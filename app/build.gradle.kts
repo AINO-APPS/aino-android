@@ -4,6 +4,19 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+fun String.asBuildConfigString(): String =
+    "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val workPulseApiUrl = providers.gradleProperty("WORKPULSE_API_URL")
+    .orElse(providers.environmentVariable("WORKPULSE_API_URL"))
+    .getOrElse("https://api.example.invalid/api")
+val workPulseWsUrl = providers.gradleProperty("WORKPULSE_WS_URL")
+    .orElse(providers.environmentVariable("WORKPULSE_WS_URL"))
+    .getOrElse("wss://api.example.invalid/ws")
+val ainoContractVersion = providers.gradleProperty("AINO_CONTRACT_VERSION")
+    .orElse(providers.environmentVariable("AINO_CONTRACT_VERSION"))
+    .getOrElse("0.1.0")
+
 android {
     namespace = "app.aino.mobile"
     compileSdk = 35
@@ -16,6 +29,9 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "WORKPULSE_API_URL", workPulseApiUrl.asBuildConfigString())
+        buildConfigField("String", "WORKPULSE_WS_URL", workPulseWsUrl.asBuildConfigString())
+        buildConfigField("String", "AINO_CONTRACT_VERSION", ainoContractVersion.asBuildConfigString())
     }
 
     buildTypes {
@@ -39,7 +55,7 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = false
+        buildConfig = true
     }
 
     packaging {

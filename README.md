@@ -1,6 +1,6 @@
 # Aino Android
 
-Native Android foundation for **MIG-0103 / MIG-0601**.
+Native Android foundation for **MIG-0103 / MIG-0601 / MIG-0602**.
 
 ## Stack
 
@@ -34,6 +34,14 @@ The shell deliberately uses Compose state rather than a navigation library until
 ```shell
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
+
+API and WebSocket endpoints are compiled into `BuildConfig`. The checked-in defaults use the non-routable `example.invalid` domain and must be overridden with Gradle properties or environment variables at build time:
+
+```shell
+./gradlew assembleDebug -PWORKPULSE_API_URL=https://example.test/api -PWORKPULSE_WS_URL=wss://example.test/ws
+```
+
+Environment variables with the same names are also supported. Gradle properties take precedence. The app pins contract baseline `0.1.0`; `AINO_CONTRACT_VERSION` can be overridden only when deliberately testing another compatible contract release.
 
 On Windows, use `gradlew.bat`. Instrumentation tests require an API 26+ emulator or device:
 
