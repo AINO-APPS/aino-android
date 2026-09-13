@@ -6,7 +6,8 @@ Native Android foundation for **MIG-0103 / MIG-0601 / MIG-0602**.
 
 - Kotlin and Gradle Kotlin DSL
 - Jetpack Compose with Material 3
-- AndroidX only; no third-party runtime libraries
+- Navigation-Compose, Lifecycle/ViewModel and Kotlin Coroutines
+- OkHttp and kotlinx-serialization for typed platform API access
 - Package and application ID: `app.aino.mobile`
 - Minimum SDK 26, target/compile SDK 35
 - JDK 17 bytecode target; Gradle and CI run on JDK 21
@@ -16,14 +17,24 @@ Native Android foundation for **MIG-0103 / MIG-0601 / MIG-0602**.
 ```text
 app/src/main/java/app/aino/mobile/
 ├── core/
+│   ├── auth/                 # Auth state, repository and Keystore credentials
 │   ├── designsystem/theme/   # Compose theme
-│   └── navigation/           # App shell and destinations
+│   ├── navigation/           # Platform-aligned app shell and destinations
+│   └── network/              # OkHttp transport, endpoint and header policy
 └── feature/
-    └── home/                 # Feature-oriented UI
+    ├── auth/                 # Login, realm choice and forced password change
+    └── home/                 # Dashboard foundation
 ```
 
 Add future product areas under `feature/<name>` and shared platform code under `core/<area>`.
-The shell deliberately uses Compose state rather than a navigation library until navigation requirements are confirmed.
+The shell follows `aino-platform/client/src/App.tsx`: Home, Attendance, Tasks,
+Chat and More are primary destinations; Calendar, Notes, Organization, Profile,
+Manager, Admin and Tenants live under role-gated secondary navigation.
+
+Native bearer authentication currently targets the tenant realm. The platform
+administration realm remains isolated behind its web console hostname; if the API
+returns a platform handoff, Android fails closed and directs the operator to the
+web console rather than weakening the realm boundary.
 
 ## Local development
 
