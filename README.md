@@ -36,6 +36,12 @@ administration realm remains isolated behind its web console hostname; if the AP
 returns a platform handoff, Android fails closed and directs the operator to the
 web console rather than weakening the realm boundary.
 
+Biometric sign-in is optional and tenant-only. Enrollment mints a revocable,
+high-entropy server credential and encrypts it with an authentication-bound Android
+Keystore key. Every decrypt requires `BIOMETRIC_STRONG`; weak-only biometric devices
+continue to use password login rather than storing a credential behind a weaker
+app-level check. No face, fingerprint, or biometric template leaves the device.
+
 ## Local development
 
 1. Install JDK 21 and Android SDK Platform 35.

@@ -24,7 +24,15 @@ import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.auth.RealmOption
 
 @Composable
-fun LoginScreen(loading: Boolean, error: String?, message: String?, onLogin: (String, String) -> Unit) {
+fun LoginScreen(
+    loading: Boolean,
+    error: String?,
+    message: String?,
+    biometricAvailable: Boolean,
+    biometricEnrolled: Boolean,
+    onLogin: (String, String) -> Unit,
+    onBiometricLogin: () -> Unit,
+) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     AuthColumn {
@@ -44,6 +52,11 @@ fun LoginScreen(loading: Boolean, error: String?, message: String?, onLogin: (St
         )
         Button(onClick = { onLogin(username, password) }, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
             if (loading) CircularProgressIndicator() else Text("Sign in")
+        }
+        if (biometricAvailable && biometricEnrolled) {
+            TextButton(onClick = onBiometricLogin, enabled = !loading, modifier = Modifier.fillMaxWidth()) {
+                Text("Sign in with biometrics")
+            }
         }
     }
 }

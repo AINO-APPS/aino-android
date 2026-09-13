@@ -27,6 +27,23 @@ data class TokenResponse(val token: String)
 data class LoginRequest(val username: String, val password: String)
 
 @Serializable
+data class BiometricEnrollRequest(val platform: String, val deviceLabel: String)
+
+@Serializable
+data class BiometricEnrollResponse(val credentialId: String, val deviceSecret: String)
+
+@Serializable
+data class BiometricLoginRequest(val credentialId: String, val deviceSecret: String)
+
+fun requireTenantBiometricCredential(credential: BiometricCredential) {
+    val tenantId = credential.credentialId.substringBefore('.').toLongOrNull()
+    require(tenantId != null && tenantId > 0) {
+        "Biometric sign-in is available only for tenant workspace accounts on Android"
+    }
+    require(credential.deviceSecret.isNotBlank()) { "Biometric credential is missing its device secret" }
+}
+
+@Serializable
 data class RealmChoiceRequest(
     @SerialName("login_ticket") val loginTicket: String,
     val realm: String,

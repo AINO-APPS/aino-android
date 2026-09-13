@@ -13,23 +13,28 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
+import javax.crypto.Cipher
 
 data class AuthUiState(
     val state: AuthState = AuthState.Initializing,
     val loading: Boolean = false,
     val error: String? = null,
     val message: String? = null,
+    val biometricEnrolled: Boolean = false,
 )
 
-class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
-    private val _ui = MutableStateFlow(AuthUiState())
+class AuthViewModel(
+    private val repository: AuthRepository,
+    private val biometricCredentials: BiometricCredentialStore,
+) : ViewModel() {
+    private val _ui = MutableStateFlow(AuthUiState(biometricEnrolled = biometricCredentials.isEnrolled()))
     val ui: StateFlow<AuthUiState> = _ui.asStateFlow()
     private val lastActivitySentAt = AtomicLong(0)
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
             val state = runCatching(repository::restoreSession).getOrElse { AuthState.SignedOut }
-            _ui.value = AuthUiState(state = state)
+            _ui.value = AuthUiState(state = state, biometricEnrolled = biometricCredentials.isEnrolled())
         }
     }
 
@@ -47,7 +52,7 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     }
 
     fun cancelRealmChoice() {
-        _ui.value = AuthUiState(state = AuthState.SignedOut)
+        _ui.value = AuthUiState(state = AuthState.SignedOut, biometricEnrolled = biometricCredentials.isEnrolled())
     }
 
     fun changePassword(current: String, next: String, confirmation: String) {
@@ -63,6 +68,39 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     fun logout() {
         execute { repository.logout(); AuthState.SignedOut }
     }
+
+    fun enrollBiometric(authenticatedCipher: Cipher, deviceLabel: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val credential = repository.enrollBiometric(deviceLabel)
+                biometricCredentials.save(credential, authenticatedCipher)
+            }.fold(
+                onSuccess = { _ui.update { it.copy(biometricEnrolled = true, message = "Biometric sign-in enabled.", error = null) } },
+                onFailure = { error -> _ui.update { it.copy(error = error.message ?: "Could not enable biometric sign-in") } },
+            )
+        }
+    }
+
+    fun biometricLogin(authenticatedCipher: Cipher) {
+        execute {
+            try {
+                repository.biometricLogin(biometricCredentials.read(authenticatedCipher))
+            } catch (error: AuthFailure) {
+                if (error.code == "BIOMETRIC_CREDENTIAL_INVALID") biometricCredentials.clear()
+                throw error
+            }
+        }
+    }
+
+    fun disableBiometric() {
+        biometricCredentials.clear()
+        _ui.update { it.copy(biometricEnrolled = false, message = "Biometric sign-in disabled.") }
+    }
+
+    fun reportBiometricError(message: String) = _ui.update { it.copy(error = message) }
+
+    fun encryptionCipher(): Cipher = biometricCredentials.createEncryptionCipher()
+    fun decryptionCipher(): Cipher? = biometricCredentials.createDecryptionCipher()
 
     /**
      * Renew the server's inactivity window only after real foreground input.
@@ -82,7 +120,13 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         _ui.update { it.copy(loading = true, error = null, message = null) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching(action).fold(
-                onSuccess = { state -> _ui.value = AuthUiState(state = state, message = successMessage) },
+                onSuccess = { state ->
+                    _ui.value = AuthUiState(
+                        state = state,
+                        message = successMessage,
+                        biometricEnrolled = biometricCredentials.isEnrolled(),
+                    )
+                },
                 onFailure = { error ->
                     _ui.update { it.copy(loading = false, error = error.message ?: "Request failed") }
                 },
@@ -99,7 +143,7 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
                 val tokens = KeystoreTokenStore(context)
                 val rawApi = OkHttpApiClient(tokenProvider = tokens)
                 val api = RefreshingApiClient(rawApi, tokens)
-                return AuthViewModel(AuthRepository(api, tokens)) as T
+                return AuthViewModel(AuthRepository(api, tokens), BiometricCredentialStore(context)) as T
             }
         }
     }

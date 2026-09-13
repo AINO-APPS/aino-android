@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -31,13 +32,27 @@ import app.aino.mobile.feature.home.HomeScreen
 import app.aino.mobile.core.update.UpdateViewModel
 
 @Composable
-fun AinoApp(auth: AuthViewModel, updates: UpdateViewModel) {
+fun AinoApp(
+    auth: AuthViewModel,
+    updates: UpdateViewModel,
+    biometricAvailable: Boolean,
+    onBiometricLogin: () -> Unit,
+    onBiometricEnroll: () -> Unit,
+) {
     val ui by auth.ui.collectAsStateWithLifecycle()
     when (val state = ui.state) {
         AuthState.Initializing -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
-        AuthState.SignedOut -> LoginScreen(ui.loading, ui.error, ui.message, auth::login)
+        AuthState.SignedOut -> LoginScreen(
+            ui.loading,
+            ui.error,
+            ui.message,
+            biometricAvailable,
+            ui.biometricEnrolled,
+            auth::login,
+            onBiometricLogin,
+        )
         is AuthState.ChoosingRealm -> RealmChoiceScreen(
             state.realms,
             ui.loading,
@@ -51,12 +66,28 @@ fun AinoApp(auth: AuthViewModel, updates: UpdateViewModel) {
             ui.error,
             auth::changePassword,
         )
-        is AuthState.Authenticated -> AuthenticatedShell(state.user.role, state.user.hasReports, updates)
+        is AuthState.Authenticated -> AuthenticatedShell(
+            state.user.role,
+            state.user.hasReports,
+            updates,
+            biometricAvailable,
+            ui.biometricEnrolled,
+            onBiometricEnroll,
+            auth::disableBiometric,
+        )
     }
 }
 
 @Composable
-private fun AuthenticatedShell(role: String, hasReports: Boolean, updates: UpdateViewModel) {
+private fun AuthenticatedShell(
+    role: String,
+    hasReports: Boolean,
+    updates: UpdateViewModel,
+    biometricAvailable: Boolean,
+    biometricEnrolled: Boolean,
+    onBiometricEnroll: () -> Unit,
+    onBiometricDisable: () -> Unit,
+) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
@@ -101,6 +132,14 @@ private fun AuthenticatedShell(role: String, hasReports: Boolean, updates: Updat
                         }
                     }
                     updateUi.message?.let { Text(it) }
+                    if (biometricAvailable) {
+                        Button(
+                            onClick = if (biometricEnrolled) onBiometricDisable else onBiometricEnroll,
+                            modifier = Modifier.padding(top = 8.dp),
+                        ) {
+                            Text(if (biometricEnrolled) "Disable biometric sign-in" else "Enable biometric sign-in")
+                        }
+                    }
                 }
             }
             availableMoreDestinations(role, hasReports).forEach { destination ->

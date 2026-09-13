@@ -40,6 +40,44 @@ class AuthRepository(
         throw decodeFailure(error)
     }
 
+    fun enrollBiometric(deviceLabel: String): BiometricCredential {
+        try {
+            val response = api.execute(
+                jsonRequest(
+                    "POST",
+                    "auth/biometric/enroll",
+                    BiometricEnrollRequest(platform = "android", deviceLabel = deviceLabel),
+                ),
+            )
+            val enrolled = json.decodeFromString<BiometricEnrollResponse>(response.bodyAsString())
+            return BiometricCredential(enrolled.credentialId, enrolled.deviceSecret).also(::requireTenantBiometricCredential)
+        } catch (error: ApiError.Http) {
+            throw decodeFailure(error)
+        }
+    }
+
+    fun biometricLogin(credential: BiometricCredential): AuthState = try {
+        requireTenantBiometricCredential(credential)
+        complete(
+            api.execute(
+                jsonRequest(
+                    "POST",
+                    "auth/biometric/login",
+                    BiometricLoginRequest(credential.credentialId, credential.deviceSecret),
+                ),
+            ),
+        )
+    } catch (error: ApiError.Http) {
+        if (error.statusCode == 401 || error.statusCode == 403) {
+            throw AuthFailure(
+                "Biometric sign-in is no longer available. Sign in with your password and enroll again.",
+                "BIOMETRIC_CREDENTIAL_INVALID",
+                error,
+            )
+        }
+        throw decodeFailure(error)
+    }
+
     fun changePassword(current: String, next: String): AuthState {
         try {
             val response = api.execute(jsonRequest("PUT", "profile/password", PasswordChangeRequest(current, next)))

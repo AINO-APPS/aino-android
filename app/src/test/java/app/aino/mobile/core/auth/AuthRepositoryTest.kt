@@ -116,6 +116,47 @@ class AuthRepositoryTest {
         assertEquals(null, store.value)
     }
 
+    @Test
+    fun biometricEnrollmentUsesAndroidPlatformAndRequiresTenantCredential() {
+        var body = ""
+        val repository = AuthRepository(FakeApiClient { request ->
+            body = request.body?.toString(Charsets.UTF_8).orEmpty()
+            response("""{"credentialId":"42.credential","deviceSecret":"secret"}""")
+        }, MemoryTokenStore())
+
+        val credential = repository.enrollBiometric("Pixel 9")
+
+        assertEquals("42.credential", credential.credentialId)
+        assertTrue(body.contains("\"platform\":\"android\""))
+        assertTrue(body.contains("\"deviceLabel\":\"Pixel 9\""))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun biometricEnrollmentRejectsPlatformMasterCredential() {
+        val repository = AuthRepository(FakeApiClient {
+            response("""{"credentialId":"0.credential","deviceSecret":"secret"}""")
+        }, MemoryTokenStore())
+
+        repository.enrollBiometric("Android device")
+    }
+
+    @Test
+    fun biometricLoginStoresReturnedBearerToken() {
+        val store = MemoryTokenStore()
+        var body = ""
+        val repository = AuthRepository(FakeApiClient { request ->
+            body = request.body?.toString(Charsets.UTF_8).orEmpty()
+            response("""{"user":{"id":4,"username":"member","role":"employee","tenant_id":42},"token":"bio-jwt"}""")
+        }, store)
+
+        val state = repository.biometricLogin(BiometricCredential("42.credential", "secret"))
+
+        assertTrue(state is AuthState.Authenticated)
+        assertEquals("bio-jwt", store.value)
+        assertTrue(body.contains("\"credentialId\":\"42.credential\""))
+        assertTrue(body.contains("\"deviceSecret\":\"secret\""))
+    }
+
     private fun response(json: String) = ApiResponse(200, emptyMap(), json.toByteArray())
 }
 
