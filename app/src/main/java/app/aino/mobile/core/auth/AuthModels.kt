@@ -21,6 +21,9 @@ data class AinoUser(
 data class AuthResponse(val user: AinoUser, val token: String)
 
 @Serializable
+data class TokenResponse(val token: String)
+
+@Serializable
 data class LoginRequest(val username: String, val password: String)
 
 @Serializable

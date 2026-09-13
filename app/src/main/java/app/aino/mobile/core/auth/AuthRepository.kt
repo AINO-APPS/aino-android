@@ -59,6 +59,10 @@ class AuthRepository(
         tokens.clearToken()
     }
 
+    fun recordActivity() {
+        api.execute(jsonRequest("POST", "auth/activity", Unit))
+    }
+
     private fun complete(response: app.aino.mobile.core.network.ApiResponse): AuthState {
         val text = response.bodyAsString()
         if (text.contains("\"redirect\"")) {

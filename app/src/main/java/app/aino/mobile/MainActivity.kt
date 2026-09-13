@@ -21,4 +21,9 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        authViewModel.recordUserActivity()
+    }
 }

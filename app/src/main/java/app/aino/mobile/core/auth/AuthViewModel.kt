@@ -5,12 +5,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.aino.mobile.core.network.OkHttpApiClient
+import app.aino.mobile.core.network.RefreshingApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicLong
 
 data class AuthUiState(
     val state: AuthState = AuthState.Initializing,
@@ -22,6 +24,7 @@ data class AuthUiState(
 class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     private val _ui = MutableStateFlow(AuthUiState())
     val ui: StateFlow<AuthUiState> = _ui.asStateFlow()
+    private val lastActivitySentAt = AtomicLong(0)
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
@@ -61,6 +64,17 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         execute { repository.logout(); AuthState.SignedOut }
     }
 
+    /**
+     * Renew the server's inactivity window only after real foreground input.
+     * Input callbacks can be very noisy, so at most one request is sent per minute.
+     */
+    fun recordUserActivity(nowMillis: Long = System.currentTimeMillis()) {
+        if (_ui.value.state !is AuthState.Authenticated) return
+        val previous = lastActivitySentAt.get()
+        if (nowMillis - previous < ACTIVITY_INTERVAL_MS || !lastActivitySentAt.compareAndSet(previous, nowMillis)) return
+        viewModelScope.launch(Dispatchers.IO) { runCatching(repository::recordActivity) }
+    }
+
     fun clearMessage() = _ui.update { it.copy(error = null, message = null) }
 
     private fun execute(successMessage: String? = null, action: () -> AuthState) {
@@ -77,11 +91,14 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     }
 
     companion object {
+        private const val ACTIVITY_INTERVAL_MS = 60_000L
+
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val tokens = KeystoreTokenStore(context)
-                val api = OkHttpApiClient(tokenProvider = tokens)
+                val rawApi = OkHttpApiClient(tokenProvider = tokens)
+                val api = RefreshingApiClient(rawApi, tokens)
                 return AuthViewModel(AuthRepository(api, tokens)) as T
             }
         }
