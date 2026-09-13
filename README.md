@@ -52,6 +52,7 @@ API and WebSocket endpoints are compiled into `BuildConfig`. The defaults target
 |---|---|
 | `AINO_API_URL` | `https://next.aino.org.in/api` |
 | `AINO_WS_URL` | `wss://next.aino.org.in` |
+| `AINO_OTA_BASE_URL` | `https://cdn.aino.org.in` |
 | `AINO_CONTRACT_VERSION` | `0.1.0` |
 
 Override any of them with a Gradle property or an environment variable of the same name (the Gradle property wins):
@@ -61,6 +62,22 @@ Override any of them with a Gradle property or an environment variable of the sa
 ```
 
 `AINO_CONTRACT_VERSION` should only be overridden when deliberately testing another compatible contract release.
+
+## Updates
+
+Native releases use an isolated R2 channel:
+
+- manifest: `https://cdn.aino.org.in/android/latest.json`
+- immutable APKs: `https://cdn.aino.org.in/android/releases/android-vX.Y.Z/AINO-X.Y.Z.apk`
+
+Authenticated users can check and install updates from **More**. APK URLs must be
+HTTPS, match the configured CDN host, and use the native `android/releases/`
+prefix. Android may require the user to grant AINO permission to install unknown
+apps. This direct installer is for sideload distribution and must be disabled if
+the app is later distributed through Google Play.
+
+`0.1.1` is the first build containing this updater; install it manually from R2
+or GitHub once. Every later native release can then be discovered in-app.
 
 ### Corporate TLS interception
 

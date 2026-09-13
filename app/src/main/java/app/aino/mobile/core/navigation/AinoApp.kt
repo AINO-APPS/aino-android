@@ -9,12 +9,14 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -26,9 +28,10 @@ import app.aino.mobile.feature.auth.ChangePasswordScreen
 import app.aino.mobile.feature.auth.LoginScreen
 import app.aino.mobile.feature.auth.RealmChoiceScreen
 import app.aino.mobile.feature.home.HomeScreen
+import app.aino.mobile.core.update.UpdateViewModel
 
 @Composable
-fun AinoApp(auth: AuthViewModel) {
+fun AinoApp(auth: AuthViewModel, updates: UpdateViewModel) {
     val ui by auth.ui.collectAsStateWithLifecycle()
     when (val state = ui.state) {
         AuthState.Initializing -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -48,12 +51,12 @@ fun AinoApp(auth: AuthViewModel) {
             ui.error,
             auth::changePassword,
         )
-        is AuthState.Authenticated -> AuthenticatedShell(state.user.role, state.user.hasReports)
+        is AuthState.Authenticated -> AuthenticatedShell(state.user.role, state.user.hasReports, updates)
     }
 }
 
 @Composable
-private fun AuthenticatedShell(role: String, hasReports: Boolean) {
+private fun AuthenticatedShell(role: String, hasReports: Boolean, updates: UpdateViewModel) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
@@ -80,6 +83,8 @@ private fun AuthenticatedShell(role: String, hasReports: Boolean) {
                 composable(destination.route) { PlaceholderScreen(destination.label) }
             }
             composable(AinoDestination.More.route) {
+                val updateUi by updates.ui.collectAsStateWithLifecycle()
+                val context = LocalContext.current
                 Column(Modifier.fillMaxSize()) {
                     availableMoreDestinations(role, hasReports).forEach { destination ->
                         ListItem(
@@ -87,6 +92,15 @@ private fun AuthenticatedShell(role: String, hasReports: Boolean) {
                             modifier = Modifier.clickable { nav.navigate(destination.route) },
                         )
                     }
+                    when (val available = updateUi.available) {
+                        null -> Button(onClick = updates::check, enabled = !updateUi.loading) {
+                            Text(if (updateUi.loading) "Checking…" else "Check for updates")
+                        }
+                        else -> Button(onClick = { updates.install(context) }, enabled = !updateUi.loading) {
+                            Text(if (updateUi.loading) "Downloading…" else "Install ${available.version}")
+                        }
+                    }
+                    updateUi.message?.let { Text(it) }
                 }
             }
             availableMoreDestinations(role, hasReports).forEach { destination ->

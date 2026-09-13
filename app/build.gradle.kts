@@ -18,6 +18,9 @@ val ainoApiUrl = providers.gradleProperty("AINO_API_URL")
 val ainoWsUrl = providers.gradleProperty("AINO_WS_URL")
     .orElse(providers.environmentVariable("AINO_WS_URL"))
     .getOrElse("wss://next.aino.org.in")
+val ainoOtaBaseUrl = providers.gradleProperty("AINO_OTA_BASE_URL")
+    .orElse(providers.environmentVariable("AINO_OTA_BASE_URL"))
+    .getOrElse("https://cdn.aino.org.in")
 val ainoContractVersion = providers.gradleProperty("AINO_CONTRACT_VERSION")
     .orElse(providers.environmentVariable("AINO_CONTRACT_VERSION"))
     .getOrElse("0.1.0")
@@ -54,12 +57,13 @@ android {
         // version: X.Y.Z -> X*1_000_000 + Y*1_000 + Z (each part 0..999).
         // `android-release.yml` re-derives this from the tag and fails on a mismatch.
         // Written without digit separators so the release workflow can parse it.
-        versionCode = 1000 // 0.1.0
-        versionName = "0.1.0"
+        versionCode = 1001 // 0.1.1
+        versionName = "0.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())
         buildConfigField("String", "AINO_WS_URL", ainoWsUrl.asBuildConfigString())
+        buildConfigField("String", "AINO_OTA_BASE_URL", ainoOtaBaseUrl.asBuildConfigString())
         buildConfigField("String", "AINO_CONTRACT_VERSION", ainoContractVersion.asBuildConfigString())
     }
 
@@ -116,6 +120,7 @@ android {
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
