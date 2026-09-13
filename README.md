@@ -53,7 +53,15 @@ Override any of them with a Gradle property or an environment variable of the sa
 
 ### Corporate TLS interception
 
-`gradle.properties` sets `systemProp.javax.net.ssl.trustStoreType=Windows-ROOT`. Some networks terminate TLS with a private root CA that Windows trusts but the JDK's bundled `cacerts` does not, which otherwise fails every download with `PKIX path building failed`. Certificates are still fully validated. The setting is inert on Linux and macOS, so CI is unaffected.
+If Gradle fails with `PKIX path building failed`, your network is terminating TLS with a private root CA that Windows trusts but the JDK's bundled `cacerts` does not. Add this to **`%USERPROFILE%\.gradle\gradle.properties`**:
+
+```properties
+systemProp.javax.net.ssl.trustStoreType=Windows-ROOT
+```
+
+Certificates are still fully validated — this only changes which trust store is consulted.
+
+Do **not** put it in the repository's `gradle.properties`: that file is also read by the wrapper before the JVM starts, and `Windows-ROOT` does not exist on Linux or macOS, so it breaks CI with `problem accessing trust store` before Gradle is even downloaded.
 
 On Windows, use `gradlew.bat`. Instrumentation tests require an API 26+ emulator or device:
 
