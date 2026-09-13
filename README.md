@@ -35,13 +35,25 @@ The shell deliberately uses Compose state rather than a navigation library until
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-API and WebSocket endpoints are compiled into `BuildConfig`. The checked-in defaults use the non-routable `example.invalid` domain and must be overridden with Gradle properties or environment variables at build time:
+API and WebSocket endpoints are compiled into `BuildConfig`. The defaults target the live platform, so a plain debug build is already functional:
+
+| Field | Default |
+|---|---|
+| `AINO_API_URL` | `https://next.aino.org.in/api` |
+| `AINO_WS_URL` | `wss://next.aino.org.in` |
+| `AINO_CONTRACT_VERSION` | `0.1.0` |
+
+Override any of them with a Gradle property or an environment variable of the same name (the Gradle property wins):
 
 ```shell
-./gradlew assembleDebug -PWORKPULSE_API_URL=https://example.test/api -PWORKPULSE_WS_URL=wss://example.test/ws
+./gradlew assembleDebug -PAINO_API_URL=https://example.test/api -PAINO_WS_URL=wss://example.test
 ```
 
-Environment variables with the same names are also supported. Gradle properties take precedence. The app pins contract baseline `0.1.0`; `AINO_CONTRACT_VERSION` can be overridden only when deliberately testing another compatible contract release.
+`AINO_CONTRACT_VERSION` should only be overridden when deliberately testing another compatible contract release.
+
+### Corporate TLS interception
+
+`gradle.properties` sets `systemProp.javax.net.ssl.trustStoreType=Windows-ROOT`. Some networks terminate TLS with a private root CA that Windows trusts but the JDK's bundled `cacerts` does not, which otherwise fails every download with `PKIX path building failed`. Certificates are still fully validated. The setting is inert on Linux and macOS, so CI is unaffected.
 
 On Windows, use `gradlew.bat`. Instrumentation tests require an API 26+ emulator or device:
 

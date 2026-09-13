@@ -7,12 +7,16 @@ plugins {
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
-val workPulseApiUrl = providers.gradleProperty("WORKPULSE_API_URL")
-    .orElse(providers.environmentVariable("WORKPULSE_API_URL"))
-    .getOrElse("https://api.example.invalid/api")
-val workPulseWsUrl = providers.gradleProperty("WORKPULSE_WS_URL")
-    .orElse(providers.environmentVariable("WORKPULSE_WS_URL"))
-    .getOrElse("wss://api.example.invalid/ws")
+// Backend targets are compiled into BuildConfig. The defaults point at the live
+// platform (Railway project `aino-platform-next`) so a plain `assembleDebug`
+// produces a working app; override per build with a Gradle property or an
+// environment variable of the same name.
+val ainoApiUrl = providers.gradleProperty("AINO_API_URL")
+    .orElse(providers.environmentVariable("AINO_API_URL"))
+    .getOrElse("https://next.aino.org.in/api")
+val ainoWsUrl = providers.gradleProperty("AINO_WS_URL")
+    .orElse(providers.environmentVariable("AINO_WS_URL"))
+    .getOrElse("wss://next.aino.org.in")
 val ainoContractVersion = providers.gradleProperty("AINO_CONTRACT_VERSION")
     .orElse(providers.environmentVariable("AINO_CONTRACT_VERSION"))
     .getOrElse("0.1.0")
@@ -29,8 +33,8 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "WORKPULSE_API_URL", workPulseApiUrl.asBuildConfigString())
-        buildConfigField("String", "WORKPULSE_WS_URL", workPulseWsUrl.asBuildConfigString())
+        buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())
+        buildConfigField("String", "AINO_WS_URL", ainoWsUrl.asBuildConfigString())
         buildConfigField("String", "AINO_CONTRACT_VERSION", ainoContractVersion.asBuildConfigString())
     }
 

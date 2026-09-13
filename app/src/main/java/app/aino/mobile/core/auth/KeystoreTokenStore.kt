@@ -74,9 +74,9 @@ class KeystoreTokenStore(context: Context) : TokenStore {
 
     private companion object {
         const val KEYSTORE = "AndroidKeyStore"
-        const val KEY_ALIAS = "workpulse_auth_token_v1"
+        const val KEY_ALIAS = "aino_auth_token_v1"
         const val TRANSFORMATION = "AES/GCM/NoPadding"
-        const val PREFERENCES = "workpulse_secure_credentials"
+        const val PREFERENCES = "aino_secure_credentials"
         const val IV = "token_iv"
         const val CIPHERTEXT = "token_ciphertext"
     }

@@ -7,7 +7,7 @@ import java.net.URL
 import java.util.TimeZone
 
 class HttpUrlConnectionApiClient(
-    private val baseUrl: String = BuildConfig.WORKPULSE_API_URL,
+    private val baseUrl: String = BuildConfig.AINO_API_URL,
     private val tokenProvider: TokenProvider = TokenProvider { null },
     private val timeZoneProvider: () -> TimeZone = TimeZone::getDefault,
     private val clock: () -> Long = System::currentTimeMillis,
