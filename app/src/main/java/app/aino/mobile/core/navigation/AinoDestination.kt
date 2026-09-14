@@ -3,6 +3,7 @@ package app.aino.mobile.core.navigation
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Apartment
+import androidx.compose.material.icons.outlined.BeachAccess
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Checklist
@@ -26,6 +27,7 @@ enum class AinoDestination(
     Tasks("tasks", "Tasks", Icons.Outlined.Checklist, true),
     Chat("chat", "Chat", Icons.Outlined.ChatBubbleOutline, true),
     More("more", "More", Icons.Outlined.MoreHoriz, true),
+    Leaves("leaves", "Leaves", Icons.Outlined.BeachAccess),
     Calendar("calendar", "Calendar", Icons.Outlined.CalendarMonth),
     Notes("notes", "Notes", Icons.Outlined.NoteAlt),
     Organization("organization", "Organization", Icons.Outlined.Apartment),
@@ -43,6 +45,7 @@ fun destinationFor(value: String): AinoDestination? =
     }
 
 fun availableMoreDestinations(role: String, hasReports: Boolean): List<AinoDestination> = buildList {
+    add(AinoDestination.Leaves)
     add(AinoDestination.Calendar)
     add(AinoDestination.Notes)
     add(AinoDestination.Organization)

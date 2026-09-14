@@ -19,6 +19,7 @@ import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.feature.home.DashboardViewModel
 import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.tasks.TaskViewModel
+import app.aino.mobile.feature.leaves.LeaveViewModel
 
 class MainActivity : FragmentActivity() {
     private val authViewModel by viewModels<AuthViewModel> { AuthViewModel.factory(applicationContext) }
@@ -27,6 +28,7 @@ class MainActivity : FragmentActivity() {
     private val dashboardViewModel by viewModels<DashboardViewModel> { DashboardViewModel.factory(applicationContext) }
     private val attendanceViewModel by viewModels<AttendanceViewModel> { AttendanceViewModel.factory(applicationContext) }
     private val taskViewModel by viewModels<TaskViewModel> { TaskViewModel.factory(applicationContext) }
+    private val leaveViewModel by viewModels<LeaveViewModel> { LeaveViewModel.factory(applicationContext) }
     private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) requestPendingAttendanceAction()
         else attendanceViewModel.reportError("Precise location permission is required for verified office attendance.")
@@ -44,6 +46,7 @@ class MainActivity : FragmentActivity() {
                     dashboardViewModel,
                     attendanceViewModel,
                     taskViewModel,
+                    leaveViewModel,
                     biometricAvailable = biometricAvailable(),
                     onBiometricLogin = ::requestBiometricLogin,
                     onBiometricEnroll = ::requestBiometricEnrollment,

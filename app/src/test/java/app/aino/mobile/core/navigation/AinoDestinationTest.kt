@@ -18,6 +18,14 @@ class AinoDestinationTest {
     }
 
     @Test
+    fun moreDestinations_alwaysIncludeTheEmployeeSurfaces() {
+        val employee = availableMoreDestinations("employee", hasReports = false)
+        assertEquals(true, AinoDestination.Leaves in employee)
+        assertEquals(true, AinoDestination.Calendar in employee)
+        assertEquals(true, AinoDestination.Profile in employee)
+    }
+
+    @Test
     fun moreDestinations_failClosedByRole() {
         val employee = availableMoreDestinations("employee", hasReports = false)
         assertEquals(false, AinoDestination.Admin in employee)

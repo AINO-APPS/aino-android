@@ -54,6 +54,8 @@ import app.aino.mobile.feature.attendance.AttendanceScreen
 import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.tasks.TasksScreen
 import app.aino.mobile.feature.tasks.TaskViewModel
+import app.aino.mobile.feature.leaves.LeavesScreen
+import app.aino.mobile.feature.leaves.LeaveViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.core.realtime.RealtimeState
 import app.aino.mobile.core.realtime.RealtimeViewModel
@@ -72,6 +74,7 @@ fun AinoApp(
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
     tasks: TaskViewModel,
+    leaves: LeaveViewModel,
     biometricAvailable: Boolean,
     onBiometricLogin: () -> Unit,
     onBiometricEnroll: () -> Unit,
@@ -125,6 +128,7 @@ fun AinoApp(
             dashboard,
             attendance,
             tasks,
+            leaves,
             biometricAvailable,
             ui.biometricEnrolled,
             onBiometricEnroll,
@@ -145,6 +149,7 @@ private fun AuthenticatedShell(
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
     tasks: TaskViewModel,
+    leaves: LeaveViewModel,
     biometricAvailable: Boolean,
     biometricEnrolled: Boolean,
     onBiometricEnroll: () -> Unit,
@@ -207,7 +212,8 @@ private fun AuthenticatedShell(
                     onBiometricDisable,
                 )
             }
-            availableMoreDestinations(role, hasReports).forEach { destination ->
+            composable(AinoDestination.Leaves.route) { LeavesScreen(leaves) }
+            availableMoreDestinations(role, hasReports).filterNot { it == AinoDestination.Leaves }.forEach { destination ->
                 composable(destination.route) { PlaceholderScreen(destination.label) }
             }
         }
@@ -328,6 +334,7 @@ private fun MoreScreen(
 }
 
 private fun destinationSubtitle(destination: AinoDestination): String = when (destination) {
+    AinoDestination.Leaves -> "Balances, applications and holidays"
     AinoDestination.Calendar -> "Events, meetings and schedule"
     AinoDestination.Notes -> "Daily notes and shared documents"
     AinoDestination.Organization -> "People, teams and structure"
