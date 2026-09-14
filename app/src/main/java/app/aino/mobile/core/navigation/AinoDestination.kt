@@ -1,22 +1,38 @@
 package app.aino.mobile.core.navigation
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AdminPanelSettings
+import androidx.compose.material.icons.outlined.Apartment
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.NoteAlt
+import androidx.compose.material.icons.outlined.PersonOutline
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.ui.graphics.vector.ImageVector
+
 enum class AinoDestination(
     val route: String,
     val label: String,
+    val icon: ImageVector,
     val inBottomBar: Boolean = false,
 ) {
-    Dashboard("dashboard", "Home", true),
-    Attendance("attendance", "Attendance", true),
-    Tasks("tasks", "Tasks", true),
-    Chat("chat", "Chat", true),
-    More("more", "More", true),
-    Calendar("calendar", "Calendar"),
-    Notes("notes", "Notes"),
-    Organization("organization", "Organization"),
-    Manager("manager", "Manager"),
-    Admin("admin", "Admin"),
-    Tenants("tenants", "Tenants"),
-    Profile("profile", "Profile"),
+    Dashboard("dashboard", "Home", Icons.Outlined.Home, true),
+    Attendance("attendance", "Attendance", Icons.Outlined.Schedule, true),
+    Tasks("tasks", "Tasks", Icons.Outlined.Checklist, true),
+    Chat("chat", "Chat", Icons.Outlined.ChatBubbleOutline, true),
+    More("more", "More", Icons.Outlined.MoreHoriz, true),
+    Calendar("calendar", "Calendar", Icons.Outlined.CalendarMonth),
+    Notes("notes", "Notes", Icons.Outlined.NoteAlt),
+    Organization("organization", "Organization", Icons.Outlined.Apartment),
+    Manager("manager", "Manager", Icons.Outlined.Groups),
+    Admin("admin", "Admin", Icons.Outlined.AdminPanelSettings),
+    Tenants("tenants", "Tenants", Icons.Outlined.Storage),
+    Profile("profile", "Profile", Icons.Outlined.PersonOutline),
 }
 
 val bottomDestinations: List<AinoDestination> = AinoDestination.entries.filter { it.inBottomBar }

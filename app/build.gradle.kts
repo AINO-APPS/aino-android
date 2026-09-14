@@ -61,8 +61,8 @@ android {
         // version: X.Y.Z -> X*1_000_000 + Y*1_000 + Z (each part 0..999).
         // `android-release.yml` re-derives this from the tag and fails on a mismatch.
         // Written without digit separators so the release workflow can parse it.
-        versionCode = 1002 // 0.1.2
-        versionName = "0.1.2"
+        versionCode = 1003 // 0.1.3
+        versionName = "0.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())
@@ -135,6 +135,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.lifecycle.runtime.compose)

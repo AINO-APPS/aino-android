@@ -90,6 +90,21 @@ target progress, and task summary, and refreshes after relevant realtime events.
 Clock-in/out controls are intentionally deferred until the attendance feature can
 satisfy each tenant's face, location, accuracy and office Wi-Fi policy.
 
+## Visual system
+
+The Compose UI mirrors the existing `aino-platform` design tokens and patterns:
+
+- AINO blue `#2383E2`, light blue `#529CCA`, and cyan `#38BDF8` accents;
+- dark-first `#131314`, `#1B1B1C`, and `#202021` surfaces;
+- subtle translucent borders and elevated glass-style cards;
+- blue gradient primary controls and semantic green/amber/red status surfaces;
+- compact metric rows, bold headings, real vector navigation icons, and the
+  existing AINO product icon.
+
+Material dynamic color is intentionally disabled so device wallpaper colors do
+not replace the AINO product identity. Light mode uses the platform's warm neutral
+palette and preserves the same blue accent hierarchy.
+
 ## Updates
 
 Native releases use an isolated R2 channel:
