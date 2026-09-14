@@ -14,11 +14,13 @@ import app.aino.mobile.core.designsystem.theme.AinoTheme
 import app.aino.mobile.core.navigation.AinoApp
 import app.aino.mobile.core.realtime.RealtimeViewModel
 import app.aino.mobile.core.update.UpdateViewModel
+import app.aino.mobile.feature.home.DashboardViewModel
 
 class MainActivity : FragmentActivity() {
     private val authViewModel by viewModels<AuthViewModel> { AuthViewModel.factory(applicationContext) }
     private val updateViewModel by viewModels<UpdateViewModel> { UpdateViewModel.Factory }
     private val realtimeViewModel by viewModels<RealtimeViewModel> { RealtimeViewModel.factory(applicationContext) }
+    private val dashboardViewModel by viewModels<DashboardViewModel> { DashboardViewModel.factory(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,6 +31,7 @@ class MainActivity : FragmentActivity() {
                     authViewModel,
                     updateViewModel,
                     realtimeViewModel,
+                    dashboardViewModel,
                     biometricAvailable = biometricAvailable(),
                     onBiometricLogin = ::requestBiometricLogin,
                     onBiometricEnroll = ::requestBiometricEnrollment,

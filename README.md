@@ -84,6 +84,12 @@ messages and outbox rows. The last scope identifiers are kept in DataStore so a
 process restarted with an expired token can still wipe the correct cache. No
 token or message content is stored in DataStore.
 
+The Home screen is backed by the live platform dashboard APIs. It shows the
+authenticated user, attendance state, work mode, live work/break duration,
+target progress, and task summary, and refreshes after relevant realtime events.
+Clock-in/out controls are intentionally deferred until the attendance feature can
+satisfy each tenant's face, location, accuracy and office Wi-Fi policy.
+
 ## Updates
 
 Native releases use an isolated R2 channel:

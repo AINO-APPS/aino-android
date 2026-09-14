@@ -30,6 +30,7 @@ import app.aino.mobile.feature.auth.ChangePasswordScreen
 import app.aino.mobile.feature.auth.LoginScreen
 import app.aino.mobile.feature.auth.RealmChoiceScreen
 import app.aino.mobile.feature.home.HomeScreen
+import app.aino.mobile.feature.home.DashboardViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.core.realtime.RealtimeState
 import app.aino.mobile.core.realtime.RealtimeViewModel
@@ -39,6 +40,7 @@ fun AinoApp(
     auth: AuthViewModel,
     updates: UpdateViewModel,
     realtime: RealtimeViewModel,
+    dashboard: DashboardViewModel,
     biometricAvailable: Boolean,
     onBiometricLogin: () -> Unit,
     onBiometricEnroll: () -> Unit,
@@ -47,6 +49,13 @@ fun AinoApp(
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
     val tenantAuthenticated = (ui.state as? AuthState.Authenticated)?.user?.tenantId != null
     LaunchedEffect(tenantAuthenticated) { realtime.setAuthenticatedTenant(tenantAuthenticated) }
+    LaunchedEffect(tenantAuthenticated) {
+        if (tenantAuthenticated) {
+            realtime.events.collect { event ->
+                if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
+            }
+        }
+    }
     when (val state = ui.state) {
         AuthState.Initializing -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -76,8 +85,10 @@ fun AinoApp(
         is AuthState.Authenticated -> AuthenticatedShell(
             state.user.role,
             state.user.hasReports,
+            state.user,
             updates,
             realtimeState,
+            dashboard,
             biometricAvailable,
             ui.biometricEnrolled,
             onBiometricEnroll,
@@ -90,8 +101,10 @@ fun AinoApp(
 private fun AuthenticatedShell(
     role: String,
     hasReports: Boolean,
+    user: app.aino.mobile.core.auth.AinoUser,
     updates: UpdateViewModel,
     realtimeState: RealtimeState,
+    dashboard: DashboardViewModel,
     biometricAvailable: Boolean,
     biometricEnrolled: Boolean,
     onBiometricEnroll: () -> Unit,
@@ -118,7 +131,7 @@ private fun AuthenticatedShell(
         }
     }) { padding ->
         NavHost(nav, startDestination = AinoDestination.Dashboard.route, modifier = Modifier.padding(padding)) {
-            composable(AinoDestination.Dashboard.route) { HomeScreen() }
+            composable(AinoDestination.Dashboard.route) { HomeScreen(user, dashboard) }
             bottomDestinations.filterNot { it in setOf(AinoDestination.Dashboard, AinoDestination.More) }.forEach { destination ->
                 composable(destination.route) { PlaceholderScreen(destination.label) }
             }
@@ -166,6 +179,14 @@ private fun AuthenticatedShell(
         }
     }
 }
+
+private val DASHBOARD_REFRESH_EVENTS = setOf(
+    "task_assigned",
+    "task_updated",
+    "calendar_refresh",
+    "meeting_updated",
+    "meeting_cancelled",
+)
 
 @Composable
 private fun PlaceholderScreen(title: String) {
