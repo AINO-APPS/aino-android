@@ -28,6 +28,18 @@ class AttendanceRepository(
         ),
     )
 
+    fun loadLeaves(range: MonthRange): List<LeaveOverlay> = decode(
+        api.execute(
+            ApiRequest(
+                path = "leaves?start_date=${range.firstVisible}&end_date=${range.lastVisible}",
+            ),
+        ),
+    )
+
+    fun loadHolidays(year: Int): List<HolidayOverlay> = decode(
+        api.execute(ApiRequest(path = "leave-policy/holidays?year=$year")),
+    )
+
     fun loadManualRequests(): List<ManualEntryRequest> = decode(
         api.execute(ApiRequest(path = "tracker/manual-entries")),
     )

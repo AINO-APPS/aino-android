@@ -30,7 +30,25 @@ data class AttendanceDay(
     val entries: List<app.aino.mobile.feature.home.TimeEntryDto> = emptyList(),
 )
 
-enum class AttendanceDayKind { Present, Absent, Weekend, InProgress, Future }
+enum class AttendanceDayKind { Present, Leave, LeavePending, Holiday, Absent, Weekend, InProgress, Future }
+
+@Serializable
+data class LeaveOverlay(
+    val id: Long,
+    val date: String,
+    @SerialName("leave_type") val leaveType: String,
+    val duration: String = "full",
+    val status: String = "pending",
+    val reason: String? = null,
+)
+
+@Serializable
+data class HolidayOverlay(
+    val id: Long,
+    val date: String,
+    val name: String,
+    @SerialName("is_optional") val isOptional: Boolean = false,
+)
 
 @Serializable
 data class ManualEntryRequest(
@@ -105,8 +123,12 @@ fun attendanceKind(
     day: AttendanceDay?,
     workDays: Set<Int>,
     minimumMinutes: Int,
+    leave: LeaveOverlay? = null,
+    holiday: HolidayOverlay? = null,
 ): AttendanceDayKind {
     if ((day?.floorMinutes ?: 0) >= minimumMinutes) return AttendanceDayKind.Present
+    if (leave != null) return if (leave.status == "approved") AttendanceDayKind.Leave else AttendanceDayKind.LeavePending
+    if (holiday != null) return AttendanceDayKind.Holiday
     if (!workDays.contains(date.dayOfWeek.value % 7)) return AttendanceDayKind.Weekend
     if (date == today) return AttendanceDayKind.InProgress
     if (date > today) return AttendanceDayKind.Future

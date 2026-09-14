@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.aspectRatio
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -312,6 +315,7 @@ private fun requestTone(status: String): AlertTone = when (status) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun AttendanceOverview(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
     val month = ui.month
     val today = LocalDate.now()
@@ -321,7 +325,7 @@ private fun AttendanceOverview(ui: AttendanceUiState, viewModel: AttendanceViewM
     val grid = monthGrid(month)
     val monthDays = (1..month.lengthOfMonth()).map(month::atDay)
     val stats = monthDays.filter { it <= today }.groupingBy {
-        attendanceKind(it, today, ui.history[it], workDays, minimumMinutes)
+        attendanceKind(it, today, ui.history[it], workDays, minimumMinutes, ui.leaves[it], ui.holidays[it])
     }.eachCount()
 
     AinoGlassCard(Modifier.fillMaxWidth()) {
@@ -349,7 +353,7 @@ private fun AttendanceOverview(ui: AttendanceUiState, viewModel: AttendanceViewM
                                 inMonth = YearMonth.from(date) == month,
                                 selected = date == ui.selectedDate,
                                 today = date == today,
-                                kind = attendanceKind(date, today, ui.history[date], workDays, minimumMinutes),
+                                kind = attendanceKind(date, today, ui.history[date], workDays, minimumMinutes, ui.leaves[date], ui.holidays[date]),
                                 modifier = Modifier.weight(1f),
                                 onClick = { viewModel.selectDate(date) },
                             )
@@ -359,12 +363,16 @@ private fun AttendanceOverview(ui: AttendanceUiState, viewModel: AttendanceViewM
             }
         }
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        MonthStat("Present", stats[AttendanceDayKind.Present] ?: 0, AinoSuccess, Modifier.weight(1f))
-        MonthStat("Absent", stats[AttendanceDayKind.Absent] ?: 0, AinoDanger, Modifier.weight(1f))
-        MonthStat("Days off", stats[AttendanceDayKind.Weekend] ?: 0, MaterialTheme.colorScheme.onSurfaceVariant, Modifier.weight(1f))
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cardWidth = (maxWidth - 8.dp) / 2
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 2) {
+            MonthStat("Present", stats[AttendanceDayKind.Present] ?: 0, AinoSuccess, Modifier.width(cardWidth))
+            MonthStat("Absent", stats[AttendanceDayKind.Absent] ?: 0, AinoDanger, Modifier.width(cardWidth))
+            MonthStat("Leave", stats[AttendanceDayKind.Leave] ?: 0, AinoBlue, Modifier.width(cardWidth))
+            MonthStat("Days off", (stats[AttendanceDayKind.Weekend] ?: 0) + (stats[AttendanceDayKind.Holiday] ?: 0), MaterialTheme.colorScheme.onSurfaceVariant, Modifier.width(cardWidth))
+        }
     }
-    SelectedDayDetail(ui.selectedDate, ui.history[ui.selectedDate])
+    SelectedDayDetail(ui.selectedDate, ui.history[ui.selectedDate], ui.leaves[ui.selectedDate], ui.holidays[ui.selectedDate])
 }
 
 @Composable
@@ -376,10 +384,12 @@ private fun CalendarNavButton(icon: androidx.compose.ui.graphics.vector.ImageVec
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 private fun AttendanceLegend() {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         LegendDot(AinoSuccess, "Present")
         LegendDot(AinoDanger, "Absent")
+        LegendDot(AinoBlue, "Leave")
         LegendDot(AinoWarning, "In progress")
         LegendDot(MaterialTheme.colorScheme.onSurfaceVariant, "Day off")
     }
@@ -405,6 +415,9 @@ private fun CalendarDay(
 ) {
     val dot = when (kind) {
         AttendanceDayKind.Present -> AinoSuccess
+        AttendanceDayKind.Leave -> AinoBlue
+        AttendanceDayKind.LeavePending -> AinoWarning
+        AttendanceDayKind.Holiday -> MaterialTheme.colorScheme.onSurfaceVariant
         AttendanceDayKind.Absent -> AinoDanger
         AttendanceDayKind.InProgress -> AinoWarning
         AttendanceDayKind.Weekend -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -439,17 +452,25 @@ private fun MonthStat(label: String, value: Int, color: Color, modifier: Modifie
 }
 
 @Composable
-private fun SelectedDayDetail(date: LocalDate, day: AttendanceDay?) {
+private fun SelectedDayDetail(date: LocalDate, day: AttendanceDay?, leave: LeaveOverlay?, holiday: HolidayOverlay?) {
     AinoGlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(date.format(DateTimeFormatter.ofPattern("EEEE, MMM d")), style = MaterialTheme.typography.titleMedium)
-            if (day == null) {
-                Text("No recorded attendance", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
+            if (day != null && (day.floorMinutes > 0 || day.entries.isNotEmpty())) {
                 DetailRow("Work", formatDuration(day.floorMinutes * 60L))
                 DetailRow("Break", formatDuration(day.breakMinutes * 60L))
                 DetailRow("Total", formatDuration(day.totalMinutes * 60L))
                 DetailRow("Mode", day.workMode.replaceFirstChar(Char::uppercase))
+            } else if (leave != null) {
+                DetailRow("Status", "${leave.leaveType.replaceFirstChar(Char::uppercase)} leave")
+                DetailRow("Approval", leave.status.replaceFirstChar(Char::uppercase))
+                DetailRow("Duration", leave.duration.replaceFirstChar(Char::uppercase))
+                leave.reason?.let { DetailRow("Reason", it) }
+            } else if (holiday != null) {
+                DetailRow("Holiday", holiday.name)
+                if (holiday.isOptional) DetailRow("Type", "Optional observance")
+            } else {
+                Text("No recorded attendance", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

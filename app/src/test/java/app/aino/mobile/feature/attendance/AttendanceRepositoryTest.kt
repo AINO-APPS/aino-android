@@ -68,4 +68,27 @@ class AttendanceRepositoryTest {
         assertEquals("tracker/overtime-request", captured[1].path)
         assertTrue(captured[1].body!!.toString(Charsets.UTF_8).contains("\"hours\":2.0"))
     }
+
+    @Test
+    fun loadsLeaveAndHolidayOverlaysFromTheirPlatformRoutes() {
+        val captured = mutableListOf<String>()
+        val repository = AttendanceRepository(ApiClient { request ->
+            captured += request.path
+            val body = if (request.path.startsWith("leaves?")) {
+                """[{"id":1,"date":"2026-09-14T00:00:00.000Z","leave_type":"casual","duration":"full","status":"approved"}]"""
+            } else {
+                """[{"id":2,"date":"2026-09-15","name":"Foundation Day","is_optional":false}]"""
+            }
+            ApiResponse(200, emptyMap(), body.toByteArray())
+        })
+        val range = MonthRange(LocalDate.of(2026, 8, 30), LocalDate.of(2026, 10, 10))
+
+        val leaves = repository.loadLeaves(range)
+        val holidays = repository.loadHolidays(2026)
+
+        assertEquals("leaves?start_date=2026-08-30&end_date=2026-10-10", captured[0])
+        assertEquals("leave-policy/holidays?year=2026", captured[1])
+        assertEquals("casual", leaves.single().leaveType)
+        assertEquals("Foundation Day", holidays.single().name)
+    }
 }

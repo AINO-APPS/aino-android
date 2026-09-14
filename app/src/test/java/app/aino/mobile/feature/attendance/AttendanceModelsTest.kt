@@ -71,4 +71,19 @@ class AttendanceModelsTest {
         assertEquals("Hours must be between 0 and 24", validateOvertime("2026-09-14", "25", "Reason"))
         assertEquals("Reason is required", validateOvertime("2026-09-14", "2", ""))
     }
+
+    @Test
+    fun leaveAndHolidayPrecedenceMatchesLegacyCalendar() {
+        val today = LocalDate.of(2026, 9, 14)
+        val friday = LocalDate.of(2026, 9, 11)
+        val approved = LeaveOverlay(1, friday.toString(), "casual", status = "approved")
+        val pending = LeaveOverlay(2, friday.toString(), "sick", status = "pending")
+        val holiday = HolidayOverlay(3, friday.toString(), "Foundation Day")
+        val workDays = setOf(1, 2, 3, 4, 5)
+
+        assertEquals(AttendanceDayKind.Present, attendanceKind(friday, today, AttendanceDay(friday.toString(), 240), workDays, 240, approved, holiday))
+        assertEquals(AttendanceDayKind.Leave, attendanceKind(friday, today, null, workDays, 240, approved, holiday))
+        assertEquals(AttendanceDayKind.LeavePending, attendanceKind(friday, today, null, workDays, 240, pending, holiday))
+        assertEquals(AttendanceDayKind.Holiday, attendanceKind(friday, today, null, workDays, 240, null, holiday))
+    }
 }

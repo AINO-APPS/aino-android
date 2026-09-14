@@ -30,6 +30,8 @@ data class AttendanceUiState(
     val month: YearMonth = YearMonth.now(),
     val selectedDate: LocalDate = LocalDate.now(),
     val history: Map<LocalDate, AttendanceDay> = emptyMap(),
+    val leaves: Map<LocalDate, LeaveOverlay> = emptyMap(),
+    val holidays: Map<LocalDate, HolidayOverlay> = emptyMap(),
     val manualRequests: List<ManualEntryRequest> = emptyList(),
     val overtimeRequests: List<OvertimeRequest> = emptyList(),
     val manualDate: String = LocalDate.now().toString(),
@@ -60,9 +62,14 @@ class AttendanceViewModel(
                 val policy = repository.loadPolicy()
                 val status = repository.loadStatus()
                 val history = repository.loadHistory(monthRange(_ui.value.month)).associateBy { LocalDate.parse(it.date) }
+                val range = monthRange(_ui.value.month)
+                val leaves = runCatching { repository.loadLeaves(range) }.getOrDefault(emptyList())
+                    .mapNotNull { leave -> normalizeDate(leave.date)?.let { it to leave } }.toMap()
+                val holidays = runCatching { repository.loadHolidays(_ui.value.month.year) }.getOrDefault(emptyList())
+                    .mapNotNull { holiday -> normalizeDate(holiday.date)?.let { it to holiday } }.toMap()
                 val manual = runCatching(repository::loadManualRequests).getOrDefault(emptyList())
                 val overtime = runCatching(repository::loadOvertimeRequests).getOrDefault(emptyList())
-                LoadedAttendance(policy, status, history, manual, overtime)
+                LoadedAttendance(policy, status, history, leaves, holidays, manual, overtime)
             }.fold(
                 onSuccess = { loaded ->
                     _ui.value = _ui.value.copy(
@@ -71,6 +78,8 @@ class AttendanceViewModel(
                         status = loaded.status,
                         workMode = parseWorkMode(loaded.status.workMode),
                         history = loaded.history,
+                        leaves = loaded.leaves,
+                        holidays = loaded.holidays,
                         manualRequests = loaded.manualRequests,
                         overtimeRequests = loaded.overtimeRequests,
                     )
@@ -254,10 +263,14 @@ class AttendanceViewModel(
 
     private fun parseWorkMode(value: String): WorkMode = WorkMode.entries.firstOrNull { it.name.equals(value, true) } ?: WorkMode.Office
 
+    private fun normalizeDate(value: String): LocalDate? = runCatching { LocalDate.parse(value.take(10)) }.getOrNull()
+
     private data class LoadedAttendance(
         val policy: AttendancePolicy,
         val status: DashboardStatus,
         val history: Map<LocalDate, AttendanceDay>,
+        val leaves: Map<LocalDate, LeaveOverlay>,
+        val holidays: Map<LocalDate, HolidayOverlay>,
         val manualRequests: List<ManualEntryRequest>,
         val overtimeRequests: List<OvertimeRequest>,
     )
