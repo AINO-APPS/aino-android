@@ -56,6 +56,8 @@ import app.aino.mobile.feature.tasks.TasksScreen
 import app.aino.mobile.feature.tasks.TaskViewModel
 import app.aino.mobile.feature.leaves.LeavesScreen
 import app.aino.mobile.feature.leaves.LeaveViewModel
+import app.aino.mobile.feature.profile.ProfileScreen
+import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.core.realtime.RealtimeState
 import app.aino.mobile.core.realtime.RealtimeViewModel
@@ -75,6 +77,7 @@ fun AinoApp(
     attendance: AttendanceViewModel,
     tasks: TaskViewModel,
     leaves: LeaveViewModel,
+    profile: ProfileViewModel,
     biometricAvailable: Boolean,
     onBiometricLogin: () -> Unit,
     onBiometricEnroll: () -> Unit,
@@ -129,6 +132,7 @@ fun AinoApp(
             attendance,
             tasks,
             leaves,
+            profile,
             biometricAvailable,
             ui.biometricEnrolled,
             onBiometricEnroll,
@@ -150,6 +154,7 @@ private fun AuthenticatedShell(
     attendance: AttendanceViewModel,
     tasks: TaskViewModel,
     leaves: LeaveViewModel,
+    profile: ProfileViewModel,
     biometricAvailable: Boolean,
     biometricEnrolled: Boolean,
     onBiometricEnroll: () -> Unit,
@@ -213,7 +218,9 @@ private fun AuthenticatedShell(
                 )
             }
             composable(AinoDestination.Leaves.route) { LeavesScreen(leaves) }
-            availableMoreDestinations(role, hasReports).filterNot { it == AinoDestination.Leaves }.forEach { destination ->
+            composable(AinoDestination.Profile.route) { ProfileScreen(profile) }
+            val nativeMoreRoutes = setOf(AinoDestination.Leaves, AinoDestination.Profile)
+            availableMoreDestinations(role, hasReports).filterNot { it in nativeMoreRoutes }.forEach { destination ->
                 composable(destination.route) { PlaceholderScreen(destination.label) }
             }
         }
