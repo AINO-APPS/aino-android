@@ -50,6 +50,8 @@ import app.aino.mobile.feature.auth.LoginScreen
 import app.aino.mobile.feature.auth.RealmChoiceScreen
 import app.aino.mobile.feature.home.HomeScreen
 import app.aino.mobile.feature.home.DashboardViewModel
+import app.aino.mobile.feature.attendance.AttendanceScreen
+import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.core.realtime.RealtimeState
 import app.aino.mobile.core.realtime.RealtimeViewModel
@@ -66,9 +68,12 @@ fun AinoApp(
     updates: UpdateViewModel,
     realtime: RealtimeViewModel,
     dashboard: DashboardViewModel,
+    attendance: AttendanceViewModel,
     biometricAvailable: Boolean,
     onBiometricLogin: () -> Unit,
     onBiometricEnroll: () -> Unit,
+    onAttendanceLocationPermission: () -> Unit,
+    onAttendanceBiometric: () -> Unit,
 ) {
     val ui by auth.ui.collectAsStateWithLifecycle()
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
@@ -114,10 +119,13 @@ fun AinoApp(
             updates,
             realtimeState,
             dashboard,
+            attendance,
             biometricAvailable,
             ui.biometricEnrolled,
             onBiometricEnroll,
             auth::disableBiometric,
+            onAttendanceLocationPermission,
+            onAttendanceBiometric,
         )
     }
 }
@@ -130,10 +138,13 @@ private fun AuthenticatedShell(
     updates: UpdateViewModel,
     realtimeState: RealtimeState,
     dashboard: DashboardViewModel,
+    attendance: AttendanceViewModel,
     biometricAvailable: Boolean,
     biometricEnrolled: Boolean,
     onBiometricEnroll: () -> Unit,
     onBiometricDisable: () -> Unit,
+    onAttendanceLocationPermission: () -> Unit,
+    onAttendanceBiometric: () -> Unit,
 ) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
@@ -164,7 +175,10 @@ private fun AuthenticatedShell(
     }) { padding ->
         NavHost(nav, startDestination = AinoDestination.Dashboard.route, modifier = Modifier.padding(padding)) {
             composable(AinoDestination.Dashboard.route) { HomeScreen(user, dashboard) }
-            bottomDestinations.filterNot { it in setOf(AinoDestination.Dashboard, AinoDestination.More) }.forEach { destination ->
+            composable(AinoDestination.Attendance.route) {
+                AttendanceScreen(attendance, onAttendanceLocationPermission, onAttendanceBiometric)
+            }
+            bottomDestinations.filterNot { it in setOf(AinoDestination.Dashboard, AinoDestination.Attendance, AinoDestination.More) }.forEach { destination ->
                 composable(destination.route) { PlaceholderScreen(destination.label) }
             }
             composable(AinoDestination.More.route) {
