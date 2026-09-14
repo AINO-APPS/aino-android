@@ -70,16 +70,15 @@ fun AinoPrimaryButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.alpha(if (enabled) 1f else 0.4f)
+            .background(Brush.linearGradient(listOf(AinoBlue, AinoBlueDark)), RoundedCornerShape(8.dp)),
         enabled = enabled,
         shape = RoundedCornerShape(8.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, disabledContainerColor = Color.Transparent),
         contentPadding = ButtonDefaults.ContentPadding,
     ) {
         Row(
-            Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.4f)
-                .background(Brush.linearGradient(listOf(AinoBlue, AinoBlueDark)), RoundedCornerShape(8.dp))
-                .padding(vertical = 4.dp),
+            Modifier.fillMaxWidth().padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
