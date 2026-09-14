@@ -90,6 +90,28 @@ data class ManualEntryPayload(
     @SerialName("clock_out") val clockOut: String? = null,
     val timezoneOffset: Int,
     @SerialName("work_mode") val workMode: String,
+    val breaks: List<ManualBreakPayload> = emptyList(),
+)
+
+@Serializable
+data class ManualBreakPayload(val start: String, val end: String)
+
+@Serializable
+data class RawTimeEntry(
+    val id: Long? = null,
+    @SerialName("entry_type") val entryType: String,
+    val timestamp: String,
+    @SerialName("work_mode") val workMode: String? = null,
+    @SerialName("is_manual") val isManual: Boolean = false,
+    @SerialName("approval_status") val approvalStatus: String? = null,
+)
+
+data class EditableDay(
+    val clockIn: String,
+    val clockOut: String?,
+    val workMode: WorkMode,
+    val breaks: List<ManualBreakPayload>,
+    val hasExistingEntries: Boolean,
 )
 
 @Serializable
@@ -156,15 +178,48 @@ data class LocationProof(val latitude: Double, val longitude: Double, val accura
 enum class AttendanceAction { ClockIn, ClockOut }
 enum class WorkMode { Office, Remote, Hybrid }
 
-fun validateManualEntry(date: String, clockIn: String, clockOut: String?, today: java.time.LocalDate): String? {
+fun validateManualEntry(
+    date: String,
+    clockIn: String,
+    clockOut: String?,
+    today: java.time.LocalDate,
+    breaks: List<ManualBreakPayload> = emptyList(),
+): String? {
     val parsedDate = runCatching { java.time.LocalDate.parse(date) }.getOrNull()
         ?: return "Choose a valid date"
     if (parsedDate > today) return "Cannot add a manual entry for a future date"
     if (!validTime(clockIn)) return "Login time must use HH:MM"
     if (!clockOut.isNullOrBlank() && !validTime(clockOut)) return "Logout time must use HH:MM"
     if (!clockOut.isNullOrBlank() && clockOut <= clockIn) return "Logout time must be after login time"
+    val sorted = breaks.sortedBy { it.start }
+    sorted.forEachIndexed { index, item ->
+        if (!validTime(item.start) || !validTime(item.end)) return "Each break must use HH:MM"
+        if (item.end <= item.start) return "Break end time must be after break start time"
+        if (item.start < clockIn || (!clockOut.isNullOrBlank() && item.end > clockOut)) return "Break times must be within clock-in and clock-out times"
+        if (index < sorted.lastIndex && item.end > sorted[index + 1].start) return "Break times must not overlap"
+    }
     return null
 }
+
+fun editableDay(entries: List<RawTimeEntry>): EditableDay? {
+    if (entries.isEmpty()) return null
+    val clockIn = entries.firstOrNull { it.entryType == "clock_in" } ?: return null
+    val clockOut = entries.lastOrNull { it.entryType == "clock_out" }
+    val starts = entries.filter { it.entryType == "break_start" }
+    val ends = entries.filter { it.entryType == "break_end" }
+    return EditableDay(
+        clockIn = localTime(clockIn.timestamp),
+        clockOut = clockOut?.timestamp?.let(::localTime),
+        workMode = WorkMode.entries.firstOrNull { it.name.equals(clockIn.workMode, true) } ?: WorkMode.Office,
+        breaks = starts.mapIndexedNotNull { index, start -> ends.getOrNull(index)?.let { ManualBreakPayload(localTime(start.timestamp), localTime(it.timestamp)) } },
+        hasExistingEntries = true,
+    )
+}
+
+private fun localTime(timestamp: String): String = runCatching {
+    java.time.Instant.parse(timestamp.replace(" ", "T").let { if (it.endsWith("Z") || Regex("[+-]\\d{2}:?\\d{2}$").containsMatchIn(it)) it else "${it}Z" })
+        .atZone(java.time.ZoneId.systemDefault()).toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+}.getOrDefault("09:00")
 
 fun validateOvertime(date: String, hours: String, reason: String): String? {
     if (runCatching { java.time.LocalDate.parse(date) }.isFailure) return "Choose a valid date"

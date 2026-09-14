@@ -48,8 +48,15 @@ class AttendanceRepository(
         api.execute(ApiRequest(path = "tracker/overtime-requests")),
     )
 
+    fun loadEntries(date: String): List<RawTimeEntry> = decode(
+        api.execute(ApiRequest(path = "tracker/entries/$date")),
+    )
+
     fun submitManualEntry(payload: ManualEntryPayload): AttendanceMutationResponse =
         mutate<ManualEntryPayload, AttendanceMutationResponse>("tracker/manual-entry", payload)
+
+    fun updateManualEntry(payload: ManualEntryPayload): AttendanceMutationResponse =
+        mutate<ManualEntryPayload, AttendanceMutationResponse>("tracker/manual-entry/${payload.date}", payload, "PUT")
 
     fun submitOvertime(payload: OvertimePayload): AttendanceMutationResponse =
         mutate<OvertimePayload, AttendanceMutationResponse>("tracker/overtime-request", payload)
@@ -80,10 +87,10 @@ class AttendanceRepository(
     fun startBreak() = mutate<Unit, AttendanceActionResponse>("tracker/break-start", Unit)
     fun endBreak() = mutate<Unit, AttendanceActionResponse>("tracker/break-end", Unit)
 
-    private inline fun <reified T, reified R> mutate(path: String, body: T): R {
+    private inline fun <reified T, reified R> mutate(path: String, body: T, method: String = "POST"): R {
         try {
             val bytes = if (body is Unit) ByteArray(0) else json.encodeToString(body).toByteArray()
-            return decode(api.execute(ApiRequest("POST", path, body = bytes)))
+            return decode(api.execute(ApiRequest(method, path, body = bytes)))
         } catch (error: ApiError.Http) {
             val message = runCatching {
                 json.parseToJsonElement(error.responseBody).jsonObject["error"]?.jsonPrimitive?.content

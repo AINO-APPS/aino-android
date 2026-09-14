@@ -38,6 +38,9 @@ data class AttendanceUiState(
     val manualClockIn: String = "09:00",
     val manualClockOut: String = "17:00",
     val manualMode: WorkMode = WorkMode.Office,
+    val manualBreaks: List<ManualBreakPayload> = emptyList(),
+    val manualEditMode: Boolean = false,
+    val checkingManualDate: Boolean = false,
     val overtimeDate: String = LocalDate.now().toString(),
     val overtimeHours: String = "",
     val overtimeReason: String = "",
@@ -83,6 +86,7 @@ class AttendanceViewModel(
                         manualRequests = loaded.manualRequests,
                         overtimeRequests = loaded.overtimeRequests,
                     )
+                    loadManualDate(_ui.value.manualDate)
                 },
                 onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Could not load attendance") },
             )
@@ -115,6 +119,53 @@ class AttendanceViewModel(
             manualMode = mode ?: _ui.value.manualMode,
             error = null,
         )
+        if (date != null && runCatching { LocalDate.parse(date) }.isSuccess) loadManualDate(date)
+    }
+
+    fun addManualBreak() {
+        if (_ui.value.manualBreaks.size >= 20) return
+        _ui.value = _ui.value.copy(manualBreaks = _ui.value.manualBreaks + ManualBreakPayload("12:00", "12:30"))
+    }
+
+    fun updateManualBreak(index: Int, start: String? = null, end: String? = null) {
+        _ui.value = _ui.value.copy(manualBreaks = _ui.value.manualBreaks.mapIndexed { i, item ->
+            if (i == index) item.copy(start = start ?: item.start, end = end ?: item.end) else item
+        })
+    }
+
+    fun removeManualBreak(index: Int) {
+        _ui.value = _ui.value.copy(manualBreaks = _ui.value.manualBreaks.filterIndexed { i, _ -> i != index })
+    }
+
+    private fun loadManualDate(date: String) {
+        _ui.value = _ui.value.copy(checkingManualDate = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.loadEntries(date) }.fold(
+                onSuccess = { entries ->
+                    val editable = editableDay(entries)
+                    val selectedDate = LocalDate.parse(date)
+                    val leave = _ui.value.leaves[selectedDate]
+                    val currentlyActive = date == LocalDate.now().toString() && _ui.value.status?.state != "logged_out"
+                    _ui.value = if (leave != null) {
+                        _ui.value.copy(checkingManualDate = false, manualEditMode = false, error = "A leave exists on this date. Remove it before editing time.")
+                    } else if (currentlyActive) {
+                        _ui.value.copy(checkingManualDate = false, manualEditMode = false, error = "Finish the active session before editing today's entries.")
+                    } else if (editable != null) {
+                        _ui.value.copy(
+                            checkingManualDate = false,
+                            manualEditMode = true,
+                            manualClockIn = editable.clockIn,
+                            manualClockOut = editable.clockOut.orEmpty(),
+                            manualMode = editable.workMode,
+                            manualBreaks = editable.breaks,
+                        )
+                    } else {
+                        _ui.value.copy(checkingManualDate = false, manualEditMode = false, manualBreaks = emptyList())
+                    }
+                },
+                onFailure = { _ui.value = _ui.value.copy(checkingManualDate = false, error = it.message ?: "Could not check this date") },
+            )
+        }
     }
 
     fun updateOvertimeForm(date: String? = null, hours: String? = null, reason: String? = null) {
@@ -128,27 +179,27 @@ class AttendanceViewModel(
 
     fun submitManualEntry() {
         val current = _ui.value
-        validateManualEntry(current.manualDate, current.manualClockIn, current.manualClockOut.ifBlank { null }, LocalDate.now())?.let {
+        validateManualEntry(current.manualDate, current.manualClockIn, current.manualClockOut.ifBlank { null }, LocalDate.now(), current.manualBreaks)?.let {
             _ui.value = current.copy(error = it)
             return
         }
         _ui.value = current.copy(loading = true, error = null, message = null)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                repository.submitManualEntry(
-                    ManualEntryPayload(
-                        date = current.manualDate,
-                        clockIn = current.manualClockIn,
-                        clockOut = current.manualClockOut.ifBlank { null },
-                        timezoneOffset = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / -60_000,
-                        workMode = current.manualMode.name.lowercase(),
-                    ),
+                val payload = ManualEntryPayload(
+                    date = current.manualDate,
+                    clockIn = current.manualClockIn,
+                    clockOut = current.manualClockOut.ifBlank { null },
+                    timezoneOffset = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / -60_000,
+                    workMode = current.manualMode.name.lowercase(),
+                    breaks = current.manualBreaks,
                 )
+                if (current.manualEditMode) repository.updateManualEntry(payload) else repository.submitManualEntry(payload)
             }.fold(
                 onSuccess = { response ->
                     val manual = repository.loadManualRequests()
                     val history = repository.loadHistory(monthRange(current.month)).associateBy { LocalDate.parse(it.date) }
-                    _ui.value = _ui.value.copy(loading = false, manualRequests = manual, history = history, message = response.message)
+                    _ui.value = _ui.value.copy(loading = false, manualRequests = manual, history = history, manualEditMode = false, message = response.message)
                 },
                 onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Manual entry failed") },
             )
@@ -262,6 +313,7 @@ class AttendanceViewModel(
     }
 
     private fun parseWorkMode(value: String): WorkMode = WorkMode.entries.firstOrNull { it.name.equals(value, true) } ?: WorkMode.Office
+
 
     private fun normalizeDate(value: String): LocalDate? = runCatching { LocalDate.parse(value.take(10)) }.getOrNull()
 

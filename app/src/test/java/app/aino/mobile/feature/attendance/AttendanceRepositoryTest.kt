@@ -91,4 +91,33 @@ class AttendanceRepositoryTest {
         assertEquals("casual", leaves.single().leaveType)
         assertEquals("Foundation Day", holidays.single().name)
     }
+
+    @Test
+    fun loadsRawEntriesAndUsesPutForExistingManualDay() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = AttendanceRepository(ApiClient { request ->
+            captured += request
+            val body = if (request.method == "GET") {
+                """[{"id":1,"entry_type":"clock_in","timestamp":"2026-09-14T09:00:00Z","work_mode":"office"}]"""
+            } else """{"message":"updated"}"""
+            ApiResponse(200, emptyMap(), body.toByteArray())
+        })
+
+        assertEquals("clock_in", repository.loadEntries("2026-09-14").single().entryType)
+        repository.updateManualEntry(
+            ManualEntryPayload(
+                "2026-09-14",
+                "09:00",
+                "17:00",
+                -330,
+                "office",
+                listOf(ManualBreakPayload("12:00", "12:30")),
+            ),
+        )
+
+        assertEquals("tracker/entries/2026-09-14", captured[0].path)
+        assertEquals("PUT", captured[1].method)
+        assertEquals("tracker/manual-entry/2026-09-14", captured[1].path)
+        assertTrue(captured[1].body!!.toString(Charsets.UTF_8).contains("\"breaks\":[{\"start\":\"12:00\",\"end\":\"12:30\"}]"))
+    }
 }

@@ -86,4 +86,45 @@ class AttendanceModelsTest {
         assertEquals(AttendanceDayKind.LeavePending, attendanceKind(friday, today, null, workDays, 240, pending, holiday))
         assertEquals(AttendanceDayKind.Holiday, attendanceKind(friday, today, null, workDays, 240, null, holiday))
     }
+
+    @Test
+    fun buildsEditableDayAndPairsBreakRows() {
+        fun atLocal(hour: Int, minute: Int = 0): String = LocalDate.of(2026, 9, 14)
+            .atTime(hour, minute).atZone(java.time.ZoneId.systemDefault()).toInstant().toString()
+        val day = editableDay(
+            listOf(
+                RawTimeEntry(entryType = "clock_in", timestamp = atLocal(9), workMode = "remote"),
+                RawTimeEntry(entryType = "break_start", timestamp = atLocal(12)),
+                RawTimeEntry(entryType = "break_end", timestamp = atLocal(12, 30)),
+                RawTimeEntry(entryType = "clock_out", timestamp = atLocal(17)),
+            ),
+        )!!
+        assertEquals("09:00", day.clockIn)
+        assertEquals("17:00", day.clockOut)
+        assertEquals(WorkMode.Remote, day.workMode)
+        assertEquals(ManualBreakPayload("12:00", "12:30"), day.breaks.single())
+    }
+
+    @Test
+    fun validatesBreakOrderingAndBounds() {
+        val today = LocalDate.of(2026, 9, 14)
+        assertEquals(
+            null,
+            validateManualEntry("2026-09-13", "09:00", "17:00", today, listOf(ManualBreakPayload("12:00", "12:30"))),
+        )
+        assertEquals(
+            "Break times must not overlap",
+            validateManualEntry(
+                "2026-09-13",
+                "09:00",
+                "17:00",
+                today,
+                listOf(ManualBreakPayload("12:00", "13:00"), ManualBreakPayload("12:30", "13:30")),
+            ),
+        )
+        assertEquals(
+            "Break times must be within clock-in and clock-out times",
+            validateManualEntry("2026-09-13", "09:00", "17:00", today, listOf(ManualBreakPayload("08:30", "09:30"))),
+        )
+    }
 }

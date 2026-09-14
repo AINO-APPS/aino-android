@@ -197,7 +197,7 @@ private fun ManualAttendance(ui: AttendanceUiState, viewModel: AttendanceViewMod
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.EditCalendar, null, tint = MaterialTheme.colorScheme.primary)
-                Text("Manual time entry", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.titleLarge)
+                Text(if (ui.manualEditMode) "Edit time entry" else "Manual time entry", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.titleLarge)
             }
             Text("Add a missed work day. Your manager may need to approve it.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
             AttendanceField("Date (YYYY-MM-DD)", ui.manualDate, { viewModel.updateManualForm(date = it) })
@@ -217,7 +217,23 @@ private fun ManualAttendance(ui: AttendanceUiState, viewModel: AttendanceViewMod
                     ) { Text(mode.name.take(6).lowercase().replaceFirstChar(Char::uppercase), maxLines = 1) }
                 }
             }
-            AinoPrimaryButton("Submit manual entry", viewModel::submitManualEntry, Modifier.fillMaxWidth(), !ui.loading)
+            if (ui.checkingManualDate) Text("Checking selected date…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (ui.manualBreaks.isNotEmpty()) {
+                Text("Breaks", style = MaterialTheme.typography.titleMedium)
+                ui.manualBreaks.forEachIndexed { index, item ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        AttendanceField("Start", item.start, { viewModel.updateManualBreak(index, start = it) }, Modifier.weight(1f))
+                        AttendanceField("End", item.end, { viewModel.updateManualBreak(index, end = it) }, Modifier.weight(1f))
+                        Text("Remove", Modifier.clickable { viewModel.removeManualBreak(index) }, color = AinoDanger, style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            Button(
+                onClick = viewModel::addManualBreak,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                enabled = ui.manualBreaks.size < 20,
+            ) { Text("Add break", color = MaterialTheme.colorScheme.onSurface) }
+            AinoPrimaryButton(if (ui.manualEditMode) "Submit entry update" else "Submit manual entry", viewModel::submitManualEntry, Modifier.fillMaxWidth(), !ui.loading && !ui.checkingManualDate)
         }
     }
 
