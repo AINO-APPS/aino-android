@@ -15,7 +15,55 @@ data class AttendancePolicy(
     @SerialName("office_radius_m") val officeRadiusMeters: Double = 150.0,
     @SerialName("office_address") val officeAddress: String? = null,
     @SerialName("office_wifi_verification_enabled") val wifiVerificationEnabled: Boolean = false,
+    @SerialName("work_hours_per_day") val workHoursPerDay: Double = 8.0,
+    @SerialName("work_days") val workDays: String = "1,2,3,4,5",
+    @SerialName("min_hours_present") val minHoursPresent: Double? = null,
 )
+
+@Serializable
+data class AttendanceDay(
+    val date: String,
+    val floorMinutes: Int = 0,
+    val breakMinutes: Int = 0,
+    val totalMinutes: Int = 0,
+    val workMode: String = "office",
+    val entries: List<app.aino.mobile.feature.home.TimeEntryDto> = emptyList(),
+)
+
+enum class AttendanceDayKind { Present, Absent, Weekend, InProgress, Future }
+
+data class MonthRange(val firstVisible: java.time.LocalDate, val lastVisible: java.time.LocalDate)
+
+fun monthGrid(month: java.time.YearMonth): List<java.time.LocalDate> {
+    val first = month.atDay(1)
+    val sundayOffset = first.dayOfWeek.value % 7
+    val start = first.minusDays(sundayOffset.toLong())
+    return List(42) { start.plusDays(it.toLong()) }
+}
+
+fun monthRange(month: java.time.YearMonth): MonthRange {
+    val grid = monthGrid(month)
+    return MonthRange(grid.first(), grid.last())
+}
+
+fun workDaySet(value: String): Set<Int> = value.split(',')
+    .mapNotNull { it.trim().toIntOrNull() }
+    .filter { it in 0..6 }
+    .toSet().ifEmpty { setOf(1, 2, 3, 4, 5) }
+
+fun attendanceKind(
+    date: java.time.LocalDate,
+    today: java.time.LocalDate,
+    day: AttendanceDay?,
+    workDays: Set<Int>,
+    minimumMinutes: Int,
+): AttendanceDayKind {
+    if ((day?.floorMinutes ?: 0) >= minimumMinutes) return AttendanceDayKind.Present
+    if (!workDays.contains(date.dayOfWeek.value % 7)) return AttendanceDayKind.Weekend
+    if (date == today) return AttendanceDayKind.InProgress
+    if (date > today) return AttendanceDayKind.Future
+    return AttendanceDayKind.Absent
+}
 
 @Serializable
 data class AttendanceActionRequest(

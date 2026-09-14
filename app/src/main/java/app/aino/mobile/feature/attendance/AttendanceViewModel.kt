@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.LocalDate
+import java.time.YearMonth
 
 data class AttendanceUiState(
     val loading: Boolean = false,
@@ -24,7 +26,13 @@ data class AttendanceUiState(
     val locationProof: LocationProof? = null,
     val error: String? = null,
     val message: String? = null,
+    val selectedTab: AttendanceTab = AttendanceTab.Today,
+    val month: YearMonth = YearMonth.now(),
+    val selectedDate: LocalDate = LocalDate.now(),
+    val history: Map<LocalDate, AttendanceDay> = emptyMap(),
 )
+
+enum class AttendanceTab { Today, Overview }
 
 class AttendanceViewModel(
     private val repository: AttendanceRepository,
@@ -39,13 +47,19 @@ class AttendanceViewModel(
         if (_ui.value.loading) return
         _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.loadPolicy() to repository.loadStatus() }.fold(
-                onSuccess = { (policy, status) ->
+            runCatching {
+                val policy = repository.loadPolicy()
+                val status = repository.loadStatus()
+                val history = repository.loadHistory(monthRange(_ui.value.month)).associateBy { LocalDate.parse(it.date) }
+                Triple(policy, status, history)
+            }.fold(
+                onSuccess = { (policy, status, history) ->
                     _ui.value = _ui.value.copy(
                         loading = false,
                         policy = policy,
                         status = status,
                         workMode = parseWorkMode(status.workMode),
+                        history = history,
                     )
                 },
                 onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Could not load attendance") },
@@ -54,6 +68,22 @@ class AttendanceViewModel(
     }
 
     fun setWorkMode(mode: WorkMode) { _ui.value = _ui.value.copy(workMode = mode, error = null) }
+
+    fun selectTab(tab: AttendanceTab) { _ui.value = _ui.value.copy(selectedTab = tab) }
+
+    fun selectDate(date: LocalDate) { _ui.value = _ui.value.copy(selectedDate = date) }
+
+    fun changeMonth(delta: Long) {
+        val next = _ui.value.month.plusMonths(delta)
+        _ui.value = _ui.value.copy(month = next, selectedDate = next.atDay(1))
+        refresh()
+    }
+
+    fun currentMonth() {
+        val now = YearMonth.now()
+        _ui.value = _ui.value.copy(month = now, selectedDate = LocalDate.now())
+        refresh()
+    }
 
     fun reportError(message: String) { _ui.value = _ui.value.copy(loading = false, error = message) }
 

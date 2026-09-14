@@ -20,6 +20,14 @@ class AttendanceRepository(
 
     fun loadStatus(): DashboardStatus = decode(api.execute(ApiRequest(path = "tracker/status")))
 
+    fun loadHistory(range: MonthRange): List<AttendanceDay> = decode(
+        api.execute(
+            ApiRequest(
+                path = "tracker/history?from=${range.firstVisible}&to=${range.lastVisible}",
+            ),
+        ),
+    )
+
     fun clockIn(mode: WorkMode, proof: LocationProof?, fingerprintVerified: Boolean): AttendanceActionResponse {
         return mutate(
             "tracker/clock-in",
