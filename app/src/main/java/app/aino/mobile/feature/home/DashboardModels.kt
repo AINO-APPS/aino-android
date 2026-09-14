@@ -40,9 +40,33 @@ data class TaskSummary(
     val activeTasks: List<ActiveTask> = emptyList(),
 )
 
+@Serializable
+data class DashboardEvent(
+    val id: Long,
+    val title: String,
+    @SerialName("start_time") val startTime: String,
+    @SerialName("end_time") val endTime: String,
+    @SerialName("all_day") val allDay: Boolean = false,
+    val color: String? = null,
+    @SerialName("meeting_code") val meetingCode: String? = null,
+)
+
+@Serializable
+data class DashboardAnnouncement(
+    val id: String,
+    val message: String,
+    val type: String = "announcement",
+)
+
+@Serializable
+data class AnnouncementEnvelope(val data: List<DashboardAnnouncement> = emptyList())
+
 data class DashboardSnapshot(
     val status: DashboardStatus,
     val tasks: TaskSummary?,
+    val todayEvents: List<DashboardEvent> = emptyList(),
+    val tomorrowEvents: List<DashboardEvent> = emptyList(),
+    val announcements: List<DashboardAnnouncement> = emptyList(),
     val loadedAtEpochMs: Long,
 )
 

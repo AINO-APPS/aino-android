@@ -10,19 +10,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
@@ -31,12 +29,23 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.SystemUpdate
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import app.aino.mobile.R
+import app.aino.mobile.core.designsystem.theme.AinoDanger
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
@@ -175,32 +184,48 @@ private fun AuthenticatedShell(
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
-    Scaffold(bottomBar = {
-        NavigationBar {
-            bottomDestinations.forEach { item ->
-                NavigationBarItem(
-                    selected = current == item.route,
-                    onClick = {
-                        nav.navigate(item.route) {
-                            launchSingleTop = true
-                            popUpTo(AinoDestination.Dashboard.route)
-                        }
-                    },
-                    icon = { Icon(item.icon, contentDescription = item.label, modifier = Modifier.size(23.dp)) },
-                    label = { Text(item.label) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f),
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
+    val chatUi by chat.ui.collectAsStateWithLifecycle()
+    val tabs = visibleBottomDestinations(
+        user.tenantFeatures,
+        ungatedPlatformAdmin = user.role == "platform_admin" && user.tenantId == null,
+    )
+    fun navigate(destination: AinoDestination) {
+        nav.navigate(destination.route) {
+            launchSingleTop = true
+            if (destination.inBottomBar) popUpTo(AinoDestination.Dashboard.route)
+        }
+    }
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            LegacyTopBar(
+                user = user,
+                realtimeState = realtimeState,
+                onNotifications = { navigate(AinoDestination.Notifications) },
+                onProfile = { navigate(AinoDestination.Profile) },
+            )
+        },
+        bottomBar = {
+            LegacyBottomBar(
+                destinations = tabs,
+                currentRoute = current,
+                chatUnread = chatUi.unread,
+                onNavigate = ::navigate,
+            )
+        },
+    ) { padding ->
+        NavHost(nav, startDestination = AinoDestination.Dashboard.route, modifier = Modifier.padding(padding)) {
+            composable(AinoDestination.Dashboard.route) {
+                HomeScreen(
+                    user,
+                    dashboard,
+                    attendance,
+                    onAttendanceLocationPermission,
+                    onAttendanceBiometric,
+                    onCalendar = { navigate(AinoDestination.Calendar) },
+                    onTasks = { navigate(AinoDestination.Tasks) },
                 )
             }
-        }
-    }) { padding ->
-        NavHost(nav, startDestination = AinoDestination.Dashboard.route, modifier = Modifier.padding(padding)) {
-            composable(AinoDestination.Dashboard.route) { HomeScreen(user, dashboard) }
             composable(AinoDestination.Attendance.route) {
                 AttendanceScreen(attendance, onAttendanceLocationPermission, onAttendanceBiometric)
             }
@@ -217,11 +242,12 @@ private fun AuthenticatedShell(
                 MoreScreen(
                     role,
                     hasReports,
+                    user.tenantFeatures,
                     updateUi,
                     realtimeState,
                     biometricAvailable,
                     biometricEnrolled,
-                    { destination -> nav.navigate(destination.route) },
+                    ::navigate,
                     updates::check,
                     { updates.install(context) },
                     onBiometricEnroll,
@@ -230,13 +256,113 @@ private fun AuthenticatedShell(
             }
             composable(AinoDestination.Leaves.route) { LeavesScreen(leaves) }
             composable(AinoDestination.Profile.route) { ProfileScreen(profile) }
+            composable(AinoDestination.Notifications.route) { PlaceholderScreen("Notifications") }
             val nativeMoreRoutes = setOf(AinoDestination.Leaves, AinoDestination.Profile)
-            availableMoreDestinations(role, hasReports).filterNot { it in nativeMoreRoutes }.forEach { destination ->
+            availableMoreDestinations(role, hasReports, user.tenantFeatures).filterNot { it in nativeMoreRoutes }.forEach { destination ->
                 composable(destination.route) { PlaceholderScreen(destination.label) }
             }
         }
     }
 }
+
+@Composable
+private fun LegacyTopBar(
+    user: app.aino.mobile.core.auth.AinoUser,
+    realtimeState: RealtimeState,
+    onNotifications: () -> Unit,
+    onProfile: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().height(56.dp)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline))
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painterResource(R.drawable.aino_icon),
+                contentDescription = "AINO",
+                modifier = Modifier.size(32.dp).clip(RoundedCornerShape(9.dp)),
+            )
+            Text(
+                "AINO",
+                Modifier.padding(start = 10.dp),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                letterSpacing = 1.5.sp,
+            )
+        }
+        Box(
+            Modifier.size(38.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.045f), RoundedCornerShape(10.dp))
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp)).clickable(onClick = onNotifications),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Outlined.NotificationsNone, "Notifications", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Box(Modifier.padding(start = 12.dp).size(34.dp).clickable(onClick = onProfile)) {
+            Box(
+                Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(initials(user.fullName ?: user.username), color = androidx.compose.ui.graphics.Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+            Box(
+                Modifier.align(Alignment.BottomEnd).size(12.dp)
+                    .background(if (realtimeState == RealtimeState.Connected) app.aino.mobile.core.designsystem.theme.AinoSuccess else MaterialTheme.colorScheme.onSurfaceVariant, CircleShape)
+                    .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LegacyBottomBar(
+    destinations: List<AinoDestination>,
+    currentRoute: String?,
+    chatUnread: Int,
+    onNavigate: (AinoDestination) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().height(68.dp).background(MaterialTheme.colorScheme.surface)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline)).padding(top = 10.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        destinations.forEach { item ->
+            val selected = currentRoute == item.route
+            Column(
+                Modifier.weight(1f).fillMaxSize().clickable { onNavigate(item) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+            ) {
+                Box {
+                    Icon(
+                        item.icon,
+                        item.label,
+                        Modifier.size(23.dp),
+                        tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (item == AinoDestination.Chat && chatUnread > 0) {
+                        Box(
+                            Modifier.align(Alignment.TopEnd).padding(start = 14.dp).background(AinoDanger, CircleShape)
+                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(if (chatUnread > 99) "99+" else chatUnread.toString(), color = androidx.compose.ui.graphics.Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                    }
+                }
+                Text(
+                    item.label,
+                    Modifier.padding(top = 3.dp),
+                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
+private fun initials(name: String): String = name.trim().split(Regex("\\s+")).take(2)
+    .mapNotNull { it.firstOrNull()?.uppercase() }.joinToString("").ifBlank { "?" }
 
 private val DASHBOARD_REFRESH_EVENTS = setOf(
     "task_assigned",
@@ -269,6 +395,7 @@ private fun PlaceholderScreen(title: String) {
 private fun MoreScreen(
     role: String,
     hasReports: Boolean,
+    features: Map<String, Boolean>,
     updateUi: app.aino.mobile.core.update.UpdateUiState,
     realtimeState: RealtimeState,
     biometricAvailable: Boolean,
@@ -281,72 +408,30 @@ private fun MoreScreen(
 ) {
     AinoAtmosphere {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
         ) {
-            AinoSectionHeader("More", "Workspace, security and application controls")
+            Text("More", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.5).sp)
             AinoGlassCard(Modifier.fillMaxWidth()) {
                 Column {
-                    availableMoreDestinations(role, hasReports).forEach { destination ->
-                        ListItem(
-                            headlineContent = { Text(destination.label, style = MaterialTheme.typography.titleMedium) },
-                            supportingContent = { Text(destinationSubtitle(destination), color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            leadingContent = {
-                                Box(Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(9.dp)).padding(9.dp)) {
-                                    Icon(destination.icon, null, tint = MaterialTheme.colorScheme.primary)
-                                }
-                            },
-                            trailingContent = { Icon(Icons.AutoMirrored.Outlined.ArrowForwardIos, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                            modifier = Modifier.clickable { onNavigate(destination) },
-                        )
-                    }
-                }
-            }
-            AinoSectionHeader("System")
-            AinoGlassCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            if (realtimeState == RealtimeState.Connected) Icons.Outlined.CloudDone else Icons.Outlined.CloudOff,
-                            null,
-                            tint = if (realtimeState == RealtimeState.Connected) app.aino.mobile.core.designsystem.theme.AinoSuccess else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                            Text("Realtime", style = MaterialTheme.typography.titleMedium)
-                            Text(realtimeLabel(realtimeState), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                    val destinations = availableMoreDestinations(role, hasReports, features)
+                    destinations.forEachIndexed { index, destination ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onNavigate(destination) }.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                Modifier.size(34.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), RoundedCornerShape(9.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(9.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(destination.icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            Text(destination.label, Modifier.padding(start = 12.dp).weight(1f), fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                            Icon(Icons.AutoMirrored.Outlined.ArrowForwardIos, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        AinoBadge(if (realtimeState == RealtimeState.Connected) "Online" else "Offline", if (realtimeState == RealtimeState.Connected) AlertTone.Success else AlertTone.Warning)
-                    }
-                    when (val available = updateUi.available) {
-                        null -> AinoPrimaryButton(if (updateUi.loading) "Checking…" else "Check for updates", onCheckUpdate, Modifier.fillMaxWidth(), !updateUi.loading, leadingIcon = { Icon(Icons.Outlined.SystemUpdate, null, Modifier.padding(end = 8.dp), tint = androidx.compose.ui.graphics.Color.White) })
-                        else -> AinoPrimaryButton(if (updateUi.loading) "Downloading…" else "Install ${available.version}", onInstallUpdate, Modifier.fillMaxWidth(), !updateUi.loading, leadingIcon = { Icon(Icons.Outlined.SystemUpdate, null, Modifier.padding(end = 8.dp), tint = androidx.compose.ui.graphics.Color.White) })
-                    }
-                    updateUi.message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
-                }
-            }
-            if (biometricAvailable) {
-                AinoSectionHeader("Security")
-                AinoGlassCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Fingerprint, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
-                            Column(Modifier.padding(start = 12.dp).weight(1f)) {
-                                Text("Biometric sign-in", style = MaterialTheme.typography.titleMedium)
-                                Text("Protected by Android Keystore", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                            }
-                            AinoBadge(if (biometricEnrolled) "Enabled" else "Off", if (biometricEnrolled) AlertTone.Success else AlertTone.Info)
-                        }
-                        AinoPrimaryButton(
-                            if (biometricEnrolled) "Disable biometric sign-in" else "Enable biometric sign-in",
-                            if (biometricEnrolled) onBiometricDisable else onBiometricEnroll,
-                            Modifier.fillMaxWidth(),
-                            leadingIcon = { Icon(Icons.Outlined.Security, null, Modifier.padding(end = 8.dp), tint = androidx.compose.ui.graphics.Color.White) },
-                        )
+                        if (index < destinations.lastIndex) Box(Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.outline))
                     }
                 }
             }
-            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -360,6 +445,7 @@ private fun destinationSubtitle(destination: AinoDestination): String = when (de
     AinoDestination.Admin -> "Workspace configuration"
     AinoDestination.Tenants -> "Platform tenant management"
     AinoDestination.Profile -> "Account and preferences"
+    AinoDestination.Notifications -> "Updates and alerts"
     else -> destination.label
 }
 

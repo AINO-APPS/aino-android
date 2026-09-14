@@ -11,6 +11,7 @@ import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.NoteAlt
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Storage
@@ -35,6 +36,7 @@ enum class AinoDestination(
     Admin("admin", "Admin", Icons.Outlined.AdminPanelSettings),
     Tenants("tenants", "Tenants", Icons.Outlined.Storage),
     Profile("profile", "Profile", Icons.Outlined.PersonOutline),
+    Notifications("notifications", "Notifications", Icons.Outlined.NotificationsNone),
 }
 
 val bottomDestinations: List<AinoDestination> = AinoDestination.entries.filter { it.inBottomBar }
@@ -44,13 +46,29 @@ fun destinationFor(value: String): AinoDestination? =
         it.label.equals(value, ignoreCase = true) || it.route.equals(value, ignoreCase = true)
     }
 
-fun availableMoreDestinations(role: String, hasReports: Boolean): List<AinoDestination> = buildList {
-    add(AinoDestination.Leaves)
-    add(AinoDestination.Calendar)
-    add(AinoDestination.Notes)
+fun availableMoreDestinations(
+    role: String,
+    hasReports: Boolean,
+    features: Map<String, Boolean> = emptyMap(),
+): List<AinoDestination> = buildList {
+    if (features["calendar"] == true) add(AinoDestination.Calendar)
+    if (features["notes"] == true) add(AinoDestination.Notes)
     add(AinoDestination.Organization)
-    add(AinoDestination.Profile)
-    if (hasReports || role in setOf("manager", "admin", "super_admin")) add(AinoDestination.Manager)
-    if (role in setOf("admin", "super_admin")) add(AinoDestination.Admin)
+    if (hasReports || role in setOf("team_lead", "manager", "hr_admin", "super_admin", "platform_admin")) add(AinoDestination.Manager)
+    if (role in setOf("hr_admin", "super_admin")) add(AinoDestination.Admin)
     if (role == "platform_admin") add(AinoDestination.Tenants)
 }
+
+fun visibleBottomDestinations(
+    features: Map<String, Boolean>,
+    ungatedPlatformAdmin: Boolean = false,
+): List<AinoDestination> =
+    bottomDestinations.filter { destination ->
+        if (ungatedPlatformAdmin) return@filter true
+        when (destination) {
+            AinoDestination.Attendance -> features["attendance"] == true
+            AinoDestination.Tasks -> features["tasks"] == true
+            AinoDestination.Chat -> features["chat"] == true
+            else -> true
+        }
+    }

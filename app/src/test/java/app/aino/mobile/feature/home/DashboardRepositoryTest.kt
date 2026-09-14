@@ -15,7 +15,8 @@ class DashboardRepositoryTest {
             when (request.path) {
                 "tracker/status" -> response("""{"state":"on_floor","floorMinutes":60,"breakMinutes":10,"workMode":"remote","targetMinutes":480,"entries":[]}""")
                 "tracker/task-summary" -> response("""{"total":4,"done":1,"inProgress":2,"activeTasks":[{"title":"Ship Android","priority":"high"}]}""")
-                else -> error("unexpected ${request.path}")
+                "notifications/announcements" -> response("""{"data":[{"id":"tenant:1","message":"Welcome","type":"announcement"}]}""")
+                else -> if (request.path.startsWith("calendar?")) response("[]") else error("unexpected ${request.path}")
             }
         }
 
@@ -25,6 +26,7 @@ class DashboardRepositoryTest {
         assertEquals("remote", result.status.workMode)
         assertEquals(4, result.tasks?.total)
         assertEquals("Ship Android", result.tasks?.activeTasks?.single()?.title)
+        assertEquals("Welcome", result.announcements.single().message)
         assertEquals(123, result.loadedAtEpochMs)
     }
 

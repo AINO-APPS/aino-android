@@ -15,6 +15,8 @@ data class AinoUser(
     @SerialName("tenant_id") val tenantId: Long? = null,
     @SerialName("has_reports") val hasReports: Boolean = false,
     @SerialName("must_change_password") val mustChangePassword: Boolean = false,
+    @SerialName("tenant_features") val tenantFeatures: Map<String, Boolean> = emptyMap(),
+    @SerialName("tenant_plan") val tenantPlan: String? = null,
 )
 
 @Serializable

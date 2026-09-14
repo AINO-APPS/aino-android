@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
@@ -25,6 +26,8 @@ import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.EditCalendar
+import androidx.compose.material.icons.outlined.BeachAccess
+import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.MoreTime
 import androidx.compose.material.icons.outlined.Coffee
 import androidx.compose.material.icons.outlined.Fingerprint
@@ -41,6 +44,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Alignment
@@ -72,120 +78,59 @@ fun AttendanceScreen(
     onBiometricRequired: () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
-    val status = ui.status
+    var selectedTab by rememberSaveable { mutableStateOf(AttendancePage.Overview) }
     AinoAtmosphere {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            AinoSectionHeader("Attendance", "Secure clocking with tenant policy enforcement")
-            AttendanceTabs(ui.selectedTab, viewModel::selectTab)
+        Column(Modifier.fillMaxSize()) {
+            AttendanceTabs(selectedTab) { tab ->
+                selectedTab = tab
+                when (tab) {
+                    AttendancePage.Overview -> viewModel.selectTab(AttendanceTab.Overview)
+                    AttendancePage.Manual -> viewModel.selectTab(AttendanceTab.Manual)
+                    else -> Unit
+                }
+            }
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
             ui.error?.let { AinoAlert(it, AlertTone.Error) }
             ui.message?.let { AinoAlert(it, AlertTone.Success) }
-            if (ui.selectedTab == AttendanceTab.Today) {
-            AinoGlassCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        AinoBadge(statusLabel(status?.state), statusTone(status?.state))
-                        AinoBadge(ui.workMode.name, if (ui.workMode == WorkMode.Remote) AlertTone.Warning else AlertTone.Info)
-                    }
-                    val floorSeconds = (status?.floorMinutes ?: 0) * 60L
-                    val breakSeconds = (status?.breakMinutes ?: 0) * 60L
-                    Text(formatDuration(floorSeconds), style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary)
-                    Text("Work today · Break ${formatDuration(breakSeconds)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (ui.policy?.verificationEnabled == true) {
-                        AinoAlert("Attendance verification is enabled for this workspace.", AlertTone.Info)
-                        ui.locationProof?.let { proof ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Outlined.LocationOn, null, tint = MaterialTheme.colorScheme.primary)
-                                Text("Precise location ±${proof.accuracyMeters.toInt()} m", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
-                    }
+                when (selectedTab) {
+                    AttendancePage.Overview -> AttendanceOverview(ui, viewModel)
+                    AttendancePage.Manual -> ManualAttendance(ui, viewModel)
+                    AttendancePage.Leaves -> AttendanceLeaves(ui)
+                    AttendancePage.Analytics -> AttendanceAnalytics(ui)
                 }
-            }
-            if (status?.state == "logged_out") {
-                AinoGlassCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Work mode", style = MaterialTheme.typography.titleMedium)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            WorkMode.entries.forEach { mode ->
-                                Button(
-                                    onClick = { viewModel.setWorkMode(mode) },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (ui.workMode == mode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                                        contentColor = if (ui.workMode == mode) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    ),
-                                ) { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase), maxLines = 1) }
-                            }
-                        }
-                        AinoPrimaryButton(
-                            if (ui.loading) "Preparing…" else "Clock in",
-                            { viewModel.prepare(AttendanceAction.ClockIn, onLocationPermission, onBiometricRequired) },
-                            Modifier.fillMaxWidth(),
-                            !ui.loading && status.isWeekend.not(),
-                            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Login, null, Modifier.padding(end = 8.dp), tint = Color.White) },
-                        )
-                    }
-                }
-            } else {
-                AinoGlassCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (status?.state == "on_floor") {
-                            AinoPrimaryButton(
-                                "Start break",
-                                { viewModel.breakAction(start = true) },
-                                Modifier.fillMaxWidth(),
-                                !ui.loading,
-                                leadingIcon = { Icon(Icons.Outlined.Coffee, null, Modifier.padding(end = 8.dp), tint = Color.White) },
-                            )
-                        } else if (status?.state == "on_break") {
-                            AinoPrimaryButton("Resume work", { viewModel.breakAction(start = false) }, Modifier.fillMaxWidth(), !ui.loading)
-                        }
-                        AinoPrimaryButton(
-                            if (ui.loading) "Preparing…" else "Clock out",
-                            { viewModel.prepare(AttendanceAction.ClockOut, onLocationPermission, onBiometricRequired) },
-                            Modifier.fillMaxWidth(),
-                            !ui.loading,
-                            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Logout, null, Modifier.padding(end = 8.dp), tint = Color.White) },
-                        )
-                    }
-                }
-            }
-            AinoPrimaryButton("Refresh attendance", viewModel::refresh, Modifier.fillMaxWidth(), !ui.loading, leadingIcon = { Icon(Icons.Outlined.Refresh, null, Modifier.padding(end = 8.dp), tint = Color.White) })
-            if (ui.policy?.verificationEnabled == true && ui.workMode == WorkMode.Remote) {
-                AinoAlert("Remote verified clock-in requires face matching. Password and fingerprint alone cannot satisfy this policy.", AlertTone.Warning)
-            } else if (ui.policy?.verificationEnabled == true) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.Fingerprint, null, tint = MaterialTheme.colorScheme.primary)
-                    Text("Office actions require precise location and strong biometric confirmation.", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            } else {
-                if (ui.selectedTab == AttendanceTab.Overview) AttendanceOverview(ui, viewModel)
-                else ManualAttendance(ui, viewModel)
             }
         }
     }
 }
 
+private enum class AttendancePage(val label: String) { Overview("Overview"), Leaves("Leaves"), Manual("Manual"), Analytics("Analytics") }
+
 @Composable
-private fun AttendanceTabs(selected: AttendanceTab, onSelect: (AttendanceTab) -> Unit) {
+private fun AttendanceTabs(selected: AttendancePage, onSelect: (AttendancePage) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(3.dp),
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        AttendanceTab.entries.forEach { tab ->
+        AttendancePage.entries.forEach { tab ->
+            val icon = when (tab) {
+                AttendancePage.Overview -> Icons.Outlined.CalendarMonth
+                AttendancePage.Manual -> Icons.Outlined.EditCalendar
+                AttendancePage.Leaves -> Icons.Outlined.BeachAccess
+                AttendancePage.Analytics -> Icons.Outlined.BarChart
+            }
             Row(
                 Modifier.weight(1f).clickable { onSelect(tab) }
                     .background(if (selected == tab) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(6.dp))
-                    .padding(vertical = 10.dp),
+                    .padding(vertical = 9.dp, horizontal = 2.dp),
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(16.dp), tint = if (selected == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(tab.name, Modifier.padding(start = 6.dp), color = if (selected == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                Icon(icon, null, Modifier.size(15.dp), tint = if (selected == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tab.label, Modifier.padding(start = 4.dp), color = if (selected == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium, maxLines = 1)
             }
         }
     }
@@ -268,6 +213,82 @@ private fun ManualAttendance(ui: AttendanceUiState, viewModel: AttendanceViewMod
             reason = request.rejectReason ?: request.reason,
         )
     })
+}
+
+@Composable
+private fun AttendanceLeaves(ui: AttendanceUiState) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column {
+            Text("Leaves", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+            Text("Approved and pending time off", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        }
+        AinoBadge("${ui.leaves.size} days", AlertTone.Info)
+    }
+    if (ui.leaves.isEmpty()) {
+        AinoGlassCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.BeachAccess, null, Modifier.size(30.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("No leave days this month", fontWeight = FontWeight.SemiBold)
+                Text("Leave requests will appear here.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    } else {
+        ui.leaves.toSortedMap().forEach { (date, leave) ->
+            AinoGlassCard(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(date.format(DateTimeFormatter.ofPattern("EEE, MMM d")), fontWeight = FontWeight.Bold)
+                        Text("${leave.leaveType.replace('_', ' ').replaceFirstChar(Char::uppercase)} · ${leave.duration.replaceFirstChar(Char::uppercase)}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        leave.reason?.takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+                    }
+                    AinoBadge(leave.status.replaceFirstChar(Char::uppercase), requestTone(leave.status))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttendanceAnalytics(ui: AttendanceUiState) {
+    val days = ui.history.toSortedMap().values.toList()
+    val worked = days.sumOf { it.floorMinutes }
+    val breaks = days.sumOf { it.breakMinutes }
+    val present = days.count { it.floorMinutes > 0 || it.entries.isNotEmpty() }
+    val average = if (present == 0) 0 else worked / present
+    Text("Attendance Analytics", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+    Text("This month", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        AnalyticsStat("Work", formatDuration(worked * 60L), AinoBlue, Modifier.weight(1f))
+        AnalyticsStat("Break", formatDuration(breaks * 60L), AinoWarning, Modifier.weight(1f))
+        AnalyticsStat("Average", formatDuration(average * 60L), AinoSuccess, Modifier.weight(1f))
+    }
+    AinoGlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Work & break trend", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (days.isEmpty()) Text("No analytics available for this month.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            days.takeLast(10).forEach { day ->
+                val total = maxOf(day.floorMinutes + day.breakMinutes, 1)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(day.date.takeLast(5), Modifier.width(42.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Box(Modifier.fillMaxWidth(day.floorMinutes.toFloat() / total).height(7.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                        if (day.breakMinutes > 0) Box(Modifier.fillMaxWidth(day.breakMinutes.toFloat() / total).height(4.dp).background(AinoWarning, CircleShape))
+                    }
+                    Text(formatDuration(day.floorMinutes * 60L), Modifier.width(58.dp), style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalyticsStat(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    AinoGlassCard(modifier) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 14.dp, horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(value, color = color, fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            Text(label.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+        }
+    }
 }
 
 private data class RequestDisplay(val id: Long, val date: String?, val detail: String, val status: String, val reason: String?)

@@ -22,15 +22,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.theme.AinoBlue
-import app.aino.mobile.core.designsystem.theme.AinoBlueDark
 import app.aino.mobile.core.designsystem.theme.AinoCyan
 import app.aino.mobile.core.designsystem.theme.AinoDanger
 import app.aino.mobile.core.designsystem.theme.AinoSuccess
@@ -38,23 +34,15 @@ import app.aino.mobile.core.designsystem.theme.AinoWarning
 
 @Composable
 fun AinoAtmosphere(content: @Composable () -> Unit) {
-    Box(
-        Modifier.fillMaxSize().background(
-            Brush.radialGradient(
-                colors = listOf(AinoBlue.copy(alpha = 0.17f), MaterialTheme.colorScheme.background),
-                center = Offset(950f, -120f),
-                radius = 1_050f,
-            ),
-        ),
-    ) { content() }
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { content() }
 }
 
 @Composable
 fun AinoGlassCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Card(
-        modifier = modifier.shadow(18.dp, RoundedCornerShape(16.dp), ambientColor = Color.Black.copy(0.28f), spotColor = Color.Black.copy(0.36f)),
+        modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = if (androidx.compose.foundation.isSystemInDarkTheme()) 0.045f else 0.03f)),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) { content() }
@@ -70,11 +58,10 @@ fun AinoPrimaryButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.alpha(if (enabled) 1f else 0.4f)
-            .background(Brush.linearGradient(listOf(AinoBlue, AinoBlueDark)), RoundedCornerShape(8.dp)),
+        modifier = modifier.alpha(if (enabled) 1f else 0.4f),
         enabled = enabled,
         shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, disabledContainerColor = Color.Transparent),
+        colors = ButtonDefaults.buttonColors(containerColor = AinoBlue, disabledContainerColor = AinoBlue),
         contentPadding = ButtonDefaults.ContentPadding,
     ) {
         Row(
@@ -124,9 +111,9 @@ fun AinoBadge(text: String, tone: AlertTone = AlertTone.Info, modifier: Modifier
         AlertTone.Error -> AinoDanger
     }
     Text(
-        text.uppercase(),
-        modifier = modifier.background(color.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
-            .border(1.dp, color.copy(alpha = 0.22f), RoundedCornerShape(6.dp)).padding(horizontal = 9.dp, vertical = 4.dp),
+        text,
+        modifier = modifier.background(color.copy(alpha = 0.12f), RoundedCornerShape(999.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
         color = color,
         style = MaterialTheme.typography.labelMedium,
     )
