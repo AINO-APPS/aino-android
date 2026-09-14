@@ -30,9 +30,18 @@ data class AttendanceUiState(
     val month: YearMonth = YearMonth.now(),
     val selectedDate: LocalDate = LocalDate.now(),
     val history: Map<LocalDate, AttendanceDay> = emptyMap(),
+    val manualRequests: List<ManualEntryRequest> = emptyList(),
+    val overtimeRequests: List<OvertimeRequest> = emptyList(),
+    val manualDate: String = LocalDate.now().toString(),
+    val manualClockIn: String = "09:00",
+    val manualClockOut: String = "17:00",
+    val manualMode: WorkMode = WorkMode.Office,
+    val overtimeDate: String = LocalDate.now().toString(),
+    val overtimeHours: String = "",
+    val overtimeReason: String = "",
 )
 
-enum class AttendanceTab { Today, Overview }
+enum class AttendanceTab { Today, Overview, Manual }
 
 class AttendanceViewModel(
     private val repository: AttendanceRepository,
@@ -51,15 +60,19 @@ class AttendanceViewModel(
                 val policy = repository.loadPolicy()
                 val status = repository.loadStatus()
                 val history = repository.loadHistory(monthRange(_ui.value.month)).associateBy { LocalDate.parse(it.date) }
-                Triple(policy, status, history)
+                val manual = runCatching(repository::loadManualRequests).getOrDefault(emptyList())
+                val overtime = runCatching(repository::loadOvertimeRequests).getOrDefault(emptyList())
+                LoadedAttendance(policy, status, history, manual, overtime)
             }.fold(
-                onSuccess = { (policy, status, history) ->
+                onSuccess = { loaded ->
                     _ui.value = _ui.value.copy(
                         loading = false,
-                        policy = policy,
-                        status = status,
-                        workMode = parseWorkMode(status.workMode),
-                        history = history,
+                        policy = loaded.policy,
+                        status = loaded.status,
+                        workMode = parseWorkMode(loaded.status.workMode),
+                        history = loaded.history,
+                        manualRequests = loaded.manualRequests,
+                        overtimeRequests = loaded.overtimeRequests,
                     )
                 },
                 onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Could not load attendance") },
@@ -83,6 +96,81 @@ class AttendanceViewModel(
         val now = YearMonth.now()
         _ui.value = _ui.value.copy(month = now, selectedDate = LocalDate.now())
         refresh()
+    }
+
+    fun updateManualForm(date: String? = null, clockIn: String? = null, clockOut: String? = null, mode: WorkMode? = null) {
+        _ui.value = _ui.value.copy(
+            manualDate = date ?: _ui.value.manualDate,
+            manualClockIn = clockIn ?: _ui.value.manualClockIn,
+            manualClockOut = clockOut ?: _ui.value.manualClockOut,
+            manualMode = mode ?: _ui.value.manualMode,
+            error = null,
+        )
+    }
+
+    fun updateOvertimeForm(date: String? = null, hours: String? = null, reason: String? = null) {
+        _ui.value = _ui.value.copy(
+            overtimeDate = date ?: _ui.value.overtimeDate,
+            overtimeHours = hours ?: _ui.value.overtimeHours,
+            overtimeReason = reason ?: _ui.value.overtimeReason,
+            error = null,
+        )
+    }
+
+    fun submitManualEntry() {
+        val current = _ui.value
+        validateManualEntry(current.manualDate, current.manualClockIn, current.manualClockOut.ifBlank { null }, LocalDate.now())?.let {
+            _ui.value = current.copy(error = it)
+            return
+        }
+        _ui.value = current.copy(loading = true, error = null, message = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                repository.submitManualEntry(
+                    ManualEntryPayload(
+                        date = current.manualDate,
+                        clockIn = current.manualClockIn,
+                        clockOut = current.manualClockOut.ifBlank { null },
+                        timezoneOffset = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / -60_000,
+                        workMode = current.manualMode.name.lowercase(),
+                    ),
+                )
+            }.fold(
+                onSuccess = { response ->
+                    val manual = repository.loadManualRequests()
+                    val history = repository.loadHistory(monthRange(current.month)).associateBy { LocalDate.parse(it.date) }
+                    _ui.value = _ui.value.copy(loading = false, manualRequests = manual, history = history, message = response.message)
+                },
+                onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Manual entry failed") },
+            )
+        }
+    }
+
+    fun submitOvertime() {
+        val current = _ui.value
+        validateOvertime(current.overtimeDate, current.overtimeHours, current.overtimeReason)?.let {
+            _ui.value = current.copy(error = it)
+            return
+        }
+        _ui.value = current.copy(loading = true, error = null, message = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                repository.submitOvertime(
+                    OvertimePayload(current.overtimeDate, current.overtimeHours.toDouble(), current.overtimeReason.trim()),
+                )
+            }.fold(
+                onSuccess = { response ->
+                    _ui.value = _ui.value.copy(
+                        loading = false,
+                        overtimeHours = "",
+                        overtimeReason = "",
+                        overtimeRequests = repository.loadOvertimeRequests(),
+                        message = response.message,
+                    )
+                },
+                onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Overtime request failed") },
+            )
+        }
     }
 
     fun reportError(message: String) { _ui.value = _ui.value.copy(loading = false, error = message) }
@@ -165,6 +253,14 @@ class AttendanceViewModel(
     }
 
     private fun parseWorkMode(value: String): WorkMode = WorkMode.entries.firstOrNull { it.name.equals(value, true) } ?: WorkMode.Office
+
+    private data class LoadedAttendance(
+        val policy: AttendancePolicy,
+        val status: DashboardStatus,
+        val history: Map<LocalDate, AttendanceDay>,
+        val manualRequests: List<ManualEntryRequest>,
+        val overtimeRequests: List<OvertimeRequest>,
+    )
 
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {

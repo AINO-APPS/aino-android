@@ -28,8 +28,22 @@ class AttendanceRepository(
         ),
     )
 
+    fun loadManualRequests(): List<ManualEntryRequest> = decode(
+        api.execute(ApiRequest(path = "tracker/manual-entries")),
+    )
+
+    fun loadOvertimeRequests(): List<OvertimeRequest> = decode(
+        api.execute(ApiRequest(path = "tracker/overtime-requests")),
+    )
+
+    fun submitManualEntry(payload: ManualEntryPayload): AttendanceMutationResponse =
+        mutate<ManualEntryPayload, AttendanceMutationResponse>("tracker/manual-entry", payload)
+
+    fun submitOvertime(payload: OvertimePayload): AttendanceMutationResponse =
+        mutate<OvertimePayload, AttendanceMutationResponse>("tracker/overtime-request", payload)
+
     fun clockIn(mode: WorkMode, proof: LocationProof?, fingerprintVerified: Boolean): AttendanceActionResponse {
-        return mutate(
+        return mutate<AttendanceActionRequest, AttendanceActionResponse>(
             "tracker/clock-in",
             AttendanceActionRequest(
                 workMode = mode.name.lowercase(),
@@ -41,7 +55,7 @@ class AttendanceRepository(
         )
     }
 
-    fun clockOut(proof: LocationProof?, fingerprintVerified: Boolean): AttendanceActionResponse = mutate(
+    fun clockOut(proof: LocationProof?, fingerprintVerified: Boolean): AttendanceActionResponse = mutate<AttendanceActionRequest, AttendanceActionResponse>(
         "tracker/clock-out",
         AttendanceActionRequest(
             latitude = proof?.latitude,
@@ -51,10 +65,10 @@ class AttendanceRepository(
         ),
     )
 
-    fun startBreak() = mutate<Unit>("tracker/break-start", Unit)
-    fun endBreak() = mutate<Unit>("tracker/break-end", Unit)
+    fun startBreak() = mutate<Unit, AttendanceActionResponse>("tracker/break-start", Unit)
+    fun endBreak() = mutate<Unit, AttendanceActionResponse>("tracker/break-end", Unit)
 
-    private inline fun <reified T> mutate(path: String, body: T): AttendanceActionResponse {
+    private inline fun <reified T, reified R> mutate(path: String, body: T): R {
         try {
             val bytes = if (body is Unit) ByteArray(0) else json.encodeToString(body).toByteArray()
             return decode(api.execute(ApiRequest("POST", path, body = bytes)))

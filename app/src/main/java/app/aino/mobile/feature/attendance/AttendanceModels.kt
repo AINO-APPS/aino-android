@@ -32,6 +32,54 @@ data class AttendanceDay(
 
 enum class AttendanceDayKind { Present, Absent, Weekend, InProgress, Future }
 
+@Serializable
+data class ManualEntryRequest(
+    @SerialName("request_id") val requestId: Long,
+    @SerialName("approval_status") val approvalStatus: String = "pending",
+    val metadata: ManualEntryMetadata? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("reviewed_at") val reviewedAt: String? = null,
+    @SerialName("reject_reason") val rejectReason: String? = null,
+    @SerialName("approver_name") val approverName: String? = null,
+)
+
+@Serializable
+data class ManualEntryMetadata(
+    val date: String? = null,
+    @SerialName("clock_in") val clockIn: String? = null,
+    @SerialName("clock_out") val clockOut: String? = null,
+    @SerialName("work_mode") val workMode: String? = null,
+)
+
+@Serializable
+data class OvertimeRequest(
+    val id: Long,
+    val status: String = "pending",
+    val reason: String? = null,
+    val metadata: OvertimeMetadata? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("reject_reason") val rejectReason: String? = null,
+    @SerialName("approver_name") val approverName: String? = null,
+)
+
+@Serializable
+data class OvertimeMetadata(val date: String? = null, val hours: Double? = null)
+
+@Serializable
+data class ManualEntryPayload(
+    val date: String,
+    @SerialName("clock_in") val clockIn: String,
+    @SerialName("clock_out") val clockOut: String? = null,
+    val timezoneOffset: Int,
+    @SerialName("work_mode") val workMode: String,
+)
+
+@Serializable
+data class OvertimePayload(val date: String, val hours: Double, val reason: String)
+
+@Serializable
+data class AttendanceMutationResponse(val message: String)
+
 data class MonthRange(val firstVisible: java.time.LocalDate, val lastVisible: java.time.LocalDate)
 
 fun monthGrid(month: java.time.YearMonth): List<java.time.LocalDate> {
@@ -85,6 +133,31 @@ data class LocationProof(val latitude: Double, val longitude: Double, val accura
 
 enum class AttendanceAction { ClockIn, ClockOut }
 enum class WorkMode { Office, Remote, Hybrid }
+
+fun validateManualEntry(date: String, clockIn: String, clockOut: String?, today: java.time.LocalDate): String? {
+    val parsedDate = runCatching { java.time.LocalDate.parse(date) }.getOrNull()
+        ?: return "Choose a valid date"
+    if (parsedDate > today) return "Cannot add a manual entry for a future date"
+    if (!validTime(clockIn)) return "Login time must use HH:MM"
+    if (!clockOut.isNullOrBlank() && !validTime(clockOut)) return "Logout time must use HH:MM"
+    if (!clockOut.isNullOrBlank() && clockOut <= clockIn) return "Logout time must be after login time"
+    return null
+}
+
+fun validateOvertime(date: String, hours: String, reason: String): String? {
+    if (runCatching { java.time.LocalDate.parse(date) }.isFailure) return "Choose a valid date"
+    val parsedHours = hours.toDoubleOrNull() ?: return "Enter valid overtime hours"
+    if (parsedHours <= 0 || parsedHours > 24) return "Hours must be between 0 and 24"
+    if (reason.isBlank()) return "Reason is required"
+    if (reason.length > 500) return "Reason must be 500 characters or less"
+    return null
+}
+
+private fun validTime(value: String): Boolean {
+    if (!Regex("^\\d{2}:\\d{2}$").matches(value)) return false
+    val (hour, minute) = value.split(':').map(String::toInt)
+    return hour in 0..23 && minute in 0..59
+}
 
 fun requiresLocation(policy: AttendancePolicy, mode: WorkMode): Boolean =
     policy.verificationEnabled && mode != WorkMode.Remote

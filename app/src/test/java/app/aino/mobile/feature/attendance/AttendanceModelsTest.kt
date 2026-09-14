@@ -55,4 +55,20 @@ class AttendanceModelsTest {
         assertEquals(AttendanceDayKind.Future, attendanceKind(today.plusDays(1), today, null, workDays, 240))
         assertEquals(AttendanceDayKind.Absent, attendanceKind(today.minusDays(4), today, null, workDays, 240))
     }
+
+    @Test
+    fun validatesManualEntryLikeTheServer() {
+        val today = LocalDate.of(2026, 9, 14)
+        assertEquals(null, validateManualEntry("2026-09-13", "09:00", "17:00", today))
+        assertEquals("Cannot add a manual entry for a future date", validateManualEntry("2026-09-15", "09:00", "17:00", today))
+        assertEquals("Logout time must be after login time", validateManualEntry("2026-09-13", "17:00", "09:00", today))
+        assertEquals("Login time must use HH:MM", validateManualEntry("2026-09-13", "9am", "17:00", today))
+    }
+
+    @Test
+    fun validatesOvertimeLikeTheServer() {
+        assertEquals(null, validateOvertime("2026-09-14", "2.5", "Release support"))
+        assertEquals("Hours must be between 0 and 24", validateOvertime("2026-09-14", "25", "Reason"))
+        assertEquals("Reason is required", validateOvertime("2026-09-14", "2", ""))
+    }
 }

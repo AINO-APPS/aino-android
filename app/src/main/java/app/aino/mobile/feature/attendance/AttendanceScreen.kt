@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.EditCalendar
+import androidx.compose.material.icons.outlined.MoreTime
 import androidx.compose.material.icons.outlined.Coffee
 import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.LocationOn
@@ -31,6 +33,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -55,6 +59,8 @@ import app.aino.mobile.core.designsystem.theme.AinoBlue
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 
 @Composable
 fun AttendanceScreen(
@@ -154,7 +160,8 @@ fun AttendanceScreen(
                 }
             }
             } else {
-                AttendanceOverview(ui, viewModel)
+                if (ui.selectedTab == AttendanceTab.Overview) AttendanceOverview(ui, viewModel)
+                else ManualAttendance(ui, viewModel)
             }
         }
     }
@@ -179,6 +186,129 @@ private fun AttendanceTabs(selected: AttendanceTab, onSelect: (AttendanceTab) ->
             }
         }
     }
+}
+
+@Composable
+private fun ManualAttendance(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
+    AinoGlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.EditCalendar, null, tint = MaterialTheme.colorScheme.primary)
+                Text("Manual time entry", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.titleLarge)
+            }
+            Text("Add a missed work day. Your manager may need to approve it.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            AttendanceField("Date (YYYY-MM-DD)", ui.manualDate, { viewModel.updateManualForm(date = it) })
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AttendanceField("Clock in", ui.manualClockIn, { viewModel.updateManualForm(clockIn = it) }, Modifier.weight(1f))
+                AttendanceField("Clock out", ui.manualClockOut, { viewModel.updateManualForm(clockOut = it) }, Modifier.weight(1f))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                WorkMode.entries.forEach { mode ->
+                    Button(
+                        onClick = { viewModel.updateManualForm(mode = mode) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (ui.manualMode == mode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (ui.manualMode == mode) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    ) { Text(mode.name.take(6).lowercase().replaceFirstChar(Char::uppercase), maxLines = 1) }
+                }
+            }
+            AinoPrimaryButton("Submit manual entry", viewModel::submitManualEntry, Modifier.fillMaxWidth(), !ui.loading)
+        }
+    }
+
+    AinoGlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.MoreTime, null, tint = MaterialTheme.colorScheme.primary)
+                Text("Overtime request", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.titleLarge)
+            }
+            AttendanceField("Date (YYYY-MM-DD)", ui.overtimeDate, { viewModel.updateOvertimeForm(date = it) })
+            AttendanceField("Extra hours", ui.overtimeHours, { viewModel.updateOvertimeForm(hours = it) }, keyboardType = KeyboardType.Decimal)
+            AttendanceField("Reason", ui.overtimeReason, { viewModel.updateOvertimeForm(reason = it) }, singleLine = false)
+            AinoPrimaryButton("Submit overtime request", viewModel::submitOvertime, Modifier.fillMaxWidth(), !ui.loading)
+        }
+    }
+
+    RequestSection("Manual entry requests", ui.manualRequests.map { request ->
+        RequestDisplay(
+            id = request.requestId,
+            date = request.metadata?.date,
+            detail = listOfNotNull(request.metadata?.clockIn, request.metadata?.clockOut).joinToString(" → "),
+            status = request.approvalStatus,
+            reason = request.rejectReason,
+        )
+    })
+    RequestSection("Overtime requests", ui.overtimeRequests.map { request ->
+        RequestDisplay(
+            id = request.id,
+            date = request.metadata?.date,
+            detail = request.metadata?.hours?.let { "$it hours" }.orEmpty(),
+            status = request.status,
+            reason = request.rejectReason ?: request.reason,
+        )
+    })
+}
+
+private data class RequestDisplay(val id: Long, val date: String?, val detail: String, val status: String, val reason: String?)
+
+@Composable
+private fun RequestSection(title: String, requests: List<RequestDisplay>) {
+    AinoSectionHeader(title)
+    if (requests.isEmpty()) {
+        AinoGlassCard(Modifier.fillMaxWidth()) {
+            Text("No requests yet.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        requests.forEach { request ->
+            AinoGlassCard(Modifier.fillMaxWidth()) {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(request.date?.let { runCatching { LocalDate.parse(it).format(DateTimeFormatter.ofPattern("EEE, MMM d")) }.getOrDefault(it) } ?: "—", fontWeight = FontWeight.SemiBold)
+                        if (request.detail.isNotBlank()) Text(request.detail, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                        request.reason?.let { Text(it, color = if (request.status == "rejected") AinoDanger else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+                    }
+                    AinoBadge(request.status, requestTone(request.status))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttendanceField(
+    label: String,
+    value: String,
+    onChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    singleLine: Boolean = true,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label) },
+        modifier = modifier.fillMaxWidth(),
+        singleLine = singleLine,
+        minLines = if (singleLine) 1 else 3,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+        shape = RoundedCornerShape(8.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        ),
+    )
+}
+
+private fun requestTone(status: String): AlertTone = when (status) {
+    "approved" -> AlertTone.Success
+    "rejected" -> AlertTone.Error
+    else -> AlertTone.Warning
 }
 
 @Composable
