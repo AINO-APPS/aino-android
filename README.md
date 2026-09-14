@@ -18,6 +18,7 @@ Native Android foundation for **MIG-0103 / MIG-0601 / MIG-0602**.
 app/src/main/java/app/aino/mobile/
 ├── core/
 │   ├── auth/                 # Auth state, repository and Keystore credentials
+│   ├── db/                   # Tenant/user-scoped Room cache and durable outbox
 │   ├── designsystem/theme/   # Compose theme
 │   ├── navigation/           # Platform-aligned app shell and destinations
 │   └── network/              # OkHttp transport, endpoint and header policy
@@ -75,6 +76,13 @@ one tenant-authenticated socket with a 25-second heartbeat, a 10-second liveness
 timeout, exponential full-jitter reconnects capped at 15 seconds, and terminal
 handling for authentication (`4001`), unavailable tenant (`4003`), and connection
 limit (`4029`) closes.
+
+Local data is scoped by both tenant and user. Room primary keys and every DAO
+query require both identifiers; logout and terminal session invalidation cancel
+that scope's outbox worker and transactionally remove only its conversations,
+messages and outbox rows. The last scope identifiers are kept in DataStore so a
+process restarted with an expired token can still wipe the correct cache. No
+token or message content is stored in DataStore.
 
 ## Updates
 

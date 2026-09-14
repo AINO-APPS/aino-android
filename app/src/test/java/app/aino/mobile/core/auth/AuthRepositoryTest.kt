@@ -114,6 +114,20 @@ class AuthRepositoryTest {
         runCatching(repository::restoreSession)
 
         assertEquals(null, store.value)
+        assertEquals(false, repository.hasStoredCredential())
+    }
+
+    @Test
+    fun transientRestoreFailurePreservesCredentialAndScopedCacheEligibility() {
+        val store = MemoryTokenStore().apply { saveToken("still-valid") }
+        val repository = AuthRepository(FakeApiClient {
+            throw app.aino.mobile.core.network.ApiError.Network("GET", "url", java.io.IOException("offline"))
+        }, store)
+
+        runCatching(repository::restoreSession)
+
+        assertEquals(true, repository.hasStoredCredential())
+        assertEquals("still-valid", store.value)
     }
 
     @Test

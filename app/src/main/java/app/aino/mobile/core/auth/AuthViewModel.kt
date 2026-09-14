@@ -6,6 +6,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
+import app.aino.mobile.core.db.AinoDatabase
+import app.aino.mobile.core.db.CacheScope
+import app.aino.mobile.core.db.OutboxWorker
+import app.aino.mobile.core.db.SessionScopeStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,14 +30,21 @@ data class AuthUiState(
 class AuthViewModel(
     private val repository: AuthRepository,
     private val biometricCredentials: BiometricCredentialStore,
+    private val context: Context,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(AuthUiState(biometricEnrolled = biometricCredentials.isEnrolled()))
     val ui: StateFlow<AuthUiState> = _ui.asStateFlow()
     private val lastActivitySentAt = AtomicLong(0)
+    private val scopeStore = SessionScopeStore(context)
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
-            val state = runCatching(repository::restoreSession).getOrElse { AuthState.SignedOut }
+            val restored = runCatching(repository::restoreSession)
+            val state = restored.getOrElse { AuthState.SignedOut }
+            // A 401/403 clears the token in AuthRepository and may safely wipe
+            // the exact stored scope. A transient network failure leaves the
+            // credential intact, so preserve offline cache for the next retry.
+            if (restored.isSuccess || !repository.hasStoredCredential()) persistOrClearScope(state)
             _ui.value = AuthUiState(state = state, biometricEnrolled = biometricCredentials.isEnrolled())
         }
     }
@@ -60,13 +71,13 @@ class AuthViewModel(
             _ui.update { it.copy(error = error) }
             return
         }
-        execute(successMessage = "Password changed. Sign in with your new password.") {
+        executeWithScopeCleanup("Password changed. Sign in with your new password.") {
             repository.changePassword(current, next)
         }
     }
 
     fun logout() {
-        execute { repository.logout(); AuthState.SignedOut }
+        executeWithScopeCleanup { repository.logout(); AuthState.SignedOut }
     }
 
     fun enrollBiometric(authenticatedCipher: Cipher, deviceLabel: String) {
@@ -121,6 +132,7 @@ class AuthViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching(action).fold(
                 onSuccess = { state ->
+                    persistOrClearScope(state)
                     _ui.value = AuthUiState(
                         state = state,
                         message = successMessage,
@@ -134,6 +146,59 @@ class AuthViewModel(
         }
     }
 
+    private fun executeWithScopeCleanup(successMessage: String? = null, action: () -> AuthState) {
+        if (_ui.value.loading) return
+        val user = when (val state = _ui.value.state) {
+            is AuthState.Authenticated -> state.user
+            is AuthState.PasswordChangeRequired -> state.user
+            else -> null
+        }
+        _ui.update { it.copy(loading = true, error = null, message = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val state = action()
+                val currentScope = user?.tenantId?.let { tenantId ->
+                    if (user.id > 0) CacheScope(tenantId, user.id) else null
+                } ?: scopeStore.read()
+                if (currentScope != null) {
+                    val scope = currentScope
+                    OutboxWorker.cancel(context, scope)
+                    AinoDatabase.get(context).dao().clearScope(scope.tenantId, scope.userId)
+                }
+                scopeStore.clear()
+                state
+            }.fold(
+                onSuccess = { state ->
+                    _ui.value = AuthUiState(
+                        state = state,
+                        message = successMessage,
+                        biometricEnrolled = biometricCredentials.isEnrolled(),
+                    )
+                },
+                onFailure = { error -> _ui.update { it.copy(loading = false, error = error.message ?: "Request failed") } },
+            )
+        }
+    }
+
+    private suspend fun persistOrClearScope(state: AuthState) {
+        val user = when (state) {
+            is AuthState.Authenticated -> state.user
+            is AuthState.PasswordChangeRequired -> state.user
+            else -> null
+        }
+        val tenantId = user?.tenantId
+        if (tenantId != null && user.id > 0) {
+            scopeStore.save(CacheScope(tenantId, user.id))
+        } else if (state is AuthState.SignedOut) {
+            val stale = scopeStore.read()
+            if (stale != null) {
+                OutboxWorker.cancel(context, stale)
+                AinoDatabase.get(context).dao().clearScope(stale.tenantId, stale.userId)
+            }
+            scopeStore.clear()
+        }
+    }
+
     companion object {
         private const val ACTIVITY_INTERVAL_MS = 60_000L
 
@@ -143,7 +208,7 @@ class AuthViewModel(
                 val tokens = KeystoreTokenStore(context)
                 val rawApi = OkHttpApiClient(tokenProvider = tokens)
                 val api = RefreshingApiClient(rawApi, tokens)
-                return AuthViewModel(AuthRepository(api, tokens), BiometricCredentialStore(context)) as T
+                return AuthViewModel(AuthRepository(api, tokens), BiometricCredentialStore(context), context.applicationContext) as T
             }
         }
     }

@@ -12,6 +12,8 @@ class AuthRepository(
     private val tokens: TokenStore,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
+    fun hasStoredCredential(): Boolean = !tokens.getToken().isNullOrBlank()
+
     fun restoreSession(): AuthState {
         if (tokens.getToken().isNullOrBlank()) return AuthState.SignedOut
         return try {
