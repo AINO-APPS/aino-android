@@ -52,6 +52,8 @@ import app.aino.mobile.feature.home.HomeScreen
 import app.aino.mobile.feature.home.DashboardViewModel
 import app.aino.mobile.feature.attendance.AttendanceScreen
 import app.aino.mobile.feature.attendance.AttendanceViewModel
+import app.aino.mobile.feature.tasks.TasksScreen
+import app.aino.mobile.feature.tasks.TaskViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.core.realtime.RealtimeState
 import app.aino.mobile.core.realtime.RealtimeViewModel
@@ -69,6 +71,7 @@ fun AinoApp(
     realtime: RealtimeViewModel,
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
+    tasks: TaskViewModel,
     biometricAvailable: Boolean,
     onBiometricLogin: () -> Unit,
     onBiometricEnroll: () -> Unit,
@@ -83,6 +86,7 @@ fun AinoApp(
         if (tenantAuthenticated) {
             realtime.events.collect { event ->
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
+                if (event.type in TASK_REFRESH_EVENTS) tasks.refresh()
             }
         }
     }
@@ -120,6 +124,7 @@ fun AinoApp(
             realtimeState,
             dashboard,
             attendance,
+            tasks,
             biometricAvailable,
             ui.biometricEnrolled,
             onBiometricEnroll,
@@ -139,6 +144,7 @@ private fun AuthenticatedShell(
     realtimeState: RealtimeState,
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
+    tasks: TaskViewModel,
     biometricAvailable: Boolean,
     biometricEnrolled: Boolean,
     onBiometricEnroll: () -> Unit,
@@ -178,7 +184,10 @@ private fun AuthenticatedShell(
             composable(AinoDestination.Attendance.route) {
                 AttendanceScreen(attendance, onAttendanceLocationPermission, onAttendanceBiometric)
             }
-            bottomDestinations.filterNot { it in setOf(AinoDestination.Dashboard, AinoDestination.Attendance, AinoDestination.More) }.forEach { destination ->
+            composable(AinoDestination.Tasks.route) { TasksScreen(tasks) }
+            bottomDestinations.filterNot {
+                it in setOf(AinoDestination.Dashboard, AinoDestination.Attendance, AinoDestination.Tasks, AinoDestination.More)
+            }.forEach { destination ->
                 composable(destination.route) { PlaceholderScreen(destination.label) }
             }
             composable(AinoDestination.More.route) {
@@ -212,6 +221,9 @@ private val DASHBOARD_REFRESH_EVENTS = setOf(
     "meeting_updated",
     "meeting_cancelled",
 )
+
+/** Task-scoped realtime events; the planner reloads rather than patching a row. */
+private val TASK_REFRESH_EVENTS = setOf("task_assigned", "task_updated")
 
 @Composable
 private fun PlaceholderScreen(title: String) {
