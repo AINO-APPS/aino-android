@@ -1,6 +1,7 @@
 package app.aino.mobile.feature.leaves
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,12 +13,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -26,6 +29,8 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Event
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.AinoAlert
@@ -60,10 +66,17 @@ fun LeavesScreen(viewModel: LeaveViewModel) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     AinoAtmosphere {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            AinoSectionHeader("Leaves", "Balances, applications and the month's schedule")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Leaves", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                Box(
+                    Modifier.size(34.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                        .clickable(enabled = !ui.loading, onClick = viewModel::refresh),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Outlined.Refresh, "Refresh", Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
             LeaveTabs(ui.tab, viewModel::selectTab)
             ui.error?.let { AinoAlert(it, AlertTone.Error) }
             ui.message?.let { AinoAlert(it, AlertTone.Success) }
@@ -76,13 +89,6 @@ fun LeavesScreen(viewModel: LeaveViewModel) {
                 LeaveTab.History -> LeaveHistory(ui, viewModel)
                 LeaveTab.Calendar -> MonthSchedule(ui)
             }
-            AinoPrimaryButton(
-                if (ui.loading) "Refreshing…" else "Refresh",
-                viewModel::refresh,
-                Modifier.fillMaxWidth(),
-                !ui.loading,
-                leadingIcon = { Icon(Icons.Outlined.Refresh, null, Modifier.padding(end = 8.dp), tint = Color.White) },
-            )
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -95,15 +101,22 @@ private fun LeaveTabs(selected: LeaveTab, onSelect: (LeaveTab) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         LeaveTab.entries.forEach { tab ->
-            Text(
-                tab.name,
+            val icon = when (tab) {
+                LeaveTab.Apply -> Icons.Outlined.Send
+                LeaveTab.History -> Icons.Outlined.History
+                LeaveTab.Calendar -> Icons.Outlined.CalendarMonth
+            }
+            Row(
                 Modifier.weight(1f).clickable { onSelect(tab) }
                     .background(if (selected == tab) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(6.dp))
-                    .padding(vertical = 10.dp),
-                color = if (selected == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelLarge,
-                textAlign = TextAlign.Center,
-            )
+                    .padding(vertical = 9.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val tint = if (selected == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                Icon(icon, null, Modifier.size(16.dp), tint = tint)
+                Text(tab.name, Modifier.padding(start = 6.dp), color = tint, style = MaterialTheme.typography.labelMedium)
+            }
         }
     }
 }
@@ -148,14 +161,17 @@ private fun LeaveBalances(ui: LeaveUiState) {
         ) {
             ui.balances.forEach { balance ->
                 AinoGlassCard(Modifier.width(cardWidth)) {
-                    Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Box(Modifier.fillMaxWidth().height(3.dp).background(balance.accentColor()))
+                        Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(balance.label(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(formatDays(balance.available), style = MaterialTheme.typography.titleLarge, color = AinoSuccess)
+                        Text(formatDays(balance.available), fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = balance.accentColor())
                         Text(
-                            "used ${formatDays(balance.used)} of ${formatDays(balance.quota + balance.carriedForward)}",
+                            "${formatDays(balance.used)} used · ${formatDays(balance.quota + balance.carriedForward)} total",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        }
                     }
                 }
             }
@@ -168,14 +184,11 @@ private fun LeaveBalances(ui: LeaveUiState) {
 private fun ApplyForm(ui: LeaveUiState, viewModel: LeaveViewModel) {
     AinoGlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.BeachAccess, null, tint = MaterialTheme.colorScheme.primary)
-                Text("Apply for leave", Modifier.padding(start = 8.dp), style = MaterialTheme.typography.titleLarge)
-            }
+            Text("New Leave Request", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (ui.policies.isEmpty()) {
                 AinoAlert("No leave policies are configured for this workspace yet.", AlertTone.Info)
             } else {
-                Text("Type", style = MaterialTheme.typography.labelLarge)
+                FormLabel("Leave Type")
                 FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     ui.policies.forEach { policy ->
                         Chip(policy.label(), ui.applyType == policy.leaveType) { viewModel.updateApplyForm(type = policy.leaveType) }
@@ -186,7 +199,7 @@ private fun ApplyForm(ui: LeaveUiState, viewModel: LeaveViewModel) {
                 LeaveField("From (YYYY-MM-DD)", ui.applyStart, { viewModel.updateApplyForm(start = it) }, Modifier.weight(1f))
                 LeaveField("To (YYYY-MM-DD)", ui.applyEnd, { viewModel.updateApplyForm(end = it) }, Modifier.weight(1f))
             }
-            Text("Duration", style = MaterialTheme.typography.labelLarge)
+            FormLabel("Duration")
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 LEAVE_DURATIONS.forEach { duration ->
                     // Half and quarter days only appear when the selected policy
@@ -209,9 +222,15 @@ private fun ApplyForm(ui: LeaveUiState, viewModel: LeaveViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
-            AinoPrimaryButton("Submit leave request", viewModel::apply, Modifier.fillMaxWidth(), !ui.loading)
+            AinoPrimaryButton("Submit Request", viewModel::apply, Modifier.fillMaxWidth(), !ui.loading)
         }
     }
+}
+
+@Composable
+private fun FormLabel(text: String) {
+    Text(text.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.5.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -242,11 +261,15 @@ private fun LeaveHistory(ui: LeaveUiState, viewModel: LeaveViewModel) {
         }
         return
     }
-    Text(
-        "${ui.leaves.size} record(s) · ${formatDays(totalLeaveDays(ui.leaves))} day(s)",
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.bodySmall,
-    )
+    Row(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .55f), RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp)).padding(vertical = 11.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        HistoryStat(ui.leaves.size.toString(), "REQUESTS")
+        HistoryStat(formatDays(totalLeaveDays(ui.leaves)), "DAYS")
+        HistoryStat(ui.leaves.count { it.status == "approved" }.toString(), "APPROVED")
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ui.leaves.forEach { leave -> LeaveRow(leave, viewModel) }
     }
@@ -256,16 +279,20 @@ private fun LeaveHistory(ui: LeaveUiState, viewModel: LeaveViewModel) {
 private fun LeaveRow(leave: Leave, viewModel: LeaveViewModel) {
     val action = availableLeaveAction(leave)
     AinoGlassCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+            Box(
+                Modifier.size(34.dp).background(leaveTypeColor(leave.leaveType).copy(alpha = .14f), RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Outlined.BeachAccess, null, Modifier.size(18.dp), tint = leaveTypeColor(leave.leaveType)) }
+            Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        runCatching { LocalDate.parse(leave.date.take(10)).format(DateTimeFormatter.ofPattern("EEE, MMM d")) }
-                            .getOrDefault(leave.date),
-                        fontWeight = FontWeight.SemiBold,
+                        leave.leaveType.replace('_', ' ').replaceFirstChar(Char::uppercase),
+                        fontWeight = FontWeight.Bold, fontSize = 14.sp,
                     )
                     Text(
-                        "${leave.leaveType.replaceFirstChar(Char::uppercase)} · ${durationLabel(leave.duration)}",
+                        "${runCatching { LocalDate.parse(leave.date.take(10)).format(DateTimeFormatter.ofPattern("EEE, MMM d")) }.getOrDefault(leave.date)} · ${durationLabel(leave.duration)}",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -290,7 +317,16 @@ private fun LeaveRow(leave: Leave, viewModel: LeaveViewModel) {
                     style = MaterialTheme.typography.labelMedium,
                 )
             }
+            }
         }
+    }
+}
+
+@Composable
+private fun HistoryStat(value: String, label: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+        Text(label, fontSize = 9.sp, letterSpacing = .3.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -303,6 +339,7 @@ private fun leaveTone(status: String): AlertTone = when (status) {
 @Composable
 private fun MonthSchedule(ui: LeaveUiState) {
     val monthPrefix = ui.month.toString()
+    CalendarGrid(ui)
     // The holiday route is year-scoped, so the month filter happens here.
     val holidays = ui.holidays.filter { it.date.take(7) == monthPrefix }.sortedBy { it.date }
     AinoSectionHeader("Holidays", "${holidays.size} this month")
@@ -358,6 +395,55 @@ private fun MonthSchedule(ui: LeaveUiState) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun CalendarGrid(ui: LeaveUiState) {
+    val first = ui.month.atDay(1)
+    val gridStart = first.minusDays((first.dayOfWeek.value % 7).toLong())
+    val days = (0L until 42L).map(gridStart::plusDays)
+    val today = LocalDate.now()
+    val weekdays = listOf("S", "M", "T", "W", "T", "F", "S")
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth()) {
+            weekdays.forEach { day ->
+                Text(day, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val cellWidth = maxWidth / 7
+            FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = 7) {
+                days.forEach { date ->
+                    val key = date.toString()
+                    val eventColors = buildList {
+                        if (ui.events.any { it.startTime.take(10) == key }) add(MaterialTheme.colorScheme.primary)
+                        if (ui.holidays.any { it.date.take(10) == key }) add(AinoBlue)
+                    }
+                    Column(
+                        Modifier.width(cellWidth).aspectRatio(1f).padding(2.dp)
+                            .background(
+                                if (date == today) MaterialTheme.colorScheme.primary.copy(alpha = .16f) else Color.Transparent,
+                                RoundedCornerShape(8.dp),
+                            ),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text(date.dayOfMonth.toString(), fontSize = 14.sp,
+                            fontWeight = if (date == today) FontWeight.Bold else FontWeight.Medium,
+                            color = if (date.month == ui.month.month) MaterialTheme.colorScheme.onSurface
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .45f))
+                        Row(Modifier.height(5.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            eventColors.take(3).forEach { color ->
+                                Box(Modifier.size(5.dp).clip(RoundedCornerShape(3.dp)).background(color))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun LeaveField(
     label: String,
     value: String,
@@ -382,3 +468,23 @@ private fun LeaveField(
         ),
     )
 }
+
+private fun LeaveBalance.accentColor(): Color = color.toComposeColorOrNull() ?: leaveTypeColor(leaveType)
+
+private fun leaveTypeColor(type: String): Color = when (type.lowercase()) {
+    "sick" -> Color(0xFFEF4444)
+    "casual" -> Color(0xFFF59E0B)
+    "earned", "annual" -> Color(0xFF10B981)
+    "holiday" -> Color(0xFF8B5CF6)
+    else -> AinoBlue
+}
+
+private fun String?.toComposeColorOrNull(): Color? = runCatching {
+    val raw = this?.trim()?.removePrefix("#") ?: return null
+    val value = raw.toLong(16)
+    when (raw.length) {
+        6 -> Color(0xFF000000 or value)
+        8 -> Color(value)
+        else -> null
+    }
+}.getOrNull()

@@ -24,6 +24,26 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun loginHydratesFeatureGatesFromProfileImmediately() {
+        val paths = mutableListOf<String>()
+        val repository = AuthRepository(FakeApiClient { request ->
+            paths += request.path
+            when (request.path) {
+                "auth/login" -> response("""{"user":{"id":9,"username":"user","role":"employee","tenant_id":3},"token":"jwt"}""")
+                "profile" -> response("""{"id":9,"username":"user","role":"employee","tenant_id":3,"tenant_features":{"attendance":true,"tasks":true,"chat":false}}""")
+                else -> error("unexpected ${request.path}")
+            }
+        }, MemoryTokenStore())
+
+        val state = repository.login("user", "secret") as AuthState.Authenticated
+
+        assertEquals(listOf("auth/login", "profile"), paths)
+        assertEquals(true, state.user.tenantFeatures["attendance"])
+        assertEquals(true, state.user.tenantFeatures["tasks"])
+        assertEquals(false, state.user.tenantFeatures["chat"])
+    }
+
+    @Test
     fun loginMapsRealmChoiceConflict() {
         val repository = AuthRepository(FakeApiClient {
             throw ApiError.Http(
@@ -159,8 +179,12 @@ class AuthRepositoryTest {
         val store = MemoryTokenStore()
         var body = ""
         val repository = AuthRepository(FakeApiClient { request ->
-            body = request.body?.toString(Charsets.UTF_8).orEmpty()
-            response("""{"user":{"id":4,"username":"member","role":"employee","tenant_id":42},"token":"bio-jwt"}""")
+            if (request.path == "profile") {
+                response("""{"id":4,"username":"member","role":"employee","tenant_id":42,"tenant_features":{"chat":true}}""")
+            } else {
+                body = request.body?.toString(Charsets.UTF_8).orEmpty()
+                response("""{"user":{"id":4,"username":"member","role":"employee","tenant_id":42},"token":"bio-jwt"}""")
+            }
         }, store)
 
         val state = repository.biometricLogin(BiometricCredential("42.credential", "secret"))

@@ -110,7 +110,17 @@ class AuthRepository(
         }
         val auth = json.decodeFromString<AuthResponse>(text)
         tokens.saveToken(auth.token)
-        return stateFor(auth)
+        // The login response intentionally stays small and does not include the
+        // plan's effective `tenant_features`. Expo immediately refreshes the
+        // profile before applying navigation gates; do the same here so a fresh
+        // login does not hide Attendance/Tasks/Chat until the next app launch.
+        // A profile fetch failure must not invalidate an otherwise valid login:
+        // the sparse login user remains fail-closed for feature visibility.
+        val hydrated = runCatching {
+            val profile = api.execute(ApiRequest(path = "profile", headers = mapOf("Accept" to "application/json")))
+            json.decodeFromString<AinoUser>(profile.bodyAsString())
+        }.getOrNull()
+        return stateFor(hydrated ?: auth.user)
     }
 
     private inline fun <reified T> jsonRequest(method: String, path: String, value: T) = ApiRequest(

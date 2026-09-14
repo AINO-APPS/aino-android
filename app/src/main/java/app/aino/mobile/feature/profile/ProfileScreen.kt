@@ -1,6 +1,7 @@
 package app.aino.mobile.feature.profile
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,7 +24,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -52,10 +58,9 @@ fun ProfileScreen(viewModel: ProfileViewModel) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     AinoAtmosphere {
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            AinoSectionHeader("Profile", "Account details and workspace search")
             ProfileTabs(ui.tab, viewModel::selectTab)
             ui.error?.let { AinoAlert(it, AlertTone.Error) }
             ui.message?.let { AinoAlert(it, AlertTone.Success) }
@@ -63,7 +68,7 @@ fun ProfileScreen(viewModel: ProfileViewModel) {
                 ProfileTab.Account -> AccountSection(ui, viewModel)
                 ProfileTab.Search -> SearchSection(ui, viewModel)
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(22.dp))
         }
     }
 }
@@ -71,12 +76,12 @@ fun ProfileScreen(viewModel: ProfileViewModel) {
 @Composable
 private fun ProfileTabs(selected: ProfileTab, onSelect: (ProfileTab) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(3.dp),
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .65f), RoundedCornerShape(8.dp)).padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         ProfileTab.entries.forEach { tab ->
             Text(
-                tab.name,
+                if (tab == ProfileTab.Account) "Profile" else "Search",
                 Modifier.weight(1f).clickable { onSelect(tab) }
                     .background(if (selected == tab) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(6.dp))
                     .padding(vertical = 10.dp),
@@ -103,34 +108,43 @@ private fun AccountSection(ui: ProfileUiState, viewModel: ProfileViewModel) {
         return
     }
     AinoGlassCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(
+            Modifier.fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Box(Modifier.size(84.dp).padding(bottom = 0.dp), contentAlignment = Alignment.BottomEnd) {
                 Box(
-                    Modifier.size(48.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), CircleShape),
+                    Modifier.size(84.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        user.display().take(1).uppercase(),
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.titleLarge,
+                        user.display().split(" ").take(2).mapNotNull { it.firstOrNull() }.joinToString("").uppercase(),
+                        color = Color.White,
+                        style = MaterialTheme.typography.headlineMedium,
                     )
                 }
-                Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text(user.display(), style = MaterialTheme.typography.titleLarge)
-                    Text("@${user.username}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                Box(
+                    Modifier.size(28.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Outlined.Edit, "Edit profile", Modifier.size(13.dp), tint = Color.White)
                 }
-                AinoBadge(roleLabel(user.role), AlertTone.Info)
             }
-            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Spacer(Modifier.height(8.dp))
+            Text(user.display(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("@${user.username}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            user.email?.takeIf(String::isNotBlank)?.let {
+                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .75f), style = MaterialTheme.typography.bodySmall)
+            }
+            FlowRow(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AinoBadge(roleLabel(user.role), AlertTone.Info)
                 user.teamName?.let { AinoBadge(it, AlertTone.Info) }
                 user.tenantPlan?.let { AinoBadge("$it plan", AlertTone.Info) }
                 if (user.hasReports) AinoBadge("Manager", AlertTone.Success)
                 if (user.impersonated) AinoBadge("Impersonated", AlertTone.Warning)
             }
-            user.email?.takeIf(String::isNotBlank)?.let {
-                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Face, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(
                     if (ui.faceEnrolled) "Face descriptor enrolled" else "No face descriptor enrolled",
@@ -164,49 +178,60 @@ private fun AccountSection(ui: ProfileUiState, viewModel: ProfileViewModel) {
             }
         }
     } else {
-        AinoPrimaryButton("Edit profile", viewModel::startEditing, Modifier.fillMaxWidth(), !ui.loading)
+        ProfileAction(Icons.Outlined.Edit, "Edit Profile", viewModel::startEditing, !ui.loading)
     }
 
-    AinoPrimaryButton(
-        if (ui.loading) "Refreshing…" else "Refresh profile",
-        viewModel::refresh,
-        Modifier.fillMaxWidth(),
-        !ui.loading,
-        leadingIcon = { Icon(Icons.Outlined.Refresh, null, Modifier.padding(end = 8.dp), tint = Color.White) },
-    )
+    ProfileAction(Icons.Outlined.Refresh, if (ui.loading) "Refreshing…" else "Refresh Profile", viewModel::refresh, !ui.loading)
+}
+
+@Composable
+private fun ProfileAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit, enabled: Boolean) {
+    Row(
+        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = .55f), RoundedCornerShape(8.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(icon, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface)
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+    }
 }
 
 @Composable
 private fun SearchSection(ui: ProfileUiState, viewModel: ProfileViewModel) {
-    AinoGlassCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            ProfileField(
-                "Search tasks, notes, people…",
-                ui.searchTerm,
-                viewModel::updateSearchTerm,
-                imeSearch = true,
-                onCommit = viewModel::search,
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                AinoPrimaryButton(
-                    if (ui.searching) "Searching…" else "Search",
-                    viewModel::search,
-                    Modifier.weight(1f),
-                    !ui.searching,
-                )
-                Text(
-                    "Clear",
-                    Modifier.clickable(onClick = viewModel::clearSearch)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 16.dp, vertical = 13.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
+    OutlinedTextField(
+        value = ui.searchTerm,
+        onValueChange = viewModel::updateSearchTerm,
+        placeholder = { Text("Search tasks, people, notes…") },
+        leadingIcon = { Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+        trailingIcon = if (ui.searchTerm.isNotEmpty()) {{
+            Text("×", Modifier.clickable(onClick = viewModel::clearSearch).padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleLarge)
+        }} else null,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+            focusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+        ),
+    )
+
+    if (!ui.searchRan && !ui.searching) {
+        Column(
+            Modifier.fillMaxWidth().height(280.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(Icons.Outlined.Search, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.outline)
             Text(
-                "Audit log results appear only for HR admins and above.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodySmall,
+                if (ui.searchTerm.trim().isNotEmpty() && ui.searchTerm.trim().length < 2) "Type at least 2 characters to search" else "Search across tasks, people, and notes",
+                Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
             )
         }
     }

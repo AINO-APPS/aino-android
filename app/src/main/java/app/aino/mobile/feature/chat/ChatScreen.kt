@@ -1,10 +1,13 @@
 package app.aino.mobile.feature.chat
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,153 +15,344 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.AinoAlert
 import app.aino.mobile.core.designsystem.AinoAtmosphere
-import app.aino.mobile.core.designsystem.AinoBadge
-import app.aino.mobile.core.designsystem.AinoGlassCard
-import app.aino.mobile.core.designsystem.AinoPrimaryButton
-import app.aino.mobile.core.designsystem.AinoSectionHeader
 import app.aino.mobile.core.designsystem.AlertTone
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
+private enum class ChatListTab { Chat, Meet, Calls }
+
+/** The Android contract does not expose thread navigation or call history yet.
+ * Those affordances are therefore shown honestly rather than made clickable.
+ */
 @Composable
 fun ChatScreen(viewModel: ChatViewModel) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    var activeTab by remember { mutableStateOf(ChatListTab.Chat) }
+    var searchOpen by remember { mutableStateOf(false) }
+    val query = ui.userSearch.trim()
+    val visibleConversations = remember(ui.conversations, activeTab, query) {
+        ui.conversations.filter { conversation ->
+            val inTab = when (activeTab) {
+                ChatListTab.Chat -> !conversation.isMeetingChat && !conversation.isArchived
+                ChatListTab.Meet -> conversation.isMeetingChat && !conversation.isArchived
+                ChatListTab.Calls -> false
+            }
+            inTab && (query.isBlank() || listOf(
+                conversation.title(), conversation.otherUsername.orEmpty(),
+                conversation.lastMessage.orEmpty(), conversation.groupName.orEmpty(),
+            ).joinToString(" ").contains(query, ignoreCase = true))
+        }
+    }
+
     AinoAtmosphere {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            AinoSectionHeader("Chat", "${ui.conversations.size} conversations · ${ui.unread} unread")
-            ui.error?.let { AinoAlert(it, AlertTone.Error) }
-            ui.message?.let { AinoAlert(it, if (ui.fromCache) AlertTone.Warning else AlertTone.Success) }
-            UserSearch(ui, viewModel)
-            if (ui.conversations.isEmpty()) {
-                AinoGlassCard(Modifier.fillMaxWidth()) {
-                    Text(
-                        if (ui.loading) "Loading conversations…" else "No conversations yet. Search for a colleague to start one.",
-                        Modifier.padding(20.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+        Column(Modifier.fillMaxSize()) {
+            ChatHeader(
+                activeTab = activeTab,
+                unread = ui.conversations.sumOf {
+                    if (it.isMuted || it.isArchived || it.isMeetingChat) 0 else it.unreadCount.coerceAtLeast(0)
+                },
+                meetingUnread = ui.conversations.filter(ChatConversation::isMeetingChat).sumOf { it.unreadCount.coerceAtLeast(0) },
+                searchOpen = searchOpen,
+                query = ui.userSearch,
+                onTab = { activeTab = it },
+                onQuery = viewModel::updateUserSearch,
+                onSearch = { if (ui.userSearch.trim().length >= 2) viewModel.searchUsers() },
+                onSearchOpen = { open ->
+                    searchOpen = open
+                    if (!open) viewModel.updateUserSearch("")
+                },
+            )
+
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 90.dp)) {
+                if (ui.error != null || ui.message != null) item(key = "notice") {
+                    Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        ui.error?.let { AinoAlert(it, AlertTone.Error) }
+                        ui.message?.let { AinoAlert(it, if (ui.fromCache) AlertTone.Warning else AlertTone.Success) }
+                    }
                 }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ui.conversations.forEach { conversation ->
-                        ConversationRow(conversation, ui.presence[conversation.otherUserId], viewModel)
+                if (searchOpen && query.length >= 2) {
+                    item(key = "people-heading") { SectionHeader("People", Icons.Outlined.Groups) }
+                    if (ui.searching) item(key = "searching") { SearchHint("Searching people…", true) }
+                    else if (ui.userResults.isEmpty()) item(key = "search-hint") { SearchHint("Press search to find colleagues", false) }
+                    items(ui.userResults, key = { "user-${it.id}" }) { user -> UserResultRow(user) { viewModel.startDirect(user) } }
+                }
+                when (activeTab) {
+                    ChatListTab.Calls -> item(key = "calls-empty") { HonestEmpty(Icons.Outlined.Phone, "Call history isn't available in Android yet.") }
+                    ChatListTab.Meet -> {
+                        if (visibleConversations.isEmpty()) item(key = "meet-empty") {
+                            HonestEmpty(Icons.Outlined.Videocam, if (query.isNotBlank()) "No matching meeting chats" else "No meeting chats yet")
+                        } else items(visibleConversations, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], viewModel) }
+                    }
+                    ChatListTab.Chat -> {
+                        val pinned = visibleConversations.filter(ChatConversation::isPinned)
+                        val favourites = visibleConversations.filter { it.isFavourite && !it.isPinned }
+                        val others = visibleConversations.filter { !it.isPinned && !it.isFavourite }
+                        if (visibleConversations.isEmpty()) item(key = "chat-empty") {
+                            HonestEmpty(Icons.Outlined.ChatBubbleOutline, when {
+                                ui.loading -> "Loading conversations…"
+                                query.isNotBlank() -> "No matching chats"
+                                else -> "No conversations yet"
+                            })
+                        }
+                        if (pinned.isNotEmpty()) item(key = "pinned") { SectionHeader("Pinned", Icons.Outlined.PushPin) }
+                        items(pinned, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], viewModel) }
+                        if (favourites.isNotEmpty()) item(key = "favourites") { SectionHeader("Favourites", Icons.Outlined.StarOutline, true) }
+                        items(favourites, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], viewModel) }
+                        if ((pinned.isNotEmpty() || favourites.isNotEmpty()) && others.isNotEmpty()) item(key = "all") {
+                            SectionHeader("All messages", Icons.Outlined.ChatBubbleOutline)
+                        }
+                        items(others, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], viewModel) }
+                        val archivedCount = ui.conversations.count { it.isArchived && !it.isMeetingChat }
+                        if (archivedCount > 0 && query.isBlank()) item(key = "archived") { ArchivedRow(archivedCount) }
+                    }
+                }
+                item(key = "refresh") {
+                    Row(
+                        Modifier.fillMaxWidth().clickable(enabled = !ui.loading) { viewModel.refresh() }.padding(16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (ui.loading) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Outlined.Refresh, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(7.dp))
+                        Text(if (ui.loading) "Refreshing…" else "Refresh conversations", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
                     }
                 }
             }
-            AinoPrimaryButton(
-                if (ui.loading) "Refreshing…" else "Refresh conversations",
-                viewModel::refresh,
-                Modifier.fillMaxWidth(),
-                !ui.loading,
-                leadingIcon = { Icon(Icons.Outlined.Refresh, null, Modifier.padding(end = 8.dp), tint = Color.White) },
-            )
-            Spacer(Modifier.height(12.dp))
         }
     }
 }
 
 @Composable
-private fun UserSearch(ui: ChatUiState, viewModel: ChatViewModel) {
-    AinoGlassCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = ui.userSearch,
-                onValueChange = viewModel::updateUserSearch,
-                label = { Text("Start a conversation") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { viewModel.searchUsers() }),
-                shape = RoundedCornerShape(8.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                ),
-            )
-            AinoPrimaryButton(if (ui.searching) "Searching…" else "Find people", viewModel::searchUsers, Modifier.fillMaxWidth(), !ui.searching)
-            ui.userResults.forEach { user ->
+private fun ChatHeader(
+    activeTab: ChatListTab, unread: Int, meetingUnread: Int, searchOpen: Boolean, query: String,
+    onTab: (ChatListTab) -> Unit, onQuery: (String) -> Unit, onSearch: () -> Unit, onSearchOpen: (Boolean) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 6.dp)) {
+        Row(
+            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(18.dp)).padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (searchOpen) {
                 Row(
-                    Modifier.fillMaxWidth().clickable { viewModel.startDirect(user) }
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(11.dp),
+                    Modifier.weight(1f).height(42.dp).background(MaterialTheme.colorScheme.surface, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(user.display(), Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                    Text("Message", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                    Icon(Icons.Outlined.Search, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.width(8.dp))
+                    BasicTextField(
+                        value = query, onValueChange = onQuery, modifier = Modifier.weight(1f), singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+                        decorationBox = { inner -> Box(contentAlignment = Alignment.CenterStart) {
+                            if (query.isEmpty()) Text("Search chats", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+                            inner()
+                        } },
+                    )
+                    Icon(
+                        Icons.Outlined.Close, "Close search",
+                        Modifier.size(20.dp).clickable { if (query.isNotEmpty()) onQuery("") else onSearchOpen(false) }.padding(2.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+            } else {
+                Segment("Chat", Icons.Outlined.ChatBubbleOutline, activeTab == ChatListTab.Chat, unread, Modifier.weight(1f)) { onTab(ChatListTab.Chat) }
+                Segment("Meet", Icons.Outlined.Videocam, activeTab == ChatListTab.Meet, meetingUnread, Modifier.weight(1f)) { onTab(ChatListTab.Meet) }
+                Segment("Calls", Icons.Outlined.Phone, activeTab == ChatListTab.Calls, 0, Modifier.weight(1f)) { onTab(ChatListTab.Calls) }
+                Box(
+                    Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface).clickable { onSearchOpen(true) },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Outlined.Search, "Search chats", Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
+    }
+}
+
+@Composable
+private fun Segment(label: String, icon: ImageVector, active: Boolean, badge: Int, modifier: Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(12.dp)
+    Box(
+        modifier.height(42.dp).clip(shape).background(if (active) MaterialTheme.colorScheme.surface else Color.Transparent)
+            .then(if (active) Modifier.border(BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .24f)), shape) else Modifier)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(icon, null, Modifier.size(14.dp), tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (badge > 0) UnreadBadge(badge, Modifier.align(Alignment.TopEnd).padding(top = 3.dp, end = 3.dp))
     }
 }
 
 @Composable
 private fun ConversationRow(conversation: ChatConversation, presence: ChatPresence?, viewModel: ChatViewModel) {
-    AinoGlassCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        ConversationAvatar(conversation, presence)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(40.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Outlined.ChatBubbleOutline, null, tint = MaterialTheme.colorScheme.primary) }
-                Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(conversation.title(), Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                        if (conversation.isPinned) Icon(Icons.Outlined.PushPin, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (conversation.isMuted) Icon(Icons.Outlined.NotificationsOff, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Text(conversation.preview(), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 2)
-                }
-                if (conversation.unreadCount > 0) {
-                    AinoBadge(if (conversation.unreadCount > 99) "99+" else conversation.unreadCount.toString(), AlertTone.Info)
-                }
+                if (conversation.isPinned) { Icon(Icons.Outlined.PushPin, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant); Spacer(Modifier.width(4.dp)) }
+                if (conversation.isFavourite) { Icon(Icons.Outlined.StarOutline, null, Modifier.size(12.dp), tint = Color(0xFFCB912F)); Spacer(Modifier.width(4.dp)) }
+                Text(conversation.title(), Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(timeAgo(conversation.lastMessageAt ?: conversation.updatedAt), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f), fontSize = 11.sp)
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                if (!conversation.isGroup) {
-                    val online = presence?.presence == "online"
-                    Box(Modifier.size(7.dp).background(if (online) Color(0xFF4DAA57) else MaterialTheme.colorScheme.onSurfaceVariant, CircleShape))
-                    Text(presenceLabel(presence), Modifier.padding(start = 6.dp).weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                } else {
-                    Text("${conversation.memberCount ?: 0} members", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
-                }
-                if (conversation.unreadCount > 0) {
-                    Text(
-                        "Mark read",
-                        Modifier.clickable { viewModel.markRead(conversation) }
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-                            .padding(horizontal = 10.dp, vertical = 7.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(conversation.preview(), Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                if (conversation.isMuted) { Spacer(Modifier.width(6.dp)); Icon(Icons.Outlined.NotificationsOff, "Muted", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f)) }
+                if (conversation.unreadCount > 0) { Spacer(Modifier.width(8.dp)); Box(Modifier.clickable { viewModel.markRead(conversation) }) { UnreadBadge(conversation.unreadCount) } }
             }
         }
+    }
+}
+
+@Composable
+private fun ConversationAvatar(conversation: ChatConversation, presence: ChatPresence?) {
+    val initials = conversation.title().trim().split(Regex("\\s+")).take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").ifEmpty { "?" }
+    Box(Modifier.size(48.dp)) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
+            if (conversation.isMeetingChat) Icon(Icons.Outlined.Videocam, null, Modifier.size(22.dp), tint = Color.White)
+            else if (conversation.isGroup) Icon(Icons.Outlined.Groups, null, Modifier.size(23.dp), tint = Color.White)
+            else Text(initials, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        }
+        if (!conversation.isGroup && !conversation.isMeetingChat) Box(
+            Modifier.align(Alignment.BottomEnd).size(15.dp).background(MaterialTheme.colorScheme.background, CircleShape).padding(2.dp).background(statusColor(presence), CircleShape),
+        )
+    }
+}
+
+@Composable
+private fun statusColor(presence: ChatPresence?): Color = when {
+    presence == null || presence.presence != "online" -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f)
+    presence.userStatus in setOf("busy", "dnd", "in_call", "in_meeting") -> Color(0xFFE03E3E)
+    presence.userStatus in setOf("away", "brb") -> Color(0xFFCB912F)
+    else -> Color(0xFF4DAA57)
+}
+
+@Composable
+private fun UnreadBadge(count: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier.height(20.dp).background(MaterialTheme.colorScheme.primary, CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = .55f), CircleShape).padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) { Text(if (count > 99) "99+" else count.toString(), color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+}
+
+@Composable
+private fun SectionHeader(label: String, icon: ImageVector, warning: Boolean = false) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, top = 12.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Icon(icon, null, Modifier.size(13.dp), tint = if (warning) Color(0xFFCB912F) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f))
+        Text(label.uppercase(Locale.getDefault()), color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .72f), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = .5.sp)
+    }
+}
+
+@Composable
+private fun UserResultRow(user: ChatUser, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        val name = user.display().ifBlank { "Unknown user" }
+        val initials = name.trim().split(Regex("\\s+")).take(2).mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("")
+        Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) { Text(initials, color = Color.White, fontWeight = FontWeight.Bold) }
+        Column(Modifier.weight(1f)) {
+            Text(name, color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            user.email?.takeIf(String::isNotBlank)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, maxLines = 1) }
+        }
+        Text("Message", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun SearchHint(text: String, progress: Boolean) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (progress) { CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
+        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun ArchivedRow(count: Int) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.size(48.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Column {
+            Text("Archived", color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text("$count chat${if (count == 1) "" else "s"} · viewing unavailable", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
+private fun HonestEmpty(icon: ImageVector, text: String) {
+    Column(Modifier.fillMaxWidth().padding(top = 90.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(
+            Modifier.size(74.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(22.dp)).border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(22.dp)),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
+    }
+}
+
+private fun timeAgo(value: String?): String {
+    if (value.isNullOrBlank()) return ""
+    val instant = runCatching { Instant.parse(value) }.getOrNull() ?: return ""
+    val minutes = Duration.between(instant, Instant.now()).toMinutes().coerceAtLeast(0)
+    return when {
+        minutes < 1 -> "now"
+        minutes < 60 -> "${minutes}m"
+        minutes < 1_440 -> "${minutes / 60}h"
+        else -> DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()).format(instant.atZone(ZoneId.systemDefault()))
     }
 }
