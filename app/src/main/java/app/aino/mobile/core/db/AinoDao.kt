@@ -12,6 +12,9 @@ interface AinoDao {
     @Query("SELECT * FROM conversations WHERE tenantId = :tenantId AND userId = :userId ORDER BY updatedAtEpochMs DESC")
     fun observeConversations(tenantId: Long, userId: Long): Flow<List<ConversationEntity>>
 
+    @Query("SELECT * FROM conversations WHERE tenantId = :tenantId AND userId = :userId ORDER BY updatedAtEpochMs DESC")
+    suspend fun getConversations(tenantId: Long, userId: Long): List<ConversationEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertConversations(values: List<ConversationEntity>)
 
@@ -38,6 +41,12 @@ interface AinoDao {
 
     @Query("DELETE FROM conversations WHERE tenantId = :tenantId AND userId = :userId")
     suspend fun clearConversations(tenantId: Long, userId: Long)
+
+    @Transaction
+    suspend fun replaceConversations(tenantId: Long, userId: Long, values: List<ConversationEntity>) {
+        clearConversations(tenantId, userId)
+        upsertConversations(values)
+    }
 
     @Query("DELETE FROM messages WHERE tenantId = :tenantId AND userId = :userId")
     suspend fun clearMessages(tenantId: Long, userId: Long)

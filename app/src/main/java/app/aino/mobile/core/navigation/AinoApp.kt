@@ -58,6 +58,8 @@ import app.aino.mobile.feature.leaves.LeavesScreen
 import app.aino.mobile.feature.leaves.LeaveViewModel
 import app.aino.mobile.feature.profile.ProfileScreen
 import app.aino.mobile.feature.profile.ProfileViewModel
+import app.aino.mobile.feature.chat.ChatScreen
+import app.aino.mobile.feature.chat.ChatViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.core.realtime.RealtimeState
 import app.aino.mobile.core.realtime.RealtimeViewModel
@@ -78,6 +80,7 @@ fun AinoApp(
     tasks: TaskViewModel,
     leaves: LeaveViewModel,
     profile: ProfileViewModel,
+    chat: ChatViewModel,
     biometricAvailable: Boolean,
     onBiometricLogin: () -> Unit,
     onBiometricEnroll: () -> Unit,
@@ -88,11 +91,16 @@ fun AinoApp(
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
     val tenantAuthenticated = (ui.state as? AuthState.Authenticated)?.user?.tenantId != null
     LaunchedEffect(tenantAuthenticated) { realtime.setAuthenticatedTenant(tenantAuthenticated) }
+    val authenticatedUser = (ui.state as? AuthState.Authenticated)?.user
+    LaunchedEffect(authenticatedUser?.tenantId, authenticatedUser?.id) {
+        chat.setScope(authenticatedUser?.tenantId, authenticatedUser?.id)
+    }
     LaunchedEffect(tenantAuthenticated) {
         if (tenantAuthenticated) {
             realtime.events.collect { event ->
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
                 if (event.type in TASK_REFRESH_EVENTS) tasks.refresh()
+                chat.onRealtimeEvent(event.type)
             }
         }
     }
@@ -133,6 +141,7 @@ fun AinoApp(
             tasks,
             leaves,
             profile,
+            chat,
             biometricAvailable,
             ui.biometricEnrolled,
             onBiometricEnroll,
@@ -155,6 +164,7 @@ private fun AuthenticatedShell(
     tasks: TaskViewModel,
     leaves: LeaveViewModel,
     profile: ProfileViewModel,
+    chat: ChatViewModel,
     biometricAvailable: Boolean,
     biometricEnrolled: Boolean,
     onBiometricEnroll: () -> Unit,
@@ -195,8 +205,9 @@ private fun AuthenticatedShell(
                 AttendanceScreen(attendance, onAttendanceLocationPermission, onAttendanceBiometric)
             }
             composable(AinoDestination.Tasks.route) { TasksScreen(tasks) }
+            composable(AinoDestination.Chat.route) { ChatScreen(chat) }
             bottomDestinations.filterNot {
-                it in setOf(AinoDestination.Dashboard, AinoDestination.Attendance, AinoDestination.Tasks, AinoDestination.More)
+                it in setOf(AinoDestination.Dashboard, AinoDestination.Attendance, AinoDestination.Tasks, AinoDestination.Chat, AinoDestination.More)
             }.forEach { destination ->
                 composable(destination.route) { PlaceholderScreen(destination.label) }
             }

@@ -6,6 +6,9 @@ import kotlinx.coroutines.flow.Flow
 class ScopedCache(private val scope: CacheScope, private val dao: AinoDao) {
     fun conversations(): Flow<List<ConversationEntity>> = dao.observeConversations(scope.tenantId, scope.userId)
 
+    suspend fun conversationSnapshot(): List<ConversationEntity> =
+        dao.getConversations(scope.tenantId, scope.userId)
+
     fun messages(conversationId: Long): Flow<List<MessageEntity>> {
         require(conversationId > 0)
         return dao.observeMessages(scope.tenantId, scope.userId, conversationId)
@@ -14,6 +17,11 @@ class ScopedCache(private val scope: CacheScope, private val dao: AinoDao) {
     suspend fun upsertConversations(values: List<ConversationEntity>) {
         require(values.all(::belongsToScope))
         dao.upsertConversations(values)
+    }
+
+    suspend fun replaceConversations(values: List<ConversationEntity>) {
+        require(values.all(::belongsToScope))
+        dao.replaceConversations(scope.tenantId, scope.userId, values)
     }
 
     suspend fun upsertMessages(values: List<MessageEntity>) {
