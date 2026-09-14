@@ -17,7 +17,10 @@ val ainoApiUrl = providers.gradleProperty("AINO_API_URL")
     .getOrElse("https://next.aino.org.in/api")
 val ainoWsUrl = providers.gradleProperty("AINO_WS_URL")
     .orElse(providers.environmentVariable("AINO_WS_URL"))
-    .getOrElse("wss://next.aino.org.in")
+    // Realtime is a separate Railway role. Cloudflare routes /ws on the public
+    // www host to it; next.aino.org.in points directly at the web role and does
+    // not upgrade WebSockets.
+    .getOrElse("wss://www.aino.org.in")
 val ainoOtaBaseUrl = providers.gradleProperty("AINO_OTA_BASE_URL")
     .orElse(providers.environmentVariable("AINO_OTA_BASE_URL"))
     .getOrElse("https://cdn.aino.org.in")

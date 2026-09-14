@@ -12,11 +12,13 @@ import javax.crypto.Cipher
 import app.aino.mobile.core.auth.AuthViewModel
 import app.aino.mobile.core.designsystem.theme.AinoTheme
 import app.aino.mobile.core.navigation.AinoApp
+import app.aino.mobile.core.realtime.RealtimeViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 
 class MainActivity : FragmentActivity() {
     private val authViewModel by viewModels<AuthViewModel> { AuthViewModel.factory(applicationContext) }
     private val updateViewModel by viewModels<UpdateViewModel> { UpdateViewModel.Factory }
+    private val realtimeViewModel by viewModels<RealtimeViewModel> { RealtimeViewModel.factory(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -26,6 +28,7 @@ class MainActivity : FragmentActivity() {
                 AinoApp(
                     authViewModel,
                     updateViewModel,
+                    realtimeViewModel,
                     biometricAvailable = biometricAvailable(),
                     onBiometricLogin = ::requestBiometricLogin,
                     onBiometricEnroll = ::requestBiometricEnrollment,

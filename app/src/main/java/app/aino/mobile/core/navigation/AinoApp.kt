@@ -14,6 +14,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -30,16 +31,22 @@ import app.aino.mobile.feature.auth.LoginScreen
 import app.aino.mobile.feature.auth.RealmChoiceScreen
 import app.aino.mobile.feature.home.HomeScreen
 import app.aino.mobile.core.update.UpdateViewModel
+import app.aino.mobile.core.realtime.RealtimeState
+import app.aino.mobile.core.realtime.RealtimeViewModel
 
 @Composable
 fun AinoApp(
     auth: AuthViewModel,
     updates: UpdateViewModel,
+    realtime: RealtimeViewModel,
     biometricAvailable: Boolean,
     onBiometricLogin: () -> Unit,
     onBiometricEnroll: () -> Unit,
 ) {
     val ui by auth.ui.collectAsStateWithLifecycle()
+    val realtimeState by realtime.state.collectAsStateWithLifecycle()
+    val tenantAuthenticated = (ui.state as? AuthState.Authenticated)?.user?.tenantId != null
+    LaunchedEffect(tenantAuthenticated) { realtime.setAuthenticatedTenant(tenantAuthenticated) }
     when (val state = ui.state) {
         AuthState.Initializing -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -70,6 +77,7 @@ fun AinoApp(
             state.user.role,
             state.user.hasReports,
             updates,
+            realtimeState,
             biometricAvailable,
             ui.biometricEnrolled,
             onBiometricEnroll,
@@ -83,6 +91,7 @@ private fun AuthenticatedShell(
     role: String,
     hasReports: Boolean,
     updates: UpdateViewModel,
+    realtimeState: RealtimeState,
     biometricAvailable: Boolean,
     biometricEnrolled: Boolean,
     onBiometricEnroll: () -> Unit,
@@ -132,6 +141,15 @@ private fun AuthenticatedShell(
                         }
                     }
                     updateUi.message?.let { Text(it) }
+                    Text(
+                        text = when (realtimeState) {
+                            RealtimeState.Connected -> "Realtime connected"
+                            is RealtimeState.Connecting -> "Realtime connecting…"
+                            is RealtimeState.Stopped -> "Realtime stopped: ${realtimeState.reason}"
+                            RealtimeState.Disconnected -> "Realtime disconnected"
+                        },
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
                     if (biometricAvailable) {
                         Button(
                             onClick = if (biometricEnrolled) onBiometricDisable else onBiometricEnroll,

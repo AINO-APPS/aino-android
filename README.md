@@ -57,7 +57,7 @@ API and WebSocket endpoints are compiled into `BuildConfig`. The defaults target
 | Field | Default |
 |---|---|
 | `AINO_API_URL` | `https://next.aino.org.in/api` |
-| `AINO_WS_URL` | `wss://next.aino.org.in` |
+| `AINO_WS_URL` | `wss://www.aino.org.in` |
 | `AINO_OTA_BASE_URL` | `https://cdn.aino.org.in` |
 | `AINO_CONTRACT_VERSION` | `0.1.0` |
 
@@ -68,6 +68,13 @@ Override any of them with a Gradle property or an environment variable of the sa
 ```
 
 `AINO_CONTRACT_VERSION` should only be overridden when deliberately testing another compatible contract release.
+
+Realtime uses `wss://www.aino.org.in/ws`, not the direct Railway web origin. The
+Cloudflare edge routes `/ws` to the separate realtime service. Android maintains
+one tenant-authenticated socket with a 25-second heartbeat, a 10-second liveness
+timeout, exponential full-jitter reconnects capped at 15 seconds, and terminal
+handling for authentication (`4001`), unavailable tenant (`4003`), and connection
+limit (`4029`) closes.
 
 ## Updates
 
