@@ -1,6 +1,8 @@
 package app.aino.mobile.feature.chat
 
 import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -34,6 +36,7 @@ data class ChatUiState(
     val threadLoading: Boolean = false,
     val threadFromCache: Boolean = false,
     val composer: String = "",
+    val uploading: Boolean = false,
     val error: String? = null,
     val message: String? = null,
 ) {
@@ -251,6 +254,69 @@ class ChatViewModel(
         }
     }
 
+    fun upload(uri: Uri) {
+        val conversation = _ui.value.selectedConversation ?: return
+        val appContext = context ?: return
+        _ui.value = _ui.value.copy(uploading = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching {
+                val resolver = appContext.contentResolver
+                var name = "file"
+                var size = -1L
+                resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        name = cursor.getString(0) ?: "file"
+                        size = if (cursor.isNull(1)) -1L else cursor.getLong(1)
+                    }
+                }
+                val mime = resolver.getType(uri) ?: "application/octet-stream"
+                if (size > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
+                val bytes = resolver.openInputStream(uri)?.use { input ->
+                    val out = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(64 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        if (total > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
+                        out.write(buffer, 0, read)
+                    }
+                    out.toByteArray()
+                } ?: throw IllegalArgumentException("Could not read the selected file")
+                validateChatUpload(name, mime, bytes.size.toLong())?.let { throw IllegalArgumentException(it) }
+                repository.uploadFile(conversation.id, ChatUpload(name, mime, bytes, _ui.value.composer.trim().ifBlank { null }))
+            }.fold(
+                onSuccess = {
+                    _ui.value = _ui.value.copy(uploading = false, composer = "")
+                    refreshThread()
+                    refresh()
+                },
+                onFailure = { _ui.value = _ui.value.copy(uploading = false, error = it.message ?: "File upload failed") },
+            )
+        }
+    }
+
+    fun cancelMedia(message: ChatMessage) {
+        val id = message.mediaJobId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.cancelMediaJob(id) }.fold(
+                onSuccess = { refreshThread() },
+                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not cancel media") },
+            )
+        }
+    }
+
+    fun retryMedia(message: ChatMessage) {
+        val id = message.mediaJobId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.retryMediaJob(id) }.fold(
+                onSuccess = { refreshThread() },
+                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not retry media") },
+            )
+        }
+    }
+
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -265,8 +331,10 @@ class ChatViewModel(
                     { scope, conversationId, content, now, clientId ->
                         outbox.enqueueText(scope, conversationId, content, nowEpochMs = now, clientMessageId = clientId)
                     },
-                ) as T
+                ).also { it.context = context.applicationContext } as T
             }
         }
     }
+
+    private var context: Context? = null
 }

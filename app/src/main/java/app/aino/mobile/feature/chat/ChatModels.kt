@@ -122,9 +122,17 @@ data class ChatMessage(
     @SerialName("reply_content") val replyContent: String? = null,
     @SerialName("reply_sender_name") val replySenderName: String? = null,
     @SerialName("file_name") val fileName: String? = null,
+    @SerialName("file_url") val fileUrl: String? = null,
+    @SerialName("file_type") val fileType: String? = null,
+    @SerialName("file_size") val fileSize: Long? = null,
     @SerialName("deleted_at") val deletedAt: String? = null,
     @SerialName("edited_at") val editedAt: String? = null,
     val reactions: List<ChatReaction> = emptyList(),
+    @SerialName("media_job_id") val mediaJobId: Long? = null,
+    @SerialName("media_state") val mediaState: String? = null,
+    @SerialName("media_stage") val mediaStage: String? = null,
+    @SerialName("media_progress") val mediaProgress: Int? = null,
+    @SerialName("media_failure_reason") val mediaFailureReason: String? = null,
     val deliveryState: String = "sent",
 ) {
     fun body(): String = when {
@@ -164,6 +172,9 @@ data class ReadReceipt(
 
 @Serializable
 data class ReactionRequest(val emoji: String)
+
+@Serializable
+data class MediaJobResponse(val ok: Boolean = true, val mediaJobId: Long? = null)
 
 data class QueuedMessage(
     val clientMessageId: String,

@@ -7,6 +7,7 @@ import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.ApiRequest
 import app.aino.mobile.core.network.ApiResponse
 import java.net.URLEncoder
+import java.util.UUID
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -52,6 +53,34 @@ class ChatRepository(
 
     fun toggleReaction(messageId: Long, emoji: String): ChatOk =
         mutate("chat/messages/$messageId/reactions", ReactionRequest(emoji))
+
+    fun uploadFile(conversationId: Long, upload: ChatUpload): ChatMessage {
+        val boundary = "aino-${UUID.randomUUID()}"
+        val multipart = buildChatMultipart(upload, boundary)
+        try {
+            return decode(
+                api.execute(
+                    ApiRequest(
+                        "POST",
+                        "chat/conversations/$conversationId/files",
+                        headers = mapOf("Content-Type" to multipart.contentType),
+                        body = multipart.body,
+                    ),
+                ),
+            )
+        } catch (error: ApiError.Http) {
+            val message = runCatching {
+                json.parseToJsonElement(error.responseBody).jsonObject["error"]?.jsonPrimitive?.content
+            }.getOrNull() ?: "File upload failed"
+            throw ChatFailure(message, error.statusCode, error)
+        }
+    }
+
+    fun cancelMediaJob(mediaJobId: Long): MediaJobResponse =
+        mutate("chat/media-jobs/$mediaJobId/cancel", Unit)
+
+    fun retryMediaJob(mediaJobId: Long): MediaJobResponse =
+        mutate("chat/media-jobs/$mediaJobId/retry", Unit)
 
     private inline fun <reified T, reified R> mutate(path: String, body: T): R {
         try {

@@ -139,4 +139,35 @@ class ChatRepositoryTest {
         assertEquals("chat/messages/77/reactions", captured[1].path)
         assertEquals("""{"emoji":"👍"}""", captured[1].body!!.toString(Charsets.UTF_8))
     }
+
+    @Test
+    fun uploadsMultipartFileAndDecodesMediaJob() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) {
+            """{"id":88,"conversation_id":12,"sender_id":4,"created_at":"2026-09-15T04:00:00Z",
+               "file_name":"report.pdf","file_type":"application/pdf","file_size":3,
+               "media_job_id":9,"media_state":"queued","media_stage":"queued","media_progress":0}"""
+        }
+
+        val message = repository.uploadFile(12, ChatUpload("report.pdf", "application/pdf", byteArrayOf(1, 2, 3)))
+
+        val request = captured.single()
+        assertEquals("POST", request.method)
+        assertEquals("chat/conversations/12/files", request.path)
+        assertTrue(request.headers["Content-Type"]!!.startsWith("multipart/form-data; boundary="))
+        assertTrue(request.body!!.toString(Charsets.ISO_8859_1).contains("name=\"file\"; filename=\"report.pdf\""))
+        assertEquals(9L, message.mediaJobId)
+        assertEquals("queued", message.mediaState)
+    }
+
+    @Test
+    fun controlsMediaJobsThroughTheServerRoutes() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) { """{"ok":true,"mediaJobId":9}""" }
+        repository.cancelMediaJob(9)
+        repository.retryMediaJob(9)
+        assertEquals("chat/media-jobs/9/cancel", captured[0].path)
+        assertEquals("chat/media-jobs/9/retry", captured[1].path)
+        assertTrue(captured.all { it.method == "POST" })
+    }
 }

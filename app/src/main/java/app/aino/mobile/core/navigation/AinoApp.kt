@@ -95,6 +95,7 @@ fun AinoApp(
     onBiometricEnroll: () -> Unit,
     onAttendanceLocationPermission: () -> Unit,
     onAttendanceBiometric: () -> Unit,
+    onPickChatDocument: () -> Unit,
 ) {
     val ui by auth.ui.collectAsStateWithLifecycle()
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
@@ -157,6 +158,7 @@ fun AinoApp(
             auth::disableBiometric,
             onAttendanceLocationPermission,
             onAttendanceBiometric,
+            onPickChatDocument,
         )
     }
 }
@@ -180,6 +182,7 @@ private fun AuthenticatedShell(
     onBiometricDisable: () -> Unit,
     onAttendanceLocationPermission: () -> Unit,
     onAttendanceBiometric: () -> Unit,
+    onPickChatDocument: () -> Unit,
 ) {
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
@@ -230,7 +233,7 @@ private fun AuthenticatedShell(
                 AttendanceScreen(attendance, onAttendanceLocationPermission, onAttendanceBiometric)
             }
             composable(AinoDestination.Tasks.route) { TasksScreen(tasks) }
-            composable(AinoDestination.Chat.route) { ChatScreen(chat) }
+            composable(AinoDestination.Chat.route) { ChatScreen(chat, onPickChatDocument) }
             bottomDestinations.filterNot {
                 it in setOf(AinoDestination.Dashboard, AinoDestination.Attendance, AinoDestination.Tasks, AinoDestination.Chat, AinoDestination.More)
             }.forEach { destination ->

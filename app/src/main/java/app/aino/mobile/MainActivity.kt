@@ -37,6 +37,9 @@ class MainActivity : FragmentActivity() {
         if (granted) requestPendingAttendanceAction()
         else attendanceViewModel.reportError("Precise location permission is required for verified office attendance.")
     }
+    private val chatDocumentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(chatViewModel::upload)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,6 +61,18 @@ class MainActivity : FragmentActivity() {
                     onBiometricEnroll = ::requestBiometricEnrollment,
                     onAttendanceLocationPermission = { locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
                     onAttendanceBiometric = ::requestAttendanceBiometric,
+                    onPickChatDocument = {
+                        chatDocumentPicker.launch(
+                            arrayOf(
+                                "image/*", "video/*", "audio/*", "application/pdf", "application/zip",
+                                "application/msword", "application/vnd.ms-excel",
+                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                                "text/plain", "text/csv",
+                            ),
+                        )
+                    },
                 )
             }
         }

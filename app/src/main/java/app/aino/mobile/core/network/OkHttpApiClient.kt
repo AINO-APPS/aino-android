@@ -24,7 +24,9 @@ class OkHttpApiClient(
         )
         val builder = Request.Builder().url(url)
         headers.forEach(builder::header)
-        val body = request.body?.toRequestBody(JSON)
+        val contentType = request.headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
+            ?.value?.toMediaType() ?: JSON
+        val body = request.body?.toRequestBody(contentType)
         builder.method(method, body)
         try {
             client.newCall(builder.build()).execute().use { response ->

@@ -36,6 +36,11 @@ import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Replay
+import androidx.compose.material.icons.outlined.Cancel
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -71,7 +76,7 @@ private enum class ChatListTab { Chat, Meet, Calls }
  * Those affordances are therefore shown honestly rather than made clickable.
  */
 @Composable
-fun ChatScreen(viewModel: ChatViewModel) {
+fun ChatScreen(viewModel: ChatViewModel, onPickDocument: () -> Unit) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     var activeTab by remember { mutableStateOf(ChatListTab.Chat) }
     var searchOpen by remember { mutableStateOf(false) }
@@ -90,7 +95,7 @@ fun ChatScreen(viewModel: ChatViewModel) {
         }
     }
     if (ui.selectedConversation != null) {
-        ChatThread(ui, viewModel)
+        ChatThread(ui, viewModel, onPickDocument)
         return
     }
 
@@ -261,7 +266,7 @@ private fun ConversationRow(conversation: ChatConversation, presence: ChatPresen
 }
 
 @Composable
-private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel) {
+private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument: () -> Unit) {
     val conversation = ui.selectedConversation ?: return
     AinoAtmosphere {
         Column(Modifier.fillMaxSize()) {
@@ -298,13 +303,20 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel) {
                     item { HonestEmpty(Icons.Outlined.ChatBubbleOutline, "No messages yet") }
                 }
                 items(ui.messages, key = { "server-${it.id}" }) { message ->
-                    MessageBubble(message, isMine = message.senderId == ui.currentUserId, receipts = ui.receipts, onReact = { viewModel.react(message, it) })
+                    MessageBubble(
+                        message,
+                        isMine = message.senderId == ui.currentUserId,
+                        receipts = ui.receipts,
+                        onReact = { viewModel.react(message, it) },
+                        onCancel = { viewModel.cancelMedia(message) },
+                        onRetry = { viewModel.retryMedia(message) },
+                    )
                 }
                 items(ui.queuedMessages, key = { "queued-${it.clientMessageId}" }) { queued ->
                     QueuedBubble(queued)
                 }
             }
-            MessageComposer(ui.composer, viewModel::updateComposer, viewModel::sendMessage)
+            MessageComposer(ui.composer, ui.uploading, viewModel::updateComposer, viewModel::sendMessage, onPickDocument)
         }
     }
 }
@@ -315,6 +327,8 @@ private fun MessageBubble(
     isMine: Boolean,
     receipts: List<ReadReceipt>,
     onReact: (String) -> Unit,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (isMine) Alignment.End else Alignment.Start) {
         if (!isMine) Text(message.senderName ?: message.senderUsername.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
@@ -332,6 +346,34 @@ private fun MessageBubble(
                 }
             }
             Text(message.body(), color = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+            if (!message.fileName.isNullOrBlank()) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Icon(
+                        if (message.fileType?.startsWith("image/") == true) Icons.Outlined.Image else Icons.Outlined.Description,
+                        null,
+                        Modifier.size(18.dp),
+                        tint = if (isMine) Color.White else MaterialTheme.colorScheme.primary,
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(message.fileName, color = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        message.fileSize?.let { Text(formatFileSize(it), color = if (isMine) Color.White.copy(alpha = .7f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp) }
+                    }
+                }
+            }
+            if (!message.mediaState.isNullOrBlank() && message.mediaState !in setOf("ready", "completed")) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        listOfNotNull(message.mediaStage ?: message.mediaState, message.mediaProgress?.let { "$it%" }).joinToString(" · "),
+                        Modifier.weight(1f),
+                        color = if (isMine) Color.White.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp,
+                    )
+                    when (message.mediaState) {
+                        "failed", "cancelled" -> Icon(Icons.Outlined.Replay, "Retry", Modifier.size(17.dp).clickable(onClick = onRetry), tint = if (isMine) Color.White else MaterialTheme.colorScheme.primary)
+                        "queued", "processing" -> Icon(Icons.Outlined.Cancel, "Cancel", Modifier.size(17.dp).clickable(onClick = onCancel), tint = if (isMine) Color.White else MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 message.editedAt?.let { Text("edited · ", color = if (isMine) Color.White.copy(alpha = .65f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp) }
                 Text(timeAgo(message.createdAt), color = if (isMine) Color.White.copy(alpha = .65f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
@@ -365,12 +407,19 @@ private fun QueuedBubble(message: QueuedMessage) {
 }
 
 @Composable
-private fun MessageComposer(value: String, onChange: (String) -> Unit, onSend: () -> Unit) {
+private fun MessageComposer(value: String, uploading: Boolean, onChange: (String) -> Unit, onSend: () -> Unit, onPickDocument: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).border(BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline)).padding(horizontal = 10.dp, vertical = 9.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        Box(
+            Modifier.size(42.dp).clip(CircleShape).clickable(enabled = !uploading, onClick = onPickDocument),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (uploading) CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp)
+            else Icon(Icons.Outlined.AttachFile, "Attach file", Modifier.size(21.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         BasicTextField(
             value = value,
             onValueChange = onChange,
@@ -490,4 +539,10 @@ private fun timeAgo(value: String?): String {
         minutes < 1_440 -> "${minutes / 60}h"
         else -> DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()).format(instant.atZone(ZoneId.systemDefault()))
     }
+}
+
+private fun formatFileSize(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+    bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
 }
