@@ -2,6 +2,7 @@ package app.aino.mobile.feature.chat
 
 import app.aino.mobile.core.db.CacheScope
 import app.aino.mobile.core.db.ConversationEntity
+import app.aino.mobile.core.db.MessageEntity
 import java.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -101,6 +102,77 @@ data class ConversationCreated(@SerialName("conversationId") val conversationId:
 @Serializable
 data class ChatOk(val ok: Boolean = true)
 
+@Serializable
+data class ChatReaction(
+    val emoji: String,
+    val userId: Long,
+    val fullName: String = "",
+)
+
+@Serializable
+data class ChatMessage(
+    val id: Long,
+    @SerialName("conversation_id") val conversationId: Long? = null,
+    @SerialName("sender_id") val senderId: Long,
+    val content: String? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("sender_name") val senderName: String? = null,
+    @SerialName("sender_username") val senderUsername: String? = null,
+    @SerialName("reply_to_id") val replyToId: Long? = null,
+    @SerialName("reply_content") val replyContent: String? = null,
+    @SerialName("reply_sender_name") val replySenderName: String? = null,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("deleted_at") val deletedAt: String? = null,
+    @SerialName("edited_at") val editedAt: String? = null,
+    val reactions: List<ChatReaction> = emptyList(),
+    val deliveryState: String = "sent",
+) {
+    fun body(): String = when {
+        deletedAt != null -> "Message deleted"
+        !content.isNullOrBlank() -> content
+        !fileName.isNullOrBlank() -> "Attachment: $fileName"
+        else -> ""
+    }
+
+    fun toEntity(scope: CacheScope, fallbackConversationId: Long): MessageEntity = MessageEntity(
+        tenantId = scope.tenantId,
+        userId = scope.userId,
+        messageId = id,
+        conversationId = conversationId ?: fallbackConversationId,
+        senderId = senderId,
+        body = body(),
+        createdAtEpochMs = parseEpoch(createdAt),
+        deliveryState = deliveryState,
+    )
+}
+
+fun MessageEntity.toCachedMessage(): ChatMessage = ChatMessage(
+    id = messageId,
+    conversationId = conversationId,
+    senderId = senderId,
+    content = body,
+    createdAt = Instant.ofEpochMilli(createdAtEpochMs).toString(),
+    deliveryState = deliveryState,
+)
+
+@Serializable
+data class ReadReceipt(
+    @SerialName("user_id") val userId: Long,
+    @SerialName("last_read_at") val lastReadAt: String,
+    @SerialName("full_name") val fullName: String,
+)
+
+@Serializable
+data class ReactionRequest(val emoji: String)
+
+data class QueuedMessage(
+    val clientMessageId: String,
+    val conversationId: Long,
+    val senderId: Long,
+    val content: String,
+    val createdAtEpochMs: Long,
+)
+
 fun totalUnread(conversations: List<ChatConversation>): Int =
     conversations.sumOf { it.unreadCount.coerceAtLeast(0) }
 
@@ -120,3 +192,22 @@ fun shouldRefreshConversationList(eventType: String): Boolean = eventType in set
     "chat_conv_archived",
     "chat_conv_muted",
 )
+
+fun reconcileQueuedMessages(
+    queued: List<QueuedMessage>,
+    messages: List<ChatMessage>,
+    currentUserId: Long?,
+): List<QueuedMessage> {
+    if (currentUserId == null || queued.isEmpty()) return queued
+    val authoritative = messages.filter { it.senderId == currentUserId }
+        .map { runCatching { Instant.parse(it.createdAt).toEpochMilli() }.getOrDefault(0L) }
+        .sorted()
+        .toMutableList()
+    return queued.sortedBy { it.createdAtEpochMs }.filter { pending ->
+        val match = authoritative.indexOfFirst { it >= pending.createdAtEpochMs }
+        if (match >= 0) {
+            authoritative.removeAt(match)
+            false
+        } else true
+    }
+}

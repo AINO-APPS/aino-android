@@ -14,6 +14,11 @@ class ScopedCache(private val scope: CacheScope, private val dao: AinoDao) {
         return dao.observeMessages(scope.tenantId, scope.userId, conversationId)
     }
 
+    suspend fun messageSnapshot(conversationId: Long): List<MessageEntity> {
+        require(conversationId > 0)
+        return dao.getMessages(scope.tenantId, scope.userId, conversationId)
+    }
+
     suspend fun upsertConversations(values: List<ConversationEntity>) {
         require(values.all(::belongsToScope))
         dao.upsertConversations(values)
@@ -27,6 +32,12 @@ class ScopedCache(private val scope: CacheScope, private val dao: AinoDao) {
     suspend fun upsertMessages(values: List<MessageEntity>) {
         require(values.all(::belongsToScope))
         dao.upsertMessages(values)
+    }
+
+    suspend fun replaceMessages(conversationId: Long, values: List<MessageEntity>) {
+        require(conversationId > 0)
+        require(values.all { belongsToScope(it) && it.conversationId == conversationId })
+        dao.replaceMessages(scope.tenantId, scope.userId, conversationId, values)
     }
 
     suspend fun enqueue(value: OutboxEntity) {

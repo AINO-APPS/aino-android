@@ -65,4 +65,42 @@ class ChatModelsTest {
         assertFalse(shouldRefreshConversationList("chat_read_receipt"))
         assertFalse(shouldRefreshConversationList("task_updated"))
     }
+
+    @Test
+    fun mapsThreadMessageIntoTheExactCacheScope() {
+        val message = ChatMessage(
+            id = 77,
+            senderId = 9,
+            content = "Hello",
+            createdAt = "2026-09-15T04:00:00Z",
+            senderName = "Asha K",
+        )
+        val entity = message.toEntity(CacheScope(3, 4), fallbackConversationId = 12)
+        assertEquals(3, entity.tenantId)
+        assertEquals(4, entity.userId)
+        assertEquals(12, entity.conversationId)
+        assertEquals(9, entity.senderId)
+        assertEquals("Hello", entity.body)
+        assertEquals("sent", entity.deliveryState)
+        assertTrue(entity.createdAtEpochMs > 0)
+    }
+
+    @Test
+    fun threadBodyHonoursDeletedAndAttachmentPrecedence() {
+        assertEquals("Message deleted", ChatMessage(1, senderId = 2, content = "hidden", createdAt = "2026-09-15T00:00:00Z", deletedAt = "2026-09-15T01:00:00Z").body())
+        assertEquals("Attachment: report.pdf", ChatMessage(2, senderId = 2, createdAt = "2026-09-15T00:00:00Z", fileName = "report.pdf").body())
+    }
+
+    @Test
+    fun reconcilesQueuedMessagesOneToOneByOwnEchoTime() {
+        val queued = listOf(
+            QueuedMessage("one", 12, 4, "one", 1_000),
+            QueuedMessage("two", 12, 4, "two", 2_000),
+        )
+        val messages = listOf(
+            ChatMessage(9, senderId = 4, content = "one", createdAt = java.time.Instant.ofEpochMilli(1_500).toString()),
+        )
+        assertEquals(listOf("two"), reconcileQueuedMessages(queued, messages, 4).map { it.clientMessageId })
+        assertEquals(queued, reconcileQueuedMessages(queued, messages, 99))
+    }
 }

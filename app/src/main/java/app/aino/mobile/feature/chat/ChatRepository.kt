@@ -42,6 +42,17 @@ class ChatRepository(
     fun markRead(conversationId: Long): ChatOk =
         mutate("chat/conversations/$conversationId/read", Unit)
 
+    fun loadMessages(conversationId: Long, before: Long? = null): List<ChatMessage> {
+        val suffix = before?.let { "?limit=50&before=$it" } ?: "?limit=50"
+        return decode(api.execute(ApiRequest(path = "chat/conversations/$conversationId/messages$suffix")))
+    }
+
+    fun loadReadReceipts(conversationId: Long): List<ReadReceipt> =
+        decode(api.execute(ApiRequest(path = "chat/conversations/$conversationId/read-status")))
+
+    fun toggleReaction(messageId: Long, emoji: String): ChatOk =
+        mutate("chat/messages/$messageId/reactions", ReactionRequest(emoji))
+
     private inline fun <reified T, reified R> mutate(path: String, body: T): R {
         try {
             val bytes = if (body is Unit) null else json.encodeToString(body).toByteArray()
@@ -64,6 +75,12 @@ class ChatCache(private val scope: CacheScope, private val cache: ScopedCache) {
 
     suspend fun snapshot(): List<ChatConversation> =
         cache.conversationSnapshot().map { it.toCachedConversation() }
+
+    suspend fun replaceMessages(conversationId: Long, messages: List<ChatMessage>) =
+        cache.replaceMessages(conversationId, messages.map { it.toEntity(scope, conversationId) })
+
+    suspend fun messageSnapshot(conversationId: Long): List<ChatMessage> =
+        cache.messageSnapshot(conversationId).map { it.toCachedMessage() }
 }
 
 class ChatFailure(message: String, val statusCode: Int, cause: Throwable) : Exception(message, cause)

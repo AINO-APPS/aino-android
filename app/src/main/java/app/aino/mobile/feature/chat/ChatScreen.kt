@@ -34,6 +34,8 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material.icons.outlined.Videocam
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -86,6 +88,10 @@ fun ChatScreen(viewModel: ChatViewModel) {
                 conversation.lastMessage.orEmpty(), conversation.groupName.orEmpty(),
             ).joinToString(" ").contains(query, ignoreCase = true))
         }
+    }
+    if (ui.selectedConversation != null) {
+        ChatThread(ui, viewModel)
+        return
     }
 
     AinoAtmosphere {
@@ -233,7 +239,8 @@ private fun Segment(label: String, icon: ImageVector, active: Boolean, badge: In
 @Composable
 private fun ConversationRow(conversation: ChatConversation, presence: ChatPresence?, viewModel: ChatViewModel) {
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).padding(horizontal = 10.dp, vertical = 9.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { viewModel.openConversation(conversation) }
+            .padding(horizontal = 10.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ConversationAvatar(conversation, presence)
@@ -250,6 +257,134 @@ private fun ConversationRow(conversation: ChatConversation, presence: ChatPresen
                 if (conversation.unreadCount > 0) { Spacer(Modifier.width(8.dp)); Box(Modifier.clickable { viewModel.markRead(conversation) }) { UnreadBadge(conversation.unreadCount) } }
             }
         }
+    }
+}
+
+@Composable
+private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel) {
+    val conversation = ui.selectedConversation ?: return
+    AinoAtmosphere {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().height(58.dp).background(MaterialTheme.colorScheme.surface)
+                    .border(BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline)).padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(38.dp).clip(CircleShape).clickable(onClick = viewModel::closeConversation), contentAlignment = Alignment.Center) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onSurface)
+                }
+                ConversationAvatar(conversation, ui.presence[conversation.otherUserId])
+                Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                    Text(conversation.title(), fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(
+                        if (conversation.isGroup) "${conversation.memberCount ?: 0} members" else presenceLabel(ui.presence[conversation.otherUserId]),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 12.sp,
+                    )
+                }
+                Box(Modifier.size(38.dp).clip(CircleShape).clickable(onClick = viewModel::refreshThread), contentAlignment = Alignment.Center) {
+                    if (ui.threadLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Outlined.Refresh, "Refresh messages", Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (ui.threadFromCache) AinoAlert("Offline · showing cached messages", AlertTone.Warning, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+            ui.error?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
+            LazyColumn(
+                Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (ui.messages.isEmpty() && ui.queuedMessages.isEmpty() && !ui.threadLoading) {
+                    item { HonestEmpty(Icons.Outlined.ChatBubbleOutline, "No messages yet") }
+                }
+                items(ui.messages, key = { "server-${it.id}" }) { message ->
+                    MessageBubble(message, isMine = message.senderId == ui.currentUserId, receipts = ui.receipts, onReact = { viewModel.react(message, it) })
+                }
+                items(ui.queuedMessages, key = { "queued-${it.clientMessageId}" }) { queued ->
+                    QueuedBubble(queued)
+                }
+            }
+            MessageComposer(ui.composer, viewModel::updateComposer, viewModel::sendMessage)
+        }
+    }
+}
+
+@Composable
+private fun MessageBubble(
+    message: ChatMessage,
+    isMine: Boolean,
+    receipts: List<ReadReceipt>,
+    onReact: (String) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (isMine) Alignment.End else Alignment.Start) {
+        if (!isMine) Text(message.senderName ?: message.senderUsername.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+        Column(
+            Modifier.fillMaxWidth(0.82f).background(
+                if (isMine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                RoundedCornerShape(16.dp),
+            ).padding(horizontal = 13.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            message.replyContent?.let {
+                Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.10f), RoundedCornerShape(8.dp)).padding(8.dp)) {
+                    Text(message.replySenderName.orEmpty(), color = if (isMine) Color.White.copy(alpha = .8f) else MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(it, color = if (isMine) Color.White.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
+                }
+            }
+            Text(message.body(), color = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                message.editedAt?.let { Text("edited · ", color = if (isMine) Color.White.copy(alpha = .65f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp) }
+                Text(timeAgo(message.createdAt), color = if (isMine) Color.White.copy(alpha = .65f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+            }
+        }
+        if (message.reactions.isNotEmpty()) {
+            Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                message.reactions.groupingBy { it.emoji }.eachCount().forEach { (emoji, count) ->
+                    Text("$emoji $count", Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape).clickable { onReact(emoji) }.padding(horizontal = 7.dp, vertical = 3.dp), fontSize = 11.sp)
+                }
+            }
+        } else if (message.deletedAt == null) {
+            Text("♡", Modifier.padding(horizontal = 10.dp).clickable { onReact("👍") }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        }
+        if (isMine && receipts.isNotEmpty()) {
+            Text("Read by ${receipts.joinToString { it.fullName }}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun QueuedBubble(message: QueuedMessage) {
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+        Column(
+            Modifier.fillMaxWidth(0.82f).background(MaterialTheme.colorScheme.primary.copy(alpha = .72f), RoundedCornerShape(16.dp)).padding(horizontal = 13.dp, vertical = 9.dp),
+        ) {
+            Text(message.content, color = Color.White, fontSize = 14.sp)
+            Text("Queued", Modifier.align(Alignment.End), color = Color.White.copy(alpha = .7f), fontSize = 10.sp)
+        }
+    }
+}
+
+@Composable
+private fun MessageComposer(value: String, onChange: (String) -> Unit, onSend: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).border(BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline)).padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.Bottom,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onChange,
+            modifier = Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(20.dp)).padding(horizontal = 14.dp, vertical = 11.dp),
+            textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(onSend = { onSend() }),
+            decorationBox = { inner -> if (value.isBlank()) Text("Message", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp); inner() },
+        )
+        Box(
+            Modifier.size(42.dp).background(if (value.isBlank()) MaterialTheme.colorScheme.onSurface.copy(alpha = .08f) else MaterialTheme.colorScheme.primary, CircleShape)
+                .clickable(enabled = value.isNotBlank(), onClick = onSend),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.AutoMirrored.Outlined.Send, "Send", Modifier.size(19.dp), tint = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else Color.White) }
     }
 }
 

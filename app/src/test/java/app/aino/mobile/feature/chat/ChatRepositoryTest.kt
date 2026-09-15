@@ -102,4 +102,41 @@ class ChatRepositoryTest {
             assertEquals("Not a participant", failure.message)
         }
     }
+
+    @Test
+    fun loadsThreadWithRepliesReactionsAndPagination() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) {
+            """[{"id":77,"sender_id":8,"content":"Reply","created_at":"2026-09-15T04:00:00Z",
+               "sender_name":"Asha K","reply_to_id":70,"reply_content":"Original","reply_sender_name":"Vishnu",
+               "reactions":[{"emoji":"👍","userId":9,"fullName":"Member"}]}]"""
+        }
+
+        val message = repository.loadMessages(12, before = 99).single()
+
+        assertEquals("chat/conversations/12/messages?limit=50&before=99", captured.single().path)
+        assertEquals("Original", message.replyContent)
+        assertEquals("Vishnu", message.replySenderName)
+        assertEquals("👍", message.reactions.single().emoji)
+        assertEquals(9, message.reactions.single().userId)
+    }
+
+    @Test
+    fun loadsReceiptsAndPostsReaction() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) { request ->
+            if (request.method == "GET") {
+                """[{"user_id":8,"last_read_at":"2026-09-15T04:00:00Z","full_name":"Asha K"}]"""
+            } else """{"ok":true}"""
+        }
+
+        val receipt = repository.loadReadReceipts(12).single()
+        repository.toggleReaction(77, "👍")
+
+        assertEquals("Asha K", receipt.fullName)
+        assertEquals("chat/conversations/12/read-status", captured[0].path)
+        assertEquals("POST", captured[1].method)
+        assertEquals("chat/messages/77/reactions", captured[1].path)
+        assertEquals("""{"emoji":"👍"}""", captured[1].body!!.toString(Charsets.UTF_8))
+    }
 }

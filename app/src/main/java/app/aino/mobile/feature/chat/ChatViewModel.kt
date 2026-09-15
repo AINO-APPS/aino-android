@@ -8,6 +8,7 @@ import app.aino.mobile.core.auth.KeystoreTokenStore
 import app.aino.mobile.core.db.AinoDatabase
 import app.aino.mobile.core.db.CacheScope
 import app.aino.mobile.core.db.ScopedCache
+import app.aino.mobile.core.db.OutboxCoordinator
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
 import kotlinx.coroutines.Dispatchers
@@ -15,8 +16,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 data class ChatUiState(
+    val currentUserId: Long? = null,
     val loading: Boolean = false,
     val conversations: List<ChatConversation> = emptyList(),
     val presence: Map<Long, ChatPresence> = emptyMap(),
@@ -24,6 +27,13 @@ data class ChatUiState(
     val userSearch: String = "",
     val userResults: List<ChatUser> = emptyList(),
     val searching: Boolean = false,
+    val selectedConversation: ChatConversation? = null,
+    val messages: List<ChatMessage> = emptyList(),
+    val queuedMessages: List<QueuedMessage> = emptyList(),
+    val receipts: List<ReadReceipt> = emptyList(),
+    val threadLoading: Boolean = false,
+    val threadFromCache: Boolean = false,
+    val composer: String = "",
     val error: String? = null,
     val message: String? = null,
 ) {
@@ -33,6 +43,7 @@ data class ChatUiState(
 class ChatViewModel(
     private val repository: ChatRepository,
     private val cacheFactory: (CacheScope) -> ChatCache,
+    private val enqueueText: suspend (CacheScope, Long, String, Long, String) -> String,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ChatUiState())
     val ui: StateFlow<ChatUiState> = _ui.asStateFlow()
@@ -46,7 +57,7 @@ class ChatViewModel(
         if (next == scope) return
         scope = next
         cache = next?.let(cacheFactory)
-        _ui.value = ChatUiState()
+        _ui.value = ChatUiState(currentUserId = next?.userId)
         if (next != null) refresh()
     }
 
@@ -85,7 +96,10 @@ class ChatViewModel(
     }
 
     fun onRealtimeEvent(type: String) {
-        if (shouldRefreshConversationList(type)) refresh()
+        if (shouldRefreshConversationList(type)) {
+            refresh()
+            if (_ui.value.selectedConversation != null) refreshThread()
+        }
     }
 
     fun updateUserSearch(value: String) {
@@ -142,6 +156,101 @@ class ChatViewModel(
         }
     }
 
+    fun openConversation(conversation: ChatConversation) {
+        _ui.value = _ui.value.copy(
+            selectedConversation = conversation,
+            messages = emptyList(),
+            queuedMessages = emptyList(),
+            receipts = emptyList(),
+            composer = "",
+            error = null,
+        )
+        markRead(conversation)
+        refreshThread()
+    }
+
+    fun closeConversation() {
+        _ui.value = _ui.value.copy(
+            selectedConversation = null,
+            messages = emptyList(),
+            queuedMessages = emptyList(),
+            receipts = emptyList(),
+            composer = "",
+            threadFromCache = false,
+        )
+    }
+
+    fun updateComposer(value: String) {
+        _ui.value = _ui.value.copy(composer = value.take(5_000), error = null)
+    }
+
+    fun refreshThread() {
+        val conversation = _ui.value.selectedConversation ?: return
+        val scopedCache = cache ?: return
+        _ui.value = _ui.value.copy(threadLoading = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.loadMessages(conversation.id) }.fold(
+                onSuccess = { messages ->
+                    scopedCache.replaceMessages(conversation.id, messages)
+                    val receipts = runCatching { repository.loadReadReceipts(conversation.id) }.getOrDefault(emptyList())
+                    _ui.value = _ui.value.copy(
+                        threadLoading = false,
+                        messages = messages,
+                        // REST rows omit clientMsgId. Reconcile one-to-one by
+                        // own-message chronology rather than deleting every
+                        // queued bubble when a single echo appears.
+                        queuedMessages = reconcileQueuedMessages(_ui.value.queuedMessages, messages, scope?.userId),
+                        receipts = receipts,
+                        threadFromCache = false,
+                    )
+                },
+                onFailure = { error ->
+                    val cached = runCatching { scopedCache.messageSnapshot(conversation.id) }.getOrDefault(emptyList())
+                    _ui.value = _ui.value.copy(
+                        threadLoading = false,
+                        messages = cached,
+                        receipts = emptyList(),
+                        threadFromCache = cached.isNotEmpty(),
+                        error = if (cached.isEmpty()) error.message ?: "Could not load messages" else null,
+                    )
+                },
+            )
+        }
+    }
+
+    fun sendMessage() {
+        val currentScope = scope ?: return
+        val conversation = _ui.value.selectedConversation ?: return
+        val content = _ui.value.composer.trim()
+        if (content.isEmpty()) {
+            _ui.value = _ui.value.copy(error = "Message content is required")
+            return
+        }
+        val clientId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val queued = QueuedMessage(clientId, conversation.id, currentScope.userId, content, now)
+        _ui.value = _ui.value.copy(composer = "", queuedMessages = _ui.value.queuedMessages + queued, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { enqueueText(currentScope, conversation.id, content, now, clientId) }.onFailure {
+                _ui.value = _ui.value.copy(
+                    queuedMessages = _ui.value.queuedMessages.filterNot { it.clientMessageId == clientId },
+                    composer = content,
+                    error = it.message ?: "Could not queue message",
+                )
+            }
+        }
+    }
+
+    fun react(message: ChatMessage, emoji: String) {
+        if (message.deletedAt != null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.toggleReaction(message.id, emoji) }.fold(
+                onSuccess = { refreshThread() },
+                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update reaction") },
+            )
+        }
+    }
+
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -149,9 +258,13 @@ class ChatViewModel(
                 val tokens = KeystoreTokenStore(context)
                 val api = RefreshingApiClient(OkHttpApiClient(tokenProvider = tokens), tokens)
                 val dao = AinoDatabase.get(context).dao()
+                val outbox = OutboxCoordinator(context.applicationContext)
                 return ChatViewModel(
                     ChatRepository(api),
                     { scope -> ChatCache(scope, ScopedCache(scope, dao)) },
+                    { scope, conversationId, content, now, clientId ->
+                        outbox.enqueueText(scope, conversationId, content, nowEpochMs = now, clientMessageId = clientId)
+                    },
                 ) as T
             }
         }

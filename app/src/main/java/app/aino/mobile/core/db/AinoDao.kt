@@ -21,8 +21,20 @@ interface AinoDao {
     @Query("SELECT * FROM messages WHERE tenantId = :tenantId AND userId = :userId AND conversationId = :conversationId ORDER BY createdAtEpochMs ASC")
     fun observeMessages(tenantId: Long, userId: Long, conversationId: Long): Flow<List<MessageEntity>>
 
+    @Query("SELECT * FROM messages WHERE tenantId = :tenantId AND userId = :userId AND conversationId = :conversationId ORDER BY createdAtEpochMs ASC")
+    suspend fun getMessages(tenantId: Long, userId: Long, conversationId: Long): List<MessageEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertMessages(values: List<MessageEntity>)
+
+    @Query("DELETE FROM messages WHERE tenantId = :tenantId AND userId = :userId AND conversationId = :conversationId")
+    suspend fun clearConversationMessages(tenantId: Long, userId: Long, conversationId: Long)
+
+    @Transaction
+    suspend fun replaceMessages(tenantId: Long, userId: Long, conversationId: Long, values: List<MessageEntity>) {
+        clearConversationMessages(tenantId, userId, conversationId)
+        upsertMessages(values)
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putOutbox(value: OutboxEntity)
