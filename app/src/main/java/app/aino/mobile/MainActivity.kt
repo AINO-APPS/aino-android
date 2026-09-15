@@ -23,9 +23,21 @@ import app.aino.mobile.feature.leaves.LeaveViewModel
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.core.push.PushNotifications
 import app.aino.mobile.core.push.PushTokenRegistrar
+import app.aino.mobile.core.call.PipController
+import app.aino.mobile.core.call.IncomingCallViewModel
+import app.aino.mobile.core.call.parseIncomingCallRoute
+import app.aino.mobile.core.call.PendingCallActionStore
+import app.aino.mobile.core.call.LockScreenController
+import app.aino.mobile.core.call.IncomingCallState
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.launch
 import app.aino.mobile.feature.chat.ChatViewModel
 
 class MainActivity : FragmentActivity() {
+    private val pipController = PipController()
+    private val lockScreenController = LockScreenController()
     private val authViewModel by viewModels<AuthViewModel> { AuthViewModel.factory(applicationContext) }
     private val updateViewModel by viewModels<UpdateViewModel> { UpdateViewModel.Factory }
     private val realtimeViewModel by viewModels<RealtimeViewModel> { RealtimeViewModel.factory(applicationContext) }
@@ -35,6 +47,7 @@ class MainActivity : FragmentActivity() {
     private val leaveViewModel by viewModels<LeaveViewModel> { LeaveViewModel.factory(applicationContext) }
     private val profileViewModel by viewModels<ProfileViewModel> { ProfileViewModel.factory(applicationContext) }
     private val chatViewModel by viewModels<ChatViewModel> { ChatViewModel.factory(applicationContext) }
+    private val incomingCallViewModel by viewModels<IncomingCallViewModel> { IncomingCallViewModel.factory(applicationContext) }
     private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) requestPendingAttendanceAction()
         else attendanceViewModel.reportError("Precise location permission is required for verified office attendance.")
@@ -60,6 +73,7 @@ class MainActivity : FragmentActivity() {
                     leaveViewModel,
                     profileViewModel,
                     chatViewModel,
+                    incomingCallViewModel,
                     biometricAvailable = biometricAvailable(),
                     onBiometricLogin = ::requestBiometricLogin,
                     onBiometricEnroll = ::requestBiometricEnrollment,
@@ -87,6 +101,23 @@ class MainActivity : FragmentActivity() {
                 )
             }
         }
+        consumeCallIntent(intent)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                incomingCallViewModel.ui.collect { state ->
+                    val visible = state.route != null && state.state !in setOf(IncomingCallState.Ended)
+                    lockScreenController.setShowingForCall(this@MainActivity, visible)
+                    val activeMedia = state.state == IncomingCallState.WaitingForMedia
+                    pipController.setCallActive(this@MainActivity, activeMedia, if (state.route?.callType == "video") 9 else 1, if (state.route?.callType == "video") 16 else 1)
+                }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        consumeCallIntent(intent)
     }
 
     override fun onUserInteraction() {
@@ -94,9 +125,43 @@ class MainActivity : FragmentActivity() {
         authViewModel.recordUserActivity()
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        pipController.onUserLeaveHint(this)
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        pipController.onPictureInPictureModeChanged(isInPictureInPictureMode)
+    }
+
     override fun onResume() {
         super.onResume()
+        consumePendingCallAction()
         Thread { runCatching { PushTokenRegistrar(applicationContext).syncCurrentToken() } }.start()
+    }
+
+    override fun onDestroy() {
+        lockScreenController.release()
+        super.onDestroy()
+    }
+
+    private fun consumeCallIntent(intent: android.content.Intent?) {
+        parseIncomingCallRoute(intent?.data)?.let(incomingCallViewModel::route)
+    }
+
+    private fun consumePendingCallAction() {
+        val pending = PendingCallActionStore.read(applicationContext) ?: return
+        val current = incomingCallViewModel.ui.value.route ?: return
+        if (pending["callId"] != current.callId.toString() || pending["conversationId"] != current.conversationId.toString()) return
+        when (pending["action"]) {
+            "answer" -> incomingCallViewModel.answer()
+            "decline" -> incomingCallViewModel.decline()
+        }
+        PendingCallActionStore.clear(applicationContext)
     }
 
     private fun biometricAvailable(): Boolean = BiometricManager.from(this).canAuthenticate(

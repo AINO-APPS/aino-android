@@ -82,6 +82,8 @@ import app.aino.mobile.core.db.CacheScope
 import app.aino.mobile.core.db.OutboxWorker
 import app.aino.mobile.core.db.shouldWakeOutboxOnReconnect
 import app.aino.mobile.core.push.PushTokenRegistrar
+import app.aino.mobile.core.call.IncomingCallViewModel
+import app.aino.mobile.core.call.IncomingCallScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -96,6 +98,7 @@ fun AinoApp(
     leaves: LeaveViewModel,
     profile: ProfileViewModel,
     chat: ChatViewModel,
+    incomingCall: IncomingCallViewModel,
     biometricAvailable: Boolean,
     onBiometricLogin: () -> Unit,
     onBiometricEnroll: () -> Unit,
@@ -105,6 +108,7 @@ fun AinoApp(
     onAuthenticatedForPush: () -> Unit,
 ) {
     val ui by auth.ui.collectAsStateWithLifecycle()
+    val incomingCallUi by incomingCall.ui.collectAsStateWithLifecycle()
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
     val tenantAuthenticated = (ui.state as? AuthState.Authenticated)?.user?.tenantId != null
     LaunchedEffect(tenantAuthenticated) { realtime.setAuthenticatedTenant(tenantAuthenticated) }
@@ -138,6 +142,10 @@ fun AinoApp(
                 chat.onRealtimeEvent(event.type)
             }
         }
+    }
+    if (incomingCallUi.route != null) {
+        IncomingCallScreen(incomingCall) { incomingCall.clear() }
+        return
     }
     when (val state = ui.state) {
         AuthState.Initializing -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
