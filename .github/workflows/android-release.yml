@@ -108,7 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${ANDROID_GOOGLE_SERVICES_JSON}" ]; then
-            echo "::notice::ANDROID_GOOGLE_SERVICES_JSON is empty; skipping (FCM not yet wired up)"
+            echo "::notice::ANDROID_GOOGLE_SERVICES_JSON is empty; building without Firebase configuration"
             exit 0
           fi
           printf '%s' "$ANDROID_GOOGLE_SERVICES_JSON" > app/google-services.json

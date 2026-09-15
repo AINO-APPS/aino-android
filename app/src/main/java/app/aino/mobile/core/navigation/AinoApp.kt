@@ -81,6 +81,9 @@ import app.aino.mobile.core.designsystem.AlertTone
 import app.aino.mobile.core.db.CacheScope
 import app.aino.mobile.core.db.OutboxWorker
 import app.aino.mobile.core.db.shouldWakeOutboxOnReconnect
+import app.aino.mobile.core.push.PushTokenRegistrar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AinoApp(
@@ -99,16 +102,23 @@ fun AinoApp(
     onAttendanceLocationPermission: () -> Unit,
     onAttendanceBiometric: () -> Unit,
     onPickChatDocument: () -> Unit,
+    onAuthenticatedForPush: () -> Unit,
 ) {
     val ui by auth.ui.collectAsStateWithLifecycle()
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
     val tenantAuthenticated = (ui.state as? AuthState.Authenticated)?.user?.tenantId != null
     LaunchedEffect(tenantAuthenticated) { realtime.setAuthenticatedTenant(tenantAuthenticated) }
     val authenticatedUser = (ui.state as? AuthState.Authenticated)?.user
+    val appContext = LocalContext.current.applicationContext
     LaunchedEffect(authenticatedUser?.tenantId, authenticatedUser?.id) {
         chat.setScope(authenticatedUser?.tenantId, authenticatedUser?.id)
+        if (authenticatedUser?.tenantId != null) {
+            onAuthenticatedForPush()
+            withContext(Dispatchers.IO) {
+                PushTokenRegistrar(appContext).syncCurrentToken()
+            }
+        }
     }
-    val appContext = LocalContext.current.applicationContext
     LaunchedEffect(realtimeState, authenticatedUser?.tenantId, authenticatedUser?.id) {
         val tenantId = authenticatedUser?.tenantId
         val userId = authenticatedUser?.id

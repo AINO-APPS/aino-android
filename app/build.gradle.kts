@@ -6,6 +6,13 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// CI writes this secret file before configuration. Local builds deliberately
+// omit it; Firebase APIs fail closed at runtime while the rest of the app still
+// builds and remains testable.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 fun String.asBuildConfigString(): String =
     "\"${replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
@@ -147,6 +154,8 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
     ksp(libs.androidx.room.compiler)
 
     debugImplementation(libs.androidx.compose.ui.tooling)

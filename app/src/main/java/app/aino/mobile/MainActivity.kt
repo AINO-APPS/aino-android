@@ -21,6 +21,8 @@ import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.tasks.TaskViewModel
 import app.aino.mobile.feature.leaves.LeaveViewModel
 import app.aino.mobile.feature.profile.ProfileViewModel
+import app.aino.mobile.core.push.PushNotifications
+import app.aino.mobile.core.push.PushTokenRegistrar
 import app.aino.mobile.feature.chat.ChatViewModel
 
 class MainActivity : FragmentActivity() {
@@ -40,10 +42,12 @@ class MainActivity : FragmentActivity() {
     private val chatDocumentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(chatViewModel::upload)
     }
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        PushNotifications.createChannels(applicationContext)
         setContent {
             AinoTheme {
                 AinoApp(
@@ -73,6 +77,13 @@ class MainActivity : FragmentActivity() {
                             ),
                         )
                     },
+                    onAuthenticatedForPush = {
+                        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    },
                 )
             }
         }
@@ -81,6 +92,11 @@ class MainActivity : FragmentActivity() {
     override fun onUserInteraction() {
         super.onUserInteraction()
         authViewModel.recordUserActivity()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Thread { runCatching { PushTokenRegistrar(applicationContext).syncCurrentToken() } }.start()
     }
 
     private fun biometricAvailable(): Boolean = BiometricManager.from(this).canAuthenticate(
