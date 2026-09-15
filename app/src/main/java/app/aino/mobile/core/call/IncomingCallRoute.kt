@@ -14,6 +14,7 @@ data class IncomingCallRoute(
     val callerAvatar: String?,
     val callType: String,
     val action: String? = null,
+    val expiresAt: String? = null,
 )
 
 fun parseIncomingCallRoute(uri: Uri?): IncomingCallRoute? = parseIncomingCallRoute(uri?.toString())
@@ -42,6 +43,7 @@ fun parseIncomingCallRoute(value: String?): IncomingCallRoute? {
         callerAvatar = query["peerAvatar"]?.takeIf(String::isNotBlank),
         callType = callType,
         action = action,
+        expiresAt = query["expiresAt"],
     )
 }
 

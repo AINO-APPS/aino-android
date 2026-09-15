@@ -27,11 +27,12 @@ class NativeCallControllerTest {
 
     @Test
     fun parsesAnswerAndDeclineDeepLinks() {
-        val answer = parseIncomingCallRoute("aino://call/31?callId=301&callType=video&peerId=6&peerName=Priya&autoAnswer=1")!!
+        val answer = parseIncomingCallRoute("aino://call/31?callId=301&callType=video&peerId=6&peerName=Priya&expiresAt=2026-09-15T00%3A00%3A30Z&autoAnswer=1")!!
         assertEquals(301, answer.callId)
         assertEquals(31, answer.conversationId)
         assertEquals("video", answer.callType)
         assertEquals("answer", answer.action)
+        assertEquals("2026-09-15T00:00:30Z", answer.expiresAt)
 
         val decline = parseIncomingCallRoute("aino://call/31?callId=301&action=decline")!!
         assertEquals("decline", decline.action)

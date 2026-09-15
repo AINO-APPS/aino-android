@@ -88,7 +88,7 @@ class CallRingService : Service() {
     private const val CHANNEL_ID = "call_ringer_fgs_v2"
     const val NOTIFICATION_ID = 909090
 
-    // WorkPulse brand green used to theme the CallStyle notification accent.
+    // AINO brand green used to theme the CallStyle notification accent.
     private val BRAND_COLOR = Color.parseColor("#22C55E")
 
     /**

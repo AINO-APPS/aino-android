@@ -35,7 +35,7 @@ fun IncomingCallScreen(viewModel: IncomingCallViewModel, onClose: () -> Unit) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val route = ui.route ?: return
     LaunchedEffect(route.callId) {
-        delay(30_000)
+        delay(remainingRingMillis(route.expiresAt))
         viewModel.expireIfRinging()
     }
     Column(
