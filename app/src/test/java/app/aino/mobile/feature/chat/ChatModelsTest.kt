@@ -103,4 +103,14 @@ class ChatModelsTest {
         assertEquals(listOf("two"), reconcileQueuedMessages(queued, messages, 4).map { it.clientMessageId })
         assertEquals(queued, reconcileQueuedMessages(queued, messages, 99))
     }
+
+    @Test
+    fun callHistoryChoosesPeerOrGroupTitle() {
+        val outgoing = CallLog(1, 12, callerId = 4, status = "answered", createdAt = "2026-09-15T00:00:00Z", otherName = "Asha")
+        val incoming = outgoing.copy(id = 2, callerId = 8, callerName = "Asha")
+        val group = outgoing.copy(id = 3, isGroup = true, groupName = "Mobile Team")
+        assertEquals("Asha", outgoing.title(4))
+        assertEquals("Asha", incoming.title(4))
+        assertEquals("Mobile Team", group.title(4))
+    }
 }

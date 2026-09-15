@@ -170,4 +170,37 @@ class ChatRepositoryTest {
         assertEquals("chat/media-jobs/9/retry", captured[1].path)
         assertTrue(captured.all { it.method == "POST" })
     }
+
+    @Test
+    fun loadsCallHistoryAndMembers() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) { request ->
+            when (request.path) {
+                "chat/calls" -> """[{"id":1,"conversation_id":12,"caller_id":4,"call_type":"voice","status":"answered","created_at":"2026-09-15T04:00:00Z","other_name":"Asha"}]"""
+                "chat/conversations/12/calls" -> """[{"id":2,"conversation_id":12,"caller_id":8,"call_type":"video","status":"missed","created_at":"2026-09-15T05:00:00Z","caller_name":"Asha"}]"""
+                else -> """[{"id":8,"username":"asha","full_name":"Asha K","role":"owner"}]"""
+            }
+        }
+        assertEquals("Asha", repository.loadCalls().single().title(4))
+        assertEquals("missed", repository.loadConversationCalls(12).single().status)
+        assertEquals("owner", repository.loadMembers(12).single().role)
+        assertEquals(listOf("chat/calls", "chat/conversations/12/calls", "chat/conversations/12/members"), captured.map { it.path })
+    }
+
+    @Test
+    fun togglesConversationInfoActions() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) { request -> when {
+            request.path.endsWith("/pin") -> """{"pinned":true}"""
+            request.path.endsWith("/favourite") -> """{"favourite":true}"""
+            request.path.endsWith("/mute") -> """{"muted":true,"mutedUntil":null}"""
+            else -> """{"archived":true}"""
+        } }
+        assertEquals(true, repository.togglePinConversation(12).pinned)
+        assertEquals(true, repository.toggleFavouriteConversation(12).favourite)
+        assertEquals(true, repository.setMute(12, "always").muted)
+        assertEquals(true, repository.toggleArchive(12).archived)
+        assertTrue(captured.all { it.method == "POST" })
+        assertTrue(captured[2].body!!.toString(Charsets.UTF_8).contains("\"duration\":\"always\""))
+    }
 }

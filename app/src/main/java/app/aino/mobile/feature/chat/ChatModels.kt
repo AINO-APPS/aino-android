@@ -176,6 +176,46 @@ data class ReactionRequest(val emoji: String)
 @Serializable
 data class MediaJobResponse(val ok: Boolean = true, val mediaJobId: Long? = null)
 
+@Serializable
+data class ConversationMember(
+    val id: Long,
+    val username: String? = null,
+    @SerialName("full_name") val fullName: String? = null,
+    val avatar: String? = null,
+    val role: String = "member",
+) {
+    fun display(): String = fullName?.takeIf(String::isNotBlank) ?: username.orEmpty()
+}
+
+@Serializable
+data class CallLog(
+    val id: Long,
+    @SerialName("conversation_id") val conversationId: Long,
+    @SerialName("caller_id") val callerId: Long,
+    @SerialName("call_type") val callType: String = "voice",
+    val status: String,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
+    val duration: Int? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("caller_name") val callerName: String? = null,
+    @SerialName("other_name") val otherName: String? = null,
+    @SerialName("is_group") val isGroup: Boolean = false,
+    @SerialName("group_name") val groupName: String? = null,
+) {
+    fun title(currentUserId: Long?): String = when {
+        isGroup -> groupName ?: "Group call"
+        callerId == currentUserId -> otherName ?: "Outgoing call"
+        else -> callerName ?: "Incoming call"
+    }
+}
+
+@Serializable data class TogglePinResponse(val pinned: Boolean)
+@Serializable data class ToggleFavouriteResponse(val favourite: Boolean)
+@Serializable data class ToggleMuteResponse(val muted: Boolean, val mutedUntil: String? = null)
+@Serializable data class ToggleArchiveResponse(val archived: Boolean)
+@Serializable data class MuteRequest(val duration: String? = null)
+
 data class QueuedMessage(
     val clientMessageId: String,
     val conversationId: Long,

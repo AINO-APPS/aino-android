@@ -39,6 +39,11 @@ data class ChatUiState(
     val threadFromCache: Boolean = false,
     val composer: String = "",
     val uploading: Boolean = false,
+    val calls: List<CallLog> = emptyList(),
+    val callsLoading: Boolean = false,
+    val showInfo: Boolean = false,
+    val members: List<ConversationMember> = emptyList(),
+    val conversationCalls: List<CallLog> = emptyList(),
     val error: String? = null,
     val message: String? = null,
 ) {
@@ -324,6 +329,79 @@ class ChatViewModel(
                 onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not retry media") },
             )
         }
+    }
+
+    fun loadCalls() {
+        if (_ui.value.callsLoading) return
+        _ui.value = _ui.value.copy(callsLoading = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching(repository::loadCalls).fold(
+                onSuccess = { _ui.value = _ui.value.copy(callsLoading = false, calls = it) },
+                onFailure = { _ui.value = _ui.value.copy(callsLoading = false, error = it.message ?: "Could not load calls") },
+            )
+        }
+    }
+
+    fun openInfo() {
+        val conversation = _ui.value.selectedConversation ?: return
+        _ui.value = _ui.value.copy(showInfo = true, members = emptyList(), conversationCalls = emptyList(), error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            val members = runCatching { repository.loadMembers(conversation.id) }.getOrDefault(emptyList())
+            val calls = runCatching { repository.loadConversationCalls(conversation.id) }.getOrDefault(emptyList())
+            _ui.value = _ui.value.copy(members = members, conversationCalls = calls)
+        }
+    }
+
+    fun closeInfo() { _ui.value = _ui.value.copy(showInfo = false) }
+
+    fun togglePin() {
+        val current = _ui.value.selectedConversation ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.togglePinConversation(current.id) }.fold(
+                onSuccess = { updateSelected(current.copy(isPinned = it.pinned)); refresh() },
+                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update pin") },
+            )
+        }
+    }
+
+    fun toggleFavourite() {
+        val current = _ui.value.selectedConversation ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.toggleFavouriteConversation(current.id) }.fold(
+                onSuccess = { updateSelected(current.copy(isFavourite = it.favourite)); refresh() },
+                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update favourite") },
+            )
+        }
+    }
+    fun toggleMute() {
+        val current = _ui.value.selectedConversation ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.setMute(current.id, if (current.isMuted) null else "always") }.fold(
+                onSuccess = { result -> updateSelected(current.copy(isMuted = result.muted)) },
+                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update mute") },
+            )
+        }
+    }
+
+    fun toggleArchive() {
+        val current = _ui.value.selectedConversation ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.toggleArchive(current.id) }.fold(
+                onSuccess = { result ->
+                    updateSelected(current.copy(isArchived = result.archived))
+                    closeConversation()
+                    refresh()
+                },
+                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not archive conversation") },
+            )
+        }
+    }
+
+    private fun updateSelected(conversation: ChatConversation) {
+        _ui.value = _ui.value.copy(
+            selectedConversation = conversation,
+            conversations = _ui.value.conversations.map { if (it.id == conversation.id) conversation else it },
+        )
     }
 
     companion object {

@@ -82,6 +82,26 @@ class ChatRepository(
     fun retryMediaJob(mediaJobId: Long): MediaJobResponse =
         mutate("chat/media-jobs/$mediaJobId/retry", Unit)
 
+    fun loadCalls(): List<CallLog> = decode(api.execute(ApiRequest(path = "chat/calls")))
+
+    fun loadConversationCalls(conversationId: Long): List<CallLog> =
+        decode(api.execute(ApiRequest(path = "chat/conversations/$conversationId/calls")))
+
+    fun loadMembers(conversationId: Long): List<ConversationMember> =
+        decode(api.execute(ApiRequest(path = "chat/conversations/$conversationId/members")))
+
+    fun togglePinConversation(conversationId: Long): TogglePinResponse =
+        mutate("chat/conversations/$conversationId/pin", Unit)
+
+    fun toggleFavouriteConversation(conversationId: Long): ToggleFavouriteResponse =
+        mutate("chat/conversations/$conversationId/favourite", Unit)
+
+    fun setMute(conversationId: Long, duration: String?): ToggleMuteResponse =
+        mutate("chat/conversations/$conversationId/mute", MuteRequest(duration))
+
+    fun toggleArchive(conversationId: Long): ToggleArchiveResponse =
+        mutate("chat/conversations/$conversationId/archive", Unit)
+
     private inline fun <reified T, reified R> mutate(path: String, body: T): R {
         try {
             val bytes = if (body is Unit) null else json.encodeToString(body).toByteArray()
