@@ -78,6 +78,9 @@ import app.aino.mobile.core.designsystem.AinoGlassCard
 import app.aino.mobile.core.designsystem.AinoPrimaryButton
 import app.aino.mobile.core.designsystem.AinoSectionHeader
 import app.aino.mobile.core.designsystem.AlertTone
+import app.aino.mobile.core.db.CacheScope
+import app.aino.mobile.core.db.OutboxWorker
+import app.aino.mobile.core.db.shouldWakeOutboxOnReconnect
 
 @Composable
 fun AinoApp(
@@ -104,6 +107,18 @@ fun AinoApp(
     val authenticatedUser = (ui.state as? AuthState.Authenticated)?.user
     LaunchedEffect(authenticatedUser?.tenantId, authenticatedUser?.id) {
         chat.setScope(authenticatedUser?.tenantId, authenticatedUser?.id)
+    }
+    val appContext = LocalContext.current.applicationContext
+    LaunchedEffect(realtimeState, authenticatedUser?.tenantId, authenticatedUser?.id) {
+        val tenantId = authenticatedUser?.tenantId
+        val userId = authenticatedUser?.id
+        val reconnectScope = if (tenantId != null && userId != null) CacheScope(tenantId, userId) else null
+        if (shouldWakeOutboxOnReconnect(realtimeState == RealtimeState.Connected, reconnectScope)) {
+            // A reconnect is the earliest reliable signal that network access
+            // returned. Wake the exact scoped durable outbox immediately rather
+            // than waiting for WorkManager's next backoff window.
+            OutboxWorker.enqueue(appContext, reconnectScope!!)
+        }
     }
     LaunchedEffect(tenantAuthenticated) {
         if (tenantAuthenticated) {

@@ -41,4 +41,12 @@ class PersistencePolicyTest {
         assertEquals(listOf(4L, 9L), listOf(message.tenantId, message.userId))
         assertEquals(listOf(4L, 9L), listOf(outbox.tenantId, outbox.userId))
     }
+
+    @Test
+    fun reconnectWakeRequiresConnectedScopedSession() {
+        val scope = CacheScope(4, 9)
+        assertEquals(true, shouldWakeOutboxOnReconnect(true, scope))
+        assertEquals(false, shouldWakeOutboxOnReconnect(false, scope))
+        assertEquals(false, shouldWakeOutboxOnReconnect(true, null))
+    }
 }

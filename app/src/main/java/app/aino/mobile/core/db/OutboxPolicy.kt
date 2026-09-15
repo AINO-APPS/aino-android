@@ -21,3 +21,7 @@ fun outboxBackoffMs(attempts: Int): Long {
 }
 
 const val MAX_ATTEMPTS = 6
+
+/** Reconnect only wakes scopes that can have durable tenant chat state. */
+fun shouldWakeOutboxOnReconnect(connected: Boolean, scope: CacheScope?): Boolean =
+    connected && scope != null

@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import java.util.UUID
 
 data class ChatUiState(
@@ -52,6 +54,7 @@ class ChatViewModel(
     val ui: StateFlow<ChatUiState> = _ui.asStateFlow()
     private var scope: CacheScope? = null
     private var cache: ChatCache? = null
+    private var realtimeRefresh: Job? = null
 
     fun setScope(tenantId: Long?, userId: Long?) {
         val next = if (tenantId != null && tenantId > 0 && userId != null && userId > 0) {
@@ -99,7 +102,13 @@ class ChatViewModel(
     }
 
     fun onRealtimeEvent(type: String) {
-        if (shouldRefreshConversationList(type)) {
+        if (!shouldRefreshConversationList(type)) return
+        // Reconnect replay and multi-device fan-out can deliver a burst of
+        // equivalent invalidations. One authoritative refresh after a short
+        // coalescing window is enough and avoids overlapping REST/cache writes.
+        realtimeRefresh?.cancel()
+        realtimeRefresh = viewModelScope.launch {
+            delay(150)
             refresh()
             if (_ui.value.selectedConversation != null) refreshThread()
         }
