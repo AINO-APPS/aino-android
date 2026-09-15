@@ -53,13 +53,25 @@ class PeerConnectionSession(
     }
 
     fun createOffer(onFailure: (String) -> Unit = {}) {
+        createOffer(iceRestart = false, onFailure = onFailure)
+    }
+
+    fun restartIce(onFailure: (String) -> Unit = {}) {
+        peer.restartIce()
+        createOffer(iceRestart = true, onFailure = onFailure)
+    }
+
+    private fun createOffer(iceRestart: Boolean, onFailure: (String) -> Unit) {
         makingOffer = true
+        val constraints = MediaConstraints().apply {
+            if (iceRestart) mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
+        }
         peer.createOffer(object : SimpleSdpObserver(onFailure) {
             override fun onCreateSuccess(description: SessionDescription) {
                 peer.setLocalDescription(object : SimpleSdpObserver(onFailure) {
                     override fun onSetSuccess() {
                         makingOffer = false
-                        sendSignal(CallSignal("offer", description.description))
+                        sendSignal(CallSignal("offer", preferOpusFec(description.description)))
                     }
                 }, description)
             }
@@ -68,7 +80,7 @@ class PeerConnectionSession(
                 makingOffer = false
                 super.onCreateFailure(error)
             }
-        }, MediaConstraints())
+        }, constraints)
     }
 
     fun handle(signal: CallSignal, onFailure: (String) -> Unit = {}) {
@@ -101,8 +113,8 @@ class PeerConnectionSession(
                 peer.createAnswer(object : SimpleSdpObserver(onFailure) {
                     override fun onCreateSuccess(description: SessionDescription) {
                         peer.setLocalDescription(object : SimpleSdpObserver(onFailure) {
-                            override fun onSetSuccess() = sendSignal(CallSignal("answer", description.description))
-                        }, description)
+                            override fun onSetSuccess() = sendSignal(CallSignal("answer", preferOpusFec(description.description)))
+                        }, SessionDescription(description.type, preferOpusFec(description.description)))
                     }
                 }, MediaConstraints())
             }
