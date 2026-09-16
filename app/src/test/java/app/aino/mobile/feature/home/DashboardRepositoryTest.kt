@@ -1,5 +1,9 @@
 package app.aino.mobile.feature.home
 
+import app.aino.mobile.core.common.TimeEntryDto
+import app.aino.mobile.core.common.TrackerStatus
+import app.aino.mobile.core.common.formatDuration
+
 import app.aino.mobile.core.network.ApiClient
 import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.ApiRequest
@@ -49,7 +53,7 @@ class DashboardRepositoryTest {
 class DashboardModelsTest {
     @Test
     fun calculatesLiveFloorAndBreakDurations() {
-        val status = DashboardStatus(
+        val status = TrackerStatus(
             state = "on_floor",
             floorMinutes = 105,
             breakMinutes = 15,
@@ -71,7 +75,7 @@ class DashboardModelsTest {
 
     @Test
     fun malformedEntryTimestampIsIgnored() {
-        val status = DashboardStatus(state = "logged_out", entries = listOf(TimeEntryDto("clock_in", "invalid")))
+        val status = TrackerStatus(state = "logged_out", entries = listOf(TimeEntryDto("clock_in", "invalid")))
         assertEquals(0L to 0L, liveDurations(status, 0, 0))
     }
 }

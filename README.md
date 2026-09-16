@@ -53,6 +53,13 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
+CI also runs repository independence, feature dependency-direction, and source
+provenance guards. Feature modules may depend on `core`, but never directly on a
+sibling feature. See [`docs/SOURCE_PROVENANCE.md`](docs/SOURCE_PROVENANCE.md)
+before consulting or importing material from another application. In particular,
+Signal Android is an AGPL-3.0-only behavioral reference, not a source migration
+dependency.
+
 API and WebSocket endpoints are compiled into `BuildConfig`. The defaults target the live platform, so a plain debug build is already functional:
 
 | Field | Default |
@@ -120,6 +127,12 @@ the app is later distributed through Google Play.
 
 `0.1.1` is the first build containing this updater; install it manually from R2
 or GitHub once. Every later native release can then be discovered in-app.
+
+`0.2.1` is a call-lifecycle reliability checkpoint. It adds process-scoped call
+identity/state ownership, typed deployed realtime-event routing, duplicate signal
+quarantine, and exactly-once non-media cleanup. It deliberately does **not** enable
+microphone, camera, WebRTC media, or PiP: accepted calls remain at the explicit
+waiting-for-media guard until A-082 physical interoperability is complete.
 
 ### Corporate TLS interception
 

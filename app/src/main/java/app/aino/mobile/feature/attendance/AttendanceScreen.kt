@@ -60,7 +60,7 @@ import app.aino.mobile.core.designsystem.AinoGlassCard
 import app.aino.mobile.core.designsystem.AinoPrimaryButton
 import app.aino.mobile.core.designsystem.AinoSectionHeader
 import app.aino.mobile.core.designsystem.AlertTone
-import app.aino.mobile.feature.home.formatDuration
+import app.aino.mobile.core.common.formatDuration
 import app.aino.mobile.core.designsystem.theme.AinoDanger
 import app.aino.mobile.core.designsystem.theme.AinoSuccess
 import app.aino.mobile.core.designsystem.theme.AinoWarning

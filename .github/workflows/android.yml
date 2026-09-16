@@ -21,7 +21,10 @@ jobs:
         with:
           node-version: 22
       - name: Check repository independence
-        run: node scripts/check-independence.mjs
+        run: |
+          node scripts/check-independence.mjs
+          node scripts/check-module-boundaries.mjs
+          node scripts/check-source-provenance.mjs
 
   build:
     runs-on: ubuntu-latest

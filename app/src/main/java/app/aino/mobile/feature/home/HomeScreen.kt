@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.auth.AinoUser
+import app.aino.mobile.core.common.TrackerStatus
+import app.aino.mobile.core.common.formatDuration
 import app.aino.mobile.core.designsystem.AinoAlert
 import app.aino.mobile.core.designsystem.AinoAtmosphere
 import app.aino.mobile.core.designsystem.AinoGlassCard
@@ -51,9 +53,6 @@ import app.aino.mobile.core.designsystem.AlertTone
 import app.aino.mobile.core.designsystem.theme.AinoDanger
 import app.aino.mobile.core.designsystem.theme.AinoSuccess
 import app.aino.mobile.core.designsystem.theme.AinoWarning
-import app.aino.mobile.feature.attendance.AttendanceAction
-import app.aino.mobile.feature.attendance.AttendanceViewModel
-import app.aino.mobile.feature.attendance.WorkMode
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -62,22 +61,33 @@ import java.time.format.DateTimeFormatter
 fun HomeScreen(
     user: AinoUser,
     viewModel: DashboardViewModel,
-    attendance: AttendanceViewModel,
-    onLocationPermission: () -> Unit,
-    onBiometricRequired: () -> Unit,
+    attendanceStatus: TrackerStatus?,
+    attendanceLoading: Boolean,
+    attendanceWorkMode: String,
+    onAttendanceWorkMode: (String) -> Unit,
+    onAttendanceAction: (String) -> Unit,
+    onAttendanceBreak: (Boolean) -> Unit,
     onCalendar: () -> Unit,
     onTasks: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
-    val attendanceUi by attendance.ui.collectAsStateWithLifecycle()
     AinoAtmosphere {
         Column(
             modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             GreetingCard(user, ui.snapshot?.announcements.orEmpty())
-            WorkTimerCard(attendanceUi, ui.floorSeconds, ui.breakSeconds, attendance, onLocationPermission, onBiometricRequired)
+            WorkTimerCard(
+                attendanceStatus,
+                attendanceLoading,
+                attendanceWorkMode,
+                ui.floorSeconds,
+                ui.breakSeconds,
+                onAttendanceWorkMode,
+                onAttendanceAction,
+                onAttendanceBreak,
+            )
             if (ui.loading && ui.snapshot == null) {
                 CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally), color = MaterialTheme.colorScheme.primary)
             } else {
@@ -136,14 +146,15 @@ private fun GreetingCard(user: AinoUser, announcements: List<DashboardAnnounceme
 
 @Composable
 private fun WorkTimerCard(
-    ui: app.aino.mobile.feature.attendance.AttendanceUiState,
+    status: TrackerStatus?,
+    loading: Boolean,
+    workMode: String,
     floorSeconds: Long,
     breakSeconds: Long,
-    viewModel: AttendanceViewModel,
-    onLocationPermission: () -> Unit,
-    onBiometricRequired: () -> Unit,
+    onWorkMode: (String) -> Unit,
+    onAction: (String) -> Unit,
+    onBreak: (Boolean) -> Unit,
 ) {
-    val status = ui.status
     val state = status?.state ?: "logged_out"
     val target = (status?.targetMinutes ?: 480).coerceAtLeast(1)
     val progress = ((status?.floorMinutes ?: 0).toFloat() / target).coerceIn(0f, 1f)
@@ -182,18 +193,18 @@ private fun WorkTimerCard(
                     when (state) {
                         "logged_out" -> {
                             Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f), RoundedCornerShape(6.dp)).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                                ModeButton("Office", Icons.Outlined.Apartment, ui.workMode == WorkMode.Office, Modifier.weight(1f)) { viewModel.setWorkMode(WorkMode.Office) }
-                                ModeButton("Remote", Icons.Outlined.Home, ui.workMode == WorkMode.Remote, Modifier.weight(1f)) { viewModel.setWorkMode(WorkMode.Remote) }
+                                ModeButton("Office", Icons.Outlined.Apartment, workMode == "office", Modifier.weight(1f)) { onWorkMode("office") }
+                                ModeButton("Remote", Icons.Outlined.Home, workMode == "remote", Modifier.weight(1f)) { onWorkMode("remote") }
                             }
-                            TimerButton("Login", AinoSuccess, Icons.AutoMirrored.Outlined.Login, !ui.loading) { viewModel.prepare(AttendanceAction.ClockIn, onLocationPermission, onBiometricRequired) }
+                            TimerButton("Login", AinoSuccess, Icons.AutoMirrored.Outlined.Login, !loading) { onAction("clock_in") }
                         }
                         "on_floor" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TimerButton("Break", AinoWarning, Icons.Outlined.Coffee, !ui.loading, Modifier.weight(1f)) { viewModel.breakAction(true) }
-                            TimerButton("Logout", AinoDanger, Icons.AutoMirrored.Outlined.Logout, !ui.loading, Modifier.weight(1f)) { viewModel.prepare(AttendanceAction.ClockOut, onLocationPermission, onBiometricRequired) }
+                            TimerButton("Break", AinoWarning, Icons.Outlined.Coffee, !loading, Modifier.weight(1f)) { onBreak(true) }
+                            TimerButton("Logout", AinoDanger, Icons.AutoMirrored.Outlined.Logout, !loading, Modifier.weight(1f)) { onAction("clock_out") }
                         }
                         else -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TimerButton("Resume", AinoSuccess, Icons.AutoMirrored.Outlined.Login, !ui.loading, Modifier.weight(1f)) { viewModel.breakAction(false) }
-                            TimerButton("Logout", AinoDanger, Icons.AutoMirrored.Outlined.Logout, !ui.loading, Modifier.weight(1f)) { viewModel.prepare(AttendanceAction.ClockOut, onLocationPermission, onBiometricRequired) }
+                            TimerButton("Resume", AinoSuccess, Icons.AutoMirrored.Outlined.Login, !loading, Modifier.weight(1f)) { onBreak(false) }
+                            TimerButton("Logout", AinoDanger, Icons.AutoMirrored.Outlined.Logout, !loading, Modifier.weight(1f)) { onAction("clock_out") }
                         }
                     }
                 }

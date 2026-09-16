@@ -2,6 +2,7 @@ package app.aino.mobile.feature.home
 
 import app.aino.mobile.core.network.ApiClient
 import app.aino.mobile.core.network.ApiRequest
+import app.aino.mobile.core.common.TrackerStatus
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.ZoneId
@@ -12,7 +13,7 @@ class DashboardRepository(
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
     fun load(nowEpochMs: Long = System.currentTimeMillis()): DashboardSnapshot {
-        val status = json.decodeFromString<DashboardStatus>(
+        val status = json.decodeFromString<TrackerStatus>(
             api.execute(ApiRequest(path = "tracker/status")).bodyAsString(),
         )
         val tasks = runCatching {

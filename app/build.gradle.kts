@@ -68,8 +68,8 @@ android {
         // version: X.Y.Z -> X*1_000_000 + Y*1_000 + Z (each part 0..999).
         // `android-release.yml` re-derives this from the tag and fails on a mismatch.
         // Written without digit separators so the release workflow can parse it.
-        versionCode = 2000 // 0.2.0
-        versionName = "0.2.0"
+        versionCode = 2001 // 0.2.1
+        versionName = "0.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())
@@ -123,6 +123,10 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
@@ -163,6 +167,13 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+    testImplementation(libs.mockwebserver)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    testReleaseImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.room.testing)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -170,4 +181,5 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }

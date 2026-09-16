@@ -40,6 +40,7 @@ fun buildCallActionRequest(route: IncomingCallRoute, action: String): ApiRequest
 class IncomingCallViewModel(
     private val api: ApiClient,
     private val context: Context,
+    private val callSession: CallSessionController = CallSessionRuntime.get(context),
 ) : ViewModel() {
     private val _ui = MutableStateFlow(IncomingCallUiState())
     val ui: StateFlow<IncomingCallUiState> = _ui.asStateFlow()
@@ -47,12 +48,13 @@ class IncomingCallViewModel(
     init {
         viewModelScope.launch {
             IncomingCallDismissals.events.collect { callId ->
-                if (_ui.value.route?.callId == callId) clear()
+                if (_ui.value.route?.callId == callId) dismissUi()
             }
         }
     }
 
     fun route(route: IncomingCallRoute) {
+        if (!callSession.incoming(route)) return
         _ui.value = IncomingCallUiState(route, IncomingCallState.Ringing)
         when (route.action) {
             "answer" -> answer()
@@ -60,16 +62,28 @@ class IncomingCallViewModel(
         }
     }
 
-    fun answer() = act("accept", IncomingCallState.Answering, IncomingCallState.WaitingForMedia)
+    fun answer() {
+        callSession.accepting()
+        act("accept", IncomingCallState.Answering, IncomingCallState.WaitingForMedia)
+    }
+
     fun decline() = act("reject", IncomingCallState.Declining, IncomingCallState.Ended)
 
     fun expireIfRinging() {
         if (_ui.value.state != IncomingCallState.Ringing) return
         CallRingService.stop(context)
+        callSession.expire()
         _ui.value = _ui.value.copy(state = IncomingCallState.Ended)
     }
 
     fun clear() {
+        CallRingService.stop(context)
+        if (!callSession.state.value.phase.isTerminal()) callSession.localEnd()
+        callSession.reset()
+        _ui.value = IncomingCallUiState()
+    }
+
+    private fun dismissUi() {
         CallRingService.stop(context)
         _ui.value = IncomingCallUiState()
     }
@@ -83,7 +97,10 @@ class IncomingCallViewModel(
             runCatching {
                 api.execute(buildCallActionRequest(route, path))
             }.fold(
-                onSuccess = { _ui.value = _ui.value.copy(state = success) },
+                onSuccess = {
+                    if (path == "reject") callSession.localReject()
+                    _ui.value = _ui.value.copy(state = success)
+                },
                 onFailure = { _ui.value = _ui.value.copy(state = IncomingCallState.Error, error = it.message ?: "Call action failed") },
             )
         }
@@ -98,6 +115,7 @@ class IncomingCallViewModel(
                 return IncomingCallViewModel(
                     RefreshingApiClient(OkHttpApiClient(tokenProvider = tokens), tokens),
                     context.applicationContext,
+                    CallSessionRuntime.get(context.applicationContext),
                 ) as T
             }
         }

@@ -41,6 +41,9 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".ComposeTestHostActivity"
+            android:exported="false" />
+        <activity
             android:name=".core.call.CallActionActivity"
             android:exported="false"
             android:excludeFromRecents="true"

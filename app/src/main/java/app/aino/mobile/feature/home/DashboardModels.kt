@@ -1,27 +1,8 @@
 package app.aino.mobile.feature.home
 
+import app.aino.mobile.core.common.TrackerStatus
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-
-@Serializable
-data class TimeEntryDto(
-    @SerialName("entry_type") val entryType: String,
-    val timestamp: String,
-    @SerialName("work_mode") val workMode: String? = null,
-)
-
-@Serializable
-data class DashboardStatus(
-    val state: String = "logged_out",
-    val floorMinutes: Int = 0,
-    val breakMinutes: Int = 0,
-    val entries: List<TimeEntryDto> = emptyList(),
-    val isWeekend: Boolean = false,
-    val workMode: String = "office",
-    val targetMinutes: Int = 480,
-    val dailyTargetMet: Boolean = false,
-    val autoLoggedOut: Boolean = false,
-)
 
 @Serializable
 data class ActiveTask(
@@ -62,7 +43,7 @@ data class DashboardAnnouncement(
 data class AnnouncementEnvelope(val data: List<DashboardAnnouncement> = emptyList())
 
 data class DashboardSnapshot(
-    val status: DashboardStatus,
+    val status: TrackerStatus,
     val tasks: TaskSummary?,
     val todayEvents: List<DashboardEvent> = emptyList(),
     val tomorrowEvents: List<DashboardEvent> = emptyList(),
@@ -70,16 +51,11 @@ data class DashboardSnapshot(
     val loadedAtEpochMs: Long,
 )
 
-fun liveDurations(status: DashboardStatus, loadedAtEpochMs: Long, nowEpochMs: Long): Pair<Long, Long> {
+fun liveDurations(status: TrackerStatus, loadedAtEpochMs: Long, nowEpochMs: Long): Pair<Long, Long> {
     var floorSeconds = status.floorMinutes.coerceAtLeast(0) * 60L
     var breakSeconds = status.breakMinutes.coerceAtLeast(0) * 60L
     val elapsed = ((nowEpochMs - loadedAtEpochMs).coerceAtLeast(0)) / 1_000
     if (status.state == "on_floor") floorSeconds += elapsed
     if (status.state == "on_break") breakSeconds += elapsed
     return floorSeconds to breakSeconds
-}
-
-fun formatDuration(seconds: Long): String {
-    val safe = seconds.coerceAtLeast(0)
-    return "%02d:%02d:%02d".format(safe / 3600, (safe % 3600) / 60, safe % 60)
 }

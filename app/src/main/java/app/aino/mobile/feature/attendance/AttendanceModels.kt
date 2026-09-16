@@ -2,6 +2,7 @@ package app.aino.mobile.feature.attendance
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import app.aino.mobile.core.common.TimeEntryDto
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.sin
@@ -27,7 +28,7 @@ data class AttendanceDay(
     val breakMinutes: Int = 0,
     val totalMinutes: Int = 0,
     val workMode: String = "office",
-    val entries: List<app.aino.mobile.feature.home.TimeEntryDto> = emptyList(),
+    val entries: List<TimeEntryDto> = emptyList(),
 )
 
 enum class AttendanceDayKind { Present, Leave, LeavePending, Holiday, Absent, Weekend, InProgress, Future }

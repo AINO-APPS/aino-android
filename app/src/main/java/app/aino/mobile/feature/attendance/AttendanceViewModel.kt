@@ -7,7 +7,7 @@ import androidx.lifecycle.viewModelScope
 import app.aino.mobile.core.auth.KeystoreTokenStore
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
-import app.aino.mobile.feature.home.DashboardStatus
+import app.aino.mobile.core.common.TrackerStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +19,7 @@ import java.time.YearMonth
 
 data class AttendanceUiState(
     val loading: Boolean = false,
-    val status: DashboardStatus? = null,
+    val status: TrackerStatus? = null,
     val policy: AttendancePolicy? = null,
     val workMode: WorkMode = WorkMode.Office,
     val pendingAction: AttendanceAction? = null,
@@ -319,7 +319,7 @@ class AttendanceViewModel(
 
     private data class LoadedAttendance(
         val policy: AttendancePolicy,
-        val status: DashboardStatus,
+        val status: TrackerStatus,
         val history: Map<LocalDate, AttendanceDay>,
         val leaves: Map<LocalDate, LeaveOverlay>,
         val holidays: Map<LocalDate, HolidayOverlay>,

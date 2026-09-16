@@ -107,7 +107,9 @@ class MainActivity : FragmentActivity() {
                 incomingCallViewModel.ui.collect { state ->
                     val visible = state.route != null && state.state !in setOf(IncomingCallState.Ended)
                     lockScreenController.setShowingForCall(this@MainActivity, visible)
-                    val activeMedia = state.state == IncomingCallState.WaitingForMedia
+                    // A-082 media remains disabled. WaitingForMedia is not a
+                    // connected/renderable call and must not activate PiP.
+                    val activeMedia = false
                     pipController.setCallActive(this@MainActivity, activeMedia, if (state.route?.callType == "video") 9 else 1, if (state.route?.callType == "video") 16 else 1)
                 }
             }

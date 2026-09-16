@@ -3,7 +3,7 @@ package app.aino.mobile.feature.attendance
 import app.aino.mobile.core.network.ApiClient
 import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.ApiRequest
-import app.aino.mobile.feature.home.DashboardStatus
+import app.aino.mobile.core.common.TrackerStatus
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -18,7 +18,7 @@ class AttendanceRepository(
         return if (body == "null") AttendancePolicy() else json.decodeFromString(body)
     }
 
-    fun loadStatus(): DashboardStatus = decode(api.execute(ApiRequest(path = "tracker/status")))
+    fun loadStatus(): TrackerStatus = decode(api.execute(ApiRequest(path = "tracker/status")))
 
     fun loadHistory(range: MonthRange): List<AttendanceDay> = decode(
         api.execute(

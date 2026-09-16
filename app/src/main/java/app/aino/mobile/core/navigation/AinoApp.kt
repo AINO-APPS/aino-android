@@ -61,6 +61,8 @@ import app.aino.mobile.feature.home.HomeScreen
 import app.aino.mobile.feature.home.DashboardViewModel
 import app.aino.mobile.feature.attendance.AttendanceScreen
 import app.aino.mobile.feature.attendance.AttendanceViewModel
+import app.aino.mobile.feature.attendance.AttendanceAction
+import app.aino.mobile.feature.attendance.WorkMode
 import app.aino.mobile.feature.tasks.TasksScreen
 import app.aino.mobile.feature.tasks.TaskViewModel
 import app.aino.mobile.feature.leaves.LeavesScreen
@@ -83,6 +85,10 @@ import app.aino.mobile.core.db.OutboxWorker
 import app.aino.mobile.core.db.shouldWakeOutboxOnReconnect
 import app.aino.mobile.core.push.PushTokenRegistrar
 import app.aino.mobile.core.call.IncomingCallViewModel
+import app.aino.mobile.core.call.CallRealtimeEvent
+import app.aino.mobile.core.call.CallRealtimeRouter
+import app.aino.mobile.core.call.CallSessionRuntime
+import app.aino.mobile.core.call.toRoute
 import app.aino.mobile.core.call.IncomingCallScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -114,6 +120,7 @@ fun AinoApp(
     LaunchedEffect(tenantAuthenticated) { realtime.setAuthenticatedTenant(tenantAuthenticated) }
     val authenticatedUser = (ui.state as? AuthState.Authenticated)?.user
     val appContext = LocalContext.current.applicationContext
+    val callSession = CallSessionRuntime.get(appContext)
     LaunchedEffect(authenticatedUser?.tenantId, authenticatedUser?.id) {
         chat.setScope(authenticatedUser?.tenantId, authenticatedUser?.id)
         if (authenticatedUser?.tenantId != null) {
@@ -137,6 +144,11 @@ fun AinoApp(
     LaunchedEffect(tenantAuthenticated) {
         if (tenantAuthenticated) {
             realtime.events.collect { event ->
+                when (val callEvent = CallRealtimeRouter.decode(event)) {
+                    is CallRealtimeEvent.Incoming -> incomingCall.route(callEvent.toRoute())
+                    null -> Unit
+                    else -> callSession.handle(callEvent)
+                }
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
                 if (event.type in TASK_REFRESH_EVENTS) tasks.refresh()
                 chat.onRealtimeEvent(event.type)
@@ -221,6 +233,7 @@ private fun AuthenticatedShell(
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
     val chatUi by chat.ui.collectAsStateWithLifecycle()
+    val attendanceUi by attendance.ui.collectAsStateWithLifecycle()
     val tabs = visibleBottomDestinations(
         user.tenantFeatures,
         ungatedPlatformAdmin = user.role == "platform_admin" && user.tenantId == null,
@@ -255,9 +268,20 @@ private fun AuthenticatedShell(
                 HomeScreen(
                     user,
                     dashboard,
-                    attendance,
-                    onAttendanceLocationPermission,
-                    onAttendanceBiometric,
+                    attendanceUi.status,
+                    attendanceUi.loading,
+                    attendanceUi.workMode.name.lowercase(),
+                    onAttendanceWorkMode = { mode ->
+                        attendance.setWorkMode(WorkMode.entries.first { it.name.equals(mode, ignoreCase = true) })
+                    },
+                    onAttendanceAction = { action ->
+                        attendance.prepare(
+                            if (action == "clock_in") AttendanceAction.ClockIn else AttendanceAction.ClockOut,
+                            onAttendanceLocationPermission,
+                            onAttendanceBiometric,
+                        )
+                    },
+                    onAttendanceBreak = attendance::breakAction,
                     onCalendar = { navigate(AinoDestination.Calendar) },
                     onTasks = { navigate(AinoDestination.Tasks) },
                 )
