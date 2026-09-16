@@ -3,6 +3,9 @@ package app.aino.mobile.feature.chat
 import app.aino.mobile.core.db.CacheScope
 import app.aino.mobile.core.db.ConversationEntity
 import app.aino.mobile.core.db.MessageEntity
+import app.aino.mobile.core.realtime.RealtimeDomain
+import app.aino.mobile.core.realtime.RealtimeEvent
+import app.aino.mobile.core.realtime.RealtimeReaction
 import java.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -233,16 +236,25 @@ fun presenceLabel(value: ChatPresence?): String = when {
     else -> value.userStatus.replace('_', ' ').replaceFirstChar(Char::uppercase)
 }
 
-fun shouldRefreshConversationList(eventType: String): Boolean = eventType in setOf(
-    "chat_message",
-    "chat_group_created",
-    "chat_group_added",
-    "chat_group_removed",
-    "chat_group_updated",
-    "chat_conv_deleted",
-    "chat_conv_archived",
-    "chat_conv_muted",
-)
+/**
+ * Whether a realtime event invalidates the conversation list (A-100).
+ *
+ * Previously a hardcoded 8-item set that both missed 12 real chat events and
+ * listed `chat_group_updated`, which the server never emits. It is now derived
+ * from the registry: an event refreshes the list when its reaction policy says
+ * so, which keeps this in lockstep with the parity guard.
+ *
+ * Ephemeral events (`chat_typing`) deliberately return false — a typing
+ * indicator must never trigger a network reload.
+ */
+fun shouldRefreshConversationList(eventType: String): Boolean {
+    val event = RealtimeEvent.from(eventType) ?: return false
+    if (event.domain != RealtimeDomain.Chat) return false
+    return when (event.reaction) {
+        RealtimeReaction.Refetch, RealtimeReaction.PatchThenReconcile -> true
+        else -> false
+    }
+}
 
 fun reconcileQueuedMessages(
     queued: List<QueuedMessage>,

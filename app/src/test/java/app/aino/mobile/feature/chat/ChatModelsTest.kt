@@ -64,6 +64,24 @@ class ChatModelsTest {
         assertFalse(shouldRefreshConversationList("chat_typing"))
         assertFalse(shouldRefreshConversationList("chat_read_receipt"))
         assertFalse(shouldRefreshConversationList("task_updated"))
+
+        // A-100: these are real server events that the previous hardcoded set
+        // ignored entirely, so the list went stale until a manual refresh.
+        assertTrue(shouldRefreshConversationList("chat_pin"))
+        assertTrue(shouldRefreshConversationList("chat_cleared"))
+        assertTrue(shouldRefreshConversationList("chat_user_blocked"))
+        assertTrue(shouldRefreshConversationList("chat_group_role_changed"))
+
+        // Ephemeral and patch-only events must never cause a network reload.
+        assertFalse(shouldRefreshConversationList("chat_media_job"))
+        assertFalse(shouldRefreshConversationList("chat_poll_vote"))
+
+        // Non-chat domains are not this predicate's concern.
+        assertFalse(shouldRefreshConversationList("leave_update"))
+        assertFalse(shouldRefreshConversationList("meeting_started"))
+
+        // `chat_group_updated` is not a server event; it must not be revived.
+        assertFalse(shouldRefreshConversationList("chat_group_updated"))
     }
 
     @Test
