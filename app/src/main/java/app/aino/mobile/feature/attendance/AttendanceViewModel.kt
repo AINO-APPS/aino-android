@@ -21,6 +21,12 @@ data class AttendanceUiState(
     val loading: Boolean = false,
     val status: TrackerStatus? = null,
     val policy: AttendancePolicy? = null,
+    /**
+     * True when the organization policy could not be loaded and a safe default
+     * is in use. Clocking stays enabled — the server enforces verification
+     * regardless — but the UI says so rather than appearing inert.
+     */
+    val policyDegraded: Boolean = false,
     val workMode: WorkMode = WorkMode.Office,
     val pendingAction: AttendanceAction? = null,
     val locationProof: LocationProof? = null,
@@ -61,35 +67,43 @@ class AttendanceViewModel(
         if (_ui.value.loading) return
         _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val policy = repository.loadPolicy()
-                val status = repository.loadStatus()
-                val history = repository.loadHistory(monthRange(_ui.value.month)).associateBy { LocalDate.parse(it.date) }
-                val range = monthRange(_ui.value.month)
-                val leaves = runCatching { repository.loadLeaves(range) }.getOrDefault(emptyList())
-                    .mapNotNull { leave -> normalizeDate(leave.date)?.let { it to leave } }.toMap()
-                val holidays = runCatching { repository.loadHolidays(_ui.value.month.year) }.getOrDefault(emptyList())
-                    .mapNotNull { holiday -> normalizeDate(holiday.date)?.let { it to holiday } }.toMap()
-                val manual = runCatching(repository::loadManualRequests).getOrDefault(emptyList())
-                val overtime = runCatching(repository::loadOvertimeRequests).getOrDefault(emptyList())
-                LoadedAttendance(policy, status, history, leaves, holidays, manual, overtime)
-            }.fold(
-                onSuccess = { loaded ->
-                    _ui.value = _ui.value.copy(
-                        loading = false,
-                        policy = loaded.policy,
-                        status = loaded.status,
-                        workMode = parseWorkMode(loaded.status.workMode),
-                        history = loaded.history,
-                        leaves = loaded.leaves,
-                        holidays = loaded.holidays,
-                        manualRequests = loaded.manualRequests,
-                        overtimeRequests = loaded.overtimeRequests,
-                    )
-                    loadManualDate(_ui.value.manualDate)
-                },
-                onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Could not load attendance") },
+            // Each source fails independently (A-101). Previously a single
+            // runCatching wrapped policy + status + history, so one bad decode
+            // discarded all of them — that is how a quoted NUMERIC in
+            // `min_hours_present` silently disabled every clock-in button.
+            val range = monthRange(_ui.value.month)
+            val policy = runCatching(repository::loadPolicy)
+            val status = runCatching(repository::loadStatus)
+            val history = runCatching { repository.loadHistory(range) }
+                .getOrDefault(emptyList())
+                .associateBy { LocalDate.parse(it.date) }
+            val leaves = runCatching { repository.loadLeaves(range) }.getOrDefault(emptyList())
+                .mapNotNull { leave -> normalizeDate(leave.date)?.let { it to leave } }.toMap()
+            val holidays = runCatching { repository.loadHolidays(_ui.value.month.year) }.getOrDefault(emptyList())
+                .mapNotNull { holiday -> normalizeDate(holiday.date)?.let { it to holiday } }.toMap()
+            val manual = runCatching(repository::loadManualRequests).getOrDefault(emptyList())
+            val overtime = runCatching(repository::loadOvertimeRequests).getOrDefault(emptyList())
+
+            val resolvedStatus = status.getOrNull() ?: _ui.value.status
+            // A policy failure must not block clocking. The server is the
+            // authority on verification anyway, so fall back to the safe
+            // default and let the server reject if it disagrees.
+            val resolvedPolicy = policy.getOrNull() ?: _ui.value.policy ?: AttendancePolicy()
+
+            _ui.value = _ui.value.copy(
+                loading = false,
+                policy = resolvedPolicy,
+                policyDegraded = policy.isFailure,
+                status = resolvedStatus,
+                workMode = resolvedStatus?.workMode?.let(::parseWorkMode) ?: _ui.value.workMode,
+                history = history,
+                leaves = leaves,
+                holidays = holidays,
+                manualRequests = manual,
+                overtimeRequests = overtime,
+                error = status.exceptionOrNull()?.let { it.message ?: "Could not load attendance status" },
             )
+            loadManualDate(_ui.value.manualDate)
         }
     }
 
@@ -241,7 +255,16 @@ class AttendanceViewModel(
     }
 
     fun prepare(action: AttendanceAction, onPermissionRequired: () -> Unit, onBiometricRequired: () -> Unit) {
-        val policy = _ui.value.policy ?: return
+        // Never return silently. The previous `?: return` made every clock
+        // button a no-op whenever the policy failed to decode, with no error,
+        // no spinner and no log — the exact defect reported from the field.
+        val policy = _ui.value.policy ?: run {
+            _ui.value = _ui.value.copy(
+                error = "Attendance settings are still loading. Retrying now — try again in a moment.",
+            )
+            refresh()
+            return
+        }
         val verificationRequired = requiresAttendanceVerification(
             policy,
             action,
@@ -273,8 +296,19 @@ class AttendanceViewModel(
     }
 
     fun submit(fingerprintVerified: Boolean) {
-        val action = _ui.value.pendingAction ?: return
-        val policy = _ui.value.policy ?: return
+        // Same fail-loud rule as prepare(): a missing action or policy here
+        // means biometric confirmation returned after state was cleared.
+        val action = _ui.value.pendingAction ?: run {
+            _ui.value = _ui.value.copy(
+                error = "That attendance action expired. Tap clock in or out again.",
+            )
+            return
+        }
+        val policy = _ui.value.policy ?: run {
+            _ui.value = _ui.value.copy(error = "Attendance settings are unavailable. Retrying now.")
+            refresh()
+            return
+        }
         val verificationRequired = requiresAttendanceVerification(
             policy,
             action,
@@ -316,16 +350,6 @@ class AttendanceViewModel(
 
 
     private fun normalizeDate(value: String): LocalDate? = runCatching { LocalDate.parse(value.take(10)) }.getOrNull()
-
-    private data class LoadedAttendance(
-        val policy: AttendancePolicy,
-        val status: TrackerStatus,
-        val history: Map<LocalDate, AttendanceDay>,
-        val leaves: Map<LocalDate, LeaveOverlay>,
-        val holidays: Map<LocalDate, HolidayOverlay>,
-        val manualRequests: List<ManualEntryRequest>,
-        val overtimeRequests: List<OvertimeRequest>,
-    )
 
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {

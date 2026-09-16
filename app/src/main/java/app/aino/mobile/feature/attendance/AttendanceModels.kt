@@ -2,23 +2,45 @@ package app.aino.mobile.feature.attendance
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import app.aino.mobile.core.common.LenientDoubleNullableSerializer
+import app.aino.mobile.core.common.LenientDoubleSerializer
 import app.aino.mobile.core.common.TimeEntryDto
 import kotlin.math.asin
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
+/**
+ * Organization attendance policy from `GET /api/org/current`.
+ *
+ * Every numeric field uses a tolerant decoder. `min_hours_present` is
+ * `NUMERIC(4,2)` and node-pg serializes it as a **string** (`"4.00"`); the
+ * latitude/longitude columns are `DOUBLE PRECISION` and arrive as numbers,
+ * while `office_radius_m` and `work_hours_per_day` are `INTEGER`. A strict
+ * `Double` decoder on `min_hours_present` threw, nulled the entire policy and
+ * silently disabled clock-in — the decoders keep any of these shapes working.
+ */
 @Serializable
 data class AttendancePolicy(
     @SerialName("attendance_verification_enabled") val verificationEnabled: Boolean = false,
-    @SerialName("office_latitude") val officeLatitude: Double? = null,
-    @SerialName("office_longitude") val officeLongitude: Double? = null,
-    @SerialName("office_radius_m") val officeRadiusMeters: Double = 150.0,
+    @SerialName("office_latitude")
+    @Serializable(with = LenientDoubleNullableSerializer::class)
+    val officeLatitude: Double? = null,
+    @SerialName("office_longitude")
+    @Serializable(with = LenientDoubleNullableSerializer::class)
+    val officeLongitude: Double? = null,
+    @SerialName("office_radius_m")
+    @Serializable(with = LenientDoubleSerializer::class)
+    val officeRadiusMeters: Double = 150.0,
     @SerialName("office_address") val officeAddress: String? = null,
     @SerialName("office_wifi_verification_enabled") val wifiVerificationEnabled: Boolean = false,
-    @SerialName("work_hours_per_day") val workHoursPerDay: Double = 8.0,
+    @SerialName("work_hours_per_day")
+    @Serializable(with = LenientDoubleSerializer::class)
+    val workHoursPerDay: Double = 8.0,
     @SerialName("work_days") val workDays: String = "1,2,3,4,5",
-    @SerialName("min_hours_present") val minHoursPresent: Double? = null,
+    @SerialName("min_hours_present")
+    @Serializable(with = LenientDoubleNullableSerializer::class)
+    val minHoursPresent: Double? = null,
 )
 
 @Serializable
@@ -82,7 +104,13 @@ data class OvertimeRequest(
 )
 
 @Serializable
-data class OvertimeMetadata(val date: String? = null, val hours: Double? = null)
+data class OvertimeMetadata(
+    val date: String? = null,
+    // Stored inside an `approval_requests.metadata` JSON blob, so the hours can
+    // arrive either as a JSON number or a quoted string depending on how the
+    // request was created.
+    @Serializable(with = LenientDoubleNullableSerializer::class) val hours: Double? = null,
+)
 
 @Serializable
 data class ManualEntryPayload(

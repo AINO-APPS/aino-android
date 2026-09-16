@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.automirrored.outlined.Login
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -78,12 +79,13 @@ fun AttendanceScreen(
     onBiometricRequired: () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
-    var selectedTab by rememberSaveable { mutableStateOf(AttendancePage.Overview) }
+    var selectedTab by rememberSaveable { mutableStateOf(AttendancePage.Today) }
     AinoAtmosphere {
         Column(Modifier.fillMaxSize()) {
             AttendanceTabs(selectedTab) { tab ->
                 selectedTab = tab
                 when (tab) {
+                    AttendancePage.Today -> viewModel.selectTab(AttendanceTab.Today)
                     AttendancePage.Overview -> viewModel.selectTab(AttendanceTab.Overview)
                     AttendancePage.Manual -> viewModel.selectTab(AttendanceTab.Manual)
                     else -> Unit
@@ -96,6 +98,7 @@ fun AttendanceScreen(
             ui.error?.let { AinoAlert(it, AlertTone.Error) }
             ui.message?.let { AinoAlert(it, AlertTone.Success) }
                 when (selectedTab) {
+                    AttendancePage.Today -> TodayAttendance(ui, viewModel, onLocationPermission, onBiometricRequired)
                     AttendancePage.Overview -> AttendanceOverview(ui, viewModel)
                     AttendancePage.Manual -> ManualAttendance(ui, viewModel)
                     AttendancePage.Leaves -> AttendanceLeaves(ui)
@@ -106,7 +109,13 @@ fun AttendanceScreen(
     }
 }
 
-private enum class AttendancePage(val label: String) { Overview("Overview"), Leaves("Leaves"), Manual("Manual"), Analytics("Analytics") }
+private enum class AttendancePage(val label: String) {
+    Today("Today"),
+    Overview("Overview"),
+    Leaves("Leaves"),
+    Manual("Manual"),
+    Analytics("Analytics"),
+}
 
 @Composable
 private fun AttendanceTabs(selected: AttendancePage, onSelect: (AttendancePage) -> Unit) {
@@ -117,6 +126,7 @@ private fun AttendanceTabs(selected: AttendancePage, onSelect: (AttendancePage) 
     ) {
         AttendancePage.entries.forEach { tab ->
             val icon = when (tab) {
+                AttendancePage.Today -> Icons.Outlined.Schedule
                 AttendancePage.Overview -> Icons.Outlined.CalendarMonth
                 AttendancePage.Manual -> Icons.Outlined.EditCalendar
                 AttendancePage.Leaves -> Icons.Outlined.BeachAccess
@@ -135,6 +145,260 @@ private fun AttendanceTabs(selected: AttendancePage, onSelect: (AttendancePage) 
         }
     }
 }
+
+/**
+ * Today tab (A-101).
+ *
+ * The Attendance screen previously had no clock-in affordance at all: its
+ * `onLocationPermission` and `onBiometricRequired` parameters were declared but
+ * never used, so clocking existed only on the dashboard. This tab wires them to
+ * the real tracker mutations.
+ */
+@Composable
+private fun TodayAttendance(
+    ui: AttendanceUiState,
+    viewModel: AttendanceViewModel,
+    onLocationPermission: () -> Unit,
+    onBiometricRequired: () -> Unit,
+) {
+    val state = ui.status?.state ?: "logged_out"
+
+    if (ui.policyDegraded) {
+        AinoAlert(
+            "Workspace attendance settings could not be loaded, so default rules are shown. " +
+                "You can still clock in — the server applies the real policy.",
+            AlertTone.Warning,
+        )
+    }
+
+    AinoGlassCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            TodayHeader(state, ui.loading, viewModel::refresh)
+            ui.status?.let { status ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TodayStat("Worked", formatDuration(status.floorMinutes.coerceAtLeast(0) * 60L), AinoSuccess, Modifier.weight(1f))
+                    TodayStat("Break", formatDuration(status.breakMinutes.coerceAtLeast(0) * 60L), AinoWarning, Modifier.weight(1f))
+                    TodayStat(
+                        "Target",
+                        "${status.targetMinutes / 60}h",
+                        if (status.dailyTargetMet) AinoSuccess else AinoBlue,
+                        Modifier.weight(1f),
+                    )
+                }
+            }
+            // Work mode only matters before clocking in; the server binds the
+            // mode to the clock_in entry itself.
+            if (state == "logged_out") WorkModePicker(ui, viewModel)
+            TodayActions(ui, state, viewModel, onLocationPermission, onBiometricRequired)
+            ui.locationProof?.let { proof ->
+                Text(
+                    "Location fix accurate to ±${proof.accuracyMeters.toInt()} m",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+    }
+
+    // Today's entries give the same audit trail the web timeline shows.
+    ui.status?.entries?.takeIf { it.isNotEmpty() }?.let { entries ->
+        AinoSectionHeader("Today's activity")
+        AinoGlassCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(vertical = 4.dp)) {
+                entries.forEach { entry ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier.size(7.dp).background(
+                                when (entry.entryType) {
+                                    "clock_in" -> AinoSuccess
+                                    "clock_out" -> AinoDanger
+                                    "break_start" -> AinoWarning
+                                    else -> AinoBlue
+                                },
+                                CircleShape,
+                            ),
+                        )
+                        Text(
+                            entry.entryType.replace('_', ' ').replaceFirstChar(Char::uppercase),
+                            Modifier.padding(start = 10.dp).weight(1f),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            entryTime(entry.timestamp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodayHeader(state: String, loading: Boolean, onRefresh: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(10.dp).background(
+                when (state) {
+                    "on_floor" -> AinoSuccess
+                    "on_break" -> AinoWarning
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                CircleShape,
+            ),
+        )
+        Column(Modifier.padding(start = 10.dp).weight(1f)) {
+            Text(
+                when (state) {
+                    "on_floor" -> "Working"
+                    "on_break" -> "On break"
+                    else -> "Logged out"
+                },
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Text(
+                LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, MMMM d")),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Box(
+            Modifier.size(34.dp).clickable(enabled = !loading, onClick = onRefresh),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.Refresh, "Refresh", Modifier.size(19.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun WorkModePicker(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
+    Text("Work mode", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        WorkMode.entries.forEach { mode ->
+            val selected = ui.workMode == mode
+            Row(
+                Modifier.weight(1f).clickable { viewModel.setWorkMode(mode) }
+                    .background(
+                        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(8.dp),
+                    ).padding(vertical = 11.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    mode.name,
+                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
+    }
+    if (ui.policy?.verificationEnabled == true) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(
+                if (ui.workMode == WorkMode.Remote) Icons.Outlined.Fingerprint else Icons.Outlined.LocationOn,
+                null,
+                Modifier.size(15.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                if (ui.workMode == WorkMode.Remote) {
+                    "Remote verified clock-in needs face matching, which is not available yet."
+                } else {
+                    "Verification is on: your location is checked, then a fingerprint confirms it."
+                },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TodayActions(
+    ui: AttendanceUiState,
+    state: String,
+    viewModel: AttendanceViewModel,
+    onLocationPermission: () -> Unit,
+    onBiometricRequired: () -> Unit,
+) {
+    when (state) {
+        "logged_out" -> AinoPrimaryButton(
+            if (ui.loading) "Working…" else "Clock in",
+            { viewModel.prepare(AttendanceAction.ClockIn, onLocationPermission, onBiometricRequired) },
+            Modifier.fillMaxWidth(),
+            !ui.loading,
+            leadingIcon = {
+                Icon(Icons.AutoMirrored.Outlined.Login, null, Modifier.size(18.dp), tint = Color.White)
+            },
+        )
+        "on_floor" -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionButton("Start break", Icons.Outlined.Coffee, AinoWarning, !ui.loading, Modifier.weight(1f)) {
+                viewModel.breakAction(true)
+            }
+            ActionButton("Clock out", Icons.AutoMirrored.Outlined.Logout, AinoDanger, !ui.loading, Modifier.weight(1f)) {
+                viewModel.prepare(AttendanceAction.ClockOut, onLocationPermission, onBiometricRequired)
+            }
+        }
+        else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionButton("Resume", Icons.AutoMirrored.Outlined.Login, AinoSuccess, !ui.loading, Modifier.weight(1f)) {
+                viewModel.breakAction(false)
+            }
+            ActionButton("Clock out", Icons.AutoMirrored.Outlined.Logout, AinoDanger, !ui.loading, Modifier.weight(1f)) {
+                viewModel.prepare(AttendanceAction.ClockOut, onLocationPermission, onBiometricRequired)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodayStat(label: String, value: String, color: Color, modifier: Modifier = Modifier) {
+    Column(
+        modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
+            .padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(value, color = color, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+        Text(label.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+    }
+}
+
+@Composable
+private fun ActionButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        enabled = enabled,
+        shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = tint, disabledContainerColor = tint.copy(alpha = 0.4f)),
+    ) {
+        Icon(icon, null, Modifier.size(17.dp), tint = Color.White)
+        Text(label, Modifier.padding(start = 7.dp), color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+    }
+}
+
+/** Render a server timestamp in the device's local time. */
+private fun entryTime(timestamp: String): String = runCatching {
+    val normalized = timestamp.replace(" ", "T").let {
+        if (it.endsWith("Z") || Regex("[+-]\\d{2}:?\\d{2}$").containsMatchIn(it)) it else "${it}Z"
+    }
+    java.time.Instant.parse(normalized)
+        .atZone(java.time.ZoneId.systemDefault())
+        .format(DateTimeFormatter.ofPattern("h:mm a"))
+}.getOrDefault("—")
 
 @Composable
 private fun ManualAttendance(ui: AttendanceUiState, viewModel: AttendanceViewModel) {

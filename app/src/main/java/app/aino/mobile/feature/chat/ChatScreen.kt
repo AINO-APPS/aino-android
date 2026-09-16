@@ -13,7 +13,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -284,8 +287,12 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     }
     AinoAtmosphere {
         Column(Modifier.fillMaxSize()) {
+            // The thread replaces the whole shell, so it owns the status-bar
+            // inset rather than inheriting it from the Scaffold.
             Row(
-                Modifier.fillMaxWidth().height(58.dp).background(MaterialTheme.colorScheme.surface)
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                    .statusBarsPadding()
+                    .height(58.dp)
                     .border(BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline)).padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -359,7 +366,11 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel) {
     val conversation = ui.selectedConversation ?: return
     AinoAtmosphere {
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().height(56.dp).background(MaterialTheme.colorScheme.surface).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+                    .statusBarsPadding().height(56.dp).padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", Modifier.size(38.dp).padding(8.dp).clickable(onClick = viewModel::closeInfo))
                 Text("Conversation info", Modifier.padding(start = 6.dp), fontSize = 17.sp, fontWeight = FontWeight.Bold)
             }
@@ -507,8 +518,15 @@ private fun QueuedBubble(message: QueuedMessage) {
 
 @Composable
 private fun MessageComposer(value: String, uploading: Boolean, onChange: (String) -> Unit, onSend: () -> Unit, onPickDocument: () -> Unit) {
+    // `imePadding()` lifts the composer above the soft keyboard and
+    // `navigationBarsPadding()` keeps it clear of the gesture bar; without
+    // both, the input sat underneath the keyboard while typing.
     Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).border(BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline)).padding(horizontal = 10.dp, vertical = 9.dp),
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+            .border(BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline))
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(horizontal = 10.dp, vertical = 9.dp),
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

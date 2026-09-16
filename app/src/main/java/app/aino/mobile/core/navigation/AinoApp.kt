@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.rememberScrollState
@@ -332,9 +334,14 @@ private fun LegacyTopBar(
     onNotifications: () -> Unit,
     onProfile: () -> Unit,
 ) {
+    // `enableEdgeToEdge()` draws behind the system bars, so this bar must
+    // consume the status-bar inset itself. Without `statusBarsPadding()` the
+    // app icon and profile avatar rendered underneath the clock and battery.
     Row(
-        Modifier.fillMaxWidth().height(56.dp)
+        Modifier.fillMaxWidth()
             .background(MaterialTheme.colorScheme.surface)
+            .statusBarsPadding()
+            .height(56.dp)
             .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline))
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -382,9 +389,14 @@ private fun LegacyBottomBar(
     chatUnread: Int,
     onNavigate: (AinoDestination) -> Unit,
 ) {
+    // Mirror of the top bar: consume the gesture/navigation-bar inset so the
+    // tab labels are not overlapped by the system navigation affordance.
     Row(
-        Modifier.fillMaxWidth().height(68.dp).background(MaterialTheme.colorScheme.surface)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline)).padding(top = 10.dp, bottom = 8.dp),
+        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
+            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline))
+            .navigationBarsPadding()
+            .height(68.dp)
+            .padding(top = 10.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         destinations.forEach { item ->

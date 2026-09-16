@@ -1,10 +1,18 @@
 <resources>
+    <!--
+      Material3 DayNight with transparent system bars. `enableEdgeToEdge()` in
+      MainActivity owns the bar scrims and icon contrast at runtime, and each
+      bar-adjacent composable consumes its own inset via statusBarsPadding() /
+      navigationBarsPadding(). The window background matches the light scheme
+      background so the pre-Compose frame does not flash a different colour.
+    -->
     <style name="Theme.Aino" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">#FBFBFA</item>
-        <item name="android:windowBackground">#FBFBFA</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">#FFFFFF</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>
+

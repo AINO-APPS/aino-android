@@ -1,5 +1,6 @@
 package app.aino.mobile.feature.leaves
 
+import app.aino.mobile.core.common.LenientDoubleSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -40,12 +41,20 @@ data class LeaveBalance(
         ?: leaveType.replace('_', ' ').replaceFirstChar(Char::uppercase)
 }
 
+/**
+ * `leave_policies.annual_quota` is `NUMERIC` and the GET route does **not**
+ * coerce it — the server's own row interface types it `number | string`
+ * (`routes/leavePolicy.ts:20`). node-pg therefore delivers it quoted, so this
+ * field needs the tolerant decoder even though `/leaves/balance` is coerced.
+ */
 @Serializable
 data class LeavePolicy(
     val id: Long? = null,
     @SerialName("leave_type") val leaveType: String,
     val name: String? = null,
-    @SerialName("annual_quota") val annualQuota: Double = 0.0,
+    @SerialName("annual_quota")
+    @Serializable(with = LenientDoubleSerializer::class)
+    val annualQuota: Double = 0.0,
     @SerialName("half_day_allowed") val halfDayAllowed: Boolean = false,
     @SerialName("quarter_day_allowed") val quarterDayAllowed: Boolean = false,
     val color: String? = null,
