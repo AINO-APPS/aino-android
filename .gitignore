@@ -15,3 +15,5 @@ build/
 google-services.json
 **/google-services.json
 captures/
+
+build-out.txt

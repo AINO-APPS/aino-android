@@ -25,6 +25,13 @@ jobs:
           node scripts/check-independence.mjs
           node scripts/check-module-boundaries.mjs
           node scripts/check-source-provenance.mjs
+      # Realtime parity (A-100). The platform repository is private and is not
+      # cloned here, so this validates the committed snapshot: it still catches
+      # a registry that drops an event or keeps a dead listener. The snapshot
+      # itself is refreshed against a real platform checkout locally, which is
+      # what detects newly added server events.
+      - name: Check realtime parity
+        run: node scripts/check-realtime-parity.mjs
 
   build:
     runs-on: ubuntu-latest
