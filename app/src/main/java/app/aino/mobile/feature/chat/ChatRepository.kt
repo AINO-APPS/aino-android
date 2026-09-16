@@ -44,6 +44,7 @@ class ChatRepository(
         mutate("chat/conversations/$conversationId/read", Unit)
 
     fun loadMessages(conversationId: Long, before: Long? = null): List<ChatMessage> {
+        // @api GET chat/conversations/:conversationId/messages
         val suffix = before?.let { "?limit=50&before=$it" } ?: "?limit=50"
         return decode(api.execute(ApiRequest(path = "chat/conversations/$conversationId/messages$suffix")))
     }

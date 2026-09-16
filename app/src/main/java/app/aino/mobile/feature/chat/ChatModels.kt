@@ -7,6 +7,8 @@ import app.aino.mobile.core.realtime.RealtimeDomain
 import app.aino.mobile.core.realtime.RealtimeEvent
 import app.aino.mobile.core.realtime.RealtimeReaction
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -225,6 +227,89 @@ data class QueuedMessage(
     val senderId: Long,
     val content: String,
     val createdAtEpochMs: Long,
+)
+
+/** Presentation model for a chronological native chat thread. */
+sealed interface ThreadItem {
+    val key: String
+
+    data class DateSeparator(val date: LocalDate) : ThreadItem {
+        override val key: String = "date-$date"
+    }
+
+    data class Message(
+        val message: ChatMessage,
+        val startsGroup: Boolean,
+        val endsGroup: Boolean,
+    ) : ThreadItem {
+        override val key: String = "server-${message.id}"
+    }
+
+    data class Queued(val message: QueuedMessage) : ThreadItem {
+        override val key: String = "queued-${message.clientMessageId}"
+    }
+}
+
+/**
+ * Build the visual thread without changing server chronology.
+ * Consecutive messages group only when they share sender/day and are at most
+ * five minutes apart. That keeps sender labels and bubble tails truthful.
+ */
+fun buildThreadItems(
+    messages: List<ChatMessage>,
+    queued: List<QueuedMessage>,
+    currentUserId: Long?,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): List<ThreadItem> {
+    val positioned = buildList {
+        messages.forEach { message ->
+            add(PositionedThreadItem(parseEpoch(message.createdAt), message = message))
+        }
+        queued.filter { currentUserId == null || it.senderId == currentUserId }.forEach { message ->
+            add(PositionedThreadItem(message.createdAtEpochMs, queued = message))
+        }
+    }.sortedWith(compareBy<PositionedThreadItem> { it.epochMs }.thenBy { it.message?.id ?: Long.MAX_VALUE })
+
+    val result = mutableListOf<ThreadItem>()
+    var currentDay: LocalDate? = null
+    positioned.forEachIndexed { index, item ->
+        val day = Instant.ofEpochMilli(item.epochMs).atZone(zoneId).toLocalDate()
+        if (day != currentDay) {
+            result += ThreadItem.DateSeparator(day)
+            currentDay = day
+        }
+        val message = item.message
+        if (message == null) {
+            result += ThreadItem.Queued(requireNotNull(item.queued))
+            return@forEachIndexed
+        }
+        val previous = positioned.getOrNull(index - 1)
+        val next = positioned.getOrNull(index + 1)
+        val startsGroup = !sameMessageGroup(previous, item, day, zoneId)
+        val endsGroup = !sameMessageGroup(item, next, day, zoneId)
+        result += ThreadItem.Message(message, startsGroup, endsGroup)
+    }
+    return result
+}
+
+private fun sameMessageGroup(
+    first: PositionedThreadItem?,
+    second: PositionedThreadItem?,
+    day: LocalDate,
+    zoneId: ZoneId,
+): Boolean {
+    val a = first?.message ?: return false
+    val b = second?.message ?: return false
+    return a.senderId == b.senderId &&
+        Instant.ofEpochMilli(first.epochMs).atZone(zoneId).toLocalDate() == day &&
+        Instant.ofEpochMilli(second.epochMs).atZone(zoneId).toLocalDate() == day &&
+        second.epochMs - first.epochMs in 0..300_000L
+}
+
+private data class PositionedThreadItem(
+    val epochMs: Long,
+    val message: ChatMessage? = null,
+    val queued: QueuedMessage? = null,
 )
 
 fun totalUnread(conversations: List<ChatConversation>): Int =

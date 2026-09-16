@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -48,11 +49,15 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.AddReaction
+import androidx.compose.material.icons.outlined.Done
+import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,6 +79,7 @@ import app.aino.mobile.core.designsystem.AlertTone
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -281,6 +287,13 @@ private fun ConversationRow(conversation: ChatConversation, presence: ChatPresen
 @Composable
 private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument: () -> Unit) {
     val conversation = ui.selectedConversation ?: return
+    val threadItems = remember(ui.messages, ui.queuedMessages, ui.currentUserId) {
+        buildThreadItems(ui.messages, ui.queuedMessages, ui.currentUserId)
+    }
+    val listState = rememberLazyListState()
+    LaunchedEffect(threadItems.size) {
+        if (threadItems.isNotEmpty()) listState.animateScrollToItem(threadItems.lastIndex)
+    }
     if (ui.showInfo) {
         ConversationInfo(ui, viewModel)
         return
@@ -318,24 +331,29 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
             ui.error?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(),
+                state = listState,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                if (ui.messages.isEmpty() && ui.queuedMessages.isEmpty() && !ui.threadLoading) {
+                if (threadItems.isEmpty() && !ui.threadLoading) {
                     item { HonestEmpty(Icons.Outlined.ChatBubbleOutline, "No messages yet") }
                 }
-                items(ui.messages, key = { "server-${it.id}" }) { message ->
-                    MessageBubble(
-                        message,
-                        isMine = message.senderId == ui.currentUserId,
-                        receipts = ui.receipts,
-                        onReact = { viewModel.react(message, it) },
-                        onCancel = { viewModel.cancelMedia(message) },
-                        onRetry = { viewModel.retryMedia(message) },
-                    )
-                }
-                items(ui.queuedMessages, key = { "queued-${it.clientMessageId}" }) { queued ->
-                    QueuedBubble(queued)
+                items(threadItems, key = ThreadItem::key) { item ->
+                    when (item) {
+                        is ThreadItem.DateSeparator -> DateSeparator(item.date)
+                        is ThreadItem.Message -> MessageBubble(
+                            item.message,
+                            isMine = item.message.senderId == ui.currentUserId,
+                            showSender = item.startsGroup,
+                            startsGroup = item.startsGroup,
+                            endsGroup = item.endsGroup,
+                            receipts = ui.receipts,
+                            onReact = { viewModel.react(item.message, it) },
+                            onCancel = { viewModel.cancelMedia(item.message) },
+                            onRetry = { viewModel.retryMedia(item.message) },
+                        )
+                        is ThreadItem.Queued -> QueuedBubble(item.message)
+                    }
                 }
             }
             MessageComposer(ui.composer, ui.uploading, viewModel::updateComposer, viewModel::sendMessage, onPickDocument)
@@ -435,38 +453,57 @@ private fun formatCallDuration(seconds: Int): String = "%d:%02d".format(seconds 
 private fun MessageBubble(
     message: ChatMessage,
     isMine: Boolean,
+    showSender: Boolean,
+    startsGroup: Boolean,
+    endsGroup: Boolean,
     receipts: List<ReadReceipt>,
     onReact: (String) -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = if (isMine) Alignment.End else Alignment.Start) {
-        if (!isMine) Text(message.senderName ?: message.senderUsername.orEmpty(), color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+    val shape = messageBubbleShape(isMine, startsGroup, endsGroup)
+    val bubbleContent = if (isMine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+    val bubbleSecondary = if (isMine) {
+        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.68f)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(
+        Modifier.fillMaxWidth().padding(top = if (startsGroup) 5.dp else 0.dp),
+        horizontalAlignment = if (isMine) Alignment.End else Alignment.Start,
+    ) {
+        if (!isMine && showSender) Text(
+            message.senderName ?: message.senderUsername.orEmpty(),
+            color = MaterialTheme.colorScheme.primary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+        )
         Column(
             Modifier.fillMaxWidth(0.82f).background(
-                if (isMine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                RoundedCornerShape(16.dp),
+                if (isMine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                shape,
             ).padding(horizontal = 13.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             message.replyContent?.let {
                 Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.10f), RoundedCornerShape(8.dp)).padding(8.dp)) {
-                    Text(message.replySenderName.orEmpty(), color = if (isMine) Color.White.copy(alpha = .8f) else MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    Text(it, color = if (isMine) Color.White.copy(alpha = .76f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
+                    Text(message.replySenderName.orEmpty(), color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, maxLines = 2)
                 }
             }
-            Text(message.body(), color = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+            Text(message.body(), color = bubbleContent, fontSize = 14.sp)
             if (!message.fileName.isNullOrBlank()) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     Icon(
                         if (message.fileType?.startsWith("image/") == true) Icons.Outlined.Image else Icons.Outlined.Description,
                         null,
                         Modifier.size(18.dp),
-                        tint = if (isMine) Color.White else MaterialTheme.colorScheme.primary,
+                        tint = if (isMine) bubbleContent else MaterialTheme.colorScheme.primary,
                     )
                     Column(Modifier.weight(1f)) {
-                        Text(message.fileName, color = if (isMine) Color.White else MaterialTheme.colorScheme.onSurface, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                        message.fileSize?.let { Text(formatFileSize(it), color = if (isMine) Color.White.copy(alpha = .7f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp) }
+                        Text(message.fileName, color = bubbleContent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        message.fileSize?.let { Text(formatFileSize(it), color = bubbleSecondary, fontSize = 10.sp) }
                     }
                 }
             }
@@ -475,18 +512,28 @@ private fun MessageBubble(
                     Text(
                         listOfNotNull(message.mediaStage ?: message.mediaState, message.mediaProgress?.let { "$it%" }).joinToString(" · "),
                         Modifier.weight(1f),
-                        color = if (isMine) Color.White.copy(alpha = .72f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = bubbleSecondary,
                         fontSize = 10.sp,
                     )
                     when (message.mediaState) {
-                        "failed", "cancelled" -> Icon(Icons.Outlined.Replay, "Retry", Modifier.size(17.dp).clickable(onClick = onRetry), tint = if (isMine) Color.White else MaterialTheme.colorScheme.primary)
-                        "queued", "processing" -> Icon(Icons.Outlined.Cancel, "Cancel", Modifier.size(17.dp).clickable(onClick = onCancel), tint = if (isMine) Color.White else MaterialTheme.colorScheme.error)
+                        "failed", "cancelled" -> Icon(Icons.Outlined.Replay, "Retry", Modifier.size(17.dp).clickable(onClick = onRetry), tint = if (isMine) bubbleContent else MaterialTheme.colorScheme.primary)
+                        "queued", "processing" -> Icon(Icons.Outlined.Cancel, "Cancel", Modifier.size(17.dp).clickable(onClick = onCancel), tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                message.editedAt?.let { Text("edited · ", color = if (isMine) Color.White.copy(alpha = .65f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp) }
-                Text(timeAgo(message.createdAt), color = if (isMine) Color.White.copy(alpha = .65f) else MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                message.editedAt?.let { Text("edited · ", color = bubbleSecondary, fontSize = 10.sp) }
+                Text(timeAgo(message.createdAt), color = bubbleSecondary, fontSize = 10.sp)
+                if (isMine) {
+                    Spacer(Modifier.width(4.dp))
+                    val read = readByForMessage(message, receipts).isNotEmpty()
+                    Icon(
+                        if (read) Icons.Outlined.DoneAll else Icons.Outlined.Done,
+                        if (read) "Read" else message.deliveryState.replaceFirstChar(Char::uppercase),
+                        Modifier.size(14.dp),
+                        tint = if (read) MaterialTheme.colorScheme.primary else bubbleSecondary,
+                    )
+                }
             }
         }
         if (message.reactions.isNotEmpty()) {
@@ -496,13 +543,83 @@ private fun MessageBubble(
                 }
             }
         } else if (message.deletedAt == null) {
-            Text("♡", Modifier.padding(horizontal = 10.dp).clickable { onReact("👍") }, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+            Row(
+                Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable { onReact("👍") }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(Icons.Outlined.AddReaction, "React", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("React", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+            }
         }
-        if (isMine && receipts.isNotEmpty()) {
-            Text("Read by ${receipts.joinToString { it.fullName }}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp))
+        val readBy = if (isMine) readByForMessage(message, receipts) else emptyList()
+        if (readBy.isNotEmpty() && endsGroup) {
+            Text("Read by ${readBy.joinToString { it.fullName }}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp))
         }
     }
 }
+
+@Composable
+private fun DateSeparator(date: LocalDate) {
+    val today = LocalDate.now()
+    val label = when (date) {
+        today -> "Today"
+        today.minusDays(1) -> "Yesterday"
+        else -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()))
+    }
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            label,
+            Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                .padding(horizontal = 12.dp, vertical = 5.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
+        )
+    }
+}
+
+/** Rounded on the outside of a group and tight toward consecutive bubbles. */
+private fun messageBubbleShape(isMine: Boolean, startsGroup: Boolean, endsGroup: Boolean): RoundedCornerShape {
+    val large = 18.dp
+    val tight = 5.dp
+    return if (isMine) {
+        RoundedCornerShape(
+            topStart = large,
+            topEnd = if (startsGroup) large else tight,
+            bottomStart = large,
+            bottomEnd = if (endsGroup) tight else tight,
+        )
+    } else {
+        RoundedCornerShape(
+            topStart = if (startsGroup) large else tight,
+            topEnd = large,
+            bottomStart = if (endsGroup) tight else tight,
+            bottomEnd = large,
+        )
+    }
+}
+
+/** Authoritative receipts that include this exact message in their read range. */
+private fun readByForMessage(message: ChatMessage, receipts: List<ReadReceipt>): List<ReadReceipt> {
+    val sentAt = parseChatInstant(message.createdAt) ?: return emptyList()
+    return receipts.filter { receipt ->
+        val readAt = parseChatInstant(receipt.lastReadAt)
+        readAt != null && !readAt.isBefore(sentAt)
+    }
+}
+
+private fun parseChatInstant(value: String): Instant? = runCatching {
+    Instant.parse(value.replace(" ", "T").let {
+        if (it.endsWith("Z") || Regex("[+-]\\d{2}:?\\d{2}$").containsMatchIn(it)) it else "${it}Z"
+    })
+}.getOrNull()
 
 @Composable
 private fun QueuedBubble(message: QueuedMessage) {
@@ -523,7 +640,6 @@ private fun MessageComposer(value: String, uploading: Boolean, onChange: (String
     // both, the input sat underneath the keyboard while typing.
     Row(
         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
-            .border(BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline))
             .navigationBarsPadding()
             .imePadding()
             .padding(horizontal = 10.dp, vertical = 9.dp),

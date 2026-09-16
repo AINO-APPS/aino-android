@@ -43,6 +43,11 @@ jobs:
           node scripts/check-independence.mjs
           node scripts/check-module-boundaries.mjs
           node scripts/check-source-provenance.mjs
+          # Realtime parity (A-100): a release must never ship a client that
+          # drops a server event or keeps a dead listener. Validates the
+          # committed snapshot, since the platform repo is private.
+          node scripts/check-realtime-parity.mjs
+          node scripts/check-endpoint-parity.mjs
 
       - name: Validate tag against app/build.gradle.kts
         id: check

@@ -31,7 +31,9 @@ jobs:
       # itself is refreshed against a real platform checkout locally, which is
       # what detects newly added server events.
       - name: Check realtime parity
-        run: node scripts/check-realtime-parity.mjs
+        run: |
+          node scripts/check-realtime-parity.mjs
+          node scripts/check-endpoint-parity.mjs
 
   build:
     runs-on: ubuntu-latest

@@ -30,6 +30,8 @@ data class IncomingCallUiState(
 
 fun buildCallActionRequest(route: IncomingCallRoute, action: String): ApiRequest {
     require(action in setOf("accept", "reject"))
+    // @api POST chat/calls/:callId/accept
+    // @api POST chat/calls/:callId/reject
     return ApiRequest(
         "POST",
         "chat/calls/${route.callId}/$action",

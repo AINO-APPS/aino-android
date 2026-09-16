@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": {
+    "platform": "contracts/http-route-inventory.json",
+    "android": "app/src/main/java/**/*.kt"
+  },
+  "totals": {
+    "platform": 464,
+    "covered": 56,
+    "waived": 0,
+    "missing": 408,
+    "unmatched": 0
+  },
+  "covered": [
+    {
+      "method": "POST",
+      "path": "/api/auth/activity",
+      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/biometric/enroll",
+      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/biometric/login",
+      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/device-token",
+      "source": "app/src/main/java/app/aino/mobile/core/push/PushTokenRegistrar.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/login",
+      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/login/realm",
+      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/logout",
+      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/calls",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversations",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/archive",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversations/:param/calls",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/favourite",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/files",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversations/:param/members",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/messages",
+      "source": "app/src/main/java/app/aino/mobile/core/db/OutboxWorker.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/mute",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/pin",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/read",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversations/:param/read-status",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/ice-config",
+      "source": "app/src/main/java/app/aino/mobile/core/call/webrtc/IceConfigRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/media-jobs/:param/cancel",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/media-jobs/:param/retry",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/messages/:param/reactions",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/leave-policy/policies",
+      "source": "app/src/main/java/app/aino/mobile/feature/leaves/LeaveRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/leaves",
+      "source": "app/src/main/java/app/aino/mobile/feature/leaves/LeaveRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/leaves/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/leaves/LeaveRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/leaves/:param/withdraw",
+      "source": "app/src/main/java/app/aino/mobile/feature/leaves/LeaveRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notifications/announcements",
+      "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/current",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/profile",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/profile",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/profile/email",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/profile/face-status",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/profile/password",
+      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tasks/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/:param/comments",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/:param/detail",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/status",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/assignable-users",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/backlog",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/carry-forward",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/labels",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tracker/break-end",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tracker/break-start",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tracker/clock-in",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tracker/clock-out",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tracker/entries/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tracker/manual-entries",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tracker/manual-entry",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/tracker/manual-entry/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tracker/overtime-request",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tracker/overtime-requests",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tracker/status",
+      "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tracker/task-summary",
+      "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
+    }
+  ],
+  "unmatched": []
+}

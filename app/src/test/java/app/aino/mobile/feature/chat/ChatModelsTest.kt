@@ -6,8 +6,62 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.ZoneId
 
 class ChatModelsTest {
+    @Test
+    fun buildsChronologicalThreadWithDateSeparatorsAndMessageGroups() {
+        val messages = listOf(
+            ChatMessage(1, 9, 4, "one", "2026-09-15T23:59:00Z"),
+            ChatMessage(2, 9, 4, "two", "2026-09-16T00:01:00Z"),
+            ChatMessage(3, 9, 4, "three", "2026-09-16T00:04:00Z"),
+            ChatMessage(4, 9, 8, "reply", "2026-09-16T00:05:00Z"),
+        )
+
+        val items = buildThreadItems(messages, emptyList(), currentUserId = 4, zoneId = ZoneId.of("UTC"))
+
+        assertEquals(6, items.size)
+        assertTrue(items[0] is ThreadItem.DateSeparator)
+        assertTrue(items[2] is ThreadItem.DateSeparator)
+        val firstDayMessage = items[1] as ThreadItem.Message
+        assertTrue(firstDayMessage.startsGroup)
+        assertTrue(firstDayMessage.endsGroup)
+        val second = items[3] as ThreadItem.Message
+        val third = items[4] as ThreadItem.Message
+        assertTrue(second.startsGroup)
+        assertFalse(second.endsGroup)
+        assertFalse(third.startsGroup)
+        assertTrue(third.endsGroup)
+        val reply = items[5] as ThreadItem.Message
+        assertTrue(reply.startsGroup)
+        assertTrue(reply.endsGroup)
+    }
+
+    @Test
+    fun queuedMessagesParticipateInChronologyButBreakServerMessageGroups() {
+        val messages = listOf(
+            ChatMessage(1, 9, 4, "sent", "2026-09-16T09:00:00Z"),
+            ChatMessage(2, 9, 4, "later", "2026-09-16T09:02:00Z"),
+        )
+        val queued = listOf(QueuedMessage("q", 9, 4, "queued", 1_789_549_260_000L)) // 2026-09-16 09:01 UTC
+
+        val items = buildThreadItems(messages, queued, currentUserId = 4, zoneId = ZoneId.of("UTC"))
+        val bubbles = items.drop(1)
+        assertEquals(listOf("server-1", "queued-q", "server-2"), bubbles.map(ThreadItem::key))
+        assertTrue((bubbles[0] as ThreadItem.Message).endsGroup)
+        assertTrue((bubbles[2] as ThreadItem.Message).startsGroup)
+    }
+
+    @Test
+    fun excludesQueuedMessagesFromAnotherSignedInUser() {
+        val queued = listOf(
+            QueuedMessage("mine", 9, 4, "mine", 1_757_927_400_000L),
+            QueuedMessage("other", 9, 8, "other", 1_757_927_401_000L),
+        )
+        val items = buildThreadItems(emptyList(), queued, currentUserId = 4, zoneId = ZoneId.of("UTC"))
+        assertEquals(listOf("date-2025-09-15", "queued-mine"), items.map(ThreadItem::key))
+    }
+
     @Test
     fun derivesDirectGroupAndSelfTitles() {
         assertEquals("Asha K", ChatConversation(1, otherFullName = "Asha K", otherUsername = "asha").title())

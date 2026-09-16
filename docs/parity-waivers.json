@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "policy": "Waivers require an endpoint key, an owner and a non-empty reason. Pending implementation work is not a waiver.",
+  "waivers": []
+}
