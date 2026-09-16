@@ -24,4 +24,17 @@ class AinoComponentsRobolectricTest {
 
         compose.onNodeWithText("Connection restored").assertExists()
     }
+
+    @Test
+    fun tonalCardKeepsContentAccessibleInTheFallbackTheme() {
+        compose.setContent {
+            AinoTheme(dynamicColor = false) {
+                AinoGlassCard {
+                    androidx.compose.material3.Text("Quarterly progress")
+                }
+            }
+        }
+
+        compose.onNodeWithText("Quarterly progress").assertExists()
+    }
 }

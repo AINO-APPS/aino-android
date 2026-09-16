@@ -24,6 +24,12 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
 import androidx.compose.material.icons.outlined.CloudDone
@@ -249,7 +255,7 @@ private fun AuthenticatedShell(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            LegacyTopBar(
+            AinoShellTopBar(
                 user = user,
                 realtimeState = realtimeState,
                 onNotifications = { navigate(AinoDestination.Notifications) },
@@ -257,7 +263,7 @@ private fun AuthenticatedShell(
             )
         },
         bottomBar = {
-            LegacyBottomBar(
+            AinoShellBottomBar(
                 destinations = tabs,
                 currentRoute = current,
                 chatUnread = chatUi.unread,
@@ -328,7 +334,7 @@ private fun AuthenticatedShell(
 }
 
 @Composable
-private fun LegacyTopBar(
+private fun AinoShellTopBar(
     user: app.aino.mobile.core.auth.AinoUser,
     realtimeState: RealtimeState,
     onNotifications: () -> Unit,
@@ -337,13 +343,12 @@ private fun LegacyTopBar(
     // `enableEdgeToEdge()` draws behind the system bars, so this bar must
     // consume the status-bar inset itself. Without `statusBarsPadding()` the
     // app icon and profile avatar rendered underneath the clock and battery.
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 2.dp,
+    ) {
     Row(
-        Modifier.fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .statusBarsPadding()
-            .height(56.dp)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline))
-            .padding(horizontal = 14.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
@@ -362,11 +367,11 @@ private fun LegacyTopBar(
             )
         }
         Box(
-            Modifier.size(38.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.045f), RoundedCornerShape(10.dp))
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp)).clickable(onClick = onNotifications),
+            Modifier.size(42.dp).background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape)
+                .clickable(onClick = onNotifications),
             contentAlignment = Alignment.Center,
         ) { Icon(Icons.Outlined.NotificationsNone, "Notifications", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Box(Modifier.padding(start = 12.dp).size(34.dp).clickable(onClick = onProfile)) {
+        Box(Modifier.padding(start = 12.dp).size(38.dp).clickable(onClick = onProfile)) {
             Box(
                 Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary, CircleShape),
                 contentAlignment = Alignment.Center,
@@ -380,55 +385,46 @@ private fun LegacyTopBar(
             )
         }
     }
+    }
 }
 
 @Composable
-private fun LegacyBottomBar(
+private fun AinoShellBottomBar(
     destinations: List<AinoDestination>,
     currentRoute: String?,
     chatUnread: Int,
     onNavigate: (AinoDestination) -> Unit,
 ) {
-    // Mirror of the top bar: consume the gesture/navigation-bar inset so the
-    // tab labels are not overlapped by the system navigation affordance.
-    Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
-            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline))
-            .navigationBarsPadding()
-            .height(68.dp)
-            .padding(top = 10.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    NavigationBar(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 3.dp,
     ) {
         destinations.forEach { item ->
             val selected = currentRoute == item.route
-            Column(
-                Modifier.weight(1f).fillMaxSize().clickable { onNavigate(item) },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-            ) {
-                Box {
+            NavigationBarItem(
+                selected = selected,
+                onClick = { onNavigate(item) },
+                icon = {
+                    BadgedBox(
+                        badge = {
+                            if (item == AinoDestination.Chat && chatUnread > 0) {
+                                Badge { Text(if (chatUnread > 99) "99+" else chatUnread.toString()) }
+                            }
+                        },
+                    ) {
                     Icon(
                         item.icon,
                         item.label,
-                        Modifier.size(23.dp),
-                        tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            Modifier.size(22.dp),
                     )
-                    if (item == AinoDestination.Chat && chatUnread > 0) {
-                        Box(
-                            Modifier.align(Alignment.TopEnd).padding(start = 14.dp).background(AinoDanger, CircleShape)
-                                .padding(horizontal = 4.dp, vertical = 1.dp),
-                            contentAlignment = Alignment.Center,
-                        ) { Text(if (chatUnread > 99) "99+" else chatUnread.toString(), color = androidx.compose.ui.graphics.Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
                     }
-                }
-                Text(
-                    item.label,
-                    Modifier.padding(top = 3.dp),
-                    color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
+                },
+                label = { Text(item.label) },
+                alwaysShowLabel = true,
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
+            )
         }
     }
 }

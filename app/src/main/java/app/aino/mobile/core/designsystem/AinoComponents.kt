@@ -1,6 +1,5 @@
 package app.aino.mobile.core.designsystem
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -15,8 +14,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,12 +38,16 @@ fun AinoAtmosphere(content: @Composable () -> Unit) {
 
 @Composable
 fun AinoGlassCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Card(
+    // Kept under the established name to avoid a disruptive call-site rename,
+    // but this is now a real Material 3 tonal surface rather than translucent
+    // white paint. The old treatment had weak contrast in both themes.
+    ElevatedCard(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = if (androidx.compose.foundation.isSystemInDarkTheme()) 0.045f else 0.03f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
     ) { content() }
 }
 
