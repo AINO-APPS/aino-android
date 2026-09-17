@@ -43,6 +43,10 @@ data class ChatUiState(
     val threadFromCache: Boolean = false,
     val composer: String = "",
     val editingMessage: ChatMessage? = null,
+    val forwardingMessage: ChatMessage? = null,
+    val forwardQuery: String = "",
+    val forwardTargets: Set<Long> = emptySet(),
+    val forwarding: Boolean = false,
     val uploading: Boolean = false,
     val calls: List<CallLog> = emptyList(),
     val callsLoading: Boolean = false,
@@ -239,6 +243,10 @@ class ChatViewModel(
             receipts = emptyList(),
             composer = "",
             editingMessage = null,
+            forwardingMessage = null,
+            forwardQuery = "",
+            forwardTargets = emptySet(),
+            forwarding = false,
             error = null,
         )
         markRead(conversation)
@@ -256,6 +264,10 @@ class ChatViewModel(
             typingUserId = null,
             composer = "",
             editingMessage = null,
+            forwardingMessage = null,
+            forwardQuery = "",
+            forwardTargets = emptySet(),
+            forwarding = false,
             threadFromCache = false,
         )
     }
@@ -389,6 +401,64 @@ class ChatViewModel(
                     _ui.value = _ui.value.copy(messages = _ui.value.messages.map { if (it.id == message.id) it.copy(starred = result.starred) else it })
                 },
                 onFailure = { _ui.value = _ui.value.copy(messages = original, error = it.message ?: "Could not update saved message") },
+            )
+        }
+    }
+
+    fun beginForward(message: ChatMessage) {
+        if (message.deletedAt != null) return
+        _ui.value = _ui.value.copy(
+            forwardingMessage = message,
+            forwardQuery = "",
+            forwardTargets = emptySet(),
+            error = null,
+        )
+    }
+
+    fun cancelForward() {
+        if (_ui.value.forwarding) return
+        _ui.value = _ui.value.copy(forwardingMessage = null, forwardQuery = "", forwardTargets = emptySet())
+    }
+
+    fun updateForwardQuery(value: String) {
+        _ui.value = _ui.value.copy(forwardQuery = value.take(100), error = null)
+    }
+
+    fun toggleForwardTarget(conversationId: Long) {
+        val current = _ui.value.forwardTargets
+        if (conversationId !in current && current.size >= 20) {
+            _ui.value = _ui.value.copy(error = "Choose no more than 20 conversations")
+            return
+        }
+        _ui.value = _ui.value.copy(
+            forwardTargets = if (conversationId in current) current - conversationId else current + conversationId,
+            error = null,
+        )
+    }
+
+    fun submitForward() {
+        val message = _ui.value.forwardingMessage ?: return
+        val targets = _ui.value.forwardTargets.toList()
+        if (targets.isEmpty()) {
+            _ui.value = _ui.value.copy(error = "Choose at least one conversation")
+            return
+        }
+        _ui.value = _ui.value.copy(forwarding = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.forwardMessage(message.id, targets) }.fold(
+                onSuccess = {
+                    val refreshCurrent = _ui.value.selectedConversation?.id in targets
+                    _ui.value = _ui.value.copy(
+                        forwarding = false,
+                        forwardingMessage = null,
+                        forwardQuery = "",
+                        forwardTargets = emptySet(),
+                        message = "Forwarded to ${targets.size} conversation${if (targets.size == 1) "" else "s"}",
+                    )
+                    refresh()
+                    if (refreshCurrent) refreshThread()
+                },
+                onFailure = { _ui.value = _ui.value.copy(forwarding = false, error = it.message ?: "Could not forward message") },
             )
         }
     }

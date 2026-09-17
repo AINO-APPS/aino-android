@@ -64,6 +64,12 @@ class ChatRepository(
     fun toggleStar(messageId: Long): ToggleStarResponse =
         mutate("chat/messages/$messageId/star", Unit)
 
+    fun forwardMessage(messageId: Long, conversationIds: List<Long>): ChatOk {
+        require(conversationIds.isNotEmpty()) { "Choose at least one conversation" }
+        require(conversationIds.size <= 20) { "Choose no more than 20 conversations" }
+        return mutate("chat/messages/$messageId/forward", ForwardMessageRequest(conversationIds.distinct()))
+    }
+
     fun uploadFile(conversationId: Long, upload: ChatUpload): ChatMessage {
         val boundary = "aino-${UUID.randomUUID()}"
         val multipart = buildChatMultipart(upload, boundary)

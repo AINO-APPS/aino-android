@@ -162,6 +162,35 @@ class ChatRepositoryTest {
     }
 
     @Test
+    fun forwardsToDistinctDestinationsWithTheServerPayload() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) { """{"ok":true}""" }
+
+        repository.forwardMessage(77, listOf(3, 5, 3))
+
+        assertEquals("POST", captured.single().method)
+        assertEquals("chat/messages/77/forward", captured.single().path)
+        assertEquals("""{"conversationIds":[3,5]}""", captured.single().body!!.toString(Charsets.UTF_8))
+    }
+
+    @Test
+    fun forwardValidationMirrorsTheServerLimit() {
+        val repository = repository(mutableListOf()) { """{"ok":true}""" }
+        try {
+            repository.forwardMessage(77, emptyList())
+            fail("expected empty target validation")
+        } catch (error: IllegalArgumentException) {
+            assertEquals("Choose at least one conversation", error.message)
+        }
+        try {
+            repository.forwardMessage(77, (1L..21L).toList())
+            fail("expected 20 target validation")
+        } catch (error: IllegalArgumentException) {
+            assertEquals("Choose no more than 20 conversations", error.message)
+        }
+    }
+
+    @Test
     fun uploadsMultipartFileAndDecodesMediaJob() {
         val captured = mutableListOf<ApiRequest>()
         val repository = repository(captured) {

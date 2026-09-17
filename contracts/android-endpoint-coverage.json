@@ -6,9 +6,9 @@
   },
   "totals": {
     "platform": 464,
-    "covered": 59,
+    "covered": 60,
     "waived": 0,
-    "missing": 405,
+    "missing": 404,
     "unmatched": 0
   },
   "covered": [
@@ -135,6 +135,11 @@
     {
       "method": "PUT",
       "path": "/api/chat/messages/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/messages/:param/forward",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {

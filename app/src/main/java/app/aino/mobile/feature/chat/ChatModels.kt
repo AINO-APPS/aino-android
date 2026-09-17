@@ -138,6 +138,7 @@ data class ChatMessage(
     @SerialName("file_size") val fileSize: Long? = null,
     @SerialName("deleted_at") val deletedAt: String? = null,
     @SerialName("edited_at") val editedAt: String? = null,
+    @SerialName("forwarded_from_id") val forwardedFromId: Long? = null,
     val starred: Boolean = false,
     val reactions: List<ChatReaction> = emptyList(),
     @SerialName("media_job_id") val mediaJobId: Long? = null,
@@ -276,6 +277,7 @@ data class ReactionRequest(val emoji: String)
 
 @Serializable data class EditMessageRequest(val content: String)
 @Serializable data class ToggleStarResponse(val ok: Boolean = true, val starred: Boolean)
+@Serializable data class ForwardMessageRequest(val conversationIds: List<Long>)
 
 @Serializable
 data class MediaJobResponse(val ok: Boolean = true, val mediaJobId: Long? = null)
@@ -413,6 +415,22 @@ private data class PositionedThreadItem(
 
 fun totalUnread(conversations: List<ChatConversation>): Int =
     conversations.sumOf { it.unreadCount.coerceAtLeast(0) }
+
+fun forwardDestinations(
+    conversations: List<ChatConversation>,
+    query: String,
+): List<ChatConversation> {
+    val normalized = query.trim()
+    return conversations.filter { conversation ->
+        !conversation.isArchived && (
+            normalized.isEmpty() || listOf(
+                conversation.title(),
+                conversation.otherUsername.orEmpty(),
+                conversation.groupName.orEmpty(),
+            ).joinToString(" ").contains(normalized, ignoreCase = true)
+        )
+    }
+}
 
 fun presenceLabel(value: ChatPresence?): String = when {
     value == null || value.presence != "online" -> "Offline"

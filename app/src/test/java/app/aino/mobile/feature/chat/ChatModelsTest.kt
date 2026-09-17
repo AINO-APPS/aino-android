@@ -68,6 +68,19 @@ class ChatModelsTest {
     }
 
     @Test
+    fun filtersForwardDestinationsWithoutShowingArchivedChats() {
+        val conversations = listOf(
+            ChatConversation(1, otherFullName = "Asha Kumar", otherUsername = "asha"),
+            ChatConversation(2, isGroup = true, groupName = "Release Team"),
+            ChatConversation(3, otherFullName = "Archived", isArchived = true),
+        )
+
+        assertEquals(listOf(1L, 2L), forwardDestinations(conversations, "").map(ChatConversation::id))
+        assertEquals(listOf(2L), forwardDestinations(conversations, "release").map(ChatConversation::id))
+        assertEquals(listOf(1L), forwardDestinations(conversations, "ASHA").map(ChatConversation::id))
+    }
+
+    @Test
     fun realtimeEditPatchesContentButNeverRevivesDeletedMessages() {
         val live = ChatMessage(1, 9, 4, "old", "2026-09-17T04:00:00Z")
         val deleted = ChatMessage(2, 9, 4, "", "2026-09-17T04:01:00Z", deletedAt = "2026-09-17T04:02:00Z")

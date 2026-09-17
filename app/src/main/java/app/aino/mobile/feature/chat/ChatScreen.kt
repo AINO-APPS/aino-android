@@ -58,7 +58,11 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.automirrored.outlined.Forward
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -308,6 +312,9 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         ConversationInfo(ui, viewModel)
         return
     }
+    if (ui.forwardingMessage != null) {
+        ForwardMessageDialog(ui, viewModel)
+    }
     AinoAtmosphere {
         Column(Modifier.fillMaxSize()) {
             // The thread replaces the whole shell, so it owns the status-bar
@@ -366,6 +373,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             onEdit = { viewModel.beginEdit(item.message) },
                             onDelete = { viewModel.deleteMessage(item.message) },
                             onStar = { viewModel.toggleStar(item.message) },
+                            onForward = { viewModel.beginForward(item.message) },
                             onCancel = { viewModel.cancelMedia(item.message) },
                             onRetry = { viewModel.retryMedia(item.message) },
                         )
@@ -487,6 +495,7 @@ private fun MessageBubble(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onStar: () -> Unit,
+    onForward: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -520,6 +529,12 @@ private fun MessageBubble(
                 .padding(horizontal = 13.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            if (message.forwardedFromId != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Icon(Icons.AutoMirrored.Outlined.Forward, null, Modifier.size(13.dp), tint = bubbleSecondary)
+                    Text("Forwarded", color = bubbleSecondary, style = MaterialTheme.typography.labelMedium)
+                }
+            }
             message.replyContent?.let {
                 Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.10f), RoundedCornerShape(8.dp)).padding(8.dp)) {
                     Text(message.replySenderName.orEmpty(), color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
@@ -575,6 +590,11 @@ private fun MessageBubble(
             }
         }
         DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Forward") },
+                leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Forward, null) },
+                onClick = { actionsOpen = false; onForward() },
+            )
             DropdownMenuItem(
                 text = { Text(if (message.starred) "Remove from saved" else "Save message") },
                 leadingIcon = { Icon(if (message.starred) Icons.Outlined.StarOutline else Icons.Outlined.Star, null) },
@@ -637,6 +657,81 @@ private fun MessageBubble(
             Text("Read by ${readBy.joinToString { it.fullName }}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 8.dp))
         }
     }
+}
+
+@Composable
+private fun ForwardMessageDialog(ui: ChatUiState, viewModel: ChatViewModel) {
+    val message = ui.forwardingMessage ?: return
+    val choices = remember(ui.conversations, ui.forwardQuery) {
+        forwardDestinations(ui.conversations, ui.forwardQuery)
+    }
+    AlertDialog(
+        onDismissRequest = viewModel::cancelForward,
+        title = { Text("Forward message") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    message.body().take(120),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                BasicTextField(
+                    value = ui.forwardQuery,
+                    onValueChange = viewModel::updateForwardQuery,
+                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.large)
+                        .padding(horizontal = 14.dp, vertical = 11.dp),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (ui.forwardQuery.isBlank()) Text("Search conversations", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            inner()
+                        }
+                    },
+                )
+                Text(
+                    "${ui.forwardTargets.size} of 20 selected",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+                LazyColumn(Modifier.fillMaxWidth().height(320.dp)) {
+                    if (choices.isEmpty()) item { AinoEmptyState(Icons.Outlined.ChatBubbleOutline, "No matching conversations") }
+                    items(choices, key = ChatConversation::id) { conversation ->
+                        val selected = conversation.id in ui.forwardTargets
+                        Row(
+                            Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
+                                .clickable(enabled = selected || ui.forwardTargets.size < 20) { viewModel.toggleForwardTarget(conversation.id) }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = selected,
+                                onCheckedChange = { viewModel.toggleForwardTarget(conversation.id) },
+                                enabled = selected || ui.forwardTargets.size < 20,
+                            )
+                            ConversationAvatar(conversation, ui.presence[conversation.otherUserId])
+                            Text(
+                                conversation.title(),
+                                Modifier.padding(start = 10.dp).weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = viewModel::submitForward, enabled = ui.forwardTargets.isNotEmpty() && !ui.forwarding) {
+                if (ui.forwarding) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                else Text("Forward${if (ui.forwardTargets.isEmpty()) "" else " (${ui.forwardTargets.size})"}")
+            }
+        },
+        dismissButton = { TextButton(onClick = viewModel::cancelForward, enabled = !ui.forwarding) { Text("Cancel") } },
+    )
 }
 
 @Composable
