@@ -373,6 +373,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             onEdit = { viewModel.beginEdit(item.message) },
                             onDelete = { viewModel.deleteMessage(item.message) },
                             onStar = { viewModel.toggleStar(item.message) },
+                            onPin = { viewModel.toggleMessagePin(item.message) },
                             onForward = { viewModel.beginForward(item.message) },
                             onCancel = { viewModel.cancelMedia(item.message) },
                             onRetry = { viewModel.retryMedia(item.message) },
@@ -495,6 +496,7 @@ private fun MessageBubble(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onStar: () -> Unit,
+    onPin: () -> Unit,
     onForward: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
@@ -587,6 +589,10 @@ private fun MessageBubble(
                     Spacer(Modifier.width(3.dp))
                     Icon(Icons.Outlined.Star, "Saved message", Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
                 }
+                if (message.pinnedAt != null) {
+                    Spacer(Modifier.width(3.dp))
+                    Icon(Icons.Outlined.PushPin, "Pinned message", Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
+                }
             }
         }
         DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
@@ -599,6 +605,11 @@ private fun MessageBubble(
                 text = { Text(if (message.starred) "Remove from saved" else "Save message") },
                 leadingIcon = { Icon(if (message.starred) Icons.Outlined.StarOutline else Icons.Outlined.Star, null) },
                 onClick = { actionsOpen = false; onStar() },
+            )
+            DropdownMenuItem(
+                text = { Text(if (message.pinnedAt == null) "Pin message" else "Unpin message") },
+                leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
+                onClick = { actionsOpen = false; onPin() },
             )
             if (isMine) {
                 DropdownMenuItem(

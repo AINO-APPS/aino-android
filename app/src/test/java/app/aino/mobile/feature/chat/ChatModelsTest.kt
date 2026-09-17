@@ -120,6 +120,27 @@ class ChatModelsTest {
     }
 
     @Test
+    fun realtimePinPatchesOnlyTheTargetAndIgnoresDeletedMessages() {
+        val target = ChatMessage(7, 9, 4, "target", "2026-09-17T04:00:00Z")
+        val other = ChatMessage(8, 9, 8, "other", "2026-09-17T04:01:00Z")
+        val pinned = applyRealtimePin(
+            listOf(target, other),
+            ChatPinEvent(7, 9, true, pinnedBy = 4),
+            pinnedAt = "2026-09-17T04:02:00Z",
+        )
+        assertEquals("2026-09-17T04:02:00Z", pinned[0].pinnedAt)
+        assertEquals(4L, pinned[0].pinnedBy)
+        assertEquals(other, pinned[1])
+
+        val unpinned = applyRealtimePin(pinned, ChatPinEvent(7, 9, false))
+        assertNull(unpinned[0].pinnedAt)
+        assertNull(unpinned[0].pinnedBy)
+
+        val deleted = target.copy(deletedAt = "2026-09-17T04:03:00Z")
+        assertEquals(deleted, applyRealtimePin(listOf(deleted), ChatPinEvent(7, 9, true))[0])
+    }
+
+    @Test
     fun buildsChronologicalThreadWithDateSeparatorsAndMessageGroups() {
         val messages = listOf(
             ChatMessage(1, 9, 4, "one", "2026-09-15T23:59:00Z"),

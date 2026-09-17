@@ -162,6 +162,18 @@ class ChatRepositoryTest {
     }
 
     @Test
+    fun pinsMessageThroughTheExactServerRoute() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) { """{"ok":true,"pinned":true}""" }
+
+        val response = repository.toggleMessagePin(77)
+
+        assertEquals("POST", captured.single().method)
+        assertEquals("chat/messages/77/pin", captured.single().path)
+        assertTrue(response.pinned)
+    }
+
+    @Test
     fun forwardsToDistinctDestinationsWithTheServerPayload() {
         val captured = mutableListOf<ApiRequest>()
         val repository = repository(captured) { """{"ok":true}""" }

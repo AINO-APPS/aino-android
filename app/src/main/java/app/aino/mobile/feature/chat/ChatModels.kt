@@ -139,6 +139,8 @@ data class ChatMessage(
     @SerialName("deleted_at") val deletedAt: String? = null,
     @SerialName("edited_at") val editedAt: String? = null,
     @SerialName("forwarded_from_id") val forwardedFromId: Long? = null,
+    @SerialName("pinned_at") val pinnedAt: String? = null,
+    @SerialName("pinned_by") val pinnedBy: Long? = null,
     val starred: Boolean = false,
     val reactions: List<ChatReaction> = emptyList(),
     @SerialName("media_job_id") val mediaJobId: Long? = null,
@@ -210,6 +212,15 @@ data class ChatEditEvent(
 @Serializable
 data class ChatDeleteEvent(val messageId: Long, val conversationId: Long)
 
+@Serializable
+data class ChatPinEvent(
+    val messageId: Long,
+    val conversationId: Long,
+    val pinned: Boolean,
+    val pinnedBy: Long? = null,
+    val pinnedByName: String? = null,
+)
+
 @PublishedApi
 internal val CHAT_EVENT_JSON = Json { ignoreUnknownKeys = true }
 
@@ -266,6 +277,19 @@ fun applyRealtimeDelete(
     } else message
 }
 
+fun applyRealtimePin(
+    messages: List<ChatMessage>,
+    event: ChatPinEvent,
+    pinnedAt: String = Instant.now().toString(),
+): List<ChatMessage> = messages.map { message ->
+    if (message.id == event.messageId && message.deletedAt == null) {
+        message.copy(
+            pinnedAt = if (event.pinned) message.pinnedAt ?: pinnedAt else null,
+            pinnedBy = if (event.pinned) event.pinnedBy else null,
+        )
+    } else message
+}
+
 /** Exact outbound shape accepted by `handleChatTyping`. */
 fun typingEnvelope(conversationId: Long): RealtimeEnvelope = RealtimeEnvelope(
     type = "chat_typing",
@@ -277,6 +301,7 @@ data class ReactionRequest(val emoji: String)
 
 @Serializable data class EditMessageRequest(val content: String)
 @Serializable data class ToggleStarResponse(val ok: Boolean = true, val starred: Boolean)
+@Serializable data class ToggleMessagePinResponse(val ok: Boolean = true, val pinned: Boolean)
 @Serializable data class ForwardMessageRequest(val conversationIds: List<Long>)
 
 @Serializable

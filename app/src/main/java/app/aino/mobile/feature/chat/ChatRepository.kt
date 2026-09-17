@@ -64,6 +64,9 @@ class ChatRepository(
     fun toggleStar(messageId: Long): ToggleStarResponse =
         mutate("chat/messages/$messageId/star", Unit)
 
+    fun toggleMessagePin(messageId: Long): ToggleMessagePinResponse =
+        mutate("chat/messages/$messageId/pin", Unit)
+
     fun forwardMessage(messageId: Long, conversationIds: List<Long>): ChatOk {
         require(conversationIds.isNotEmpty()) { "Choose at least one conversation" }
         require(conversationIds.size <= 20) { "Choose no more than 20 conversations" }

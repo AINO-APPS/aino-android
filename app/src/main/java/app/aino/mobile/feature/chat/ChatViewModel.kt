@@ -167,6 +167,13 @@ class ChatViewModel(
                 }
                 return
             }
+            RealtimeEvent.ChatPin -> {
+                val pin = decodeChatRealtime<ChatPinEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id == pin.conversationId) {
+                    _ui.value = _ui.value.copy(messages = applyRealtimePin(_ui.value.messages, pin))
+                }
+                return
+            }
             else -> Unit
         }
         if (!shouldRefreshConversationList(event.type)) return
@@ -401,6 +408,32 @@ class ChatViewModel(
                     _ui.value = _ui.value.copy(messages = _ui.value.messages.map { if (it.id == message.id) it.copy(starred = result.starred) else it })
                 },
                 onFailure = { _ui.value = _ui.value.copy(messages = original, error = it.message ?: "Could not update saved message") },
+            )
+        }
+    }
+
+    fun toggleMessagePin(message: ChatMessage) {
+        if (message.deletedAt != null) return
+        val conversationId = message.conversationId ?: _ui.value.selectedConversation?.id ?: return
+        val original = _ui.value.messages
+        val optimisticPinned = message.pinnedAt == null
+        _ui.value = _ui.value.copy(
+            messages = applyRealtimePin(
+                original,
+                ChatPinEvent(message.id, conversationId, optimisticPinned, scope?.userId),
+            ),
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.toggleMessagePin(message.id) }.fold(
+                onSuccess = { response ->
+                    _ui.value = _ui.value.copy(
+                        messages = applyRealtimePin(
+                            _ui.value.messages,
+                            ChatPinEvent(message.id, conversationId, response.pinned, scope?.userId),
+                        ),
+                    )
+                },
+                onFailure = { _ui.value = _ui.value.copy(messages = original, error = it.message ?: "Could not update pinned message") },
             )
         }
     }
