@@ -13,6 +13,9 @@ import app.aino.mobile.core.db.ScopedCache
 import app.aino.mobile.core.db.OutboxCoordinator
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
+import app.aino.mobile.core.realtime.RealtimeEvent
+import app.aino.mobile.core.realtime.RealtimeEnvelope
+import app.aino.mobile.core.realtime.RoutedRealtimeEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +38,7 @@ data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
     val queuedMessages: List<QueuedMessage> = emptyList(),
     val receipts: List<ReadReceipt> = emptyList(),
+    val typingUserId: Long? = null,
     val threadLoading: Boolean = false,
     val threadFromCache: Boolean = false,
     val composer: String = "",
@@ -60,6 +64,14 @@ class ChatViewModel(
     private var scope: CacheScope? = null
     private var cache: ChatCache? = null
     private var realtimeRefresh: Job? = null
+    private var typingExpiry: Job? = null
+    private var typingDispatch: Job? = null
+    private var realtimeSend: (RealtimeEnvelope) -> Boolean = { false }
+
+    /** Injected from the process-owned realtime ViewModel after composition. */
+    fun setRealtimeSender(sender: (RealtimeEnvelope) -> Boolean) {
+        realtimeSend = sender
+    }
 
     fun setScope(tenantId: Long?, userId: Long?) {
         val next = if (tenantId != null && tenantId > 0 && userId != null && userId > 0) {
@@ -106,8 +118,36 @@ class ChatViewModel(
         }
     }
 
-    fun onRealtimeEvent(type: String) {
-        if (!shouldRefreshConversationList(type)) return
+    fun onRealtimeEvent(event: RoutedRealtimeEvent) {
+        when (event.event) {
+            RealtimeEvent.ChatTyping -> {
+                val typing = decodeChatRealtime<ChatTypingEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id != typing.conversationId || typing.userId == scope?.userId) return
+                _ui.value = _ui.value.copy(typingUserId = typing.userId)
+                typingExpiry?.cancel()
+                typingExpiry = viewModelScope.launch {
+                    delay(3_000)
+                    if (_ui.value.typingUserId == typing.userId) _ui.value = _ui.value.copy(typingUserId = null)
+                }
+                return
+            }
+            RealtimeEvent.ChatReadReceipt -> {
+                val receipt = decodeChatRealtime<ChatReadReceiptEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id == receipt.conversationId) {
+                    _ui.value = _ui.value.copy(receipts = applyRealtimeReceipt(_ui.value.receipts, receipt))
+                }
+                return
+            }
+            RealtimeEvent.ChatReaction -> {
+                val reaction = decodeChatRealtime<ChatReactionEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id == reaction.conversationId) {
+                    _ui.value = _ui.value.copy(messages = applyRealtimeReaction(_ui.value.messages, reaction))
+                }
+                // Reconcile after the immediate patch, matching web behavior.
+            }
+            else -> Unit
+        }
+        if (!shouldRefreshConversationList(event.type)) return
         // Reconnect replay and multi-device fan-out can deliver a burst of
         // equivalent invalidations. One authoritative refresh after a short
         // coalescing window is enough and avoids overlapping REST/cache writes.
@@ -187,11 +227,14 @@ class ChatViewModel(
     }
 
     fun closeConversation() {
+        typingExpiry?.cancel()
+        typingDispatch?.cancel()
         _ui.value = _ui.value.copy(
             selectedConversation = null,
             messages = emptyList(),
             queuedMessages = emptyList(),
             receipts = emptyList(),
+            typingUserId = null,
             composer = "",
             threadFromCache = false,
         )
@@ -199,6 +242,14 @@ class ChatViewModel(
 
     fun updateComposer(value: String) {
         _ui.value = _ui.value.copy(composer = value.take(5_000), error = null)
+        val conversationId = _ui.value.selectedConversation?.id ?: return
+        // Match web exactly: reset on every change, then emit after 200 ms of
+        // inactivity. Typing is fire-and-forget and never causes a refetch.
+        typingDispatch?.cancel()
+        typingDispatch = viewModelScope.launch {
+            delay(200)
+            realtimeSend(typingEnvelope(conversationId))
+        }
     }
 
     fun refreshThread() {

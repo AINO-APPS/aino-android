@@ -74,6 +74,7 @@ import app.aino.mobile.feature.chat.ChatScreen
 import app.aino.mobile.feature.chat.ChatViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.core.realtime.RealtimeState
+import app.aino.mobile.core.realtime.RealtimeDomain
 import app.aino.mobile.core.realtime.RealtimeViewModel
 import app.aino.mobile.core.designsystem.AinoAtmosphere
 import app.aino.mobile.core.designsystem.AinoBadge
@@ -125,6 +126,7 @@ fun AinoApp(
     val authenticatedUser = (ui.state as? AuthState.Authenticated)?.user
     val appContext = LocalContext.current.applicationContext
     val callSession = CallSessionRuntime.get(appContext)
+    LaunchedEffect(chat, realtime) { chat.setRealtimeSender(realtime::send) }
     LaunchedEffect(authenticatedUser?.tenantId, authenticatedUser?.id) {
         chat.setScope(authenticatedUser?.tenantId, authenticatedUser?.id)
         if (authenticatedUser?.tenantId != null) {
@@ -155,8 +157,12 @@ fun AinoApp(
                 }
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
                 if (event.type in TASK_REFRESH_EVENTS) tasks.refresh()
-                chat.onRealtimeEvent(event.type)
             }
+        }
+    }
+    LaunchedEffect(tenantAuthenticated) {
+        if (tenantAuthenticated) {
+            realtime.domain(RealtimeDomain.Chat).collect(chat::onRealtimeEvent)
         }
     }
     if (incomingCallUi.route != null) {

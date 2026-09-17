@@ -6,11 +6,17 @@ import app.aino.mobile.core.db.MessageEntity
 import app.aino.mobile.core.realtime.RealtimeDomain
 import app.aino.mobile.core.realtime.RealtimeEvent
 import app.aino.mobile.core.realtime.RealtimeReaction
+import app.aino.mobile.core.realtime.RealtimeEnvelope
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.put
 
 @Serializable
 data class ChatConversation(
@@ -173,6 +179,58 @@ data class ReadReceipt(
     @SerialName("user_id") val userId: Long,
     @SerialName("last_read_at") val lastReadAt: String,
     @SerialName("full_name") val fullName: String,
+)
+
+@Serializable
+data class ChatTypingEvent(val conversationId: Long, val userId: Long)
+
+@Serializable
+data class ChatReadReceiptEvent(val conversationId: Long, val userId: Long, val readAt: String)
+
+@Serializable
+data class ChatReactionEvent(
+    val messageId: Long,
+    val conversationId: Long,
+    val userId: Long,
+    val fullName: String = "",
+    val emoji: String,
+    val action: String,
+)
+
+@PublishedApi
+internal val CHAT_EVENT_JSON = Json { ignoreUnknownKeys = true }
+
+inline fun <reified T> decodeChatRealtime(data: JsonElement?): T? =
+    data?.let { runCatching { CHAT_EVENT_JSON.decodeFromJsonElement<T>(it) }.getOrNull() }
+
+fun applyRealtimeReceipt(
+    receipts: List<ReadReceipt>,
+    event: ChatReadReceiptEvent,
+): List<ReadReceipt> = receipts
+    .filterNot { it.userId == event.userId }
+    .plus(ReadReceipt(event.userId, event.readAt, receipts.firstOrNull { it.userId == event.userId }?.fullName.orEmpty()))
+
+fun applyRealtimeReaction(
+    messages: List<ChatMessage>,
+    event: ChatReactionEvent,
+): List<ChatMessage> = messages.map { message ->
+    if (message.id != event.messageId) return@map message
+    val withoutActorEmoji = message.reactions.filterNot {
+        it.userId == event.userId && it.emoji == event.emoji
+    }
+    message.copy(
+        reactions = if (event.action == "added") {
+            withoutActorEmoji + ChatReaction(event.emoji, event.userId, event.fullName)
+        } else {
+            withoutActorEmoji
+        },
+    )
+}
+
+/** Exact outbound shape accepted by `handleChatTyping`. */
+fun typingEnvelope(conversationId: Long): RealtimeEnvelope = RealtimeEnvelope(
+    type = "chat_typing",
+    data = buildJsonObject { put("conversationId", conversationId) },
 )
 
 @Serializable

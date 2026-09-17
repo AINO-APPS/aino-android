@@ -7,8 +7,66 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.ZoneId
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 
 class ChatModelsTest {
+    @Test
+    fun decodesRealtimeChatPayloadsAndRejectsMalformedFrames() {
+        val typing = decodeChatRealtime<ChatTypingEvent>(
+            Json.parseToJsonElement("""{"conversationId":9,"userId":4}"""),
+        )
+        val receipt = decodeChatRealtime<ChatReadReceiptEvent>(
+            Json.parseToJsonElement("""{"conversationId":9,"userId":8,"readAt":"2026-09-17T04:00:00Z"}"""),
+        )
+
+        assertEquals(ChatTypingEvent(9, 4), typing)
+        assertEquals(8L, receipt?.userId)
+        assertNull(decodeChatRealtime<ChatTypingEvent>(Json.parseToJsonElement("""{"conversationId":"bad"}""")))
+        assertNull(decodeChatRealtime<ChatTypingEvent>(null))
+    }
+
+    @Test
+    fun realtimeReactionPatchIsIdempotentAndScopedToOneMessage() {
+        val original = listOf(
+            ChatMessage(1, 9, 4, "one", "2026-09-17T04:00:00Z"),
+            ChatMessage(2, 9, 8, "two", "2026-09-17T04:01:00Z"),
+        )
+        val add = ChatReactionEvent(2, 9, 4, "Asha", "👍", "added")
+        val once = applyRealtimeReaction(original, add)
+        val twice = applyRealtimeReaction(once, add)
+
+        assertEquals(original[0], twice[0])
+        assertEquals(listOf(ChatReaction("👍", 4, "Asha")), twice[1].reactions)
+
+        val removed = applyRealtimeReaction(twice, add.copy(action = "removed"))
+        assertTrue(removed[1].reactions.isEmpty())
+    }
+
+    @Test
+    fun realtimeReceiptReplacesOnlyTheSameUserCursor() {
+        val current = listOf(
+            ReadReceipt(4, "2026-09-17T03:00:00Z", "Asha"),
+            ReadReceipt(8, "2026-09-17T03:10:00Z", "Ben"),
+        )
+        val updated = applyRealtimeReceipt(
+            current,
+            ChatReadReceiptEvent(9, 4, "2026-09-17T04:00:00Z"),
+        )
+
+        assertEquals(2, updated.size)
+        assertEquals("2026-09-17T04:00:00Z", updated.single { it.userId == 4L }.lastReadAt)
+        assertEquals("Asha", updated.single { it.userId == 4L }.fullName)
+        assertEquals("Ben", updated.single { it.userId == 8L }.fullName)
+    }
+
+    @Test
+    fun typingEnvelopeMatchesTheServerCommandContract() {
+        val envelope = typingEnvelope(42)
+        assertEquals("chat_typing", envelope.type)
+        assertEquals("42", envelope.data!!.jsonObject["conversationId"].toString())
+    }
+
     @Test
     fun buildsChronologicalThreadWithDateSeparatorsAndMessageGroups() {
         val messages = listOf(

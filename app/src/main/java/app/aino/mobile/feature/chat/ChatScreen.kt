@@ -317,8 +317,12 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 Column(Modifier.padding(start = 10.dp).weight(1f).clickable(onClick = viewModel::openInfo)) {
                     Text(conversation.title(), fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     Text(
-                        if (conversation.isGroup) "${conversation.memberCount ?: 0} members" else presenceLabel(ui.presence[conversation.otherUserId]),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        when {
+                            ui.typingUserId != null -> "Typing…"
+                            conversation.isGroup -> "${conversation.memberCount ?: 0} members"
+                            else -> presenceLabel(ui.presence[conversation.otherUserId])
+                        },
+                        color = if (ui.typingUserId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 12.sp,
                     )
                 }
