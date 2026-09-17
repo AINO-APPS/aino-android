@@ -11,6 +11,7 @@ import app.aino.mobile.core.network.ApiResponse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.LocalDate
 
 class DashboardRepositoryTest {
     @Test
@@ -51,6 +52,22 @@ class DashboardRepositoryTest {
 }
 
 class DashboardModelsTest {
+    @Test
+    fun dashboardWeekEndsWithTodayAcrossSevenDays() {
+        val today = LocalDate.of(2026, 9, 17)
+        val dates = dashboardWeek(today)
+        assertEquals(7, dates.size)
+        assertEquals(LocalDate.of(2026, 9, 11), dates.first())
+        assertEquals(today, dates.last())
+    }
+
+    @Test
+    fun dashboardGreetingTracksTimeOfDay() {
+        assertEquals("Good Morning", dashboardGreeting(8))
+        assertEquals("Good Afternoon", dashboardGreeting(14))
+        assertEquals("Good Evening", dashboardGreeting(20))
+    }
+
     @Test
     fun calculatesLiveFloorAndBreakDurations() {
         val status = TrackerStatus(
