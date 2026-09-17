@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.AinoAlert
 import app.aino.mobile.core.designsystem.AinoAtmosphere
 import app.aino.mobile.core.designsystem.AlertTone
+import app.aino.mobile.core.designsystem.AinoEmptyState
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -753,13 +754,7 @@ private fun ArchivedRow(count: Int) {
 
 @Composable
 private fun HonestEmpty(icon: ImageVector, text: String) {
-    Column(Modifier.fillMaxWidth().padding(top = 90.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(
-            Modifier.size(74.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(22.dp)).border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(22.dp)),
-            contentAlignment = Alignment.Center,
-        ) { Icon(icon, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
-    }
+    AinoEmptyState(icon = icon, title = text, modifier = Modifier.padding(top = 42.dp))
 }
 
 private fun timeAgo(value: String?): String {

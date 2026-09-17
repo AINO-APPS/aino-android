@@ -10,10 +10,24 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.theme.AinoBlue
 import app.aino.mobile.core.designsystem.theme.AinoCyan
@@ -34,6 +52,164 @@ import app.aino.mobile.core.designsystem.theme.AinoWarning
 @Composable
 fun AinoAtmosphere(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { content() }
+}
+
+/** Shared edge-to-edge Material 3 page scaffold. */
+@Composable
+fun AinoScaffold(
+    modifier: Modifier = Modifier,
+    topBar: @Composable () -> Unit = {},
+    bottomBar: @Composable () -> Unit = {},
+    content: @Composable (PaddingValues) -> Unit,
+) {
+    Scaffold(
+        modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = topBar,
+        bottomBar = bottomBar,
+        content = content,
+    )
+}
+
+/** Standard page top bar for feature screens that own their navigation. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AinoTopBar(
+    title: String,
+    modifier: Modifier = Modifier,
+    subtitle: String? = null,
+    navigationIcon: @Composable () -> Unit = {},
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    CenterAlignedTopAppBar(
+        modifier = modifier,
+        title = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge)
+                subtitle?.let {
+                    Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        navigationIcon = navigationIcon,
+        actions = actions,
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        ),
+    )
+}
+
+data class AinoNavigationItem(
+    val key: String,
+    val label: String,
+    val icon: ImageVector,
+    val badgeCount: Int = 0,
+)
+
+/** Shared Material 3 bottom navigation with accessible labels and badges. */
+@Composable
+fun AinoNavigationBar(
+    items: List<AinoNavigationItem>,
+    selectedKey: String?,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    NavigationBar(
+        modifier = modifier,
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        tonalElevation = 3.dp,
+    ) {
+        items.forEach { item ->
+            NavigationBarItem(
+                selected = item.key == selectedKey,
+                onClick = { onSelect(item.key) },
+                icon = {
+                    BadgedBox(
+                        badge = {
+                            if (item.badgeCount > 0) {
+                                Badge { Text(if (item.badgeCount > 99) "99+" else item.badgeCount.toString()) }
+                            }
+                        },
+                    ) {
+                        Icon(item.icon, contentDescription = item.label)
+                    }
+                },
+                label = { Text(item.label) },
+                alwaysShowLabel = true,
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                ),
+            )
+        }
+    }
+}
+
+/** Compact, scroll-free segmented selector for two to five feature modes. */
+@Composable
+fun <T> AinoSegmentedTabs(
+    items: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    icon: (@Composable (T, Boolean) -> Unit)? = null,
+) {
+    Row(
+        modifier.fillMaxWidth().selectableGroup()
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.large)
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        items.forEach { item ->
+            val isSelected = item == selected
+            Surface(
+                modifier = Modifier.weight(1f).selectable(
+                    selected = isSelected,
+                    onClick = { onSelect(item) },
+                    role = Role.Tab,
+                ),
+                shape = MaterialTheme.shapes.medium,
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                tonalElevation = if (isSelected) 1.dp else 0.dp,
+            ) {
+                Row(
+                    Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    icon?.invoke(item, isSelected)
+                    Text(label(item), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+/** Reusable honest empty state; it never advertises an unavailable action. */
+@Composable
+fun AinoEmptyState(
+    icon: ImageVector,
+    title: String,
+    modifier: Modifier = Modifier,
+    message: String? = null,
+) {
+    Column(
+        modifier.fillMaxWidth().semantics { contentDescription = title }.padding(horizontal = 24.dp, vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Icon(icon, contentDescription = null, Modifier.padding(18.dp), tint = MaterialTheme.colorScheme.primary)
+        }
+        Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+        message?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 @Composable

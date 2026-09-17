@@ -60,6 +60,7 @@ import app.aino.mobile.core.designsystem.AinoBadge
 import app.aino.mobile.core.designsystem.AinoGlassCard
 import app.aino.mobile.core.designsystem.AinoPrimaryButton
 import app.aino.mobile.core.designsystem.AinoSectionHeader
+import app.aino.mobile.core.designsystem.AinoSegmentedTabs
 import app.aino.mobile.core.designsystem.AlertTone
 import app.aino.mobile.core.common.formatDuration
 import app.aino.mobile.core.designsystem.theme.AinoDanger
@@ -119,12 +120,13 @@ private enum class AttendancePage(val label: String) {
 
 @Composable
 private fun AttendanceTabs(selected: AttendancePage, onSelect: (AttendancePage) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        AttendancePage.entries.forEach { tab ->
+    AinoSegmentedTabs(
+        items = AttendancePage.entries,
+        selected = selected,
+        label = AttendancePage::label,
+        onSelect = onSelect,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
+        icon = { tab, isSelected ->
             val icon = when (tab) {
                 AttendancePage.Today -> Icons.Outlined.Schedule
                 AttendancePage.Overview -> Icons.Outlined.CalendarMonth
@@ -132,18 +134,9 @@ private fun AttendanceTabs(selected: AttendancePage, onSelect: (AttendancePage) 
                 AttendancePage.Leaves -> Icons.Outlined.BeachAccess
                 AttendancePage.Analytics -> Icons.Outlined.BarChart
             }
-            Row(
-                Modifier.weight(1f).clickable { onSelect(tab) }
-                    .background(if (selected == tab) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(6.dp))
-                    .padding(vertical = 9.dp, horizontal = 2.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(icon, null, Modifier.size(15.dp), tint = if (selected == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(tab.label, Modifier.padding(start = 4.dp), color = if (selected == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium, maxLines = 1)
-            }
-        }
-    }
+            Icon(icon, null, Modifier.padding(end = 4.dp).size(15.dp))
+        },
+    )
 }
 
 /**

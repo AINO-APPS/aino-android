@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -20,15 +19,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
@@ -88,6 +81,9 @@ import app.aino.mobile.core.designsystem.AinoGlassCard
 import app.aino.mobile.core.designsystem.AinoPrimaryButton
 import app.aino.mobile.core.designsystem.AinoSectionHeader
 import app.aino.mobile.core.designsystem.AlertTone
+import app.aino.mobile.core.designsystem.AinoNavigationBar
+import app.aino.mobile.core.designsystem.AinoNavigationItem
+import app.aino.mobile.core.designsystem.AinoScaffold
 import app.aino.mobile.core.db.CacheScope
 import app.aino.mobile.core.db.OutboxWorker
 import app.aino.mobile.core.db.shouldWakeOutboxOnReconnect
@@ -252,8 +248,7 @@ private fun AuthenticatedShell(
             if (destination.inBottomBar) popUpTo(AinoDestination.Dashboard.route)
         }
     }
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+    AinoScaffold(
         topBar = {
             AinoShellTopBar(
                 user = user,
@@ -395,38 +390,18 @@ private fun AinoShellBottomBar(
     chatUnread: Int,
     onNavigate: (AinoDestination) -> Unit,
 ) {
-    NavigationBar(
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        tonalElevation = 3.dp,
-    ) {
-        destinations.forEach { item ->
-            val selected = currentRoute == item.route
-            NavigationBarItem(
-                selected = selected,
-                onClick = { onNavigate(item) },
-                icon = {
-                    BadgedBox(
-                        badge = {
-                            if (item == AinoDestination.Chat && chatUnread > 0) {
-                                Badge { Text(if (chatUnread > 99) "99+" else chatUnread.toString()) }
-                            }
-                        },
-                    ) {
-                    Icon(
-                        item.icon,
-                        item.label,
-                            Modifier.size(22.dp),
-                    )
-                    }
-                },
-                label = { Text(item.label) },
-                alwaysShowLabel = true,
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                ),
+    AinoNavigationBar(
+        items = destinations.map { destination ->
+            AinoNavigationItem(
+                key = destination.route,
+                label = destination.label,
+                icon = destination.icon,
+                badgeCount = if (destination == AinoDestination.Chat) chatUnread else 0,
             )
-        }
-    }
+        },
+        selectedKey = currentRoute,
+        onSelect = { route -> destinations.firstOrNull { it.route == route }?.let(onNavigate) },
+    )
 }
 
 private fun initials(name: String): String = name.trim().split(Regex("\\s+")).take(2)
