@@ -55,6 +55,15 @@ class ChatRepository(
     fun toggleReaction(messageId: Long, emoji: String): ChatOk =
         mutate("chat/messages/$messageId/reactions", ReactionRequest(emoji))
 
+    fun editMessage(messageId: Long, content: String): ChatOk =
+        mutate("chat/messages/$messageId", EditMessageRequest(content.trim()), method = "PUT")
+
+    fun deleteMessage(messageId: Long): ChatOk =
+        mutate("chat/messages/$messageId", Unit, method = "DELETE")
+
+    fun toggleStar(messageId: Long): ToggleStarResponse =
+        mutate("chat/messages/$messageId/star", Unit)
+
     fun uploadFile(conversationId: Long, upload: ChatUpload): ChatMessage {
         val boundary = "aino-${UUID.randomUUID()}"
         val multipart = buildChatMultipart(upload, boundary)
@@ -103,10 +112,10 @@ class ChatRepository(
     fun toggleArchive(conversationId: Long): ToggleArchiveResponse =
         mutate("chat/conversations/$conversationId/archive", Unit)
 
-    private inline fun <reified T, reified R> mutate(path: String, body: T): R {
+    private inline fun <reified T, reified R> mutate(path: String, body: T, method: String = "POST"): R {
         try {
             val bytes = if (body is Unit) null else json.encodeToString(body).toByteArray()
-            return decode(api.execute(ApiRequest("POST", path, body = bytes)))
+            return decode(api.execute(ApiRequest(method, path, body = bytes)))
         } catch (error: ApiError.Http) {
             val message = runCatching {
                 json.parseToJsonElement(error.responseBody).jsonObject["error"]?.jsonPrimitive?.content

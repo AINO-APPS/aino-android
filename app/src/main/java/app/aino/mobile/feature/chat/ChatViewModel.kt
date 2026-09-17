@@ -42,6 +42,7 @@ data class ChatUiState(
     val threadLoading: Boolean = false,
     val threadFromCache: Boolean = false,
     val composer: String = "",
+    val editingMessage: ChatMessage? = null,
     val uploading: Boolean = false,
     val calls: List<CallLog> = emptyList(),
     val callsLoading: Boolean = false,
@@ -145,6 +146,23 @@ class ChatViewModel(
                 }
                 // Reconcile after the immediate patch, matching web behavior.
             }
+            RealtimeEvent.ChatEdit -> {
+                val edit = decodeChatRealtime<ChatEditEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id == edit.conversationId) {
+                    _ui.value = _ui.value.copy(messages = applyRealtimeEdit(_ui.value.messages, edit))
+                }
+                return
+            }
+            RealtimeEvent.ChatDelete -> {
+                val delete = decodeChatRealtime<ChatDeleteEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id == delete.conversationId) {
+                    _ui.value = _ui.value.copy(
+                        messages = applyRealtimeDelete(_ui.value.messages, delete),
+                        editingMessage = _ui.value.editingMessage?.takeUnless { it.id == delete.messageId },
+                    )
+                }
+                return
+            }
             else -> Unit
         }
         if (!shouldRefreshConversationList(event.type)) return
@@ -220,6 +238,7 @@ class ChatViewModel(
             queuedMessages = emptyList(),
             receipts = emptyList(),
             composer = "",
+            editingMessage = null,
             error = null,
         )
         markRead(conversation)
@@ -236,6 +255,7 @@ class ChatViewModel(
             receipts = emptyList(),
             typingUserId = null,
             composer = "",
+            editingMessage = null,
             threadFromCache = false,
         )
     }
@@ -287,6 +307,11 @@ class ChatViewModel(
     }
 
     fun sendMessage() {
+        val editing = _ui.value.editingMessage
+        if (editing != null) {
+            submitEdit(editing)
+            return
+        }
         val currentScope = scope ?: return
         val conversation = _ui.value.selectedConversation ?: return
         val content = _ui.value.composer.trim()
@@ -306,6 +331,65 @@ class ChatViewModel(
                     error = it.message ?: "Could not queue message",
                 )
             }
+        }
+    }
+
+    fun beginEdit(message: ChatMessage) {
+        if (message.senderId != scope?.userId || message.deletedAt != null) return
+        _ui.value = _ui.value.copy(editingMessage = message, composer = message.content.orEmpty(), error = null)
+    }
+
+    fun cancelEdit() {
+        _ui.value = _ui.value.copy(editingMessage = null, composer = "", error = null)
+    }
+
+    private fun submitEdit(message: ChatMessage) {
+        val content = _ui.value.composer.trim()
+        if (content.isEmpty() || content.length > 5_000) {
+            _ui.value = _ui.value.copy(error = "Edited message must be 1–5000 characters")
+            return
+        }
+        val original = _ui.value.messages
+        val optimistic = message.copy(content = content, editedAt = java.time.Instant.now().toString())
+        _ui.value = _ui.value.copy(
+            messages = original.map { if (it.id == message.id) optimistic else it },
+            editingMessage = null,
+            composer = "",
+            error = null,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.editMessage(message.id, content) }.onFailure {
+                _ui.value = _ui.value.copy(messages = original, editingMessage = message, composer = content, error = it.message ?: "Could not edit message")
+            }
+        }
+    }
+
+    fun deleteMessage(message: ChatMessage) {
+        if (message.senderId != scope?.userId || message.deletedAt != null) return
+        val original = _ui.value.messages
+        _ui.value = _ui.value.copy(
+            messages = applyRealtimeDelete(original, ChatDeleteEvent(message.id, message.conversationId ?: _ui.value.selectedConversation?.id ?: return)),
+            editingMessage = _ui.value.editingMessage?.takeUnless { it.id == message.id },
+            error = null,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.deleteMessage(message.id) }.onFailure {
+                _ui.value = _ui.value.copy(messages = original, error = it.message ?: "Could not delete message")
+            }
+        }
+    }
+
+    fun toggleStar(message: ChatMessage) {
+        if (message.deletedAt != null) return
+        val original = _ui.value.messages
+        _ui.value = _ui.value.copy(messages = original.map { if (it.id == message.id) it.copy(starred = !it.starred) else it })
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.toggleStar(message.id) }.fold(
+                onSuccess = { result ->
+                    _ui.value = _ui.value.copy(messages = _ui.value.messages.map { if (it.id == message.id) it.copy(starred = result.starred) else it })
+                },
+                onFailure = { _ui.value = _ui.value.copy(messages = original, error = it.message ?: "Could not update saved message") },
+            )
         }
     }
 

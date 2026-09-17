@@ -6,9 +6,9 @@
   },
   "totals": {
     "platform": 464,
-    "covered": 56,
+    "covered": 59,
     "waived": 0,
-    "missing": 408,
+    "missing": 405,
     "unmatched": 0
   },
   "covered": [
@@ -128,8 +128,23 @@
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
+      "method": "DELETE",
+      "path": "/api/chat/messages/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/chat/messages/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
       "method": "POST",
       "path": "/api/chat/messages/:param/reactions",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/messages/:param/star",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {

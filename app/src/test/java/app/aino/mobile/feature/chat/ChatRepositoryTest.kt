@@ -141,6 +141,27 @@ class ChatRepositoryTest {
     }
 
     @Test
+    fun editsDeletesAndStarsThroughExactServerContracts() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) { request ->
+            if (request.path.endsWith("/star")) """{"ok":true,"starred":true}""" else """{"ok":true}"""
+        }
+
+        repository.editMessage(77, "  revised  ")
+        repository.deleteMessage(77)
+        val star = repository.toggleStar(77)
+
+        assertEquals("PUT", captured[0].method)
+        assertEquals("chat/messages/77", captured[0].path)
+        assertEquals("""{"content":"revised"}""", captured[0].body!!.toString(Charsets.UTF_8))
+        assertEquals("DELETE", captured[1].method)
+        assertEquals("chat/messages/77", captured[1].path)
+        assertEquals("POST", captured[2].method)
+        assertEquals("chat/messages/77/star", captured[2].path)
+        assertTrue(star.starred)
+    }
+
+    @Test
     fun uploadsMultipartFileAndDecodesMediaJob() {
         val captured = mutableListOf<ApiRequest>()
         val repository = repository(captured) {

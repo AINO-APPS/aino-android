@@ -68,6 +68,45 @@ class ChatModelsTest {
     }
 
     @Test
+    fun realtimeEditPatchesContentButNeverRevivesDeletedMessages() {
+        val live = ChatMessage(1, 9, 4, "old", "2026-09-17T04:00:00Z")
+        val deleted = ChatMessage(2, 9, 4, "", "2026-09-17T04:01:00Z", deletedAt = "2026-09-17T04:02:00Z")
+        val event = ChatEditEvent(1, 9, "new", "2026-09-17T04:03:00Z")
+
+        val patched = applyRealtimeEdit(listOf(live, deleted), event)
+
+        assertEquals("new", patched[0].content)
+        assertEquals(event.editedAt, patched[0].editedAt)
+        assertEquals(deleted, applyRealtimeEdit(patched, event.copy(messageId = 2))[1])
+    }
+
+    @Test
+    fun realtimeDeleteClearsSensitiveMessageStateIdempotently() {
+        val message = ChatMessage(
+            id = 7,
+            conversationId = 9,
+            senderId = 4,
+            content = "secret",
+            createdAt = "2026-09-17T04:00:00Z",
+            fileName = "secret.pdf",
+            fileUrl = "/uploads/secret.pdf",
+            fileType = "application/pdf",
+            fileSize = 42,
+            starred = true,
+            reactions = listOf(ChatReaction("👍", 8, "Ben")),
+        )
+        val event = ChatDeleteEvent(7, 9)
+        val once = applyRealtimeDelete(listOf(message), event, "2026-09-17T04:01:00Z").single()
+        val twice = applyRealtimeDelete(listOf(once), event, "2026-09-17T04:02:00Z").single()
+
+        assertEquals("Message deleted", once.body())
+        assertNull(once.fileUrl)
+        assertTrue(once.reactions.isEmpty())
+        assertFalse(once.starred)
+        assertEquals(once.deletedAt, twice.deletedAt)
+    }
+
+    @Test
     fun buildsChronologicalThreadWithDateSeparatorsAndMessageGroups() {
         val messages = listOf(
             ChatMessage(1, 9, 4, "one", "2026-09-15T23:59:00Z"),

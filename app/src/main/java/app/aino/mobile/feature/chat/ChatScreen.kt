@@ -1,9 +1,11 @@
 package app.aino.mobile.feature.chat
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,7 +54,14 @@ import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.AddReaction
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.MoreHoriz
+import androidx.compose.material.icons.outlined.Star
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -354,6 +363,9 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             endsGroup = item.endsGroup,
                             receipts = ui.receipts,
                             onReact = { viewModel.react(item.message, it) },
+                            onEdit = { viewModel.beginEdit(item.message) },
+                            onDelete = { viewModel.deleteMessage(item.message) },
+                            onStar = { viewModel.toggleStar(item.message) },
                             onCancel = { viewModel.cancelMedia(item.message) },
                             onRetry = { viewModel.retryMedia(item.message) },
                         )
@@ -361,7 +373,15 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                     }
                 }
             }
-            MessageComposer(ui.composer, ui.uploading, viewModel::updateComposer, viewModel::sendMessage, onPickDocument)
+            MessageComposer(
+                value = ui.composer,
+                uploading = ui.uploading,
+                editingMessage = ui.editingMessage,
+                onChange = viewModel::updateComposer,
+                onSend = viewModel::sendMessage,
+                onCancelEdit = viewModel::cancelEdit,
+                onPickDocument = onPickDocument,
+            )
         }
     }
 }
@@ -454,6 +474,7 @@ private fun InfoRow(icon: ImageVector, label: String, onClick: () -> Unit) {
 
 private fun formatCallDuration(seconds: Int): String = "%d:%02d".format(seconds / 60, seconds % 60)
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun MessageBubble(
     message: ChatMessage,
@@ -463,9 +484,13 @@ private fun MessageBubble(
     endsGroup: Boolean,
     receipts: List<ReadReceipt>,
     onReact: (String) -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onStar: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
 ) {
+    var actionsOpen by remember { mutableStateOf(false) }
     val shape = messageBubbleShape(isMine, startsGroup, endsGroup)
     val bubbleContent = if (isMine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
     val bubbleSecondary = if (isMine) {
@@ -484,11 +509,15 @@ private fun MessageBubble(
             fontWeight = FontWeight.SemiBold,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
         )
+        Box {
         Column(
-            Modifier.fillMaxWidth(0.82f).background(
-                if (isMine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                shape,
-            ).padding(horizontal = 13.dp, vertical = 9.dp),
+            Modifier.fillMaxWidth(0.82f)
+                .background(
+                    if (isMine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    shape,
+                )
+                .combinedClickable(onClick = {}, onLongClick = { if (message.deletedAt == null) actionsOpen = true })
+                .padding(horizontal = 13.dp, vertical = 9.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             message.replyContent?.let {
@@ -539,13 +568,48 @@ private fun MessageBubble(
                         tint = if (read) MaterialTheme.colorScheme.primary else bubbleSecondary,
                     )
                 }
+                if (message.starred) {
+                    Spacer(Modifier.width(3.dp))
+                    Icon(Icons.Outlined.Star, "Saved message", Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
+                }
             }
         }
+        DropdownMenu(expanded = actionsOpen, onDismissRequest = { actionsOpen = false }) {
+            DropdownMenuItem(
+                text = { Text(if (message.starred) "Remove from saved" else "Save message") },
+                leadingIcon = { Icon(if (message.starred) Icons.Outlined.StarOutline else Icons.Outlined.Star, null) },
+                onClick = { actionsOpen = false; onStar() },
+            )
+            if (isMine) {
+                DropdownMenuItem(
+                    text = { Text("Edit") },
+                    leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                    onClick = { actionsOpen = false; onEdit() },
+                )
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = { actionsOpen = false; onDelete() },
+                )
+            }
+        }
+        }
         if (message.reactions.isNotEmpty()) {
-            Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 message.reactions.groupingBy { it.emoji }.eachCount().forEach { (emoji, count) ->
                     Text("$emoji $count", Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape).clickable { onReact(emoji) }.padding(horizontal = 7.dp, vertical = 3.dp), fontSize = 11.sp)
                 }
+                Icon(
+                    Icons.Outlined.MoreHoriz,
+                    "Message actions",
+                    Modifier.size(24.dp).clip(CircleShape).clickable { actionsOpen = true }.padding(4.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         } else if (message.deletedAt == null) {
             Row(
@@ -559,6 +623,13 @@ private fun MessageBubble(
             ) {
                 Icon(Icons.Outlined.AddReaction, "React", Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("React", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.width(4.dp))
+                Icon(
+                    Icons.Outlined.MoreHoriz,
+                    "Message actions",
+                    Modifier.size(16.dp).clickable { actionsOpen = true },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         val readBy = if (isMine) readByForMessage(message, receipts) else emptyList()
@@ -639,24 +710,49 @@ private fun QueuedBubble(message: QueuedMessage) {
 }
 
 @Composable
-private fun MessageComposer(value: String, uploading: Boolean, onChange: (String) -> Unit, onSend: () -> Unit, onPickDocument: () -> Unit) {
+private fun MessageComposer(
+    value: String,
+    uploading: Boolean,
+    editingMessage: ChatMessage?,
+    onChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onCancelEdit: () -> Unit,
+    onPickDocument: () -> Unit,
+) {
     // `imePadding()` lifts the composer above the soft keyboard and
     // `navigationBarsPadding()` keeps it clear of the gesture bar; without
     // both, the input sat underneath the keyboard while typing.
-    Row(
+    Column(
         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface)
-            .navigationBarsPadding()
-            .imePadding()
-            .padding(horizontal = 10.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.Bottom,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .navigationBarsPadding().imePadding(),
     ) {
+        if (editingMessage != null) {
+            Row(
+                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer)
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.Edit, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(
+                    "Editing message",
+                    Modifier.padding(start = 8.dp).weight(1f),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                Icon(Icons.Outlined.Close, "Cancel edit", Modifier.size(20.dp).clickable(onClick = onCancelEdit), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
         Box(
-            Modifier.size(42.dp).clip(CircleShape).clickable(enabled = !uploading, onClick = onPickDocument),
+            Modifier.size(42.dp).clip(CircleShape).clickable(enabled = !uploading && editingMessage == null, onClick = onPickDocument),
             contentAlignment = Alignment.Center,
         ) {
             if (uploading) CircularProgressIndicator(Modifier.size(19.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Outlined.AttachFile, "Attach file", Modifier.size(21.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            else Icon(Icons.Outlined.AttachFile, "Attach file", Modifier.size(21.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (editingMessage == null) 1f else .38f))
         }
         BasicTextField(
             value = value,
@@ -665,13 +761,14 @@ private fun MessageComposer(value: String, uploading: Boolean, onChange: (String
             textStyle = androidx.compose.ui.text.TextStyle(color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
             keyboardActions = KeyboardActions(onSend = { onSend() }),
-            decorationBox = { inner -> if (value.isBlank()) Text("Message", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp); inner() },
+            decorationBox = { inner -> if (value.isBlank()) Text(if (editingMessage == null) "Message" else "Edit message", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp); inner() },
         )
         Box(
             Modifier.size(42.dp).background(if (value.isBlank()) MaterialTheme.colorScheme.onSurface.copy(alpha = .08f) else MaterialTheme.colorScheme.primary, CircleShape)
                 .clickable(enabled = value.isNotBlank(), onClick = onSend),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.AutoMirrored.Outlined.Send, "Send", Modifier.size(19.dp), tint = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else Color.White) }
+        ) { Icon(Icons.AutoMirrored.Outlined.Send, if (editingMessage == null) "Send" else "Update message", Modifier.size(19.dp), tint = if (value.isBlank()) MaterialTheme.colorScheme.onSurfaceVariant else Color.White) }
+        }
     }
 }
 

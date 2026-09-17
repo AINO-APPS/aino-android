@@ -138,6 +138,7 @@ data class ChatMessage(
     @SerialName("file_size") val fileSize: Long? = null,
     @SerialName("deleted_at") val deletedAt: String? = null,
     @SerialName("edited_at") val editedAt: String? = null,
+    val starred: Boolean = false,
     val reactions: List<ChatReaction> = emptyList(),
     @SerialName("media_job_id") val mediaJobId: Long? = null,
     @SerialName("media_state") val mediaState: String? = null,
@@ -197,6 +198,17 @@ data class ChatReactionEvent(
     val action: String,
 )
 
+@Serializable
+data class ChatEditEvent(
+    val messageId: Long,
+    val conversationId: Long,
+    val content: String,
+    val editedAt: String,
+)
+
+@Serializable
+data class ChatDeleteEvent(val messageId: Long, val conversationId: Long)
+
 @PublishedApi
 internal val CHAT_EVENT_JSON = Json { ignoreUnknownKeys = true }
 
@@ -227,6 +239,32 @@ fun applyRealtimeReaction(
     )
 }
 
+fun applyRealtimeEdit(messages: List<ChatMessage>, event: ChatEditEvent): List<ChatMessage> =
+    messages.map { message ->
+        if (message.id == event.messageId && message.deletedAt == null) {
+            message.copy(content = event.content, editedAt = event.editedAt)
+        } else message
+    }
+
+fun applyRealtimeDelete(
+    messages: List<ChatMessage>,
+    event: ChatDeleteEvent,
+    deletedAt: String = Instant.now().toString(),
+): List<ChatMessage> = messages.map { message ->
+    if (message.id == event.messageId) {
+        message.copy(
+            content = "",
+            fileName = null,
+            fileUrl = null,
+            fileType = null,
+            fileSize = null,
+            reactions = emptyList(),
+            deletedAt = message.deletedAt ?: deletedAt,
+            starred = false,
+        )
+    } else message
+}
+
 /** Exact outbound shape accepted by `handleChatTyping`. */
 fun typingEnvelope(conversationId: Long): RealtimeEnvelope = RealtimeEnvelope(
     type = "chat_typing",
@@ -235,6 +273,9 @@ fun typingEnvelope(conversationId: Long): RealtimeEnvelope = RealtimeEnvelope(
 
 @Serializable
 data class ReactionRequest(val emoji: String)
+
+@Serializable data class EditMessageRequest(val content: String)
+@Serializable data class ToggleStarResponse(val ok: Boolean = true, val starred: Boolean)
 
 @Serializable
 data class MediaJobResponse(val ok: Boolean = true, val mediaJobId: Long? = null)
