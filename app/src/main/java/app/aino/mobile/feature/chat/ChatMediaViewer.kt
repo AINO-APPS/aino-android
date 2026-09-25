@@ -73,12 +73,20 @@ fun ChatMessage.isViewableMedia() = isImageAttachment() || isVideoAttachment()
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun ChatMediaViewer(media: List<ChatMessage>, startMessageId: Long, onClose: () -> Unit) {
+fun ChatMediaViewer(media: List<ChatMessage>, startMessageId: Long, secure: Boolean = false, onClose: () -> Unit) {
     if (media.isEmpty()) return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pager = rememberPagerState(media.indexOfFirst { it.id == startMessageId }.coerceAtLeast(0)) { media.size }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        // Signal view-once: block screenshots/recents thumbnails while open.
+        if (secure) {
+            val window = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+            androidx.compose.runtime.DisposableEffect(window) {
+                window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                onDispose { window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
+            }
+        }
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(pager, Modifier.fillMaxSize(), pageSpacing = 24.dp, key = { media[it].id }) { page ->
                 val item = media[page]
@@ -96,7 +104,7 @@ fun ChatMediaViewer(media: List<ChatMessage>, startMessageId: Long, onClose: () 
                     Text(current.senderName ?: current.senderUsername.orEmpty(), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
                     if (media.size > 1) Text("${pager.currentPage + 1} of ${media.size}", color = Color.White.copy(alpha = .7f), fontSize = 12.sp)
                 }
-                Icon(
+                if (!secure) Icon(
                     Icons.Outlined.Share, "Share",
                     Modifier.size(40.dp).clickable {
                         scope.launch { openChatFile(context, resolveChatMediaUrl(current.fileUrl.orEmpty()), current.fileName, current.fileType, share = true) }

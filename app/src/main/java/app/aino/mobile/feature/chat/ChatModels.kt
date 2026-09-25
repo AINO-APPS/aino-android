@@ -291,6 +291,45 @@ fun applyRealtimeDelete(
     } else message
 }
 
+@Serializable
+data class ChatViewOnceEvent(val messageId: Long, val conversationId: Long, val viewerId: Long)
+
+private val ChatMessage.metaObject: kotlinx.serialization.json.JsonObject?
+    get() = metadata as? kotlinx.serialization.json.JsonObject
+
+/** Server `metadata.viewOnce` (multipart `viewOnce="true"`). */
+fun ChatMessage.isViewOnce(): Boolean =
+    (metaObject?.get("viewOnce") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+
+fun ChatMessage.viewedBy(): List<Long> =
+    (metaObject?.get("viewedBy") as? kotlinx.serialization.json.JsonArray)
+        ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() }.orEmpty()
+
+/** Signal view-once pill state for the current user. */
+enum class ViewOnceState { Unopened, Viewed, SentUnviewed, SentViewed }
+
+fun viewOnceState(message: ChatMessage, currentUserId: Long?): ViewOnceState {
+    val viewers = message.viewedBy()
+    return if (message.senderId == currentUserId) {
+        if (viewers.any { it != currentUserId }) ViewOnceState.SentViewed else ViewOnceState.SentUnviewed
+    } else if (currentUserId != null && currentUserId in viewers) ViewOnceState.Viewed else ViewOnceState.Unopened
+}
+
+fun applyViewOnce(messages: List<ChatMessage>, event: ChatViewOnceEvent): List<ChatMessage> = messages.map { message ->
+    if (message.id != event.messageId || event.viewerId in message.viewedBy()) return@map message
+    val meta = message.metaObject ?: kotlinx.serialization.json.JsonObject(emptyMap())
+    val viewers = message.viewedBy() + event.viewerId
+    message.copy(
+        metadata = kotlinx.serialization.json.JsonObject(
+            meta + ("viewedBy" to kotlinx.serialization.json.JsonArray(viewers.map { kotlinx.serialization.json.JsonPrimitive(it) })),
+        ),
+    )
+}
+
+/** Signal in-chat search "x of y" stepping: index 0 = newest match, clamps at both ends. */
+fun stepSearchMatch(current: Int, count: Int, delta: Int): Int =
+    if (count <= 0) -1 else (current + delta).coerceIn(0, count - 1)
+
 fun applyRealtimePin(
     messages: List<ChatMessage>,
     event: ChatPinEvent,

@@ -92,11 +92,20 @@ data class ChatUiState(
     val showInfo: Boolean = false,
     val members: List<ConversationMember> = emptyList(),
     val conversationCalls: List<CallLog> = emptyList(),
+    val threadSearchOpen: Boolean = false,
+    val threadSearchQuery: String = "",
+    /** Match ids newest-first; [threadSearchIndex] is the focused one. */
+    val threadSearchMatches: List<Long> = emptyList(),
+    val threadSearchIndex: Int = -1,
+    val messageResults: List<ChatMessage> = emptyList(),
     val error: String? = null,
     val message: String? = null,
 ) {
     val unread: Int get() = totalUnread(conversations)
 }
+
+/** One item of a Signal media send (camera, tray or gallery). */
+data class MediaUploadSpec(val uri: Uri, val mimeType: String? = null, val width: Int? = null, val height: Int? = null)
 
 class ChatViewModel(
     private val repository: ChatRepository,
@@ -111,6 +120,9 @@ class ChatViewModel(
     private var typingExpiry: Job? = null
     private var typingDispatch: Job? = null
     private var linkPreviewJob: Job? = null
+    private var globalSearchJob: Job? = null
+    private var threadSearchJob: Job? = null
+    private var pendingJump: Pair<Long, Long>? = null
     private val mentionedIds = mutableSetOf<Long>()
     private var realtimeSend: (RealtimeEnvelope) -> Boolean = { false }
 
@@ -231,6 +243,13 @@ class ChatViewModel(
                         messages = applyRealtimeDelete(_ui.value.messages, delete),
                         editingMessage = _ui.value.editingMessage?.takeUnless { it.id == delete.messageId },
                     )
+                }
+                return
+            }
+            RealtimeEvent.ChatViewOnce -> {
+                val viewed = decodeChatRealtime<ChatViewOnceEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id == viewed.conversationId) {
+                    _ui.value = _ui.value.copy(messages = applyViewOnce(_ui.value.messages, viewed))
                 }
                 return
             }
@@ -355,7 +374,11 @@ class ChatViewModel(
             dismissedPreviewUrl = null,
             selectedMessageIds = emptySet(),
             hiddenMessageIds = loadHidden(conversation.id),
-            jumpToMessageId = null,
+            jumpToMessageId = pendingJump?.takeIf { it.first == conversation.id }?.second,
+            threadSearchOpen = false,
+            threadSearchQuery = "",
+            threadSearchMatches = emptyList(),
+            threadSearchIndex = -1,
             unreadAtOpen = conversation.unreadCount.coerceAtLeast(0),
             editingMessage = null,
             replyingTo = null,
@@ -366,6 +389,7 @@ class ChatViewModel(
             forwarding = false,
             error = null,
         )
+        pendingJump = null
         markRead(conversation)
         refreshThread()
         // Members feed @mention suggestions (web MentionInput uses convMembers).
@@ -865,47 +889,70 @@ class ChatViewModel(
     /** Voice notes: FileProvider's `.m4a` MIME varies by OS version, so pin the server-allowed type. */
     fun uploadVoiceNote(uri: Uri) = upload(uri, mimeOverride = "audio/mp4", keepComposer = true)
 
-    fun upload(uri: Uri, mimeOverride: String? = null, keepComposer: Boolean = false) {
+    fun upload(uri: Uri, mimeOverride: String? = null, keepComposer: Boolean = false) =
+        uploadAll(listOf(MediaUploadSpec(uri, mimeOverride)), caption = if (keepComposer) null else _ui.value.composer.trim().ifBlank { null }, clearComposer = !keepComposer)
+
+    /** Signal media send: items upload in order, caption rides on the first (server has no albums). */
+    fun sendMedia(items: List<MediaUploadSpec>, caption: String, viewOnce: Boolean, highQuality: Boolean) {
+        if (items.isEmpty()) return
+        uploadAll(items, caption.trim().ifBlank { null }?.takeUnless { viewOnce }, clearComposer = false, viewOnce = viewOnce, quality = if (highQuality) "hd" else "standard")
+    }
+
+    private fun uploadAll(
+        items: List<MediaUploadSpec>,
+        caption: String?,
+        clearComposer: Boolean,
+        viewOnce: Boolean = false,
+        quality: String? = null,
+    ) {
         val conversation = _ui.value.selectedConversation ?: return
         val appContext = context ?: return
         _ui.value = _ui.value.copy(uploading = true, uploadProgress = 0f, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
-                val resolver = appContext.contentResolver
-                var name = "file"
-                var size = -1L
-                resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        name = cursor.getString(0) ?: "file"
-                        size = if (cursor.isNull(1)) -1L else cursor.getLong(1)
+                items.forEachIndexed { index, item ->
+                    val resolver = appContext.contentResolver
+                    var name = "file"
+                    var size = -1L
+                    resolver.query(item.uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            name = cursor.getString(0) ?: "file"
+                            size = if (cursor.isNull(1)) -1L else cursor.getLong(1)
+                        }
                     }
-                }
-                val mime = mimeOverride ?: resolver.getType(uri) ?: "application/octet-stream"
-                if (size > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
-                val bytes = resolver.openInputStream(uri)?.use { input ->
-                    val out = java.io.ByteArrayOutputStream()
-                    val buffer = ByteArray(64 * 1024)
-                    var total = 0L
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        total += read
-                        if (total > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
-                        out.write(buffer, 0, read)
+                    val mime = item.mimeType ?: resolver.getType(item.uri) ?: "application/octet-stream"
+                    if (size > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
+                    val bytes = resolver.openInputStream(item.uri)?.use { input ->
+                        val out = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(64 * 1024)
+                        var total = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read < 0) break
+                            total += read
+                            if (total > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
+                            out.write(buffer, 0, read)
+                        }
+                        out.toByteArray()
+                    } ?: throw IllegalArgumentException("Could not read the selected file")
+                    validateChatUpload(name, mime, bytes.size.toLong())?.let { throw IllegalArgumentException(it) }
+                    val media = mime.startsWith("image/") || mime.startsWith("video/")
+                    repository.uploadFile(
+                        conversation.id,
+                        ChatUpload(
+                            name, mime, bytes, caption.takeIf { index == 0 },
+                            viewOnce = viewOnce && media,
+                            quality = quality.takeIf { media },
+                            width = item.width, height = item.height,
+                        ),
+                    ) { sent, total ->
+                        if (total > 0) _ui.value = _ui.value.copy(uploadProgress = ((index + sent.toFloat() / total) / items.size).coerceIn(0f, 1f))
                     }
-                    out.toByteArray()
-                } ?: throw IllegalArgumentException("Could not read the selected file")
-                validateChatUpload(name, mime, bytes.size.toLong())?.let { throw IllegalArgumentException(it) }
-                repository.uploadFile(
-                    conversation.id,
-                    ChatUpload(name, mime, bytes, if (keepComposer) null else _ui.value.composer.trim().ifBlank { null }),
-                ) { sent, total ->
-                    if (total > 0) _ui.value = _ui.value.copy(uploadProgress = (sent.toFloat() / total).coerceIn(0f, 1f))
                 }
             }.fold(
                 onSuccess = {
-                    _ui.value = _ui.value.copy(uploading = false, uploadProgress = null, composer = if (keepComposer) _ui.value.composer else "")
-                    if (!keepComposer) saveDraft(conversation.id, "")
+                    _ui.value = _ui.value.copy(uploading = false, uploadProgress = null, composer = if (clearComposer) "" else _ui.value.composer)
+                    if (clearComposer) saveDraft(conversation.id, "")
                     refreshThread()
                     refresh()
                 },
@@ -914,6 +961,76 @@ class ChatViewModel(
         }
     }
 
+    /** View-once open: the server claims the single allowed view and returns the URL (null once consumed). */
+    fun openViewOnce(message: ChatMessage, onUrl: (String?) -> Unit) {
+        val me = scope?.userId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val url = runCatching { repository.viewMessage(message.id) }.getOrNull()?.fileUrl
+            val event = ChatViewOnceEvent(message.id, message.conversationId ?: 0, me)
+            if (message.senderId != me) _ui.value = _ui.value.copy(messages = applyViewOnce(_ui.value.messages, event))
+            kotlinx.coroutines.withContext(Dispatchers.Main) { onUrl(url) }
+        }
+    }
+
+    /** Signal "Delete for me" on a single message (local hide, web `chatLocalDeletes`). */
+    fun deleteForMe(message: ChatMessage) {
+        val conversationId = _ui.value.selectedConversation?.id ?: return
+        val hidden = _ui.value.hiddenMessageIds + message.id
+        saveHidden(conversationId, hidden)
+        _ui.value = _ui.value.copy(hiddenMessageIds = hidden)
+    }
+
+    // ---- Signal in-chat search: toolbar field + "x of y" stepping ----
+    fun openThreadSearch() { _ui.value = _ui.value.copy(threadSearchOpen = true) }
+
+    fun closeThreadSearch() {
+        threadSearchJob?.cancel()
+        _ui.value = _ui.value.copy(threadSearchOpen = false, threadSearchQuery = "", threadSearchMatches = emptyList(), threadSearchIndex = -1)
+    }
+
+    fun updateThreadSearch(term: String) {
+        _ui.value = _ui.value.copy(threadSearchQuery = term)
+        threadSearchJob?.cancel()
+        val conversation = _ui.value.selectedConversation ?: return
+        if (term.trim().length < 2) {
+            _ui.value = _ui.value.copy(threadSearchMatches = emptyList(), threadSearchIndex = -1)
+            return
+        }
+        threadSearchJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(300)
+            runCatching { repository.searchMessages(term.trim(), conversation.id) }.onSuccess { found ->
+                val newestFirst = found.filter { it.id !in _ui.value.hiddenMessageIds }.sortedByDescending { it.createdAt }.map { it.id }
+                _ui.value = _ui.value.copy(
+                    threadSearchMatches = newestFirst,
+                    threadSearchIndex = if (newestFirst.isEmpty()) -1 else 0,
+                    jumpToMessageId = newestFirst.firstOrNull(),
+                )
+            }
+        }
+    }
+
+    /** delta = +1 walks to older matches (Signal "up"), -1 to newer. */
+    fun stepThreadSearch(delta: Int) {
+        val state = _ui.value
+        val next = stepSearchMatch(state.threadSearchIndex, state.threadSearchMatches.size, delta)
+        if (next < 0) return
+        _ui.value = state.copy(threadSearchIndex = next, jumpToMessageId = state.threadSearchMatches[next])
+    }
+
+    // ---- Signal list search: chats + contacts + messages sections ----
+    fun searchAllMessages(term: String) {
+        globalSearchJob?.cancel()
+        if (term.trim().length < 2) { _ui.value = _ui.value.copy(messageResults = emptyList()); return }
+        globalSearchJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(300)
+            runCatching { repository.searchMessages(term.trim()) }.onSuccess { _ui.value = _ui.value.copy(messageResults = it) }
+        }
+    }
+
+    /** Remember a list-search hit so the thread scrolls to it once opened (by id route or directly). */
+    fun rememberJump(message: ChatMessage) {
+        pendingJump = message.conversationId?.let { it to message.id }
+    }
     fun cancelMedia(message: ChatMessage) {
         val id = message.mediaJobId ?: return
         viewModelScope.launch(Dispatchers.IO) {

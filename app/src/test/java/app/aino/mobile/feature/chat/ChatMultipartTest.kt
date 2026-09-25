@@ -31,6 +31,18 @@ class ChatMultipartTest {
     }
 
     @Test
+    fun emitsSignalMediaMetadataFieldsOnlyWhenSet() {
+        fun body(upload: ChatUpload) = buildChatMultipart(upload, "aino-boundary-123").body.toString(Charsets.ISO_8859_1)
+        val plain = body(ChatUpload("a.jpg", "image/jpeg", byteArrayOf(1)))
+        assertTrue(!plain.contains("viewOnce") && !plain.contains("quality") && !plain.contains("width"))
+        val rich = body(ChatUpload("a.jpg", "image/jpeg", byteArrayOf(1), viewOnce = true, quality = "hd", width = 640, height = 480))
+        assertTrue(rich.contains("name=\"viewOnce\"\r\n\r\ntrue\r\n"))
+        assertTrue(rich.contains("name=\"quality\"\r\n\r\nhd\r\n"))
+        assertTrue(rich.contains("name=\"width\"\r\n\r\n640\r\n") && rich.contains("name=\"height\"\r\n\r\n480\r\n"))
+        assertTrue(!body(ChatUpload("a.jpg", "image/jpeg", byteArrayOf(1), quality = "ultra")).contains("quality"))
+    }
+
+    @Test
     fun sanitizesUnsafeDisplayFilename() {
         val payload = buildChatMultipart(
             ChatUpload("../bad\r\nname.pdf", "application/pdf", byteArrayOf(1)),

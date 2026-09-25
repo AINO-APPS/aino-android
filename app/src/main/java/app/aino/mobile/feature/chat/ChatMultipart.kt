@@ -21,6 +21,11 @@ data class ChatUpload(
     val mimeType: String,
     val bytes: ByteArray,
     val content: String? = null,
+    /** Server `buildUploadedMediaMetadata` fields (Signal view-once / HD / dimensions). */
+    val viewOnce: Boolean = false,
+    val quality: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
 )
 
 data class MultipartPayload(val contentType: String, val body: ByteArray)
@@ -39,8 +44,13 @@ fun buildChatMultipart(upload: ChatUpload, boundary: String): MultipartPayload {
     val safeName = upload.fileName.replace(Regex("[\\r\\n\\\"/\\\\]"), "_").take(255).ifBlank { "file" }
     val out = ByteArrayOutputStream()
     fun text(value: String) = out.write(value.toByteArray(StandardCharsets.UTF_8))
-    upload.content?.takeIf(String::isNotBlank)?.let {
-        text("--$boundary\r\nContent-Disposition: form-data; name=\"content\"\r\n\r\n$it\r\n")
+    fun field(name: String, value: String) = text("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n")
+    upload.content?.takeIf(String::isNotBlank)?.let { field("content", it) }
+    if (upload.viewOnce) field("viewOnce", "true")
+    upload.quality?.takeIf { it == "standard" || it == "hd" }?.let { field("quality", it) }
+    if (upload.width != null && upload.height != null && upload.width > 0 && upload.height > 0) {
+        field("width", upload.width.toString())
+        field("height", upload.height.toString())
     }
     text("--$boundary\r\n")
     text("Content-Disposition: form-data; name=\"file\"; filename=\"$safeName\"\r\n")

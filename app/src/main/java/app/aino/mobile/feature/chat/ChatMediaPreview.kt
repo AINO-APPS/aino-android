@@ -45,14 +45,16 @@ fun ChatMediaPreview(
     onOpenMedia: (ChatMessage) -> Unit = {},
     onCancelProcessing: (ChatMessage) -> Unit = {},
     onRetryProcessing: (ChatMessage) -> Unit = {},
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(12.dp),
+    outgoing: Boolean = false,
 ) {
     val rawUrl = message.fileUrl ?: return
     val url = resolveChatMediaUrl(rawUrl)
-    Column(modifier.widthIn(max = 280.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier.widthIn(max = SignalDimens.mediaMaxWidth + 40.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when {
-            message.isImageAttachment() -> ChatThumbnail(url, message.fileName, video = false) { onOpenMedia(message) }
-            message.isVideoAttachment() -> ChatThumbnail(url, message.fileName, video = true) { onOpenMedia(message) }
-            message.fileType?.startsWith("audio/") == true -> ChatVoicePlayer(url, Modifier.fillMaxWidth())
+            message.isImageAttachment() -> ChatThumbnail(url, message.fileName, video = false, shape = shape) { onOpenMedia(message) }
+            message.isVideoAttachment() -> ChatThumbnail(url, message.fileName, video = true, shape = shape) { onOpenMedia(message) }
+            message.fileType?.startsWith("audio/") == true -> ChatVoicePlayer(url, Modifier.fillMaxWidth(), outgoing = outgoing)
             else -> AttachmentCard(message, url)
         }
         MediaProcessingState(message, onCancelProcessing, onRetryProcessing)
@@ -65,7 +67,7 @@ fun ChatMediaPreview(
  * image, like the web's `--img-aspect`, falling back to 4:3.
  */
 @Composable
-private fun ChatThumbnail(url: String, label: String?, video: Boolean, onClick: () -> Unit) {
+private fun ChatThumbnail(url: String, label: String?, video: Boolean, shape: androidx.compose.ui.graphics.Shape, onClick: () -> Unit) {
     val context = LocalContext.current
     val loader = AppContainer.get(context).imageLoader
     var aspect by remember(url) { mutableFloatStateOf(4f / 3f) }
@@ -74,9 +76,10 @@ private fun ChatThumbnail(url: String, label: String?, video: Boolean, onClick: 
     val request = remember(url, video) {
         ImageRequest.Builder(context).data(url).apply { if (video) videoFrameMillis(100) }.build()
     }
+    val (width, height) = signalMediaSize(aspect)
     Box(
-        Modifier.widthIn(min = 160.dp, max = 280.dp).aspectRatio(aspect.coerceIn(0.6f, 2.2f))
-            .clip(RoundedCornerShape(12.dp)).background(LocalWebColors.current.surface).clickable(onClick = onClick),
+        Modifier.size(width.dp, height.dp)
+            .clip(shape).background(LocalWebColors.current.surface).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         AsyncImage(
@@ -98,6 +101,15 @@ private fun ChatThumbnail(url: String, label: String?, video: Boolean, onClick: 
             }
         }
     }
+}
+
+/** Signal media bubble box: 240dp wide, 100–320dp tall; tall images narrow down to 150dp. */
+fun signalMediaSize(aspect: Float): Pair<Float, Float> {
+    val ratio = aspect.takeIf { it > 0f } ?: (4f / 3f)
+    var width = 240f
+    var height = width / ratio
+    if (height > 320f) { height = 320f; width = (height * ratio).coerceIn(150f, 240f) }
+    return width to height.coerceAtLeast(100f)
 }
 
 @Composable

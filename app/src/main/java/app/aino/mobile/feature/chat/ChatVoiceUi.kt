@@ -56,10 +56,19 @@ fun formatVoiceTime(milliseconds: Long): String {
     return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
-/** Received audio / voice note — port of web `FilePreview.tsx` `AudioPlayer` on the shared player. */
+/** Deterministic pseudo-waveform (the server stores no peaks): 0.2..1 bar heights seeded by the url. */
+fun voiceWaveform(seed: String, bars: Int = 46): List<Float> {
+    var x = seed.hashCode().toLong() and 0xffffffffL
+    return List(bars) {
+        x = (x * 1103515245L + 12345L) and 0x7fffffffL
+        0.2f + (x % 1000) / 1250f
+    }
+}
+
+/** Signal voice-note bubble: round play button, waveform scrubber, elapsed/total time, speed chip. */
 @Composable
-fun ChatVoicePlayer(url: String, modifier: Modifier = Modifier, tint: Color = LocalWebColors.current.primary) {
-    val colors = LocalWebColors.current
+fun ChatVoicePlayer(url: String, modifier: Modifier = Modifier, tint: Color = LocalWebColors.current.primary, outgoing: Boolean = false) {
+    val signal = signalColors
     val player = AppContainer.get(LocalContext.current).audio
     val state by player.state.collectAsStateWithLifecycle()
     val current = state.url == url
@@ -67,54 +76,61 @@ fun ChatVoicePlayer(url: String, modifier: Modifier = Modifier, tint: Color = Lo
     val duration = if (current) state.durationMs else player.durationOf(url)
     val position = if (current) state.positionMs else 0
     val progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
-    Row(modifier.widthIn(min = 220.dp, max = 280.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    val fg = if (outgoing) signal.onOutgoing else signal.onIncoming
+    val fgMuted = if (outgoing) signal.onOutgoingSecondary else signal.onIncomingSecondary
+    val buttonBg = if (outgoing) signal.onOutgoing else tint
+    val buttonFg = if (outgoing) signal.outgoing else Color.White
+    val bars = remember(url) { voiceWaveform(url) }
+    Row(modifier.widthIn(min = 220.dp, max = 260.dp).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(
-            Modifier.size(36.dp).background(tint, CircleShape).clickable { player.toggle(url) },
+            Modifier.size(40.dp).background(buttonBg, CircleShape).clickable { player.toggle(url) },
             contentAlignment = Alignment.Center,
         ) {
-            if (current && state.buffering && !playing) CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-            else Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playing) "Pause" else "Play", Modifier.size(20.dp), tint = Color.White)
+            if (current && state.buffering && !playing) CircularProgressIndicator(Modifier.size(18.dp), color = buttonFg, strokeWidth = 2.dp)
+            else Icon(if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow, if (playing) "Pause" else "Play", Modifier.size(24.dp), tint = buttonFg)
         }
-        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+        Column(Modifier.weight(1f).padding(start = 10.dp, end = 6.dp)) {
             var width by remember { mutableIntStateOf(1) }
-            Box(
-                Modifier.fillMaxWidth().height(18.dp)
+            Canvas(
+                Modifier.fillMaxWidth().height(26.dp)
                     .onSizeChanged { width = it.width.coerceAtLeast(1) }
-                    .pointerInput(url) {
-                        detectTapGestures { player.seekTo(url, it.x / width) }
-                    }
-                    .pointerInput(url) {
-                        detectHorizontalDragGestures { change, _ -> player.seekTo(url, change.position.x / width) }
-                    },
-                contentAlignment = Alignment.CenterStart,
+                    .pointerInput(url) { detectTapGestures { player.seekTo(url, it.x / width) } }
+                    .pointerInput(url) { detectHorizontalDragGestures { change, _ -> player.seekTo(url, change.position.x / width) } },
             ) {
-                Box(Modifier.fillMaxWidth().height(4.dp).background(colors.border, RoundedCornerShape(2.dp)))
-                Box(Modifier.fillMaxWidth(progress).height(4.dp).background(tint, RoundedCornerShape(2.dp)))
-                Box(
-                    Modifier.offset { androidx.compose.ui.unit.IntOffset(((width - 12.dp.roundToPx()) * progress).toInt(), 0) }
-                        .size(12.dp).background(tint, CircleShape),
-                )
+                val step = size.width / bars.size
+                val barWidth = (step * 0.55f).coerceAtLeast(2f)
+                bars.forEachIndexed { index, level ->
+                    val h = size.height * level
+                    val left = index * step
+                    drawRoundRect(
+                        color = if ((index + 0.5f) / bars.size <= progress) fg else fgMuted.copy(alpha = .45f),
+                        topLeft = Offset(left, (size.height - h) / 2),
+                        size = Size(barWidth, h),
+                        cornerRadius = CornerRadius(barWidth / 2),
+                    )
+                }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    if (current && state.error != null) state.error!! else formatVoiceTime(position),
-                    color = if (current && state.error != null) colors.danger else colors.textSecondary,
-                    fontSize = 11.sp,
-                )
-                Text(if (duration > 0) formatVoiceTime(duration) else "--:--", color = colors.textSecondary, fontSize = 11.sp)
-            }
+            Text(
+                when {
+                    current && state.error != null -> state.error!!
+                    current && position > 0 -> formatVoiceTime(position)
+                    duration > 0 -> formatVoiceTime(duration)
+                    else -> "--:--"
+                },
+                color = if (current && state.error != null) LocalWebColors.current.danger else fgMuted,
+                fontSize = 12.sp,
+            )
         }
         Text(
             "${state.speed.let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }}x",
-            Modifier.clip(RoundedCornerShape(10.dp)).background(colors.surface).clickable { player.cycleSpeed() }
+            Modifier.clip(RoundedCornerShape(10.dp)).background(fg.copy(alpha = .14f)).clickable { player.cycleSpeed() }
                 .padding(horizontal = 7.dp, vertical = 3.dp),
-            color = colors.textSecondary,
-            fontSize = 11.sp,
+            color = fg,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
         )
     }
 }
-
 /** Scrolling live waveform of the most recent amplitude samples (newest on the right). */
 @Composable
 fun LiveWaveform(levels: List<Float>, color: Color, modifier: Modifier = Modifier) {
