@@ -72,7 +72,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
     val ui by controller.ui.collectAsStateWithLifecycle()
     if (!ui.visible) return
     val inPip by PipState.inPip.collectAsStateWithLifecycle()
-    val activity = LocalContext.current as? Activity
+    val activity = androidx.activity.compose.LocalActivity.current
     val connected = ui.connectedAt != null && ui.endMessage == null
     var swapped by remember { mutableStateOf(false) }
     var chromeVisible by remember { mutableStateOf(true) }

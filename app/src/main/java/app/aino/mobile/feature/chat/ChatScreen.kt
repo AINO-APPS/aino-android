@@ -487,34 +487,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         Column(Modifier.fillMaxSize()) {
             // The thread replaces the whole shell, so it owns the status-bar
             // inset rather than inheriting it from the Scaffold.
-            if (ui.selectedMessageIds.isNotEmpty()) MessageSelectionBar(ui, viewModel) else
-            Row(
-                Modifier.fillMaxWidth().background(colors.bgSecondary)
-                    .statusBarsPadding()
-                    .height(72.dp)
-                    .border(BorderStroke(0.5.dp, colors.border)).padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(38.dp).clip(CircleShape).clickable { viewModel.closeConversation(); onNavigateBack?.invoke() }, contentAlignment = Alignment.Center) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = colors.text)
-                }
-                Box(Modifier.size(40.dp).clickable(onClick = viewModel::openInfo)) { ConversationAvatar(conversation, ui.presence[conversation.otherUserId], 40.dp) }
-                Column(Modifier.padding(start = 10.dp).weight(1f).clickable(onClick = viewModel::openInfo)) {
-                    Text(conversation.title(), color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Text(
-                        when {
-                            ui.typingUserId != null -> "Typing…"
-                            conversation.isGroup -> "${conversation.memberCount ?: 0} members"
-                            else -> presenceLabel(ui.presence[conversation.otherUserId])
-                        },
-                        color = if (ui.typingUserId != null) colors.primary else colors.textSecondary,
-                        fontSize = 12.sp,
-                    )
-                }
-                Icon(Icons.Outlined.Phone, "Voice call", Modifier.padding(horizontal = 5.dp).size(20.dp).clickable { withCallPermissions(false) { viewModel.startCall("voice") } }, tint = colors.textSecondary)
-                Icon(Icons.Outlined.Videocam, "Video call", Modifier.padding(horizontal = 5.dp).size(20.dp).clickable { withCallPermissions(true) { viewModel.startCall("video") } }, tint = colors.textSecondary)
-                Icon(Icons.Outlined.Info, "Conversation info", Modifier.padding(horizontal = 8.dp).size(20.dp).clickable(onClick = viewModel::openInfo), tint = colors.textSecondary)
-            }
+            if (ui.selectedMessageIds.isNotEmpty()) MessageSelectionBar(ui, viewModel) else ThreadHeader(conversation, ui, viewModel, onNavigateBack, withCallPermissions)
             if (ui.threadFromCache) AinoAlert("Offline · showing cached messages", AlertTone.Warning, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
             ui.error?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -1900,5 +1873,44 @@ private fun ChatMeetingCard(meta: kotlinx.serialization.json.JsonObject, code: S
                 )
             }
         }
+    }
+}
+
+/** Thread top bar: back, avatar, name + presence/typing, voice/video call, info. */
+@Composable
+private fun ThreadHeader(
+    conversation: ChatConversation,
+    ui: ChatUiState,
+    viewModel: ChatViewModel,
+    onNavigateBack: (() -> Unit)?,
+    withCallPermissions: (Boolean, () -> Unit) -> Unit,
+) {
+    val colors = LocalWebColors.current
+    Row(
+        Modifier.fillMaxWidth().background(colors.bgSecondary)
+            .statusBarsPadding()
+            .height(72.dp)
+            .border(BorderStroke(0.5.dp, colors.border)).padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(38.dp).clip(CircleShape).clickable { viewModel.closeConversation(); onNavigateBack?.invoke() }, contentAlignment = Alignment.Center) {
+            Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = colors.text)
+        }
+        Box(Modifier.size(40.dp).clickable(onClick = viewModel::openInfo)) { ConversationAvatar(conversation, ui.presence[conversation.otherUserId], 40.dp) }
+        Column(Modifier.padding(start = 10.dp).weight(1f).clickable(onClick = viewModel::openInfo)) {
+            Text(conversation.title(), color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            Text(
+                when {
+                    ui.typingUserId != null -> "Typing…"
+                    conversation.isGroup -> "${conversation.memberCount ?: 0} members"
+                    else -> presenceLabel(ui.presence[conversation.otherUserId])
+                },
+                color = if (ui.typingUserId != null) colors.primary else colors.textSecondary,
+                fontSize = 12.sp,
+            )
+        }
+        Icon(Icons.Outlined.Phone, "Voice call", Modifier.padding(horizontal = 5.dp).size(20.dp).clickable { withCallPermissions(false) { viewModel.startCall("voice") } }, tint = colors.textSecondary)
+        Icon(Icons.Outlined.Videocam, "Video call", Modifier.padding(horizontal = 5.dp).size(20.dp).clickable { withCallPermissions(true) { viewModel.startCall("video") } }, tint = colors.textSecondary)
+        Icon(Icons.Outlined.Info, "Conversation info", Modifier.padding(horizontal = 8.dp).size(20.dp).clickable(onClick = viewModel::openInfo), tint = colors.textSecondary)
     }
 }

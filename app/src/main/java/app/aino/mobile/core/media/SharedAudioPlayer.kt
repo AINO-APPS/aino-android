@@ -46,6 +46,7 @@ data class AudioPlaybackState(
  * content:// and file:// (drafts) through the default data source.
  * Must be created on the main thread (ExoPlayer is looper-bound).
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class SharedAudioPlayer(context: Context, http: OkHttpClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val durations = mutableMapOf<String, Long>()

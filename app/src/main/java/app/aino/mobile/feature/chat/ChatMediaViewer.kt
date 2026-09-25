@@ -140,6 +140,7 @@ private fun ZoomableImage(url: String, label: String?) {
     )
 }
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 private fun VideoPage(url: String, active: Boolean) {
     val context = LocalContext.current

@@ -800,7 +800,7 @@ private fun AuthenticatedShell(
                 val context = LocalContext.current
                 val manager = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.manager.ManagerViewModel>(
                     factory = app.aino.mobile.feature.manager.ManagerViewModel.factory(context),
-                    viewModelStoreOwner = nav.getBackStackEntry(AinoDestination.Manager.route),
+                    viewModelStoreOwner = androidx.compose.runtime.remember(entry) { nav.getBackStackEntry(AinoDestination.Manager.route) },
                 )
                 RefetchOnResume(manager::refreshMemberDetail)
                 app.aino.mobile.feature.manager.MemberDetailScreen(
