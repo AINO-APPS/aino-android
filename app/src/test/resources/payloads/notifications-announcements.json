@@ -1,0 +1,6 @@
+{
+  "data": [
+    { "id": "ann-1", "message": "Welcome to the new sprint", "type": "announcement" },
+    { "id": "ann-2", "message": "Office closed on Friday", "type": "alert" }
+  ]
+}

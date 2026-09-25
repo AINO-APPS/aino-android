@@ -110,3 +110,8 @@ class PipController(
 
     private fun PipRatio.toRational() = Rational(width, height)
 }
+
+/** Whether the activity is currently in system PiP; call/meeting screens drop their chrome. */
+object PipState {
+    val inPip = kotlinx.coroutines.flow.MutableStateFlow(false)
+}

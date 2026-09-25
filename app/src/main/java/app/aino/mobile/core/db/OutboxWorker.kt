@@ -37,9 +37,9 @@ class OutboxWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val scope = runCatching {
             CacheScope(inputData.getLong(TENANT_ID, 0), inputData.getLong(USER_ID, 0))
         }.getOrElse { return@withContext Result.failure() }
-        val tokens = KeystoreTokenStore(applicationContext)
-        if (tokens.getToken().isNullOrBlank()) return@withContext Result.failure()
-        val api = RefreshingApiClient(OkHttpApiClient(tokenProvider = tokens), tokens)
+        val container = app.aino.mobile.core.AppContainer.get(applicationContext)
+        if (container.tokens.getToken().isNullOrBlank()) return@withContext Result.failure()
+        val api = container.api
         val dao = AinoDatabase.get(applicationContext).dao()
         val now = System.currentTimeMillis()
         val pending = dao.pendingOutbox(scope.tenantId, scope.userId, now, 50)

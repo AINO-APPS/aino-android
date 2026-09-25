@@ -6,16 +6,126 @@
   },
   "totals": {
     "platform": 464,
-    "covered": 61,
+    "covered": 248,
     "waived": 0,
-    "missing": 403,
+    "missing": 216,
     "unmatched": 0
   },
   "covered": [
     {
+      "method": "GET",
+      "path": "/api/agile/config",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agile/permissions/cancel-request",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agile/permissions/grants",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/agile/permissions/grants/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agile/permissions/me",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agile/permissions/request",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agile/permissions/requests",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/agile/permissions/requests/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agile/settings",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/agile/settings",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agile/work-item-types",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agile/work-item-types",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/agile/work-item-types/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/agile/work-item-types/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/agile/work-item-types/reorder",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agile/workflow-states",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agile/workflow-states",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/agile/workflow-states/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/agile/workflow-states/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/agile/workflow-states/reorder",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
       "method": "POST",
       "path": "/api/auth/activity",
       "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/biometric",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/auth/biometric/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
     },
     {
       "method": "POST",
@@ -49,7 +159,57 @@
     },
     {
       "method": "GET",
+      "path": "/api/calendar",
+      "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/calendar",
+      "source": "app/src/main/java/app/aino/mobile/feature/calendar/CalendarRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/calendar/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/calendar/CalendarRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/calendar/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/calendar/CalendarRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/blocked",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
       "path": "/api/chat/calls",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/calls/:param/accept",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/calls/:param/end",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/calls/:param/reject",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/calls/active",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/calls/delete",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
@@ -60,6 +220,16 @@
     {
       "method": "POST",
       "path": "/api/chat/conversations",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversations/:id/messages",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/chat/conversations/:param",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
@@ -78,8 +248,23 @@
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
+      "method": "GET",
+      "path": "/api/chat/conversations/:param/files",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
       "method": "POST",
       "path": "/api/chat/conversations/:param/files",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/chat/conversations/:param/group",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/leave",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
@@ -88,9 +273,14 @@
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
+      "method": "DELETE",
+      "path": "/api/chat/conversations/:param/messages",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
       "method": "POST",
       "path": "/api/chat/conversations/:param/messages",
-      "source": "app/src/main/java/app/aino/mobile/core/db/OutboxWorker.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
       "method": "POST",
@@ -98,8 +288,23 @@
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
+      "method": "PUT",
+      "path": "/api/chat/conversations/:param/participants/:param/role",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
       "method": "POST",
       "path": "/api/chat/conversations/:param/pin",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversations/:param/pinned",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/polls",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
@@ -113,9 +318,29 @@
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/transfer-owner",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/unread",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/group",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/chat/ice-config",
       "source": "app/src/main/java/app/aino/mobile/core/call/webrtc/IceConfigRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/link-preview",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
       "method": "POST",
@@ -139,6 +364,11 @@
     },
     {
       "method": "POST",
+      "path": "/api/chat/messages/:param/delivered",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
       "path": "/api/chat/messages/:param/forward",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
@@ -158,24 +388,354 @@
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
+      "method": "POST",
+      "path": "/api/chat/messages/:param/view",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/polls/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/polls/:param/vote",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/presence",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/search",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/search-messages",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/starred",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/chat/users/:param/block",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/users/:param/block",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/custom-fields",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/custom-fields/task/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/custom-fields/task/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingJoinScreen.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/leave-policy/policies",
-      "source": "app/src/main/java/app/aino/mobile/feature/leaves/LeaveRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     },
     {
       "method": "POST",
       "path": "/api/leaves",
-      "source": "app/src/main/java/app/aino/mobile/feature/leaves/LeaveRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     },
     {
       "method": "DELETE",
       "path": "/api/leaves/:param",
-      "source": "app/src/main/java/app/aino/mobile/feature/leaves/LeaveRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     },
     {
       "method": "POST",
       "path": "/api/leaves/:param/withdraw",
-      "source": "app/src/main/java/app/aino/mobile/feature/leaves/LeaveRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/manager/approvals",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/manager/approvals/:param/approve",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/manager/approvals/:param/reject",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/manager/approvals/bulk",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/manager/member/:param/hours",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/manager/member/:param/leaves",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/manager/member/:param/overview",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/manager/member/:param/requests",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/manager/member/:param/tasks",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/manager/my-requests",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/manager/team-analytics",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/manager/team-attendance",
+      "source": "app/src/main/java/app/aino/mobile/feature/manager/ManagerRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/me/status",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/me/status",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/me/status/activity-ping",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/me/status/presence-preference",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/meetings",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/meetings",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/meetings/:code",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/meetings/:code/hls/start",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/meetings/:code/hls/status",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/meetings/:code/hls/stop",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/meetings/:code/messages",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/meetings/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/meetings/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/meetings/:param/participants",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/meetings/:param/participants",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/meetings/:param/participants/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/meetings/check-conflicts",
+      "source": "app/src/main/java/app/aino/mobile/feature/calendar/CalendarRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/notes",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/notes/convert-to-task",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/daily-prefill",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/direct-reports",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/history/:pageId",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/history/snapshot/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/notes/links",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/notes/links",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/links/:pageId",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/notes/mention",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/mentionable-users",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/oneonone-prefill/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/search-events",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/search-meetings",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/search-tasks",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/notes/share/:pageId",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/share/:pageId",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/notes/share/:pageId",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/sprint-embed",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notes/time-summary",
+      "source": "app/src/main/java/app/aino/mobile/feature/notes/NotesRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notifications",
+      "source": "app/src/main/java/app/aino/mobile/feature/notifications/NotificationsRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/notifications/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/notifications/NotificationsRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/notifications/:param/read",
+      "source": "app/src/main/java/app/aino/mobile/feature/notifications/NotificationsRepository.kt"
     },
     {
       "method": "GET",
@@ -183,9 +743,89 @@
       "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
     },
     {
+      "method": "POST",
+      "path": "/api/notifications/metrics/events",
+      "source": "app/src/main/java/app/aino/mobile/core/push/PushTapRouting.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/notifications/read-all",
+      "source": "app/src/main/java/app/aino/mobile/feature/notifications/NotificationsRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/chart",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/org/current",
-      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/departments",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org/departments",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/org/departments/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/org/departments/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/members",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/teams",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org/teams",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/org/teams/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/org/teams/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/teams/:param/sprint-config",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/org/teams/:param/sprint-config",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/profile",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
     },
     {
       "method": "GET",
@@ -195,6 +835,16 @@
     {
       "method": "PUT",
       "path": "/api/profile",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/profile/avatar",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/profile/avatar",
       "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
     },
     {
@@ -203,17 +853,162 @@
       "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
     },
     {
+      "method": "DELETE",
+      "path": "/api/profile/face-enroll",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/profile/face-status",
       "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
     },
     {
+      "method": "GET",
+      "path": "/api/profile/notification-prefs",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/profile/notification-prefs",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
       "method": "PUT",
       "path": "/api/profile/password",
-      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
       "method": "POST",
+      "path": "/api/projects",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ProjectsRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/projects/:id",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ProjectsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:id/tasks",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ProjectsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ProjectsRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/projects/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ProjectsRepository.kt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/projects/:param/archive",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ProjectsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/search",
+      "source": "app/src/main/java/app/aino/mobile/feature/search/SearchRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/service-desk/stats",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ServiceDeskModels.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/service-desk/tickets",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ServiceDeskModels.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/service-desk/tickets",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ServiceDeskModels.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/service-desk/tickets/:id",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/ServiceDeskModels.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:param/burndown",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sprints/:param/complete",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:param/cumulative-flow",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:param/cycle-time",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sprints/:param/pause",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sprints/:param/resume",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:param/retrospective",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/sprints/:param/retrospective",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sprints/:param/start",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:param/stats",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:param/tasks",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/active",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/velocity/recent",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
       "path": "/api/tasks",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
@@ -223,8 +1018,68 @@
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
+      "method": "PUT",
+      "path": "/api/tasks/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/:param/acceptance-criteria",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/tasks/:param/acceptance-criteria",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/assign-sprint",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/block",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/:param/children",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/:param/comments",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
       "method": "POST",
       "path": "/api/tasks/:param/comments",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tasks/:param/comments/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/tasks/:param/comments/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/:param/dependencies",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/:param/dependencies",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tasks/:param/dependencies/:param",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -233,13 +1088,48 @@
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
+      "method": "GET",
+      "path": "/api/tasks/:param/history",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/:param/parent",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/parent",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/schedule",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
       "method": "PATCH",
       "path": "/api/tasks/:param/status",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/unschedule",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/tasks/assignable-users",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/available-sprints",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/backlog",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -259,6 +1149,41 @@
     },
     {
       "method": "POST",
+      "path": "/api/tasks/labels",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/tasks/labels/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/tasks/labels/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/labels/manage",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/lookup/quicksearch",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/search",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tracker/analytics",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "POST",
       "path": "/api/tracker/break-end",
       "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     },
@@ -275,7 +1200,7 @@
     {
       "method": "POST",
       "path": "/api/tracker/clock-out",
-      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
     },
     {
       "method": "GET",
@@ -310,12 +1235,22 @@
     {
       "method": "GET",
       "path": "/api/tracker/status",
-      "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     },
     {
       "method": "GET",
-      "path": "/api/tracker/task-summary",
-      "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
+      "path": "/api/tracker/theme",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/tracker/theme",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tracker/widgets",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     }
   ],
   "unmatched": []

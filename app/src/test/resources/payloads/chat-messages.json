@@ -1,0 +1,19 @@
+[
+  {
+    "id": 901, "sender_id": 12, "content": "See https://aino.app", "created_at": "2026-09-24T11:02:00.000Z",
+    "reply_to_id": null, "file_url": null, "file_name": null, "file_type": null, "file_size": null,
+    "edited_at": null, "deleted_at": null, "forwarded_from_id": null, "pinned_at": null, "pinned_by": null,
+    "link_preview": { "url": "https://aino.app", "title": "AINO", "description": "Workday OS", "image": null, "siteName": "aino.app" },
+    "format_type": null, "metadata": null, "delivered_to": [9],
+    "media_job_id": null, "media_state": null, "media_stage": null, "media_progress": null, "media_failure_reason": null,
+    "sender_name": "Ana Lima", "sender_avatar": null, "sender_username": "ana",
+    "reply_content": null, "reply_sender_id": null, "reply_sender_name": null,
+    "reply_file_url": null, "reply_file_type": null, "reply_file_name": null,
+    "starred": false, "reactions": [{ "emoji": "👍", "userId": 9, "fullName": "Jane Doe" }]
+  },
+  {
+    "id": 902, "sender_id": 9, "content": null, "created_at": "2026-09-24T11:03:00.000Z",
+    "file_url": "/uploads/chat/voice-1.m4a", "file_name": "voice-1.m4a", "file_type": "audio/mp4", "file_size": 48213,
+    "link_preview": null, "delivered_to": [], "starred": true, "conversation_name": "Ana Lima"
+  }
+]

@@ -1,22 +1,21 @@
 package app.aino.mobile.core.call
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.CallEnd
 import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.outlined.VideocamOff
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,43 +26,59 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.aino.mobile.core.designsystem.component.UserAvatar
 import kotlinx.coroutines.delay
 
+/**
+ * Signal-style incoming call: blurred avatar backdrop, the caller's name and
+ * the web's status line on top, a large avatar, and Decline / Accept (plus
+ * "Answer without video" for video calls) at the bottom.
+ */
 @Composable
 fun IncomingCallScreen(viewModel: IncomingCallViewModel, onClose: () -> Unit) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val route = ui.route ?: return
+    val withCallPermissions = rememberCallPermissions()
     LaunchedEffect(route.callId) {
         delay(remainingRingMillis(route.expiresAt))
         viewModel.expireIfRinging()
     }
-    Column(
-        Modifier.fillMaxSize().background(Color(0xFF0A0E1C)).padding(28.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Box(Modifier.size(104.dp).background(MaterialTheme.colorScheme.primary, CircleShape), contentAlignment = Alignment.Center) {
-            Text(route.callerName.take(2).uppercase().ifBlank { "?" }, color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        }
-        Text(route.callerName.ifBlank { "Incoming call" }, Modifier.padding(top = 24.dp), color = Color.White, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
-        Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(if (route.callType == "video") Icons.Outlined.Videocam else Icons.Outlined.Call, null, tint = Color.White.copy(alpha = .7f))
-            Text(" Incoming ${route.callType} call", color = Color.White.copy(alpha = .7f))
-        }
-        ui.error?.let { Text(it, Modifier.padding(top = 16.dp), color = MaterialTheme.colorScheme.error) }
-        when (ui.state) {
-            IncomingCallState.WaitingForMedia -> Text(
-                "Answered. Secure media connection will be enabled in the WebRTC stage.",
-                Modifier.padding(top = 28.dp), color = Color.White.copy(alpha = .75f), textAlign = TextAlign.Center,
+    val video = route.callType == "video"
+    val busy = ui.state == IncomingCallState.Answering || ui.state == IncomingCallState.Declining
+    Box(Modifier.fillMaxSize().blockTouches()) {
+        BlurredAvatarBackdrop(route.callerAvatar)
+        Column(
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.padding(top = 48.dp))
+            Text(route.callerName.ifBlank { "Unknown" }, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+            Text(
+                if (video) "Incoming video call..." else "Incoming voice call...",
+                Modifier.padding(top = 8.dp),
+                color = Color.White.copy(alpha = .8f),
+                fontSize = 16.sp,
             )
-            IncomingCallState.Ended -> Button(onClick = { viewModel.clear(); onClose() }, Modifier.padding(top = 28.dp)) { Text("Close") }
-            else -> Row(Modifier.padding(top = 42.dp), horizontalArrangement = Arrangement.spacedBy(42.dp)) {
-                Button(onClick = viewModel::decline, shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE03E3E)), modifier = Modifier.size(68.dp)) {
-                    Icon(Icons.Outlined.CallEnd, "Decline", tint = Color.White)
+            ui.error?.let { Text(it, Modifier.padding(top = 12.dp), color = Color(0xFFFCA5A5), fontSize = 14.sp, textAlign = TextAlign.Center) }
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                UserAvatar(route.callerName.ifBlank { "?" }, route.callerAvatar, 112.dp, background = Color(0xFF3A3A3A))
+            }
+            if (busy) {
+                CircularProgressIndicator(Modifier.padding(bottom = 64.dp), color = Color.White)
+            } else {
+                if (video) {
+                    LabeledCallButton(Icons.Outlined.VideocamOff, "Answer without video", Color.White.copy(alpha = .2f), size = 56.dp, onClick = {
+                        withCallPermissions(false) { viewModel.answer(withoutVideo = true) }
+                    })
+                    Spacer(Modifier.padding(top = 24.dp))
                 }
-                Button(onClick = viewModel::answer, shape = CircleShape, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF22C55E)), modifier = Modifier.size(68.dp)) {
-                    Icon(Icons.Outlined.Call, "Answer", tint = Color.White)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 40.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    LabeledCallButton(Icons.Outlined.CallEnd, "Decline", CallRed, onClick = viewModel::decline)
+                    LabeledCallButton(if (video) Icons.Outlined.Videocam else Icons.Outlined.Call, "Accept", CallGreen, onClick = {
+                        withCallPermissions(video) { viewModel.answer() }
+                    })
                 }
             }
         }

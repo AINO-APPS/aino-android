@@ -15,6 +15,9 @@ data class IncomingCallRoute(
     val callType: String,
     val action: String? = null,
     val expiresAt: String? = null,
+    /** Set for group-call (huddle) rings: answering joins `/huddle/:code`. */
+    val meetingCode: String? = null,
+    val meetingId: Long? = null,
 )
 
 fun parseIncomingCallRoute(uri: Uri?): IncomingCallRoute? = parseIncomingCallRoute(uri?.toString())
@@ -44,6 +47,8 @@ fun parseIncomingCallRoute(value: String?): IncomingCallRoute? {
         callType = callType,
         action = action,
         expiresAt = query["expiresAt"],
+        meetingCode = query["meetingCode"]?.takeIf(String::isNotBlank),
+        meetingId = query["meetingId"]?.toLongOrNull()?.takeIf { it > 0 },
     )
 }
 

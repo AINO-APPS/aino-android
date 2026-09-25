@@ -8,6 +8,7 @@ import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.EglBase
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.audio.JavaAudioDeviceModule
 
 class WebRtcRuntime private constructor(
     val factory: PeerConnectionFactory,
@@ -42,6 +43,16 @@ class WebRtcRuntime private constructor(
 
     companion object {
         @Volatile private var initialized = false
+        @Volatile private var shared: WebRtcRuntime? = null
+
+        /** Latest local microphone level (0..1), fed by the audio device module. */
+        @Volatile var micLevel: Float = 0f
+            private set
+
+        /** One factory + EGL context for the process; calls and meetings share it. */
+        fun shared(context: Context): WebRtcRuntime = shared ?: synchronized(this) {
+            shared ?: create(context).also { shared = it }
+        }
 
         fun create(context: Context): WebRtcRuntime {
             synchronized(this) {
@@ -55,11 +66,32 @@ class WebRtcRuntime private constructor(
                 }
             }
             val egl = EglBase.create()
+            val audioModule = JavaAudioDeviceModule.builder(context.applicationContext)
+                .setUseHardwareAcousticEchoCanceler(true)
+                .setUseHardwareNoiseSuppressor(true)
+                .setSamplesReadyCallback { samples -> micLevel = pcm16Level(samples.data) }
+                .createAudioDeviceModule()
             val factory = PeerConnectionFactory.builder()
+                .setAudioDeviceModule(audioModule)
                 .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))
                 .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext))
                 .createPeerConnectionFactory()
             return WebRtcRuntime(factory, egl)
         }
     }
+}
+
+/**
+ * RMS of little-endian PCM16 scaled to roughly match the web's analyser level
+ * (speech ≈ 0.1–0.5), clamped to 0..1.
+ */
+fun pcm16Level(data: ByteArray): Float {
+    val count = data.size / 2
+    if (count == 0) return 0f
+    var sum = 0.0
+    for (i in 0 until count) {
+        val sample = ((data[2 * i + 1].toInt() shl 8) or (data[2 * i].toInt() and 0xFF)).toShort().toDouble()
+        sum += sample * sample
+    }
+    return (kotlin.math.sqrt(sum / count) / 32768.0 * 5).toFloat().coerceIn(0f, 1f)
 }

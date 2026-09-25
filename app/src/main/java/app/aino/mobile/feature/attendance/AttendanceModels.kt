@@ -1,5 +1,6 @@
 package app.aino.mobile.feature.attendance
 
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import app.aino.mobile.core.common.LenientDoubleNullableSerializer
@@ -41,7 +42,47 @@ data class AttendancePolicy(
     @SerialName("min_hours_present")
     @Serializable(with = LenientDoubleNullableSerializer::class)
     val minHoursPresent: Double? = null,
+    /**
+     * Organization "Regular Office Start Time" — the Manual Entry form
+     * pre-fills the login field from it (`ManualEntry.tsx`), falling back to
+     * 09:00 when not configured.
+     */
+    @SerialName("office_start_time") val officeStartTime: String? = null,
+    /**
+     * Office Wi-Fi allow-list used by the verification sheet
+     * (`ClockInVerifyModal`): when `wifiVerificationEnabled` and the connected
+     * BSSID is in this list the server skips the geofence check.
+     */
+    @SerialName("office_wifi_bssids")
+    @Serializable(with = BssidListSerializer::class)
+    val officeWifiBssids: List<String> = emptyList(),
 )
+
+/**
+ * `office_wifi_bssids` is JSONB stored as `{ bssid, label, added_by, added_at }`
+ * objects (legacy rows are bare strings). Decoding it as `List<String>` threw on
+ * the first registered AP, which collapsed the whole policy to "verification
+ * off" — clock-in then skipped the verify sheet and the server rejected it.
+ */
+object BssidListSerializer : kotlinx.serialization.KSerializer<List<String>> {
+    private val delegate = kotlinx.serialization.builtins.ListSerializer(String.serializer())
+    override val descriptor = delegate.descriptor
+    override fun serialize(encoder: kotlinx.serialization.encoding.Encoder, value: List<String>) = delegate.serialize(encoder, value)
+    override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): List<String> {
+        val element = (decoder as? kotlinx.serialization.json.JsonDecoder)?.decodeJsonElement() ?: return delegate.deserialize(decoder)
+        val array = element as? kotlinx.serialization.json.JsonArray ?: return emptyList()
+        return array.mapNotNull { entry ->
+            when (entry) {
+                is kotlinx.serialization.json.JsonPrimitive -> entry.contentOrNullSafe()
+                is kotlinx.serialization.json.JsonObject -> (entry["bssid"] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNullSafe()
+                else -> null
+            }
+        }
+    }
+
+    private fun kotlinx.serialization.json.JsonPrimitive.contentOrNullSafe(): String? =
+        if (this is kotlinx.serialization.json.JsonNull) null else content.takeIf(String::isNotBlank)
+}
 
 @Serializable
 data class AttendanceDay(
@@ -63,6 +104,8 @@ data class LeaveOverlay(
     val duration: String = "full",
     val status: String = "pending",
     val reason: String? = null,
+    @SerialName("reject_reason") val rejectReason: String? = null,
+    @SerialName("approved_by_name") val approvedByName: String? = null,
 )
 
 @Serializable
@@ -72,6 +115,42 @@ data class HolidayOverlay(
     val name: String,
     @SerialName("is_optional") val isOptional: Boolean = false,
 )
+
+/** `GET /tracker/widgets` summary block rendered above the analytics charts. */
+@Serializable
+data class TrackerWidgets(
+    @Serializable(with = LenientDoubleSerializer::class) val avgFloorMinutes: Double = 0.0,
+    @Serializable(with = LenientDoubleSerializer::class) val punctualityPercent: Double = 0.0,
+    @Serializable(with = LenientDoubleSerializer::class) val attendancePercent: Double = 0.0,
+    val targetMetDays: Int = 0,
+    val workDays: Int = 0,
+    val leaveCount: Int = 0,
+    val officeDays: Int = 0,
+    val remoteDays: Int = 0,
+)
+
+/** `GET /notifications/metrics?hours=24` — the Analytics "Notification Routing" card. */
+@Serializable
+data class NotificationMetrics(
+    val successRate: Double? = null,
+    val counts: NotificationMetricCounts = NotificationMetricCounts(),
+    val latency: NotificationMetricLatency = NotificationMetricLatency(),
+)
+
+@Serializable
+data class NotificationMetricCounts(val routingAttempts: Int = 0, val successfulRoutes: Int = 0)
+
+@Serializable
+data class NotificationMetricLatency(val p95Ms: Double = 0.0)
+
+/** Card value: `successRate.toFixed(1)%` or "No data". */
+fun routingSuccessLabel(metrics: NotificationMetrics?): String =
+    metrics?.successRate?.let { "%.1f%%".format(java.util.Locale.US, it) } ?: "No data"
+
+/** `x/y routes · p95 Nms`. */
+fun routingMeta(metrics: NotificationMetrics): String =
+    "${metrics.counts.successfulRoutes}/${metrics.counts.routingAttempts} routes" +
+        if (metrics.latency.p95Ms > 0) " · p95 ${Math.round(metrics.latency.p95Ms)}ms" else ""
 
 @Serializable
 data class ManualEntryRequest(
@@ -186,12 +265,19 @@ fun attendanceKind(
     return AttendanceDayKind.Absent
 }
 
+/**
+ * Clock-in/out body, mirroring `client/src/api/workforce.ts` (P3.6):
+ * geo fix, office Wi-Fi BSSID, optional face descriptor, plus the native
+ * device-biometric fallback the server accepts (`fingerprint_verified`).
+ */
 @Serializable
 data class AttendanceActionRequest(
     @SerialName("work_mode") val workMode: String? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
     val accuracy: Float? = null,
+    @SerialName("wifi_bssid") val wifiBssid: String? = null,
+    @SerialName("face_descriptor") val faceDescriptor: List<Float>? = null,
     @SerialName("fingerprint_verified") val fingerprintVerified: Boolean? = null,
 )
 
@@ -286,6 +372,19 @@ fun canUseFingerprintFallback(policy: AttendancePolicy, mode: WorkMode, proof: L
         policy.officeLatitude != null && policy.officeLongitude != null &&
         proof.accuracyMeters <= maxOf(policy.officeRadiusMeters, 200.0) &&
         distanceMeters(proof.latitude, proof.longitude, policy.officeLatitude, policy.officeLongitude) <= policy.officeRadiusMeters
+
+/** Why a location fix does not prove office presence — same wording as the server's clock-in errors. */
+fun officeProofFailure(policy: AttendancePolicy, proof: LocationProof): String {
+    val lat = policy.officeLatitude
+    val lng = policy.officeLongitude
+    if (lat == null || lng == null) return "Office location is not configured. Contact your admin or switch to remote."
+    val maxAccuracy = maxOf(policy.officeRadiusMeters, 200.0)
+    if (proof.accuracyMeters > maxAccuracy) {
+        return "Your location accuracy is ±${proof.accuracyMeters.toInt()} m — too coarse for the office geofence (max ±${maxAccuracy.toInt()} m). Enable precise location or connect to the office Wi-Fi."
+    }
+    val distance = distanceMeters(proof.latitude, proof.longitude, lat, lng).toInt()
+    return "You are $distance m from the office (allowed ${policy.officeRadiusMeters.toInt()} m). Move closer or switch to remote."
+}
 
 fun distanceMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
     val earthRadius = 6_371_000.0

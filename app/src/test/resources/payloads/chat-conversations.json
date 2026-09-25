@@ -1,0 +1,14 @@
+[
+  {
+    "id": 51, "updated_at": "2026-09-24T11:02:00.000Z", "group_name": null, "is_group": false,
+    "other_user_id": 12, "other_username": "ana", "other_full_name": "Ana Lima", "other_avatar": null,
+    "is_self_chat": false, "last_message": "See https://aino.app", "last_sender_name": "Ana Lima",
+    "last_message_at": "2026-09-24T11:02:00.000Z", "last_file_name": null, "last_deleted": null,
+    "unread_count": 2, "member_count": 2, "is_pinned": true, "is_favourite": false, "is_muted": false,
+    "is_archived": false, "is_blocked": false, "is_meeting_chat": false, "meeting_code": null
+  },
+  {
+    "id": 52, "updated_at": "2026-09-23T09:00:00.000Z", "group_name": "Design", "is_group": true,
+    "other_user_id": null, "unread_count": 0, "member_count": 5
+  }
+]

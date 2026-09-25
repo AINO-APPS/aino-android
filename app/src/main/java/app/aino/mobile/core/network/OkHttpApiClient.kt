@@ -6,7 +6,30 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.buffer
 import java.util.concurrent.TimeUnit
+
+/** Reports bytes written to the socket so uploads can show real progress. */
+private class ProgressRequestBody(
+    private val delegate: okhttp3.RequestBody,
+    private val onProgress: (Long, Long) -> Unit,
+) : okhttp3.RequestBody() {
+    override fun contentType() = delegate.contentType()
+    override fun contentLength() = delegate.contentLength()
+    override fun writeTo(sink: okio.BufferedSink) {
+        val total = contentLength()
+        var written = 0L
+        val counting = object : okio.ForwardingSink(sink) {
+            override fun write(source: okio.Buffer, byteCount: Long) {
+                super.write(source, byteCount)
+                written += byteCount
+                onProgress(written, total)
+            }
+        }.buffer()
+        delegate.writeTo(counting)
+        counting.flush()
+    }
+}
 
 class OkHttpApiClient(
     private val baseUrl: String = NetworkConfig.apiUrl,
@@ -26,7 +49,10 @@ class OkHttpApiClient(
         headers.forEach(builder::header)
         val contentType = request.headers.entries.firstOrNull { it.key.equals("Content-Type", ignoreCase = true) }
             ?.value?.toMediaType() ?: JSON
-        val body = request.body?.toRequestBody(contentType)
+        val body = request.body?.toRequestBody(contentType)?.let { raw ->
+            val progress = request.onUploadProgress ?: return@let raw
+            ProgressRequestBody(raw, progress)
+        }
         builder.method(method, body)
         try {
             client.newCall(builder.build()).execute().use { response ->

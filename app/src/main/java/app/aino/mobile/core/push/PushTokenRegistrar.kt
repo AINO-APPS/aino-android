@@ -25,18 +25,27 @@ class PushTokenRegistrar(private val context: Context) {
     fun syncCurrentToken() {
         val tokens = KeystoreTokenStore(context)
         if (tokens.getToken().isNullOrBlank()) return
+        if (FirebaseApp.getApps(context).isEmpty()) {
+            // Local builds without app/google-services.json: the server will log
+            // push_skip_no_tokens for this user and no push can ever arrive.
+            android.util.Log.w(TAG, "Firebase is not configured (no google-services.json); push notifications are disabled")
+            return
+        }
         runCatching {
-            if (FirebaseApp.getApps(context).isEmpty()) return
             val fcm = Tasks.await(FirebaseMessaging.getInstance().token, 20, TimeUnit.SECONDS)
             register(fcm)
-        }
+        }.onFailure { android.util.Log.w(TAG, "Push token sync failed", it) }
+    }
+
+    private companion object {
+        const val TAG = "AinoPush"
     }
 
     fun register(fcmToken: String) {
         if (fcmToken.isBlank()) return
-        val tokens = KeystoreTokenStore(context)
-        if (tokens.getToken().isNullOrBlank()) return
-        val api = RefreshingApiClient(OkHttpApiClient(tokenProvider = tokens), tokens)
+        val container = app.aino.mobile.core.AppContainer.get(context)
+        if (container.tokens.getToken().isNullOrBlank()) return
+        val api = container.api
         val body = encodeDeviceTokenRequest(fcmToken)
         api.execute(ApiRequest("POST", "auth/device-token", body = body))
     }

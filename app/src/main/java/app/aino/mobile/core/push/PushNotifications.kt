@@ -49,8 +49,7 @@ object PushNotifications {
         }
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("push_type", push.data["type"])
-            putExtra("conversation_id", push.data["conversationId"])
+            putPushTapExtras(push)
             putExtra("call_id", push.data["callId"])
         }
         val pending = PendingIntent.getActivity(
@@ -59,6 +58,13 @@ object PushNotifications {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // Notification Sounds prefs: mute-all silences everything; other
+        // alerts stay quiet while the app is open unless "play when focused".
+        val silent = if (push.kind == PushKind.IncomingCall) {
+            app.aino.mobile.core.notifications.NotificationSoundPrefs.muteAll(context)
+        } else {
+            !app.aino.mobile.core.notifications.NotificationSoundPrefs.notificationAudible(context)
+        }
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.aino_icon)
             .setContentTitle(title)
@@ -66,6 +72,7 @@ object PushNotifications {
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pending)
             .setAutoCancel(true)
+            .setSilent(silent)
             .setPriority(if (push.kind == PushKind.IncomingCall) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
             .setCategory(if (push.kind == PushKind.IncomingCall) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(if (privateCall) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)

@@ -25,7 +25,7 @@ class DashboardRepositoryTest {
             }
         }
 
-        val result = DashboardRepository(api).load(123)
+        val result = DashboardRepository(api).load(isManager = false, nowEpochMs = 123)
 
         assertEquals("on_floor", result.status.state)
         assertEquals("remote", result.status.workMode)
@@ -42,7 +42,7 @@ class DashboardRepositoryTest {
             else throw ApiError.Network("GET", request.path, java.io.IOException("offline"))
         }
 
-        val result = DashboardRepository(api).load()
+        val result = DashboardRepository(api).load(isManager = false)
 
         assertEquals("logged_out", result.status.state)
         assertNull(result.tasks)

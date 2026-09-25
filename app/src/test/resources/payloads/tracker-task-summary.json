@@ -1,0 +1,11 @@
+{
+  "total": 12,
+  "done": 5,
+  "pending": 4,
+  "inProgress": 2,
+  "inReview": 1,
+  "activeTasks": [
+    { "title": "Ship parity plan", "priority": "high", "status": "in_progress" },
+    { "title": "Write decode tests", "priority": "medium", "status": "pending" }
+  ]
+}

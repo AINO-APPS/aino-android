@@ -41,91 +41,84 @@ data class UpdateProfilePayload(
 data class UpdateEmailPayload(val email: String)
 
 @Serializable
+data class DeleteAccountPayload(val password: String)
+
+@Serializable
 data class FaceStatus(
     val enrolled: Boolean = false,
     @SerialName("enrolled_at") val enrolledAt: String? = null,
 )
 
-// ── Global search (`GET /api/search?q=`) ──────────────────────────────────
-// The service returns seven fixed buckets; audit logs are only populated for
-// hr_admin and above, and notes come from the user's own notebook JSON.
+/** `POST/DELETE /api/profile/avatar` → `{ avatar }` (null after removal). */
+@Serializable
+data class AvatarResponse(val avatar: String? = null)
+
+// ── Status v2 (`/api/me/status`) ─────────────────────────────────────────────
+// The resolver payload is camelCase (`services/status/index.ts` StatusPayload),
+// both from REST and inside the `user_status` WS event.
 
 @Serializable
-data class SearchTaskHit(
-    val id: Long,
-    val title: String,
-    val status: String? = null,
-    val priority: String? = null,
-    val date: String? = null,
-    val snippet: String? = null,
+data class StatusPayload(
+    val userId: Long? = null,
+    /** available · busy · dnd · brb · away · in_call · in_meeting · offline */
+    val effective: String = "available",
+    val presence: String = "offline",
+    /** The user's manual choice (available · busy · dnd · brb) or null. */
+    val manualStatus: String? = null,
+    /** auto · invisible ("Appear Offline"). */
+    val presencePreference: String = "auto",
+    val statusMessage: String? = null,
+    val statusMessageExpiresAt: String? = null,
+    val source: String? = null,
+)
+
+/** `PUT /api/me/status`; `status = null` clears the manual choice. */
+@Serializable
+data class SetStatusRequest(
+    val status: String?,
+    val message: String? = null,
+    val messageExpiresAt: String? = null,
 )
 
 @Serializable
-data class SearchNoteHit(
+data class PresencePreferenceRequest(val preference: String)
+
+// ── Theme (`/api/tracker/theme`) ─────────────────────────────────────────────
+
+@Serializable
+data class ThemePayload(val theme: String)
+
+// ── Notification prefs (`/api/profile/notification-prefs`) ───────────────────
+// `client/src/utils/sounds.ts` DEFAULT_PREFS. The server merges partial updates.
+
+@Serializable
+data class NotificationPrefs(
+    val ringtone: String = "classic",
+    val ringtoneVolume: Double = 0.6,
+    val outgoingTone: String = "ringback",
+    val outgoingVolume: Double = 0.4,
+    val messageTone: String = "ding",
+    val messageVolume: Double = 0.5,
+    val mentionTone: String = "mention",
+    val mentionVolume: Double = 0.6,
+    val reactionTone: String = "subtle",
+    val reactionVolume: Double = 0.4,
+    val muteAll: Boolean = false,
+    val playWhenFocused: Boolean = false,
+    val playOnSend: Boolean = false,
+    val readReceipts: Boolean = true,
+)
+
+// ── Biometric devices (`GET /api/auth/biometric`) ────────────────────────────
+
+@Serializable
+data class BiometricDevice(
     val id: String,
-    val title: String = "Untitled",
-    val snippet: String? = null,
-    val tags: List<String> = emptyList(),
-    val pinned: Boolean = false,
-)
-
-@Serializable
-data class SearchUserHit(
-    val id: Long,
-    val username: String? = null,
-    @SerialName("full_name") val fullName: String? = null,
-    val email: String? = null,
-    val role: String? = null,
-) {
-    fun display(): String = fullName?.takeIf(String::isNotBlank) ?: username.orEmpty()
-}
-
-@Serializable
-data class SearchEventHit(
-    val id: Long,
-    val title: String,
-    @SerialName("start_time") val startTime: String? = null,
-    @SerialName("all_day") val allDay: Boolean = false,
-)
-
-@Serializable
-data class SearchLeaveHit(
-    val id: Long,
-    val date: String,
-    @SerialName("leave_type") val leaveType: String,
-    val status: String? = null,
-    val reason: String? = null,
-)
-
-@Serializable
-data class SearchSprintHit(
-    val id: Long,
-    val name: String,
-    val status: String? = null,
-    val goal: String? = null,
-)
-
-@Serializable
-data class SearchLogHit(
-    val id: Long,
-    val action: String? = null,
-    @SerialName("entity_type") val entityType: String? = null,
-    @SerialName("actor_name") val actorName: String? = null,
+    @SerialName("device_label") val deviceLabel: String? = null,
+    val platform: String = "android",
     @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("last_used_at") val lastUsedAt: String? = null,
 )
 
 @Serializable
-data class SearchResults(
-    val tasks: List<SearchTaskHit> = emptyList(),
-    val notes: List<SearchNoteHit> = emptyList(),
-    val users: List<SearchUserHit> = emptyList(),
-    val events: List<SearchEventHit> = emptyList(),
-    val leaves: List<SearchLeaveHit> = emptyList(),
-    val sprints: List<SearchSprintHit> = emptyList(),
-    val logs: List<SearchLogHit> = emptyList(),
-) {
-    val total: Int
-        get() = tasks.size + notes.size + users.size + events.size + leaves.size + sprints.size + logs.size
-
-    val isEmpty: Boolean get() = total == 0
-}
+data class BiometricDevicesResponse(val devices: List<BiometricDevice> = emptyList())

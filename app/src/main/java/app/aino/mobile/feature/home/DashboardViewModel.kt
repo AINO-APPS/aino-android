@@ -26,6 +26,7 @@ data class DashboardUiState(
 class DashboardViewModel(private val repository: DashboardRepository) : ViewModel() {
     private val _ui = MutableStateFlow(DashboardUiState())
     val ui: StateFlow<DashboardUiState> = _ui.asStateFlow()
+    private var isManager: Boolean = false
 
     init {
         refresh()
@@ -39,17 +40,36 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
         }
     }
 
+    fun setManager(manager: Boolean) {
+        if (manager != isManager) { isManager = manager; refresh() } else isManager = manager
+    }
+
+    private var refreshAgain = false
+
     fun refresh() {
-        if (_ui.value.loading) return
+        // Coalesce: a request that arrives mid-load (e.g. the manager flag flipping
+        // during the first load) runs once after, instead of being dropped.
+        if (_ui.value.loading) { refreshAgain = true; return }
         _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching(repository::load).fold(
+            runCatching { repository.load(isManager) }.fold(
                 onSuccess = { snapshot ->
                     val (floor, breaks) = liveDurations(snapshot.status, snapshot.loadedAtEpochMs, System.currentTimeMillis())
                     _ui.value = DashboardUiState(false, snapshot, floor, breaks)
                 },
                 onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Could not load dashboard") },
             )
+            if (refreshAgain) { refreshAgain = false; refresh() }
+        }
+    }
+
+    fun approve(id: Long) = act { repository.approveRequest(id) }
+    fun reject(id: Long) = act { repository.rejectRequest(id) }
+
+    private fun act(block: () -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { block() }
+            refresh()
         }
     }
 
@@ -57,8 +77,9 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                val tokens = KeystoreTokenStore(context)
-                val api = RefreshingApiClient(OkHttpApiClient(tokenProvider = tokens), tokens)
+                val container = app.aino.mobile.core.AppContainer.get(context)
+                val tokens = container.tokens
+                val api = container.api
                 return DashboardViewModel(DashboardRepository(api)) as T
             }
         }

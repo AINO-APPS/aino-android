@@ -23,6 +23,21 @@ data class IceConfigDto(
 private val REAL_TURN_MODES = setOf("cloudflare-calls", "coturn-rest", "static")
 private const val PUBLIC_RELAY_HOST = "openrelay.metered.ca"
 
+/** `iceConfig.ts` FALLBACK_ICE_SERVERS — only when `GET chat/ice-config` is unavailable. */
+fun fallbackIceConfig(): IceConfigDto {
+    fun relay(url: String) = IceServerDto(IceUrls(listOf(url)), "openrelayproject", "openrelayproject")
+    return IceConfigDto(
+        listOf(
+            IceServerDto(IceUrls(listOf("stun:stun.l.google.com:19302"))),
+            IceServerDto(IceUrls(listOf("stun:stun1.l.google.com:19302"))),
+            IceServerDto(IceUrls(listOf("stun:stun2.l.google.com:19302"))),
+            relay("turn:openrelay.metered.ca:80"),
+            relay("turn:openrelay.metered.ca:443"),
+            relay("turn:openrelay.metered.ca:443?transport=tcp"),
+        ),
+    )
+}
+
 fun hasRealTurn(config: IceConfigDto): Boolean {
     if (config.mode in REAL_TURN_MODES) return true
     return config.iceServers.any { server ->

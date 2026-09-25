@@ -1,0 +1,4 @@
+[
+  { "id": 1, "leave_type": "casual", "name": "Casual Leave", "annual_quota": "12.00", "half_day_allowed": true, "quarter_day_allowed": false, "color": "#2383e2" },
+  { "id": 2, "leave_type": "sick", "name": "Sick Leave", "annual_quota": 8, "half_day_allowed": true }
+]

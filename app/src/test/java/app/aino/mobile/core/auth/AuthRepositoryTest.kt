@@ -195,6 +195,58 @@ class AuthRepositoryTest {
         assertTrue(body.contains("\"deviceSecret\":\"secret\""))
     }
 
+    @Test
+    fun loginFallsBackToCachedFeaturesAndMarksDegradedOnHydrationFailure() {
+        val store = MemoryTokenStore()
+        store.saveFeatures("""{"attendance":true,"tasks":true,"chat":true}""")
+        var profileCalls = 0
+        val repository = AuthRepository(FakeApiClient { request ->
+            when (request.path) {
+                "auth/login" -> response("""{"user":{"id":9,"username":"user","role":"employee","tenant_id":42},"token":"jwt"}""")
+                "profile" -> {
+                    profileCalls++
+                    throw ApiError.Network("GET", "profile", java.io.IOException("offline"))
+                }
+                else -> error("unexpected ${request.path}")
+            }
+        }, store)
+
+        val state = repository.login("user", "secret") as AuthState.Authenticated
+
+        assertEquals(true, state.featuresDegraded)
+        assertEquals(true, state.user.tenantFeatures["attendance"])
+        assertTrue(profileCalls >= 1) // retried before giving up
+    }
+
+    @Test
+    fun loginPersistsHydratedFeaturesOnSuccess() {
+        val store = MemoryTokenStore()
+        val repository = AuthRepository(FakeApiClient { request ->
+            when (request.path) {
+                "auth/login" -> response("""{"user":{"id":9,"username":"user","role":"employee","tenant_id":42},"token":"jwt"}""")
+                "profile" -> response("""{"id":9,"username":"user","role":"employee","tenant_id":42,"tenant_features":{"attendance":true,"tasks":true,"chat":false}}""")
+                else -> error("unexpected ${request.path}")
+            }
+        }, store)
+
+        val state = repository.login("user", "secret") as AuthState.Authenticated
+
+        assertEquals(false, state.featuresDegraded)
+        assertEquals(true, decodeFeatures(store.cachedFeatures)?.get("attendance"))
+        assertEquals(false, decodeFeatures(store.cachedFeatures)?.get("chat"))
+    }
+
+    @Test
+    fun logoutClearsCachedFeatures() {
+        val store = MemoryTokenStore().apply { saveToken("jwt") }
+        store.saveFeatures("""{"attendance":true}""")
+        val repository = AuthRepository(FakeApiClient { response("{}") }, store)
+
+        repository.logout()
+
+        assertEquals(null, store.cachedFeatures)
+    }
+
     private fun response(json: String) = ApiResponse(200, emptyMap(), json.toByteArray())
 }
 
@@ -204,7 +256,11 @@ private class FakeApiClient(private val block: (ApiRequest) -> ApiResponse) : Ap
 
 private class MemoryTokenStore : TokenStore {
     var value: String? = null
+    var cachedFeatures: String? = null
     override fun saveToken(token: String) { value = token }
     override fun getToken(): String? = value
     override fun clearToken() { value = null }
+    override fun saveFeatures(features: String) { this.cachedFeatures = features }
+    override fun getFeatures(): String? = cachedFeatures
+    override fun clearFeatures() { cachedFeatures = null }
 }

@@ -84,6 +84,8 @@ class CallRingService : Service() {
     const val EXTRA_CALL_TYPE = "callType"
     const val EXTRA_SCHEME = "scheme"
     const val EXTRA_EXPIRES_AT = "expiresAt"
+    /** Group-call (huddle) rings: the meeting to join; the push `callId` is the meeting id. */
+    const val EXTRA_MEETING_CODE = "meetingCode"
 
     private const val CHANNEL_ID = "call_ringer_fgs_v2"
     const val NOTIFICATION_ID = 909090
@@ -140,6 +142,15 @@ class CallRingService : Service() {
 
   override fun onBind(intent: Intent?): IBinder? = null
 
+  private var meetingCode: String = ""
+  private var ringingCallId: String = ""
+
+  private fun appendMeeting(sb: StringBuilder, callId: String) {
+    if (meetingCode.isBlank()) return
+    sb.append("&meetingCode=").append(Uri.encode(meetingCode))
+    sb.append("&meetingId=").append(Uri.encode(callId))
+  }
+
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     when (intent?.action) {
       ACTION_STOP -> {
@@ -172,6 +183,7 @@ class CallRingService : Service() {
     val callType = intent?.getStringExtra(EXTRA_CALL_TYPE) ?: "voice"
     val scheme = intent?.getStringExtra(EXTRA_SCHEME) ?: "aino"
     val expiresAt = intent?.getStringExtra(EXTRA_EXPIRES_AT)
+    meetingCode = intent?.getStringExtra(EXTRA_MEETING_CODE).orEmpty()
 
     timeoutHandler.removeCallbacks(timeoutStop)
     val remaining = remainingRingMillis(expiresAt)
@@ -239,8 +251,11 @@ class CallRingService : Service() {
       }.apply { isDaemon = true }.start()
     }
 
-    // Start the ringtone (unless silent).
-    if (!silent) {
+    // The same call can arrive over the socket and as a push: keep ringing once.
+    if (callId.isNotEmpty() && callId == ringingCallId && mediaPlayer != null) return
+    ringingCallId = callId
+    // Start the ringtone (unless silent or muted in Notification Sounds).
+    if (!silent && !app.aino.mobile.core.notifications.NotificationSoundPrefs.muteAll(this)) {
       startRingtone(ringtoneRes)
     }
     // Start vibration (unless silent or explicitly disabled).
@@ -371,6 +386,7 @@ class CallRingService : Service() {
     sb.append("&peerId=").append(Uri.encode(callerId))
     sb.append("&peerName=").append(Uri.encode(callerName))
     sb.append("&peerAvatar=").append(Uri.encode(callerAvatar))
+    appendMeeting(sb, callId)
 
     val viewIntent = Intent(this, MainActivity::class.java).apply {
       setAction(Intent.ACTION_VIEW)
@@ -413,6 +429,7 @@ class CallRingService : Service() {
           Intent.FLAG_ACTIVITY_SINGLE_TOP or
           Intent.FLAG_ACTIVITY_CLEAR_TOP,
       )
+      putExtra(CallActionActivity.EXTRA_MEETING_CODE, meetingCode)
       putExtra(CallActionActivity.EXTRA_CALL_ID, callId)
       putExtra(CallActionActivity.EXTRA_CONVERSATION_ID, conversationId)
       putExtra(CallActionActivity.EXTRA_CALLER_ID, callerId)
@@ -446,6 +463,7 @@ class CallRingService : Service() {
           Intent.FLAG_ACTIVITY_SINGLE_TOP or
           Intent.FLAG_ACTIVITY_CLEAR_TOP,
       )
+      putExtra(CallActionActivity.EXTRA_MEETING_CODE, meetingCode)
       putExtra(CallActionActivity.EXTRA_CALL_ID, callId)
       putExtra(CallActionActivity.EXTRA_CONVERSATION_ID, conversationId)
       putExtra(CallActionActivity.EXTRA_CALLER_ID, callerId)
@@ -516,7 +534,9 @@ class CallRingService : Service() {
         return Uri.parse("android.resource://$packageName/$resId")
       }
     }
-    return RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+    // The ringtone the user picked on the Notification Sounds page, else the system default.
+    return app.aino.mobile.core.notifications.NotificationSoundPrefs.ringtoneUri(this)
+      ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
   }
 
   private fun startVibration() {
@@ -593,6 +613,7 @@ class CallRingService : Service() {
 
   private fun stopEverything() {
     timeoutHandler.removeCallbacks(timeoutStop)
+    ringingCallId = ""
     stopMediaPlayer()
     stopVibration()
     try {

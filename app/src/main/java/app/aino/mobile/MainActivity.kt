@@ -13,13 +13,17 @@ import androidx.fragment.app.FragmentActivity
 import javax.crypto.Cipher
 import app.aino.mobile.core.auth.AuthViewModel
 import app.aino.mobile.core.designsystem.theme.AinoTheme
+import app.aino.mobile.core.designsystem.tokens.ThemePreferenceStore
+import app.aino.mobile.core.designsystem.tokens.WebTheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import app.aino.mobile.core.navigation.AinoApp
 import app.aino.mobile.core.realtime.RealtimeViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.feature.home.DashboardViewModel
 import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.tasks.TaskViewModel
-import app.aino.mobile.feature.leaves.LeaveViewModel
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.core.push.PushNotifications
 import app.aino.mobile.core.push.PushTokenRegistrar
@@ -44,16 +48,20 @@ class MainActivity : FragmentActivity() {
     private val dashboardViewModel by viewModels<DashboardViewModel> { DashboardViewModel.factory(applicationContext) }
     private val attendanceViewModel by viewModels<AttendanceViewModel> { AttendanceViewModel.factory(applicationContext) }
     private val taskViewModel by viewModels<TaskViewModel> { TaskViewModel.factory(applicationContext) }
-    private val leaveViewModel by viewModels<LeaveViewModel> { LeaveViewModel.factory(applicationContext) }
     private val profileViewModel by viewModels<ProfileViewModel> { ProfileViewModel.factory(applicationContext) }
     private val chatViewModel by viewModels<ChatViewModel> { ChatViewModel.factory(applicationContext) }
     private val incomingCallViewModel by viewModels<IncomingCallViewModel> { IncomingCallViewModel.factory(applicationContext) }
-    private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) requestPendingAttendanceAction()
-        else attendanceViewModel.reportError("Precise location permission is required for verified office attendance.")
+    // Android 12+ silently ignores a request for FINE alone; it must be asked
+    // together with COARSE. Only a precise grant satisfies the office geofence.
+    private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants[Manifest.permission.ACCESS_FINE_LOCATION] == true) requestPendingAttendanceAction()
+        else attendanceViewModel.locationPermissionDenied()
     }
+    private fun requestLocationPermission() = locationPermission.launch(
+        arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+    )
     private val chatDocumentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(chatViewModel::upload)
+        uri?.let(chatViewModel::stageAttachment)
     }
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -62,7 +70,10 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         PushNotifications.createChannels(applicationContext)
         setContent {
-            AinoTheme {
+            val themeStore = ThemePreferenceStore(applicationContext)
+            val isDark by themeStore.isDark.collectAsState(initial = true)
+            val themeScope = rememberCoroutineScope()
+            WebTheme(darkTheme = isDark) {
                 AinoApp(
                     authViewModel,
                     updateViewModel,
@@ -70,14 +81,15 @@ class MainActivity : FragmentActivity() {
                     dashboardViewModel,
                     attendanceViewModel,
                     taskViewModel,
-                    leaveViewModel,
                     profileViewModel,
                     chatViewModel,
                     incomingCallViewModel,
+                    isDark = isDark,
+                    onSetDark = { dark -> themeScope.launch { themeStore.setDark(dark) } },
                     biometricAvailable = biometricAvailable(),
                     onBiometricLogin = ::requestBiometricLogin,
                     onBiometricEnroll = ::requestBiometricEnrollment,
-                    onAttendanceLocationPermission = { locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
+                    onAttendanceLocationPermission = { requestLocationPermission() },
                     onAttendanceBiometric = ::requestAttendanceBiometric,
                     onPickChatDocument = {
                         chatDocumentPicker.launch(
@@ -102,15 +114,26 @@ class MainActivity : FragmentActivity() {
             }
         }
         consumeCallIntent(intent)
+        if (savedInstanceState == null) consumePushTap(intent)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                incomingCallViewModel.ui.collect { state ->
-                    val visible = state.route != null && state.state !in setOf(IncomingCallState.Ended)
-                    lockScreenController.setShowingForCall(this@MainActivity, visible)
-                    // A-082 media remains disabled. WaitingForMedia is not a
-                    // connected/renderable call and must not activate PiP.
-                    val activeMedia = false
-                    pipController.setCallActive(this@MainActivity, activeMedia, if (state.route?.callType == "video") 9 else 1, if (state.route?.callType == "video") 16 else 1)
+                launch {
+                    incomingCallViewModel.ui.collect { state ->
+                        val visible = state.route != null && state.state !in setOf(IncomingCallState.Ended)
+                        lockScreenController.setShowingForCall(this@MainActivity, visible)
+                    }
+                }
+                // Leaving the app during a connected call or a meeting enters system PiP.
+                val activeCall = app.aino.mobile.core.call.ActiveCallRuntime.get(applicationContext).ui
+                val meeting = app.aino.mobile.feature.meeting.MeetingRuntime.get(applicationContext).state
+                kotlinx.coroutines.flow.combine(activeCall, meeting) { call, live ->
+                    when {
+                        call.visible && call.connectedAt != null -> if (call.isVideo) 9 to 16 else 1 to 1
+                        live != null -> 9 to 16
+                        else -> null
+                    }
+                }.collect { ratio ->
+                    pipController.setCallActive(this@MainActivity, ratio != null, ratio?.first ?: 1, ratio?.second ?: 1)
                 }
             }
         }
@@ -120,11 +143,19 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         consumeCallIntent(intent)
+        consumePushTap(intent)
+    }
+
+    /** A tapped notification is routed by the signed-in shell (see `PendingPushTap`). */
+    private fun consumePushTap(intent: android.content.Intent?) {
+        app.aino.mobile.core.push.parsePushTap(intent)?.let(app.aino.mobile.core.push.PendingPushTap::set) ?: return
+        intent?.removeExtra("push_type")
     }
 
     override fun onUserInteraction() {
         super.onUserInteraction()
         authViewModel.recordUserActivity()
+        profileViewModel.recordActivity()
     }
 
     override fun onUserLeaveHint() {
@@ -138,6 +169,17 @@ class MainActivity : FragmentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         pipController.onPictureInPictureModeChanged(isInPictureInPictureMode)
+        app.aino.mobile.core.call.PipState.inPip.value = isInPictureInPictureMode
+    }
+
+    override fun onStart() {
+        super.onStart()
+        app.aino.mobile.core.notifications.NotificationSoundPrefs.appVisible = true
+    }
+
+    override fun onStop() {
+        app.aino.mobile.core.notifications.NotificationSoundPrefs.appVisible = false
+        super.onStop()
     }
 
     override fun onResume() {
@@ -148,6 +190,12 @@ class MainActivity : FragmentActivity() {
 
     override fun onDestroy() {
         lockScreenController.release()
+        if (isFinishing) {
+            // The realtime socket is Activity-scoped and closes with it; don't
+            // leave call/meeting media running with no signaling (swiped task).
+            app.aino.mobile.feature.meeting.MeetingRuntime.get(applicationContext).leave()
+            app.aino.mobile.core.call.ActiveCallRuntime.get(applicationContext).let { if (it.ui.value.visible) it.hangUp() }
+        }
         super.onDestroy()
     }
 
@@ -191,12 +239,26 @@ class MainActivity : FragmentActivity() {
 
     private fun requestPendingAttendanceAction() {
         attendanceViewModel.resumePending(
-            onPermissionRequired = { locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION) },
-            onBiometricRequired = ::requestAttendanceBiometric,
+            onPermissionRequired = { requestLocationPermission() },
         )
     }
 
     private fun requestAttendanceBiometric() {
+        // The server's fingerprint path accepts any OS-level identity check once
+        // office presence is proven, so allow the screen lock as a fallback;
+        // BIOMETRIC_STRONG alone failed silently on devices without a strong sensor.
+        val authenticators = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        } else {
+            BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        }
+        val availability = BiometricManager.from(this).canAuthenticate(authenticators)
+        if (availability != BiometricManager.BIOMETRIC_SUCCESS) {
+            attendanceViewModel.reportVerifyError(
+                "Set up a fingerprint, face unlock or screen lock on this device to verify attendance.",
+            )
+            return
+        }
         val prompt = BiometricPrompt(
             this,
             ContextCompat.getMainExecutor(this),
@@ -206,9 +268,9 @@ class MainActivity : FragmentActivity() {
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
-                        attendanceViewModel.reportError(errString.toString())
-                    }
+                    val cancelled = errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
+                        errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON || errorCode == BiometricPrompt.ERROR_CANCELED
+                    attendanceViewModel.reportVerifyError(if (cancelled) "Identity check cancelled. Tap verify to try again." else errString.toString())
                 }
             },
         )
@@ -216,8 +278,7 @@ class MainActivity : FragmentActivity() {
             BiometricPrompt.PromptInfo.Builder()
                 .setTitle("Verify attendance")
                 .setSubtitle("Confirm your identity from the office")
-                .setNegativeButtonText("Cancel")
-                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .setAllowedAuthenticators(authenticators)
                 .build(),
         )
     }

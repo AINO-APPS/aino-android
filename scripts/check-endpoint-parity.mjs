@@ -36,7 +36,10 @@ function structural(value) {
 }
 
 function add(found, method, route, source) {
-  if (!route || !/^[a-z][a-z0-9/_?${}.\-]+$/i.test(route)) return;
+  // Explicit @api markers use Express-style named parameters (`:id`). Keep
+  // accepting interpolated Kotlin templates as well; both normalize to the
+  // same structural route below.
+  if (!route || !/^[a-z][a-z0-9/_?${}.:\-]+$/i.test(route)) return;
   // These two finite dynamic forms are declared through adjacent @api markers.
   // Do not also record their unresolved expression as an unmatched operation.
   if (/\$(action|suffix)\b/.test(route)) return;

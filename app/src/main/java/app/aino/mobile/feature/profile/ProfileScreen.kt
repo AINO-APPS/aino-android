@@ -1,305 +1,270 @@
 package app.aino.mobile.feature.profile
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.outlined.Apartment
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.LightMode
+import androidx.compose.material.icons.outlined.NotificationsNone
+import androidx.compose.material.icons.outlined.PhotoCamera
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.aino.mobile.core.designsystem.AinoAlert
-import app.aino.mobile.core.designsystem.AinoAtmosphere
-import app.aino.mobile.core.designsystem.AinoBadge
-import app.aino.mobile.core.designsystem.AinoGlassCard
-import app.aino.mobile.core.designsystem.AinoPrimaryButton
-import app.aino.mobile.core.designsystem.AinoSectionHeader
-import app.aino.mobile.core.designsystem.AlertTone
+import app.aino.mobile.core.auth.AinoUser
+import app.aino.mobile.core.designsystem.component.StatusDot
+import app.aino.mobile.core.designsystem.component.StatusGlyph
+import app.aino.mobile.core.designsystem.component.StatusGlyphIcon
+import app.aino.mobile.core.designsystem.component.StatusVisual
+import app.aino.mobile.core.designsystem.component.UserAvatar
+import app.aino.mobile.core.designsystem.component.profileStatusVisual
+import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 
+/** StatusPicker `PICKABLE_STATUSES` (`client/src/status/constants.ts` STATUS_META). */
+private val PICKABLE = listOf(
+    "available" to StatusVisual("Available", Color(0xFF22C55E), StatusGlyph.Check),
+    "busy" to StatusVisual("Busy", Color(0xFFEF4444), StatusGlyph.Dot),
+    "dnd" to StatusVisual("Do Not Disturb", Color(0xFFEF4444), StatusGlyph.Minus),
+    "brb" to StatusVisual("Away", Color(0xFFF59E0B), StatusGlyph.Clock),
+)
+
+/** Server-derived statuses the picker shows read-only (STATUS_META `auto`). */
+private val AUTO_LABELS = mapOf("away" to "Away (idle)", "in_call" to "In a Call", "in_meeting" to "In a Meeting")
+
+/**
+ * Profile page — the web's `ProfileMenu` dropdown content as a full screen:
+ * header (photo + camera, name, @username, email, status/mode badges),
+ * StatusPicker, then Edit Profile · Remove Photo · Notification Sounds ·
+ * Face Enrollment · theme · Sign Out.
+ */
 @Composable
-fun ProfileScreen(viewModel: ProfileViewModel) {
+fun ProfileScreen(
+    viewModel: ProfileViewModel,
+    authUser: AinoUser,
+    workState: String?,
+    workMode: String?,
+    isDark: Boolean,
+    onBack: () -> Unit,
+    onEditProfile: () -> Unit,
+    onNotificationSounds: () -> Unit,
+    onFaceEnrollment: () -> Unit,
+    onToggleTheme: () -> Unit,
+    onAvatarChanged: (String?) -> Unit,
+    onSignOut: () -> Unit,
+) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
-    AinoAtmosphere {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            ProfileTabs(ui.tab, viewModel::selectTab)
-            ui.error?.let { AinoAlert(it, AlertTone.Error) }
-            ui.message?.let { AinoAlert(it, AlertTone.Success) }
-            when (ui.tab) {
-                ProfileTab.Account -> AccountSection(ui, viewModel)
-                ProfileTab.Search -> SearchSection(ui, viewModel)
-            }
-            Spacer(Modifier.height(22.dp))
-        }
+    val colors = LocalWebColors.current
+    LaunchedEffect(Unit) { viewModel.refresh() }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let { viewModel.uploadAvatar(it, onAvatarChanged) }
     }
-}
+    val fullName = ui.user?.fullName ?: authUser.fullName
+    val username = ui.user?.username ?: authUser.username
+    val email = ui.user?.email ?: authUser.email
+    val avatar = ui.user?.avatar ?: authUser.avatar
+    val effective = ui.status?.effective ?: "available"
+    val visual = profileStatusVisual(effective, workState, workMode)
 
-@Composable
-private fun ProfileTabs(selected: ProfileTab, onSelect: (ProfileTab) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .65f), RoundedCornerShape(8.dp)).padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        ProfileTab.entries.forEach { tab ->
-            Text(
-                if (tab == ProfileTab.Account) "Profile" else "Search",
-                Modifier.weight(1f).clickable { onSelect(tab) }
-                    .background(if (selected == tab) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(6.dp))
-                    .padding(vertical = 10.dp),
-                color = if (selected == tab) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelLarge,
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
-@Composable
-@OptIn(ExperimentalLayoutApi::class)
-private fun AccountSection(ui: ProfileUiState, viewModel: ProfileViewModel) {
-    val user = ui.user
-    if (user == null) {
-        AinoGlassCard(Modifier.fillMaxWidth()) {
-            Text(
-                if (ui.loading) "Loading your profile…" else "Profile unavailable.",
-                Modifier.padding(20.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        return
-    }
-    AinoGlassCard(Modifier.fillMaxWidth()) {
-        Column(
-            Modifier.fillMaxWidth().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Box(Modifier.size(84.dp).padding(bottom = 0.dp), contentAlignment = Alignment.BottomEnd) {
-                Box(
-                    Modifier.size(84.dp).background(MaterialTheme.colorScheme.primary, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        user.display().split(" ").take(2).mapNotNull { it.firstOrNull() }.joinToString("").uppercase(),
-                        color = Color.White,
-                        style = MaterialTheme.typography.headlineMedium,
-                    )
-                }
-                Box(
-                    Modifier.size(28.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Outlined.Edit, "Edit profile", Modifier.size(13.dp), tint = Color.White)
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(user.display(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("@${user.username}", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-            user.email?.takeIf(String::isNotBlank)?.let {
-                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .75f), style = MaterialTheme.typography.bodySmall)
-            }
-            FlowRow(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                AinoBadge(roleLabel(user.role), AlertTone.Info)
-                user.teamName?.let { AinoBadge(it, AlertTone.Info) }
-                user.tenantPlan?.let { AinoBadge("$it plan", AlertTone.Info) }
-                if (user.hasReports) AinoBadge("Manager", AlertTone.Success)
-                if (user.impersonated) AinoBadge("Impersonated", AlertTone.Warning)
-            }
-            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Face, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    if (ui.faceEnrolled) "Face descriptor enrolled" else "No face descriptor enrolled",
-                    Modifier.padding(start = 8.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-        }
-    }
-
-    if (ui.editing) {
-        AinoGlassCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Edit details", style = MaterialTheme.typography.titleMedium)
-                ProfileField("Full name", ui.draftName, onChange = { viewModel.updateDraft(name = it) })
-                ProfileField("Username", ui.draftUsername, onChange = { viewModel.updateDraft(username = it) })
-                AinoPrimaryButton("Save name and username", viewModel::saveProfile, Modifier.fillMaxWidth(), !ui.loading)
-                // Email is a separate route with its own uniqueness check, so it
-                // is saved independently rather than bundled into the same call.
-                ProfileField("Email", ui.draftEmail, onChange = { viewModel.updateDraft(email = it) })
-                AinoPrimaryButton("Save email", viewModel::saveEmail, Modifier.fillMaxWidth(), !ui.loading)
-                Text(
-                    "Cancel",
-                    Modifier.clickable(onClick = viewModel::cancelEditing)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            }
-        }
-    } else {
-        ProfileAction(Icons.Outlined.Edit, "Edit Profile", viewModel::startEditing, !ui.loading)
-    }
-
-    ProfileAction(Icons.Outlined.Refresh, if (ui.loading) "Refreshing…" else "Refresh Profile", viewModel::refresh, !ui.loading)
-}
-
-@Composable
-private fun ProfileAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit, enabled: Boolean) {
-    Row(
-        Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = .55f), RoundedCornerShape(8.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Icon(icon, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface)
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-private fun SearchSection(ui: ProfileUiState, viewModel: ProfileViewModel) {
-    OutlinedTextField(
-        value = ui.searchTerm,
-        onValueChange = viewModel::updateSearchTerm,
-        placeholder = { Text("Search tasks, people, notes…") },
-        leadingIcon = { Icon(Icons.Outlined.Search, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-        trailingIcon = if (ui.searchTerm.isNotEmpty()) {{
-            Text("×", Modifier.clickable(onClick = viewModel::clearSearch).padding(8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.titleLarge)
-        }} else null,
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
-        shape = RoundedCornerShape(12.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-            focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-        ),
-    )
-
-    if (!ui.searchRan && !ui.searching) {
-        Column(
-            Modifier.fillMaxWidth().height(280.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Icon(Icons.Outlined.Search, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.outline)
-            Text(
-                if (ui.searchTerm.trim().isNotEmpty() && ui.searchTerm.trim().length < 2) "Type at least 2 characters to search" else "Search across tasks, people, and notes",
-                Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall,
-            )
-        }
-    }
-
-    val results = ui.searchResults
-    if (ui.searchRan && results.isEmpty) {
-        AinoGlassCard(Modifier.fillMaxWidth()) {
-            Text("No matches.", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        return
-    }
-    if (!ui.searchRan) return
-
-    ResultGroup("Tasks", results.tasks.map { ResultRow(it.title, plainSnippet(it.snippet).ifBlank { it.status.orEmpty() }) })
-    ResultGroup("Notes", results.notes.map { ResultRow(it.title, it.snippet.orEmpty()) })
-    ResultGroup("People", results.users.map { ResultRow(it.display(), listOfNotNull(it.email, it.role?.let(::roleLabel)).joinToString(" · ")) })
-    ResultGroup("Events", results.events.map { ResultRow(it.title, it.startTime?.take(16)?.replace('T', ' ').orEmpty()) })
-    ResultGroup("Leaves", results.leaves.map { ResultRow("${it.leaveType} · ${it.date.take(10)}", it.status.orEmpty()) })
-    ResultGroup("Sprints", results.sprints.map { ResultRow(it.name, it.goal ?: it.status.orEmpty()) })
-    ResultGroup("Audit logs", results.logs.map { ResultRow("${it.action} ${it.entityType}", it.actorName.orEmpty()) })
-}
-
-private data class ResultRow(val title: String, val subtitle: String)
-
-@Composable
-private fun ResultGroup(title: String, rows: List<ResultRow>) {
-    if (rows.isEmpty()) return
-    AinoSectionHeader(title, "${rows.size} match(es)")
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        rows.forEach { row ->
-            AinoGlassCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(row.title, fontWeight = FontWeight.SemiBold)
-                    row.subtitle.takeIf(String::isNotBlank)?.let {
-                        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    ProfilePage("Profile", onBack) {
+        // ── Header ──
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(104.dp)) {
+                UserAvatar(fullName ?: username, avatar, 96.dp, Modifier.align(Alignment.Center))
+                if (ui.avatarUploading) {
+                    Box(Modifier.size(96.dp).align(Alignment.Center).background(Color.Black.copy(alpha = .45f), CircleShape), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(32.dp), color = Color.White, strokeWidth = 3.dp)
                     }
                 }
+                StatusDot(visual, 22.dp, colors.bg, Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 6.dp))
+                Box(
+                    Modifier.align(Alignment.BottomEnd).size(34.dp).background(colors.primary, CircleShape)
+                        .border(3.dp, colors.bg, CircleShape)
+                        .clickable(enabled = !ui.avatarUploading) {
+                            picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Outlined.PhotoCamera, "Change photo", Modifier.size(16.dp), tint = Color.White) }
             }
+            Text(fullName.orEmpty(), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
+            Text("@$username", color = colors.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
+            email?.takeIf(String::isNotBlank)?.let {
+                Text(it, color = colors.textMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                StatusBadge(effective, visual)
+                if (workState != null && workState != "logged_out") ModeBadge(workMode == "office")
+            }
+        }
+
+        // ── StatusPicker ──
+        StatusPickerSection(ui.status, ui.statusBusy, viewModel::setManualStatus, viewModel::toggleInvisible)
+
+        // ── Menu ──
+        ProfileSection {
+            ProfileRow(Icons.Outlined.Edit, "Edit Profile", onEditProfile)
+            if (!avatar.isNullOrBlank()) {
+                RowDivider()
+                ProfileRow(Icons.Outlined.Delete, "Remove Photo", { viewModel.askRemoveAvatar(true) })
+            }
+            RowDivider()
+            ProfileRow(Icons.Outlined.NotificationsNone, "Notification Sounds", onNotificationSounds)
+            RowDivider()
+            ProfileRow(Icons.Outlined.Face, "Face Enrollment", onFaceEnrollment)
+            RowDivider()
+            ProfileRow(if (isDark) Icons.Outlined.LightMode else Icons.Outlined.DarkMode, if (isDark) "Light Mode" else "Dark Mode", onToggleTheme)
+        }
+        ProfileSection {
+            ProfileRow(Icons.AutoMirrored.Outlined.Logout, "Sign Out", { viewModel.askSignOut(true) }, tint = colors.danger)
+        }
+    }
+
+    if (ui.signOutConfirming) {
+        ProfileConfirmDialog(
+            title = "Sign Out",
+            message = "Are you sure you want to sign out?",
+            confirmText = "Sign Out",
+            danger = true,
+            busy = ui.signingOut,
+            onConfirm = { viewModel.confirmSignOut(workState, workMode, onSignOut) },
+            onCancel = { viewModel.askSignOut(false) },
+        )
+    }
+    if (ui.removeAvatarConfirming) {
+        ProfileConfirmDialog(
+            title = "Remove Photo",
+            message = "Are you sure you want to remove your profile photo?",
+            confirmText = "Remove",
+            danger = true,
+            onConfirm = { viewModel.removeAvatar(onAvatarChanged) },
+            onCancel = { viewModel.askRemoveAvatar(false) },
+        )
+    }
+    ProfileAlert(ui.alert, viewModel::dismissAlert)
+}
+
+/** `.dd-status-badge.status-*` tints. */
+@Composable
+private fun StatusBadge(effective: String, visual: StatusVisual) {
+    val colors = LocalWebColors.current
+    val (fg, bg) = when (effective) {
+        "available" -> Color(0xFF4ADE80) to Color(0xFF22C55E)
+        "busy", "dnd", "in_call" -> Color(0xFFF87171) to Color(0xFFEF4444)
+        "away" -> Color(0xFFFBBF24) to Color(0xFFF59E0B)
+        "in_meeting" -> Color(0xFF38BDF8) to Color(0xFF0EA5E9)
+        "offline" -> colors.textMuted to Color(0xFF94A3B8)
+        else -> colors.textSecondary to Color.Transparent
+    }
+    Badge(visual.label, fg, bg) { StatusGlyphIcon(visual.glyph, fg, Modifier.size(9.dp)) }
+}
+
+/** `.dd-mode-office` / `.dd-mode-remote`. */
+@Composable
+private fun ModeBadge(office: Boolean) {
+    val fg = if (office) Color(0xFF38BDF8) else Color(0xFFFBBF24)
+    val bg = if (office) Color(0xFF0EA5E9) else Color(0xFFF59E0B)
+    Badge(if (office) "Office" else "Remote", fg, bg) {
+        Icon(if (office) Icons.Outlined.Apartment else Icons.Outlined.Home, null, Modifier.size(12.dp), tint = fg)
+    }
+}
+
+@Composable
+private fun Badge(label: String, fg: Color, bg: Color, leading: @Composable () -> Unit) {
+    val shape = RoundedCornerShape(6.dp)
+    Row(
+        Modifier.background(bg.copy(alpha = .12f), shape).border(1.dp, bg.copy(alpha = .2f), shape)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        leading()
+        Text(label, color = fg, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** `StatusPicker.tsx` as an inline settings group. */
+@Composable
+private fun StatusPickerSection(
+    status: StatusPayload?,
+    busy: Boolean,
+    onPick: (String) -> Unit,
+    onToggleInvisible: () -> Unit,
+) {
+    val colors = LocalWebColors.current
+    val effective = status?.effective ?: "available"
+    val invisible = status?.presencePreference == "invisible"
+    ProfileSection("Set status") {
+        PICKABLE.forEachIndexed { index, (key, visual) ->
+            if (index > 0) RowDivider()
+            ProfileRow(
+                icon = null,
+                label = visual.label,
+                onClick = { onPick(key) },
+                enabled = !busy,
+                leading = { PickerDot(visual) },
+                trailing = if (effective == key && !invisible) {
+                    { Icon(Icons.Outlined.Check, "Selected", Modifier.size(18.dp), tint = colors.primary) }
+                } else null,
+            )
+        }
+        RowDivider()
+        ProfileRow(
+            icon = null,
+            label = if (invisible) "Stop appearing offline" else "Appear Offline",
+            onClick = onToggleInvisible,
+            enabled = !busy,
+            leading = { PickerDot(StatusVisual("Offline", Color(0xFF64748B), StatusGlyph.Ring, ring = true)) },
+            trailing = if (invisible) {
+                { Icon(Icons.Outlined.Check, "Selected", Modifier.size(18.dp), tint = colors.primary) }
+            } else null,
+        )
+        AUTO_LABELS[effective]?.let { label ->
+            Text(
+                "Status automatically set to \"$label\" — will revert when done.",
+                color = colors.textMuted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+            )
         }
     }
 }
 
 @Composable
-private fun ProfileField(
-    label: String,
-    value: String,
-    onChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    imeSearch: Boolean = false,
-    onCommit: (() -> Unit)? = null,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        modifier = modifier.fillMaxWidth(),
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = KeyboardType.Text,
-            imeAction = if (imeSearch) ImeAction.Search else ImeAction.Default,
+private fun PickerDot(visual: StatusVisual) {
+    Box(
+        Modifier.size(20.dp).then(
+            if (visual.ring) Modifier.border(1.5.dp, visual.color, CircleShape) else Modifier.background(visual.color, CircleShape),
         ),
-        keyboardActions = KeyboardActions(onSearch = { onCommit?.invoke() }),
-        shape = RoundedCornerShape(8.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = MaterialTheme.colorScheme.primary,
-            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-        ),
-    )
+        contentAlignment = Alignment.Center,
+    ) { StatusGlyphIcon(visual.glyph, if (visual.ring) visual.color else Color.White, Modifier.size(12.dp)) }
 }
+

@@ -64,7 +64,7 @@ enum class RealtimeEvent(
     CallHandledElsewhere("call_handled_elsewhere", RealtimeDomain.Call, RealtimeReaction.CallControl),
     HuddleDeclined("huddle_declined", RealtimeDomain.Call, RealtimeReaction.CallControl),
 
-    // ── Meetings (22) — state/UI now, media gated behind A-082 ───────────
+    // ── Meetings (22) — handled by MeetingSession (P9) ───────────────────
     MeetingStarted("meeting_started", RealtimeDomain.Meeting, RealtimeReaction.MeetingState),
     MeetingEnded("meeting_ended", RealtimeDomain.Meeting, RealtimeReaction.MeetingState),
     MeetingUpdated("meeting_updated", RealtimeDomain.Meeting, RealtimeReaction.Refetch),
@@ -258,10 +258,10 @@ enum class RealtimeReaction {
     /** Drive the call session state machine. */
     CallControl,
 
-    /** Meeting room state — safe and useful before A-082 media exists. */
+    /** Meeting room state (participants, track state, hands) — `MeetingSession`. */
     MeetingState,
 
-    /** Meeting media negotiation — routed now, inert until A-082 enables media. */
+    /** Meeting mesh negotiation (offers/answers/candidates) — `MeetingSession`. */
     MeetingMedia,
 
     /** Re-evaluate navigation/feature gates, as the web client does live. */

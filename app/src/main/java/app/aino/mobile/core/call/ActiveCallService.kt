@@ -30,7 +30,8 @@ import app.aino.mobile.MainActivity
  * surfaces as STUTTER, LAG and FREEZES. Holding a foreground service with the
  * MICROPHONE (and CAMERA for video) foreground-service types keeps the process
  * at foreground priority for the whole call — exactly how Signal keeps its calls
- * smooth. The media itself is owned by react-native-webrtc in JS; this service's
+ * smooth. The media itself is owned by ActiveCallController (1:1) or
+ * MeetingSession (meetings, group calls); this service's
  * sole job is the process-priority + ongoing-call notification.
  */
 class ActiveCallService : Service() {
@@ -49,19 +50,36 @@ class ActiveCallService : Service() {
 
     private val BRAND_COLOR = Color.parseColor("#22C55E")
 
-    fun start(context: Context, extras: Map<String, String>) {
+    /** A 1:1 call and a meeting can overlap; the service lives while either owns it. */
+    const val OWNER_CALL = "call"
+    const val OWNER_MEETING = "meeting"
+    private val owners = mutableSetOf<String>()
+
+    fun start(context: Context, extras: Map<String, String>, owner: String = OWNER_CALL) {
+      // startForegroundService() obliges startForeground(), which needs a granted
+      // microphone/camera type on API 34+; without one, never start at all.
+      val mic = context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+      val cam = extras[EXTRA_CALL_TYPE] == "video" &&
+        context.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
+      if (!mic && !cam) return
+      synchronized(owners) { owners += owner }
       val intent = Intent(context, ActiveCallService::class.java).apply {
         action = ACTION_START
         for ((k, v) in extras) putExtra(k, v)
       }
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      try {
         context.startForegroundService(intent)
-      } else {
-        context.startService(intent)
+      } catch (_: Throwable) {
+        // Background FGS-start restriction: the call continues without the priority boost.
       }
     }
 
-    fun stop(context: Context) {
+    fun stop(context: Context, owner: String = OWNER_CALL) {
+      val remaining = synchronized(owners) {
+        owners -= owner
+        owners.isNotEmpty()
+      }
+      if (remaining) return
       val intent = Intent(context, ActiveCallService::class.java).apply {
         action = ACTION_STOP
       }
@@ -100,25 +118,42 @@ class ActiveCallService : Service() {
 
     val notification = buildNotification(title, body, scheme)
 
-    // foregroundServiceType must match the AndroidManifest declaration. We pass
-    // MICROPHONE for every call and additionally CAMERA for video calls (API
-    // 30+). On older platforms we start a plain foreground service.
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-      var type = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-      if (callType == "video") {
-        type = type or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+    // foregroundServiceType must match the AndroidManifest declaration, and on
+    // API 34+ each type needs its runtime permission granted — so only claim
+    // CAMERA/MICROPHONE when the user allowed them (a denied camera must not
+    // crash a voice-only meeting).
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        var type = 0
+        if (granted(android.Manifest.permission.RECORD_AUDIO)) {
+          type = type or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        }
+        if (callType == "video" && granted(android.Manifest.permission.CAMERA)) {
+          type = type or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        }
+        if (type == 0) {
+          stopSelf()
+          return
+        }
+        startForeground(NOTIFICATION_ID, notification, type)
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        startForeground(
+          NOTIFICATION_ID,
+          notification,
+          android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+        )
+      } else {
+        startForeground(NOTIFICATION_ID, notification)
       }
-      startForeground(NOTIFICATION_ID, notification, type)
-    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-      startForeground(
-        NOTIFICATION_ID,
-        notification,
-        android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
-      )
-    } else {
-      startForeground(NOTIFICATION_ID, notification)
+    } catch (_: Throwable) {
+      // Background FGS-start restrictions or a revoked permission: the call
+      // still works in the foreground, it just loses process priority.
+      stopSelf()
     }
   }
+
+  private fun granted(permission: String): Boolean =
+    checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
 
   private fun buildNotification(
     title: String,

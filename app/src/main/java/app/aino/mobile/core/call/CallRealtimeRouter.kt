@@ -20,9 +20,12 @@ sealed interface CallRealtimeEvent {
         val callerAvatar: String?,
         val callType: String,
         val isGroup: Boolean,
+        /** Group-call (huddle) rings carry the meeting to join instead of a 1:1 call. */
+        val meetingCode: String? = null,
+        val meetingId: Long? = null,
     ) : CallRealtimeEvent
 
-    data class Started(val callId: Long, override val conversationId: Long) : CallRealtimeEvent
+    data class Started(val callId: Long, override val conversationId: Long, val callType: String = "voice") : CallRealtimeEvent
     data class Accepted(val callId: Long, override val conversationId: Long, val userId: Long?) : CallRealtimeEvent
     data class Rejected(val callId: Long, override val conversationId: Long) : CallRealtimeEvent
     data class Ended(val callId: Long?, override val conversationId: Long?, val reason: String?) : CallRealtimeEvent
@@ -51,8 +54,12 @@ object CallRealtimeRouter {
                 callerAvatar = data.string("callerAvatar"),
                 callType = if (data.string("callType") == "video") "video" else "voice",
                 isGroup = data.boolean("isGroup") ?: false,
+                meetingCode = data.string("meetingCode"),
+                meetingId = data.positiveLong("meetingId"),
             )
-            "call_started" -> idPair(data)?.let { CallRealtimeEvent.Started(it.first, it.second) }
+            "call_started" -> idPair(data)?.let {
+                CallRealtimeEvent.Started(it.first, it.second, if (data.string("callType") == "video") "video" else "voice")
+            }
             "call_accepted" -> idPair(data)?.let { CallRealtimeEvent.Accepted(it.first, it.second, data.positiveLong("userId")) }
             "call_rejected" -> idPair(data)?.let { CallRealtimeEvent.Rejected(it.first, it.second) }
             "call_ended" -> CallRealtimeEvent.Ended(data.positiveLong("callId"), data.positiveLong("conversationId"), data.string("reason"))

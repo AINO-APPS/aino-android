@@ -77,8 +77,30 @@ class AuthViewModel(
     }
 
     fun logout() {
-        executeWithScopeCleanup { repository.logout(); AuthState.SignedOut }
+        executeWithScopeCleanup {
+            repository.logout()
+            wipeUserMedia()
+            AuthState.SignedOut
+        }
     }
+
+    /** Photos and sound prefs belong to the signed-in user; drop them on sign-out. */
+    private fun wipeUserMedia() {
+        val loader = app.aino.mobile.core.AppContainer.get(context).imageLoader
+        loader.memoryCache?.clear()
+        loader.diskCache?.clear()
+        app.aino.mobile.core.notifications.NotificationSoundPrefs.clear(context)
+    }
+
+    /** Web `updateUser`: patch the signed-in user after a profile/avatar change. */
+    fun updateUser(transform: (AinoUser) -> AinoUser) {
+        _ui.update { current ->
+            val state = current.state
+            if (state is AuthState.Authenticated) current.copy(state = state.copy(user = transform(state.user))) else current
+        }
+    }
+
+    fun biometricCredentialId(): String? = biometricCredentials.credentialId()
 
     fun enrollBiometric(authenticatedCipher: Cipher, deviceLabel: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -125,6 +147,11 @@ class AuthViewModel(
     }
 
     fun clearMessage() = _ui.update { it.copy(error = null, message = null) }
+
+    /** Re-hydrate feature gates after a degraded session (P0.2 Retry action). */
+    fun retryFeatureHydration() {
+        execute { repository.refreshFeatures() }
+    }
 
     private fun execute(successMessage: String? = null, action: () -> AuthState) {
         if (_ui.value.loading) return
@@ -205,9 +232,9 @@ class AuthViewModel(
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                val tokens = KeystoreTokenStore(context)
-                val rawApi = OkHttpApiClient(tokenProvider = tokens)
-                val api = RefreshingApiClient(rawApi, tokens)
+                val container = app.aino.mobile.core.AppContainer.get(context)
+                val tokens = container.tokens
+                val api = container.api
                 return AuthViewModel(AuthRepository(api, tokens), BiometricCredentialStore(context), context.applicationContext) as T
             }
         }

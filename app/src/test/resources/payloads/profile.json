@@ -1,0 +1,14 @@
+{
+  "id": 9,
+  "username": "jane.doe",
+  "full_name": "Jane Doe",
+  "email": "jane@example.com",
+  "avatar": "/uploads/avatars/9.png",
+  "role": "employee",
+  "org_id": 3,
+  "tenant_id": 42,
+  "has_reports": false,
+  "must_change_password": false,
+  "tenant_features": { "attendance": true, "tasks": true, "chat": true, "calendar": true, "notes": true },
+  "tenant_plan": "pro"
+}

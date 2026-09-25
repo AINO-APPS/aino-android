@@ -51,6 +51,8 @@ import app.aino.mobile.core.designsystem.theme.AinoWarning
 
 @Composable
 fun AinoAtmosphere(content: @Composable () -> Unit) {
+    // P1.9: retained ONLY for surfaces with no web counterpart (incoming-call UI).
+    // Parity screens use WebCard/WebTheme tokens instead. See WEB_PARITY_PLAN P1.9.
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { content() }
 }
 

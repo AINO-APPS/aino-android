@@ -1,0 +1,7 @@
+[
+  { "id": 301, "user_id": 9, "org_id": 3, "title": "Sprint review", "description": null,
+    "start_time": "2026-09-25T09:30:00.000Z", "end_time": "2026-09-25T10:30:00.000Z", "all_day": false,
+    "color": "#6366f1", "task_id": null, "meeting_id": 14, "meeting_code": "abc-defg-hij",
+    "meeting_status": "scheduled", "meeting_conversation_id": 77 },
+  { "id": 302, "title": "Holiday", "start_time": "2026-09-26T00:00:00.000Z", "end_time": "2026-09-26T23:59:59.000Z", "all_day": true }
+]

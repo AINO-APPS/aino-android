@@ -2,6 +2,8 @@ package app.aino.mobile.core.auth
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.decodeFromString
 
 @Serializable
 data class AinoUser(
@@ -17,6 +19,8 @@ data class AinoUser(
     @SerialName("must_change_password") val mustChangePassword: Boolean = false,
     @SerialName("tenant_features") val tenantFeatures: Map<String, Boolean> = emptyMap(),
     @SerialName("tenant_plan") val tenantPlan: String? = null,
+    @SerialName("team_id") val teamId: Long? = null,
+    @SerialName("team_name") val teamName: String? = null,
 )
 
 @Serializable
@@ -85,7 +89,23 @@ sealed interface AuthState {
     data object SignedOut : AuthState
     data class ChoosingRealm(val ticket: String, val realms: List<RealmOption>) : AuthState
     data class PasswordChangeRequired(val user: AinoUser) : AuthState
-    data class Authenticated(val user: AinoUser) : AuthState
+
+    /**
+     * @param featuresDegraded true when `tenant_features` could not be refreshed
+     * from the server and the user's gates came from a last-known-good cache or
+     * are unknown. The shell surfaces a warning banner instead of silently
+     * hiding tabs.
+     */
+    data class Authenticated(val user: AinoUser, val featuresDegraded: Boolean = false) : AuthState
+}
+
+private val FeatureJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+fun encodeFeatures(features: Map<String, Boolean>): String =
+    FeatureJson.encodeToString(features)
+
+fun decodeFeatures(raw: String?): Map<String, Boolean>? = raw?.let {
+    runCatching { FeatureJson.decodeFromString<Map<String, Boolean>>(it) }.getOrNull()
 }
 
 fun stateFor(user: AinoUser): AuthState =

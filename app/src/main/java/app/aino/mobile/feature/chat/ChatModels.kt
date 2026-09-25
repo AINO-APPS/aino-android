@@ -100,6 +100,8 @@ data class ChatUser(
     @SerialName("full_name") val fullName: String? = null,
     val email: String? = null,
     val avatar: String? = null,
+    @SerialName("last_seen_at") val lastSeenAt: String? = null,
+    @SerialName("blocked_at") val blockedAt: String? = null,
 ) {
     fun display(): String = fullName?.takeIf(String::isNotBlank) ?: username.orEmpty()
 }
@@ -128,10 +130,14 @@ data class ChatMessage(
     val content: String? = null,
     @SerialName("created_at") val createdAt: String,
     @SerialName("sender_name") val senderName: String? = null,
+    @SerialName("sender_avatar") val senderAvatar: String? = null,
     @SerialName("sender_username") val senderUsername: String? = null,
     @SerialName("reply_to_id") val replyToId: Long? = null,
     @SerialName("reply_content") val replyContent: String? = null,
     @SerialName("reply_sender_name") val replySenderName: String? = null,
+    @SerialName("reply_file_url") val replyFileUrl: String? = null,
+    @SerialName("reply_file_type") val replyFileType: String? = null,
+    @SerialName("reply_file_name") val replyFileName: String? = null,
     @SerialName("file_name") val fileName: String? = null,
     @SerialName("file_url") val fileUrl: String? = null,
     @SerialName("file_type") val fileType: String? = null,
@@ -142,12 +148,20 @@ data class ChatMessage(
     @SerialName("pinned_at") val pinnedAt: String? = null,
     @SerialName("pinned_by") val pinnedBy: Long? = null,
     val starred: Boolean = false,
+    @SerialName("format_type") val formatType: String? = null,
+    val metadata: JsonElement? = null,
+    @SerialName("client_msg_id") val clientMessageId: String? = null,
+    @SerialName("delivered_to") val deliveredTo: List<Long> = emptyList(),
     val reactions: List<ChatReaction> = emptyList(),
     @SerialName("media_job_id") val mediaJobId: Long? = null,
     @SerialName("media_state") val mediaState: String? = null,
     @SerialName("media_stage") val mediaStage: String? = null,
     @SerialName("media_progress") val mediaProgress: Int? = null,
     @SerialName("media_failure_reason") val mediaFailureReason: String? = null,
+    /** Sender-generated OpenGraph card (web `MessageBubble` `msg.link_preview`). */
+    @SerialName("link_preview") val linkPreview: LinkPreview? = null,
+    /** Present on `/chat/starred` rows (web StarredMessages "in {conversation_name}"). */
+    @SerialName("conversation_name") val conversationName: String? = null,
     val deliveryState: String = "sent",
 ) {
     fun body(): String = when {
@@ -318,6 +332,23 @@ data class ConversationMember(
     fun display(): String = fullName?.takeIf(String::isNotBlank) ?: username.orEmpty()
 }
 
+/** Web `MentionInput`: the `@word` being typed at the end of the text, or null. */
+fun activeMentionQuery(text: String): String? = Regex("@(\\w*)$").find(text)?.groupValues?.get(1)
+
+/** Web `MentionInput`: up to 6 members whose full name or username contains the query. */
+fun mentionSuggestions(members: List<ConversationMember>, query: String, currentUserId: Long?): List<ConversationMember> {
+    val q = query.lowercase()
+    return members.filter {
+        it.id != currentUserId && (it.fullName.orEmpty().lowercase().contains(q) || it.username.orEmpty().lowercase().contains(q))
+    }.take(6)
+}
+
+/** Replaces the trailing `@query` with `@Full Name ` (web inserts `full_name || username`). */
+fun insertMention(text: String, member: ConversationMember): String {
+    val start = text.lastIndexOf('@').takeIf { it >= 0 } ?: return text
+    return text.substring(0, start) + "@" + member.display() + " "
+}
+
 @Serializable
 data class CallLog(
     val id: Long,
@@ -328,9 +359,12 @@ data class CallLog(
     @SerialName("started_at") val startedAt: String? = null,
     @SerialName("ended_at") val endedAt: String? = null,
     val duration: Int? = null,
-    @SerialName("created_at") val createdAt: String,
+    @SerialName("created_at") val createdAt: String? = null,
     @SerialName("caller_name") val callerName: String? = null,
+    @SerialName("caller_avatar") val callerAvatar: String? = null,
+    @SerialName("other_user_id") val otherUserId: Long? = null,
     @SerialName("other_name") val otherName: String? = null,
+    @SerialName("other_avatar") val otherAvatar: String? = null,
     @SerialName("is_group") val isGroup: Boolean = false,
     @SerialName("group_name") val groupName: String? = null,
 ) {
@@ -346,6 +380,106 @@ data class CallLog(
 @Serializable data class ToggleMuteResponse(val muted: Boolean, val mutedUntil: String? = null)
 @Serializable data class ToggleArchiveResponse(val archived: Boolean)
 @Serializable data class MuteRequest(val duration: String? = null)
+
+// HTTP chat endpoint contracts. Field names intentionally mirror the server's
+// snake_case SQL projections and camelCase request/response envelopes.
+@Serializable data class CreateGroupRequest(val name: String, val userIds: List<Long>)
+@Serializable data class GroupUpdateRequest(
+    val name: String? = null,
+    val description: String? = null,
+    val avatar: String? = null,
+    val postPolicy: String? = null,
+    val addPolicy: String? = null,
+    val addUserIds: List<Long>? = null,
+    val removeUserIds: List<Long>? = null,
+)
+@Serializable data class SetParticipantRoleRequest(val role: String)
+@Serializable data class TransferOwnerRequest(val userId: Long)
+@Serializable data class RoleResponse(val ok: Boolean = true, val role: String)
+@Serializable data class UnreadResponse(val ok: Boolean = true, val unread: Boolean)
+@Serializable data class BlockResponse(val ok: Boolean = true, val blocked: Boolean)
+
+@Serializable data class SendMessageRequest(
+    val content: String,
+    val replyToId: Long? = null,
+    val clientMsgId: String? = null,
+)
+
+@Serializable data class SharedChatFile(
+    val id: Long,
+    @SerialName("file_url") val fileUrl: String,
+    @SerialName("file_name") val fileName: String? = null,
+    @SerialName("file_type") val fileType: String? = null,
+    @SerialName("file_size") val fileSize: Long? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("sender_id") val senderId: Long,
+    @SerialName("sender_name") val senderName: String? = null,
+    @SerialName("sender_avatar") val senderAvatar: String? = null,
+)
+
+@Serializable data class LinkPreview(
+    val url: String,
+    val title: String = "",
+    val description: String = "",
+    val image: String? = null,
+    val siteName: String = "",
+)
+
+/** Web `ChatInputBar` `URL_RE`: the first http(s) URL in the draft. */
+fun firstLinkIn(text: String): String? = Regex("https?://[^\\s<]+").find(text)?.value
+
+/**
+ * Web `useMessageActions` send path: the WS `chat_message` frame is the only
+ * send route that carries `mentions` and a sender `linkPreview`.
+ */
+fun chatMessageEnvelope(
+    conversationId: Long,
+    content: String,
+    clientMsgId: String,
+    replyToId: Long?,
+    mentions: Collection<Long>,
+    linkPreview: LinkPreview?,
+): RealtimeEnvelope = RealtimeEnvelope(
+    type = "chat_message",
+    data = buildJsonObject {
+        put("conversationId", conversationId)
+        put("content", content)
+        put("clientMsgId", clientMsgId)
+        replyToId?.let { put("replyToId", it) }
+        if (mentions.isNotEmpty()) put("mentions", kotlinx.serialization.json.JsonArray(mentions.map { kotlinx.serialization.json.JsonPrimitive(it) }))
+        linkPreview?.let { put("linkPreview", Json.encodeToJsonElement(LinkPreview.serializer(), it)) }
+    },
+)
+
+@Serializable data class ViewMessageResponse(val fileUrl: String? = null, val viewed: Boolean? = null)
+@Serializable data class CallActionRequest(val conversationId: Long)
+@Serializable data class CallActionResponse(val ok: Boolean = true, val status: String)
+@Serializable data class DeleteCallsRequest(val ids: List<Long> = emptyList(), val all: Boolean = false)
+@Serializable data class DeleteCallsResponse(val ok: Boolean = true, val deleted: Int)
+
+@Serializable data class CreatePollRequest(
+    val question: String,
+    val options: List<String>,
+    val multiSelect: Boolean = false,
+)
+@Serializable data class PollVoteRequest(val optionIdx: Int)
+@Serializable data class PollVoter(val userId: Long, val fullName: String)
+@Serializable data class ChatPoll(
+    val id: Long,
+    @SerialName("conversation_id") val conversationId: Long,
+    @SerialName("creator_id") val creatorId: Long,
+    val question: String,
+    val options: List<String>,
+    @SerialName("multi_select") val multiSelect: Boolean = false,
+    @SerialName("closed_at") val closedAt: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    val votes: Map<Int, List<PollVoter>> = emptyMap(),
+)
+@Serializable data class CreatePollResponse(val ok: Boolean = true, val poll: ChatPoll, val messageId: Long)
+@Serializable data class PollVoteResponse(
+    val ok: Boolean = true,
+    val votes: Map<Int, List<Long>> = emptyMap(),
+)
 
 data class QueuedMessage(
     val clientMessageId: String,
@@ -374,6 +508,19 @@ sealed interface ThreadItem {
     data class Queued(val message: QueuedMessage) : ThreadItem {
         override val key: String = "queued-${message.clientMessageId}"
     }
+}
+
+/**
+ * Key of the oldest unread incoming message (Signal-style "N unread messages"
+ * divider sits directly above it). [newestFirst] is the reversed thread.
+ */
+fun unreadDividerKey(newestFirst: List<ThreadItem>, unread: Int, currentUserId: Long?): String? {
+    if (unread <= 0) return null
+    var seen = 0
+    for (item in newestFirst) {
+        if (item is ThreadItem.Message && item.message.senderId != currentUserId && ++seen == unread) return item.key
+    }
+    return null
 }
 
 /**
@@ -501,3 +648,17 @@ fun reconcileQueuedMessages(
         } else true
     }
 }
+/** `POST /meetings` body for a group call (fields are explicit: chat JSON omits defaults). */
+@Serializable
+data class GroupCallRequest(
+    val title: String,
+    @SerialName("conversation_id") val conversationId: Long,
+    val huddle: Boolean,
+    val settings: GroupCallSettings,
+)
+
+@Serializable
+data class GroupCallSettings(val allowScreenShare: Boolean, val callType: String)
+
+@Serializable
+data class CreatedGroupCall(val id: Long, @SerialName("meeting_code") val meetingCode: String)

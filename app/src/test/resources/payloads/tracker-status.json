@@ -1,0 +1,13 @@
+{
+  "state": "on_floor",
+  "floorMinutes": 312,
+  "breakMinutes": 24,
+  "entries": [
+    { "entry_type": "clock_in", "timestamp": "2026-09-20T09:00:00Z", "work_mode": "office" }
+  ],
+  "isWeekend": false,
+  "workMode": "office",
+  "targetMinutes": 480,
+  "dailyTargetMet": false,
+  "autoLoggedOut": false
+}

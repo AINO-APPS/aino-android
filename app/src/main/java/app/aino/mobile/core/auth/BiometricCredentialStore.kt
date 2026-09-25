@@ -40,8 +40,16 @@ class BiometricCredentialStore(context: Context, private val json: Json = Json) 
 
     fun save(credential: BiometricCredential, authenticatedCipher: Cipher) {
         val ciphertext = authenticatedCipher.doFinal(json.encodeToString(credential).toByteArray())
-        preferences.edit().putString(IV, encode(authenticatedCipher.iv)).putString(CIPHERTEXT, encode(ciphertext)).apply()
+        // The id is not secret (the device secret is); keeping it readable lets
+        // the devices list recognise and revoke this device without a prompt.
+        preferences.edit()
+            .putString(IV, encode(authenticatedCipher.iv))
+            .putString(CIPHERTEXT, encode(ciphertext))
+            .putString(CREDENTIAL_ID, credential.credentialId)
+            .apply()
     }
+
+    fun credentialId(): String? = preferences.getString(CREDENTIAL_ID, null)
 
     fun read(authenticatedCipher: Cipher): BiometricCredential {
         val ciphertext = preferences.getString(CIPHERTEXT, null) ?: error("No biometric credential is enrolled")
@@ -84,5 +92,6 @@ class BiometricCredentialStore(context: Context, private val json: Json = Json) 
         const val PREFERENCES = "aino_biometric_credential"
         const val IV = "iv"
         const val CIPHERTEXT = "ciphertext"
+        const val CREDENTIAL_ID = "credential_id"
     }
 }

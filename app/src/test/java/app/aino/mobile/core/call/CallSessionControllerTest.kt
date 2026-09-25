@@ -11,6 +11,23 @@ class CallSessionControllerTest {
     private val route = IncomingCallRoute(41, 7, 9, "Priya", null, "video")
 
     @Test
+    fun handledElsewhereEndsOnlyAStillRingingDevice() {
+        val ringing = CallSessionController()
+        ringing.incoming(route)
+        assertTrue(ringing.handle(CallRealtimeEvent.HandledElsewhere(41, 7, "accepted")))
+        assertEquals(CallPhase.Ended, ringing.state.value.phase)
+
+        // The server echoes "accepted" to the device that accepted; it must survive.
+        val accepting = CallSessionController()
+        accepting.incoming(route)
+        assertFalse(accepting.acceptedHere(41))
+        accepting.accepting()
+        assertTrue(accepting.acceptedHere(41))
+        assertFalse(accepting.handle(CallRealtimeEvent.HandledElsewhere(41, 7, "accepted")))
+        assertEquals(CallPhase.Accepting, accepting.state.value.phase)
+    }
+
+    @Test
     fun duplicateInviteMergesAndDifferentInviteCannotReplaceActiveCall() {
         val controller = CallSessionController()
         assertTrue(controller.incoming(route))
@@ -59,7 +76,7 @@ class CallSessionControllerTest {
     }
 
     @Test
-    fun signalsAreDeduplicatedAndQuarantinedWithoutMedia() {
+    fun signalsAreDeduplicated() {
         val controller = CallSessionController()
         controller.incoming(route)
         val signal = CallRealtimeEvent.Signal(
@@ -71,7 +88,6 @@ class CallSessionControllerTest {
 
         assertTrue(controller.handle(signal))
         assertFalse(controller.handle(signal))
-        assertEquals(1, controller.state.value.quarantinedSignalCount)
         assertEquals(CallPhase.Ringing, controller.state.value.phase)
     }
 

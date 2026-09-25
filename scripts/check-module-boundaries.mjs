@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const FEATURE_ROOT = "app/src/main/java/app/aino/mobile/feature/";
 const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", `${FEATURE_ROOT}*.kt`, `${FEATURE_ROOT}**/*.kt`], {
@@ -9,6 +9,10 @@ const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclud
 
 const violations = [];
 for (const file of files) {
+  // `git ls-files --cached` can include a tracked file deleted in the working
+  // tree until the deletion is staged. Ignore that transient entry so this
+  // guard works during module moves as well as after commit.
+  if (!existsSync(file)) continue;
   const owner = file.slice(FEATURE_ROOT.length).split("/")[0];
   for (const [index, line] of readFileSync(file, "utf8").split(/\r?\n/).entries()) {
     const match = /^import app\.aino\.mobile\.feature\.([^.]+)/.exec(line.trim());

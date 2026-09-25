@@ -8,6 +8,8 @@ data class ApiRequest(
     val path: String,
     val headers: Map<String, String> = emptyMap(),
     val body: ByteArray? = null,
+    /** Optional upload progress (bytes sent, total); honoured by [OkHttpApiClient]. */
+    val onUploadProgress: ((Long, Long) -> Unit)? = null,
 )
 
 data class ApiResponse(
@@ -41,6 +43,16 @@ fun interface TokenProvider {
 interface TokenStore : TokenProvider {
     fun saveToken(token: String)
     fun clearToken()
+
+    /**
+     * Last-known-good serialized `tenant_features` map, persisted alongside the
+     * token so a cold start with a transient network failure does not collapse
+     * the navigation gates to an empty (fail-closed) set. Default no-ops keep
+     * in-memory test doubles source-compatible.
+     */
+    fun saveFeatures(features: String) {}
+    fun getFeatures(): String? = null
+    fun clearFeatures() {}
 }
 
 fun interface ApiClient {

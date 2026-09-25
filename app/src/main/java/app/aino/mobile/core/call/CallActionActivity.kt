@@ -59,6 +59,7 @@ class CallActionActivity : Activity() {
     const val EXTRA_CALLER_AVATAR = "callerAvatar"
     const val EXTRA_CALL_TYPE = "callType"
     const val EXTRA_SCHEME = "scheme"
+    const val EXTRA_MEETING_CODE = "meetingCode"
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,6 +137,10 @@ class CallActionActivity : Activity() {
     sb.append("&peerId=").append(Uri.encode(callerId))
     sb.append("&peerName=").append(Uri.encode(callerName))
     sb.append("&peerAvatar=").append(Uri.encode(callerAvatar))
+    intent.getStringExtra(EXTRA_MEETING_CODE)?.takeIf(String::isNotBlank)?.let {
+      sb.append("&meetingCode=").append(Uri.encode(it))
+      sb.append("&meetingId=").append(Uri.encode(callId))
+    }
     if (isAnswer) {
       sb.append("&autoAnswer=1")
     } else {

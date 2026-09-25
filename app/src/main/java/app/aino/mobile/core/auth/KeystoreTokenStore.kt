@@ -48,6 +48,22 @@ class KeystoreTokenStore(context: Context) : TokenStore {
         preferences.edit().remove(IV).remove(CIPHERTEXT).apply()
     }
 
+    // Feature gates are stored unencrypted: they are booleans (non-sensitive)
+    // and must survive even if the Keystore key is invalidated, so a cold start
+    // can keep the last-known-good tab set instead of collapsing to two tabs.
+    @Synchronized
+    override fun saveFeatures(features: String) {
+        preferences.edit().putString(FEATURES, features).apply()
+    }
+
+    @Synchronized
+    override fun getFeatures(): String? = preferences.getString(FEATURES, null)
+
+    @Synchronized
+    override fun clearFeatures() {
+        preferences.edit().remove(FEATURES).apply()
+    }
+
     private fun getOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance(KEYSTORE).apply { load(null) }
         (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
@@ -79,5 +95,6 @@ class KeystoreTokenStore(context: Context) : TokenStore {
         const val PREFERENCES = "aino_secure_credentials"
         const val IV = "token_iv"
         const val CIPHERTEXT = "token_ciphertext"
+        const val FEATURES = "tenant_features_cache"
     }
 }

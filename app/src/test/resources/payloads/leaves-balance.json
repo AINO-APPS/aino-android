@@ -1,0 +1,4 @@
+[
+  { "leave_type": "annual", "year": 2026, "quota": 20, "used": 6, "carried_forward": 2, "policy_name": "Annual Leave", "color": "#2383e2" },
+  { "leave_type": "sick", "year": 2026, "quota": 10, "used": 2, "carried_forward": 0, "policy_name": "Sick Leave", "color": "#4daa57" }
+]

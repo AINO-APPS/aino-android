@@ -1,6 +1,10 @@
 package app.aino.mobile.feature.profile
 
-enum class ProfileTab { Account, Search }
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 /**
  * `validateUsername` on the server (`server/utils/validation`) is mirrored here
@@ -21,6 +25,9 @@ fun validateProfileEdit(fullName: String, username: String): String? {
     return null
 }
 
+/** EditProfileModal's username input: `toLowerCase().replace(/\s/g, "")`. */
+fun normalizeUsernameInput(value: String): String = value.lowercase().replace(Regex("\\s"), "")
+
 /** Matches the server's email regex on `PUT /api/profile/email`. */
 fun validateEmail(email: String): String? {
     val value = email.trim()
@@ -29,21 +36,12 @@ fun validateEmail(email: String): String? {
     return null
 }
 
-/**
- * The search service returns empty results below two characters rather than an
- * error, so the client suppresses the request entirely instead of spending a
- * round-trip on a guaranteed-empty response.
- */
-const val SEARCH_MIN_LENGTH = 2
-
-fun searchable(term: String): Boolean = term.trim().length >= SEARCH_MIN_LENGTH
-
-/** The service truncates the term to 100 characters; do the same before sending. */
-fun normalizeSearchTerm(term: String): String = term.trim().take(100)
-
-/** Strips the `ts_headline` markup the task snippet can carry. */
-fun plainSnippet(snippet: String?): String =
-    snippet?.replace(Regex("</?b>"), "")?.replace(Regex("<[^>]*>"), "")?.trim().orEmpty()
+/** EditProfileModal `handlePasswordSave` client checks (verbatim copy); empty fields are blocked by the disabled button like the web's `required`. */
+fun validateProfilePassword(next: String, confirmation: String): String? = when {
+    next != confirmation -> "New passwords do not match"
+    next.length < 8 -> "Password must be at least 8 characters"
+    else -> null
+}
 
 fun roleLabel(role: String): String = when (role) {
     "super_admin" -> "Super admin"
@@ -51,4 +49,50 @@ fun roleLabel(role: String): String = when (role) {
     "platform_admin" -> "Platform admin"
     "team_lead" -> "Team lead"
     else -> role.replace('_', ' ').replaceFirstChar(Char::uppercase)
+}
+
+// ── Avatar (ProfileMenu `handleAvatarUpload`) ────────────────────────────────
+
+const val MAX_AVATAR_BYTES: Long = 5L * 1024 * 1024
+val AVATAR_MIME_TYPES = setOf("image/jpeg", "image/png", "image/webp", "image/gif")
+const val AVATAR_TOO_LARGE = "File is too large. Maximum size is 5MB."
+
+/** True when the picked image can be uploaded untouched (the web sends the original file). */
+fun avatarUploadableAsIs(mimeType: String?, size: Long): Boolean =
+    mimeType in AVATAR_MIME_TYPES && size in 1..MAX_AVATAR_BYTES
+
+// ── Sign out (ProfileMenu `confirmSignOut`) ──────────────────────────────────
+
+sealed interface SignOutPlan {
+    data object SignOut : SignOutPlan
+    /** Remote sessions are clocked out automatically before signing out. */
+    data object ClockOutThenSignOut : SignOutPlan
+    data class Blocked(val message: String) : SignOutPlan
+}
+
+fun signOutPlan(workState: String?, workMode: String?): SignOutPlan = when {
+    workState != "on_floor" && workState != "on_break" -> SignOutPlan.SignOut
+    workMode == "office" -> SignOutPlan.Blocked(
+        "Please clock out from the Work Timer before signing out. Office clock-out requires location and face verification.",
+    )
+    else -> SignOutPlan.ClockOutThenSignOut
+}
+
+// ── Biometric devices (EditProfileModal `platformLabel`) ─────────────────────
+
+fun biometricPlatformLabel(platform: String): String = when (platform) {
+    "ios" -> "iPhone / iPad"
+    "android" -> "Android device"
+    "desktop" -> "Desktop app"
+    "web" -> "Web browser"
+    else -> platform
+}
+
+/** `new Date(x).toLocaleDateString()` equivalent in the device locale. */
+fun localDate(value: String?, zone: ZoneId = ZoneId.systemDefault()): String? {
+    if (value.isNullOrBlank()) return null
+    val instant = runCatching { Instant.parse(value) }.getOrNull()
+        ?: runCatching { OffsetDateTime.parse(value).toInstant() }.getOrNull()
+        ?: return null
+    return DateTimeFormatter.ofLocalizedDate(FormatStyle.SHORT).withZone(zone).format(instant)
 }

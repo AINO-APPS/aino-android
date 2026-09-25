@@ -14,13 +14,44 @@ class AuthRepository(
 ) {
     fun hasStoredCredential(): Boolean = !tokens.getToken().isNullOrBlank()
 
+    /** Profile fetch with backoff (3 attempts). Returns null only on 401/403. */
+    private fun fetchProfile(attempts: Int = 3): AinoUser? {
+        var lastError: Exception? = null
+        for (attempt in 0 until attempts) {
+            try {
+                val response = api.execute(ApiRequest(path = "profile", headers = mapOf("Accept" to "application/json")))
+                return json.decodeFromString<AinoUser>(response.bodyAsString())
+            } catch (error: ApiError.Http) {
+                if (error.statusCode == 401 || error.statusCode == 403) return null
+                lastError = error
+            } catch (error: ApiError.Network) {
+                lastError = error
+            } catch (error: Exception) {
+                lastError = error
+            }
+            // Exponential backoff between attempts; no sleep after the last one.
+            if (attempt < attempts - 1) Thread.sleep(300L shl attempt)
+        }
+        throw lastError ?: ApiError.Network("GET", "profile", java.io.IOException("profile fetch failed"))
+    }
+
     fun restoreSession(): AuthState {
         if (tokens.getToken().isNullOrBlank()) return AuthState.SignedOut
         return try {
-            val response = api.execute(ApiRequest(path = "profile", headers = mapOf("Accept" to "application/json")))
-            stateFor(json.decodeFromString<AinoUser>(response.bodyAsString()))
+            val user = fetchProfile()
+            if (user == null) {
+                tokens.clearToken()
+                tokens.clearFeatures()
+                AuthState.SignedOut
+            } else {
+                tokens.saveFeatures(encodeFeatures(user.tenantFeatures))
+                stateFor(user)
+            }
         } catch (error: ApiError.Http) {
-            if (error.statusCode == 401 || error.statusCode == 403) tokens.clearToken()
+            if (error.statusCode == 401 || error.statusCode == 403) {
+                tokens.clearToken()
+                tokens.clearFeatures()
+            }
             throw decodeFailure(error)
         }
     }
@@ -97,6 +128,7 @@ class AuthRepository(
     fun logout() {
         runCatching { api.execute(jsonRequest("POST", "auth/logout", Unit)) }
         tokens.clearToken()
+        tokens.clearFeatures()
     }
 
     fun recordActivity() {
@@ -111,16 +143,42 @@ class AuthRepository(
         val auth = json.decodeFromString<AuthResponse>(text)
         tokens.saveToken(auth.token)
         // The login response intentionally stays small and does not include the
-        // plan's effective `tenant_features`. Expo immediately refreshes the
-        // profile before applying navigation gates; do the same here so a fresh
-        // login does not hide Attendance/Tasks/Chat until the next app launch.
-        // A profile fetch failure must not invalidate an otherwise valid login:
-        // the sparse login user remains fail-closed for feature visibility.
-        val hydrated = runCatching {
-            val profile = api.execute(ApiRequest(path = "profile", headers = mapOf("Accept" to "application/json")))
-            json.decodeFromString<AinoUser>(profile.bodyAsString())
-        }.getOrNull()
-        return stateFor(hydrated ?: auth.user)
+        // plan's effective `tenant_features`. Hydrate the profile (with retry)
+        // before applying navigation gates so a fresh login does not hide
+        // Attendance/Tasks/Chat until the next app launch. A profile fetch
+        // failure must NOT invalidate an otherwise valid login: fall back to the
+        // persisted last-known-good features, and mark the session degraded so
+        // the shell surfaces a warning banner instead of silently hiding tabs.
+        val hydrated = runCatching { fetchProfile() }.getOrNull()
+        return when {
+            hydrated != null -> {
+                tokens.saveFeatures(encodeFeatures(hydrated.tenantFeatures))
+                logInfo("hydrated tenant_features=${hydrated.tenantFeatures}")
+                stateFor(hydrated)
+            }
+            else -> {
+                val cached = decodeFeatures(tokens.getFeatures())
+                val user = if (cached != null) auth.user.copy(tenantFeatures = cached) else auth.user
+                logWarn("tenant_features hydration failed; using cached=${cached != null} degraded=true")
+                when (val degraded = stateFor(user)) {
+                    is AuthState.Authenticated -> degraded.copy(featuresDegraded = true)
+                    else -> degraded
+                }
+            }
+        }
+    }
+
+    // android.util.Log is not on the plain-JVM unit-test classpath; keep the
+    // required INFO logging but never let it crash a test.
+    private fun logInfo(message: String) = runCatching { android.util.Log.i("AinoAuth", message) }
+    private fun logWarn(message: String) = runCatching { android.util.Log.w("AinoAuth", message) }
+
+    /** Re-hydrate `tenant_features` for the current session (P0.1/P0.2 retry). */
+    fun refreshFeatures(): AuthState {
+        val hydrated = fetchProfile()
+            ?: throw AuthFailure("Session expired", cause = null)
+        tokens.saveFeatures(encodeFeatures(hydrated.tenantFeatures))
+        return stateFor(hydrated)
     }
 
     private inline fun <reified T> jsonRequest(method: String, path: String, value: T) = ApiRequest(

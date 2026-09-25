@@ -10,7 +10,6 @@ data class CallSessionUiState(
     val route: IncomingCallRoute? = null,
     val outgoingConversationId: Long? = null,
     val peerUserId: Long? = null,
-    val quarantinedSignalCount: Int = 0,
     val terminalReason: String? = null,
 )
 
@@ -77,7 +76,7 @@ class CallSessionController(
             is CallRealtimeEvent.Started -> {
                 if (current.route != null || current.outgoingConversationId != event.conversationId) return false
                 _state.value = current.copy(
-                    route = IncomingCallRoute(event.callId, event.conversationId, null, "", null, "voice"),
+                    route = IncomingCallRoute(event.callId, event.conversationId, null, "", null, event.callType),
                 )
             }
             is CallRealtimeEvent.Accepted -> {
@@ -99,10 +98,8 @@ class CallSessionController(
                 )
             }
             is CallRealtimeEvent.Signal -> {
+                // Accepted (true) only once per signalId; ActiveCallController applies it.
                 if (current.route?.conversationId != event.conversationId || !deduplicator.remember(event.signalId)) return false
-                // Media is deliberately disabled in this checkpoint. Retain only a
-                // diagnostic count; never create a peer or emit call_ready here.
-                _state.value = current.copy(quarantinedSignalCount = current.quarantinedSignalCount + 1)
             }
             is CallRealtimeEvent.Rejected -> {
                 if (!matches(event.callId, event.conversationId)) return false
@@ -114,6 +111,10 @@ class CallSessionController(
             }
             is CallRealtimeEvent.HandledElsewhere -> {
                 if (!matches(event.callId, event.conversationId)) return false
+                // The server also sends this to the device that accepted/rejected
+                // (web CallContext ignores it there). Only a still-ringing device
+                // was handled "elsewhere".
+                if (current.phase != CallPhase.Ringing) return false
                 terminate(
                     if (event.action == "rejected") CallEvent.RemoteRejected else CallEvent.RemoteEnded,
                     "handled_${event.action}",
@@ -135,6 +136,22 @@ class CallSessionController(
 
     @Synchronized
     fun localEnd(reason: String = "local_end") = terminate(CallEvent.LocalEnd, reason)
+
+    /** True when this device already answered [callId] (Accepting or later). */
+    fun acceptedHere(callId: Long): Boolean {
+        val current = _state.value
+        return current.route?.callId == callId && !current.phase.isTerminal() &&
+            current.phase != CallPhase.Ringing && current.phase != CallPhase.Idle
+    }
+
+    @Synchronized
+    fun mediaConnected() = transition(CallEvent.MediaConnected)
+
+    @Synchronized
+    fun mediaDisconnected() = transition(CallEvent.MediaDisconnected)
+
+    @Synchronized
+    fun fail(reason: String) = terminate(CallEvent.Failure, reason)
 
     @Synchronized
     fun localReject(reason: String = "local_reject") = terminate(CallEvent.RemoteRejected, reason)
@@ -185,6 +202,8 @@ fun CallRealtimeEvent.Incoming.toRoute() = IncomingCallRoute(
     callerName = callerName,
     callerAvatar = callerAvatar,
     callType = callType,
+    meetingCode = meetingCode,
+    meetingId = meetingId,
 )
 
 object CallSessionRuntime {

@@ -23,8 +23,18 @@ class PushPayloadTest {
         assertTrue(validatePushPayload(chat(), Instant.ofEpochSecond(1_781_667_766)).isFailure)
         assertTrue(validatePushPayload(privateCall() + ("callerName" to "Priya"), fixtureTime).isFailure)
         assertTrue(validatePushPayload(general() + ("unknown" to "leak"), fixtureTime).isFailure)
-        assertTrue(validatePushPayload(chat() + ("body" to "x".repeat(151)), fixtureTime).isFailure)
+        assertTrue(validatePushPayload(chat() + ("body" to "x".repeat(401)), fixtureTime).isFailure)
         assertTrue(validatePushPayload(visibleCall() + ("title" to "Incoming Fax"), fixtureTime).isFailure)
+    }
+
+    @Test
+    fun acceptsGroupMessagesWithAFullPreview() {
+        // Server: body = "{sender}: {messagePreview.substring(0,150)}" for groups.
+        val group = chat() + mapOf(
+            "isGroup" to "true", "groupName" to "Design", "title" to "Design",
+            "body" to "Alice Johnson: " + "x".repeat(150), "unreadCount" to "0", "badgeCount" to "0",
+        )
+        assertEquals(PushKind.ChatMessage, validatePushPayload(group, fixtureTime).getOrThrow().kind)
     }
 
     @Test

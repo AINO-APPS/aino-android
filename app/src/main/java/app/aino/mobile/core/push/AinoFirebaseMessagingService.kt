@@ -21,11 +21,17 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
     }
 
     override fun onNewToken(token: String) {
-        scope.launch { runCatching { PushTokenRegistrar(applicationContext).register(token) } }
+        scope.launch {
+            runCatching { PushTokenRegistrar(applicationContext).register(token) }
+                .onFailure { android.util.Log.w("AinoPush", "Push token registration failed", it) }
+        }
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        val validated = validatePushPayload(message.data).getOrNull() ?: return
+        val validated = validatePushPayload(message.data).getOrElse {
+            android.util.Log.w("AinoPush", "Dropped push type=${message.data["type"]}: ${it.message}")
+            return
+        }
         if (!PushDeduplicator(applicationContext).accept(validated.dedupeKey)) return
         var displayFallback = true
         when (validated.kind) {
@@ -49,8 +55,12 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
                 displayFallback = !CallRingService.start(applicationContext, extras)
             }
             PushKind.CallHandledElsewhere -> {
+                val callId = validated.data.getValue("callId").toLong()
+                // Accepting here also pushes "accepted" to this very device; only
+                // other (still ringing) devices should stop.
+                if (app.aino.mobile.core.call.CallSessionRuntime.get(applicationContext).acceptedHere(callId)) return
                 CallRingService.stop(applicationContext)
-                IncomingCallDismissals.dismiss(validated.data.getValue("callId").toLong())
+                IncomingCallDismissals.dismiss(callId)
             }
             PushKind.General -> Unit
         }

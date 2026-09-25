@@ -16,6 +16,8 @@ fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now())
         ?: throw IllegalArgumentException("Missing push field: $name")
     fun positive(name: String): Long = required(name).toLongOrNull()?.takeIf { it > 0 }
         ?: throw IllegalArgumentException("Invalid push field: $name")
+    fun nonNegative(name: String): Long = required(name).toLongOrNull()?.takeIf { it >= 0 }
+        ?: throw IllegalArgumentException("Invalid push field: $name")
     fun tenant(): Long? = data["tenantId"]?.takeIf(String::isNotBlank)?.toLongOrNull()?.takeIf { it > 0 }
     fun sentAt() { Instant.parse(required("sentAt")) }
     fun exact(required: Set<String>, optional: Set<String> = emptySet()) {
@@ -28,8 +30,9 @@ fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now())
         "chat_message" -> {
             exact(setOf("type", "title", "body", "conversationId", "messageId", "senderId", "senderName", "isGroup", "groupName", "senderAvatar", "unreadCount", "badgeCount", "dedupeKey", "expiresAt", "tenantId", "sentAt"))
             positive("conversationId"); positive("messageId"); positive("senderId")
-            positive("unreadCount"); positive("badgeCount"); required("title"); required("senderName")
-            require((data["body"] ?: "").length <= 150) { "Chat push body is too long" }
+            nonNegative("unreadCount"); nonNegative("badgeCount"); required("title"); required("senderName")
+            // Group bodies are "{sender}: {150-char preview}" (server pushNotifications.ts).
+            require((data["body"] ?: "").length <= 400) { "Chat push body is too long" }
             require(data["isGroup"] in setOf("true", "false"))
             require(required("dedupeKey") == "msg:${data["messageId"]}")
             val expiry = required("expiresAt").toLongOrNull()?.let(Instant::ofEpochSecond)
