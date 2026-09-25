@@ -52,7 +52,10 @@ class OkHttpApiClient(
         val body = request.body?.toRequestBody(contentType)?.let { raw ->
             val progress = request.onUploadProgress ?: return@let raw
             ProgressRequestBody(raw, progress)
-        }
+        } ?: ByteArray(0).toRequestBody(contentType).takeIf { method in BODY_REQUIRED }
+        // OkHttp rejects a body-less POST/PUT/PATCH ("method POST must have a
+        // request body"); callers with nothing to send (mark read, delivered,
+        // call accept …) get an empty body instead.
         builder.method(method, body)
         try {
             client.newCall(builder.build()).execute().use { response ->
@@ -69,6 +72,7 @@ class OkHttpApiClient(
 
     private companion object {
         val JSON = "application/json; charset=utf-8".toMediaType()
+        val BODY_REQUIRED = setOf("POST", "PUT", "PATCH")
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(60, TimeUnit.SECONDS)

@@ -90,6 +90,7 @@ class AuthViewModel(
         loader.memoryCache?.clear()
         loader.diskCache?.clear()
         app.aino.mobile.core.notifications.NotificationSoundPrefs.clear(context)
+        app.aino.mobile.core.push.PushTokenRegistrar.forget(context)
     }
 
     /** Web `updateUser`: patch the signed-in user after a profile/avatar change. */

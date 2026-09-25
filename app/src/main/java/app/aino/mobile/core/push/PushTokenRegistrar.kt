@@ -37,16 +37,39 @@ class PushTokenRegistrar(private val context: Context) {
         }.onFailure { android.util.Log.w(TAG, "Push token sync failed", it) }
     }
 
-    private companion object {
-        const val TAG = "AinoPush"
+    companion object {
+        private const val TAG = "AinoPush"
+        private const val PREFS = "aino_push_registration"
+        private const val TTL_MS = 12 * 60 * 60 * 1000L
+
+        /** Sign-out: the next sign-in must register again. */
+        fun forget(context: Context) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        }
     }
 
     fun register(fcmToken: String) {
         if (fcmToken.isBlank()) return
         val container = app.aino.mobile.core.AppContainer.get(context)
-        if (container.tokens.getToken().isNullOrBlank()) return
-        val api = container.api
-        val body = encodeDeviceTokenRequest(fcmToken)
-        api.execute(ApiRequest("POST", "auth/device-token", body = body))
+        val auth = container.tokens.getToken()
+        if (auth.isNullOrBlank()) return
+        // The server upserts (user, token); re-posting on every resume only
+        // tripped its rate limit (429) and could drop a real token change.
+        val key = registrationKey(fcmToken, auth)
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        if (prefs.getString("key", null) == key && now - prefs.getLong("at", 0) < TTL_MS) return
+        container.api.execute(ApiRequest("POST", "auth/device-token", body = encodeDeviceTokenRequest(fcmToken)))
+        prefs.edit().putString("key", key).putLong("at", now).apply()
     }
+}
+
+/** FCM token + signed-in user (JWT `id`/`sub`), so a different account re-registers. */
+internal fun registrationKey(fcmToken: String, jwt: String): String {
+    val user = runCatching {
+        val payload = String(java.util.Base64.getUrlDecoder().decode(jwt.split('.')[1].padEnd((jwt.split('.')[1].length + 3) / 4 * 4, '=')))
+        Json.parseToJsonElement(payload).let { it as kotlinx.serialization.json.JsonObject }
+            .let { (it["id"] ?: it["userId"] ?: it["sub"])?.toString() }
+    }.getOrNull() ?: jwt.hashCode().toString()
+    return "${fcmToken.hashCode()}:$user"
 }

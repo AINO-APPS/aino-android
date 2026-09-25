@@ -14,6 +14,15 @@ class PushPolicyTest {
     }
 
     @Test
+    fun registrationKeyTracksTokenAndUserNotTheRotatingJwt() {
+        fun jwt(payload: String) = "h." + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toByteArray()) + ".s"
+        val a = registrationKey("fcm-1", jwt("""{"id":1,"iat":1}"""))
+        assertEquals(a, registrationKey("fcm-1", jwt("""{"id":1,"iat":2}""")))
+        assertTrue(a != registrationKey("fcm-1", jwt("""{"id":2,"iat":1}""")))
+        assertTrue(a != registrationKey("fcm-2", jwt("""{"id":1,"iat":1}""")))
+    }
+
+    @Test
     fun dedupeRetentionDropsExpiredAndCapsNewest() {
         val now = 100_000_000L
         val values = mapOf(
