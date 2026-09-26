@@ -567,7 +567,22 @@ private fun AuthenticatedShell(
                     },
                 )
             }
-            composable(AinoDestination.Chat.route) {
+            composable(
+                AinoDestination.Chat.route,
+                // Chat list side of the Signal parallax (the thread supplies the slide).
+                exitTransition = {
+                    if (targetState.destination.route == AinoDestination.ChatThread.route) {
+                        androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(300)) { -it / 3 } +
+                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300), targetAlpha = 0.6f)
+                    } else androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200))
+                },
+                popEnterTransition = {
+                    if (initialState.destination.route == AinoDestination.ChatThread.route) {
+                        androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(300)) { -it / 3 } +
+                            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300), initialAlpha = 0.6f)
+                    } else androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200))
+                },
+            ) {
                 ChatScreen(
                     viewModel = chat,
                     onPickDocument = onPickChatDocument,
@@ -583,6 +598,24 @@ private fun AuthenticatedShell(
                 route = AinoDestination.ChatThread.route,
                 arguments = listOf(navArgument(CHAT_CONVERSATION_ARGUMENT) { type = NavType.LongType }),
                 deepLinks = listOf(navDeepLink { uriPattern = CHAT_DEEP_LINK_PATTERN }),
+                // Signal conversation transition: thread slides in from the end while
+                // the list parallaxes 30% and dims; back reverses it.
+                enterTransition = {
+                    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { it } +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150))
+                },
+                exitTransition = {
+                    androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(300)) { -it / 3 } +
+                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300), targetAlpha = 0.6f)
+                },
+                popEnterTransition = {
+                    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(300)) { -it / 3 } +
+                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300), initialAlpha = 0.6f)
+                },
+                popExitTransition = {
+                    androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { it } +
+                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(250, delayMillis = 50))
+                },
             ) { backStackEntry ->
                 val conversationId = backStackEntry.arguments?.getLong(CHAT_CONVERSATION_ARGUMENT)
                     ?: return@composable

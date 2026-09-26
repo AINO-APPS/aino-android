@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Backspace
 import androidx.compose.material.icons.outlined.AccessTime
 import androidx.compose.material.icons.outlined.Close
@@ -51,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -251,11 +253,11 @@ fun SignalEmojiKeyboard(
     onBackspace: () -> Unit,
     modifier: Modifier = Modifier,
     height: Dp = 300.dp,
+    onOpenSearch: () -> Unit = {},
 ) {
     val colors = signalColors
     val context = LocalContext.current
     var recents by remember { mutableStateOf(loadRecents(context)) }
-    var query by remember { mutableStateOf("") }
     var skinPopupFor by remember { mutableStateOf<String?>(null) }
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -267,16 +269,8 @@ fun SignalEmojiKeyboard(
             SignalEmojiCategories.forEachIndexed { i, c -> add(Triple(c.name, categoryIcons[i], c.emojis)) }
         }
     }
-    val entries: List<GridEntry> = remember(sections, query) {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) {
-            sections.flatMapIndexed { i, (title, _, list) -> listOf(GridEntry.Header(title, i)) + list.map { GridEntry.Cell(it, i) } }
-        } else {
-            val matches = SignalEmojiCategories.flatMap { it.emojis }.distinct()
-                .filter { em -> EmojiKeywords[em]?.split(' ')?.any { it.startsWith(q) } == true }
-            listOf(GridEntry.Header(if (matches.isEmpty()) "No emoji found" else "Search results", -1)) +
-                matches.map { GridEntry.Cell(it, -1) }
-        }
+    val entries: List<GridEntry> = remember(sections) {
+        sections.flatMapIndexed { i, (title, _, list) -> listOf(GridEntry.Header(title, i)) + list.map { GridEntry.Cell(it, i) } }
     }
     val sectionStarts = remember(entries) {
         entries.withIndex().filter { it.value is GridEntry.Header }.associate { (it.value as GridEntry.Header).section to it.index }
@@ -298,32 +292,19 @@ fun SignalEmojiKeyboard(
     }
 
     Column(modifier.fillMaxWidth().height(height).background(colors.surface)) {
-        // Search pill
+        // Search pill. Signal swaps to a compact search bar above the system
+        // keyboard; typing inside this panel was impossible because showing the
+        // IME collapses the emoji panel.
         Row(
             Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth().height(40.dp)
-                .clip(RoundedCornerShape(20.dp)).background(colors.searchPill).padding(horizontal = 12.dp),
+                .clip(RoundedCornerShape(20.dp)).background(colors.searchPill)
+                .combinedClickable(role = Role.Button, onClickLabel = "Search emoji", onClick = onOpenSearch)
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Icons.Outlined.Search, null, Modifier.size(20.dp), tint = colors.textSecondary)
             Spacer(Modifier.width(8.dp))
-            Box(Modifier.weight(1f)) {
-                if (query.isEmpty()) Text("Search emoji", color = colors.textSecondary, fontSize = 15.sp)
-                BasicTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    singleLine = true,
-                    textStyle = TextStyle(color = colors.text, fontSize = 15.sp),
-                    cursorBrush = SolidColor(colors.primary),
-                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search emoji" },
-                )
-            }
-            if (query.isNotEmpty()) {
-                Icon(
-                    Icons.Outlined.Close, "Clear search",
-                    Modifier.size(20.dp).clip(CircleShape).combinedClickable(onClick = { query = "" }),
-                    tint = colors.textSecondary,
-                )
-            }
+            Text("Search emoji", color = colors.textSecondary, fontSize = 15.sp)
         }
 
         LazyVerticalGrid(
@@ -387,12 +368,11 @@ fun SignalEmojiKeyboard(
         Row(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceEvenly) {
                 sections.forEachIndexed { i, (title, icon, _) ->
-                    val active = query.isEmpty() && activeSection == i
+                    val active = activeSection == i
                     Box(
                         Modifier.size(36.dp).clip(CircleShape)
                             .background(if (active) colors.searchPill else colors.surface)
                             .combinedClickable(role = Role.Tab, onClick = {
-                                query = ""
                                 scope.launch { gridState.scrollToItem(sectionStarts[i] ?: 0) }
                             })
                             .semantics { contentDescription = title },
@@ -423,5 +403,97 @@ private fun BackspaceButton(onBackspace: () -> Unit, tint: androidx.compose.ui.g
         })
     }) {
         Icon(Icons.AutoMirrored.Outlined.Backspace, "Backspace", tint = tint)
+    }
+}
+
+/**
+ * Emoji search (Signal `EmojiSearchRepository` behaviour): prefix or substring
+ * match on keywords, category names, and — so every emoji is findable — the
+ * Unicode character name of the base code point ("GRINNING FACE", "ROCKET").
+ * Keyword prefix hits rank before substring / name hits.
+ */
+fun searchEmoji(query: String, limit: Int = 80): List<String> {
+    val q = query.trim().lowercase()
+    if (q.isEmpty()) return emptyList()
+    val all = SignalEmojiCategories.flatMap { it.emojis }.distinct()
+    val scored = all.mapNotNull { emoji ->
+        val words = EmojiKeywords[emoji]?.split(' ').orEmpty()
+        val name = runCatching { Character.getName(emoji.codePointAt(0)) }.getOrNull()?.lowercase().orEmpty()
+        val category = SignalEmojiCategories.firstOrNull { emoji in it.emojis }?.name?.lowercase().orEmpty()
+        val score = when {
+            words.any { it == q } -> 0
+            words.any { it.startsWith(q) } -> 1
+            name.split(' ').any { it.startsWith(q) } -> 2
+            words.any { q in it } || q in name -> 3
+            category.startsWith(q) -> 4
+            else -> return@mapNotNull null
+        }
+        emoji to score
+    }
+    return scored.sortedBy { it.second }.map { it.first }.take(limit)
+}
+
+/**
+ * Signal-style emoji search bar that sits directly above the system keyboard:
+ * back arrow, focused text field and a horizontal strip of results. Picking an
+ * emoji inserts it and keeps searching (Signal behaviour).
+ */
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
+fun EmojiSearchBar(onEmoji: (String) -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = signalColors
+    val context = LocalContext.current
+    var query by remember { mutableStateOf("") }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    val results = remember(query) { searchEmoji(query) }
+    val shown = if (query.isBlank()) loadRecents(context).ifEmpty { SignalQuickReactions } else results
+    androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    Column(modifier.fillMaxWidth().background(colors.surface)) {
+        LazyRow(
+            Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (query.isNotBlank() && results.isEmpty()) item {
+                Text("No emoji found", Modifier.padding(horizontal = 12.dp), color = colors.textSecondary, fontSize = 15.sp)
+            }
+            items(shown.size) { i ->
+                val emoji = shown[i]
+                Text(
+                    emoji, fontSize = 28.sp,
+                    modifier = Modifier.size(SignalDimens.emojiCell).clip(CircleShape)
+                        .combinedClickable(role = Role.Button, onClick = {
+                            onEmoji(emoji)
+                            saveRecents(context, EmojiRecents.push(loadRecents(context), emoji))
+                        })
+                        .semantics { contentDescription = emoji }
+                        .wrapContentSize(),
+                )
+            }
+        }
+        Row(
+            Modifier.padding(horizontal = 8.dp, vertical = 6.dp).fillMaxWidth().height(40.dp)
+                .clip(RoundedCornerShape(20.dp)).background(colors.searchPill).padding(end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Close emoji search", Modifier.size(20.dp), tint = colors.textSecondary)
+            }
+            Box(Modifier.weight(1f)) {
+                if (query.isEmpty()) Text("Search emoji", color = colors.textSecondary, fontSize = 15.sp)
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it.take(40) },
+                    singleLine = true,
+                    textStyle = TextStyle(color = colors.text, fontSize = 15.sp),
+                    cursorBrush = SolidColor(colors.primary),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "Search emoji" },
+                )
+            }
+            if (query.isNotEmpty()) Icon(
+                Icons.Outlined.Close, "Clear search",
+                Modifier.size(20.dp).clip(CircleShape).combinedClickable(onClick = { query = "" }),
+                tint = colors.textSecondary,
+            )
+        }
     }
 }

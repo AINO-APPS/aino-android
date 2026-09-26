@@ -17,6 +17,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.material.icons.outlined.AddToHomeScreen
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -557,9 +561,16 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     val conversation = ui.selectedConversation ?: return
     val signal = signalColors
     val context = LocalContext.current
-    val threadItems = remember(ui.messages, ui.queuedMessages, ui.currentUserId, ui.hiddenMessageIds) {
-        buildThreadItems(ui.messages.filterNot { it.id in ui.hiddenMessageIds }, ui.queuedMessages, ui.currentUserId)
+    val threadPending = remember(ui.pendingMedia, conversation.id) { ui.pendingMedia.filter { it.conversationId == conversation.id } }
+    val threadItems = remember(ui.messages, ui.queuedMessages, ui.currentUserId, ui.hiddenMessageIds, threadPending) {
+        buildThreadItems(
+            ui.messages.filterNot { it.id in ui.hiddenMessageIds }, ui.queuedMessages, ui.currentUserId,
+            uploads = threadPending.map { OutgoingMediaItem(it.localId, it.createdAtEpochMs) },
+        )
     }
+    val pendingById = remember(threadPending) { threadPending.associateBy(PendingMedia::localId) }
+    var allMediaOpen by remember(conversation.id) { mutableStateOf(false) }
+    var pinnedIndex by remember(conversation.id) { mutableStateOf(0) }
     // Signal-style bottom-anchored thread: `reverseLayout` keeps the newest
     // message pinned above the composer when the keyboard shrinks the viewport.
     val newestFirst = remember(threadItems) { threadItems.asReversed() }
@@ -614,7 +625,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     }
     val newestKey = newestFirst.firstOrNull()?.key
     val newestMine = (newestFirst.firstOrNull() as? ThreadItem.Message)?.message?.senderId == ui.currentUserId ||
-        newestFirst.firstOrNull() is ThreadItem.Queued
+        newestFirst.firstOrNull() is ThreadItem.Queued || newestFirst.firstOrNull() is ThreadItem.PendingUpload
     LaunchedEffect(newestKey) {
         if (newestKey == null) return@LaunchedEffect
         if (atBottom || newestMine) { listState.animateScrollToItem(0); unseen = 0 } else unseen++
@@ -626,8 +637,10 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
             .collect { last -> if (newestFirst.isNotEmpty() && last >= newestFirst.size - 3) viewModel.loadOlderMessages() }
     }
     val withCallPermissions = app.aino.mobile.core.call.rememberCallPermissions()
+    BackHandler(enabled = allMediaOpen) { allMediaOpen = false }
     if (ui.showInfo) {
-        ConversationInfo(ui, viewModel)
+        ConversationInfo(ui, viewModel, onOpenAllMedia = { allMediaOpen = true })
+        if (allMediaOpen) AllMediaScreen(ui, conversation, viewModel, onClose = { allMediaOpen = false })
         return
     }
     if (ui.forwardingMessage != null) {
@@ -639,7 +652,28 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
             when {
                 ui.selectedMessageIds.isNotEmpty() -> MessageSelectionBar(ui, viewModel) { deleteTargets = it }
                 ui.threadSearchOpen -> ThreadSearchToolbar(ui.threadSearchQuery, viewModel::updateThreadSearch, viewModel::closeThreadSearch)
-                else -> ThreadHeader(conversation, ui, viewModel, onNavigateBack, withCallPermissions)
+                else -> ThreadHeader(conversation, ui, viewModel, onNavigateBack, withCallPermissions, onOpenAllMedia = { allMediaOpen = true })
+            }
+            // Signal pinned-message bar: newest pin shown; tap jumps and cycles to the next.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = ui.pinnedMessages.isNotEmpty() && ui.selectedMessageIds.isEmpty() && !ui.threadSearchOpen,
+                enter = androidx.compose.animation.expandVertically() + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically() + androidx.compose.animation.fadeOut(),
+            ) {
+                val index = pinnedIndex.coerceIn(0, (ui.pinnedMessages.size - 1).coerceAtLeast(0))
+                ui.pinnedMessages.getOrNull(index)?.let { pinned ->
+                    PinnedMessageBar(
+                        message = pinned,
+                        index = index,
+                        count = ui.pinnedMessages.size,
+                        onClick = {
+                            viewModel.jumpToMessage(pinned)
+                            pinnedIndex = (index + 1) % ui.pinnedMessages.size
+                        },
+                        onUnpin = { viewModel.toggleMessagePin(pinned) },
+                        onViewAll = { viewModel.openInfo(); viewModel.loadPinnedMessages() },
+                    )
+                }
             }
             if (ui.threadFromCache) AinoAlert("Offline · showing cached messages", AlertTone.Warning, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
             ui.error?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
@@ -654,7 +688,18 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                     item { HonestEmpty(Icons.Outlined.ChatBubbleOutline, "No messages yet") }
                 }
                 items(newestFirst, key = ThreadItem::key) { item ->
-                    Column {
+                    // Signal: new bubbles slide up + fade in; removals fade (pending → sent swap).
+                    Column(
+                        Modifier.animateItem(
+                            fadeInSpec = androidx.compose.animation.core.tween(220),
+                            placementSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow,
+                                visibilityThreshold = androidx.compose.ui.unit.IntOffset(1, 1),
+                            ),
+                            fadeOutSpec = androidx.compose.animation.core.tween(150),
+                        ),
+                    ) {
                     if (item.key == dividerKey) UnreadDivider(ui.unreadAtOpen)
                     when (item) {
                         is ThreadItem.DateSeparator -> DateSeparator(item.date)
@@ -696,6 +741,13 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             },
                         )
                         is ThreadItem.Queued -> QueuedBubble(item.message)
+                        is ThreadItem.PendingUpload -> pendingById[item.localId]?.let { media ->
+                            PendingMediaBubble(
+                                media,
+                                onCancel = { viewModel.cancelPendingMedia(media.localId) },
+                                onRetry = { viewModel.retryPendingMedia(media.localId) },
+                            )
+                        }
                     }
                     }
                 }
@@ -846,6 +898,8 @@ private fun NewGroupDialog(ui: ChatUiState, viewModel: ChatViewModel, onClose: (
     DisposableEffect(Unit) { onDispose { viewModel.updateUserSearch("") } }
     AlertDialog(
         onDismissRequest = onClose,
+        containerColor = signalColors.surface,
+        titleContentColor = signalColors.text,
         title = { Text("New group") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -945,11 +999,14 @@ private enum class InfoPage(val title: String) {
 
 /** Port of web `ConversationInfoPanel.tsx` (quick Call/Video/Search, shared/pinned/saved, block, clear). */
 @Composable
-private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel) {
+private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAllMedia: () -> Unit = {}) {
     val conversation = ui.selectedConversation ?: return
     val colors = LocalWebColors.current
     var page by remember { mutableStateOf(InfoPage.Main) }
     var confirmClear by remember { mutableStateOf(false) }
+    var confirmBlock by remember { mutableStateOf(false) }
+    // Signal settings shows a strip of recent media above "All media".
+    LaunchedEffect(conversation.id) { viewModel.loadSharedFiles() }
     var searchTerm by remember { mutableStateOf("") }
     BackHandler(enabled = page != InfoPage.Main) { page = InfoPage.Main }
     fun open(next: InfoPage) {
@@ -1001,7 +1058,26 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel) {
                         }
                     }
                     if (conversation.isGroup) item { InfoRow(Icons.Outlined.Settings, "Group settings & members") { open(InfoPage.Group) } }
-                    item { InfoRow(Icons.Outlined.FolderOpen, "Shared media, files & links") { open(InfoPage.Shared) } }
+                    item {
+                        val recent = (ui.infoContent as? InfoContent.Files)?.files.orEmpty().filter { it.isVisual() }.take(4)
+                        Column {
+                            InfoRow(Icons.Outlined.FolderOpen, "All media, files & links", onClick = onOpenAllMedia)
+                            if (recent.isNotEmpty()) Row(
+                                Modifier.fillMaxWidth().padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                recent.forEach { file ->
+                                    Box(Modifier.weight(1f).aspectRatio(1f)) {
+                                        ChatThumbnail(
+                                            resolveChatMediaUrl(file.fileUrl), file.fileName, video = false,
+                                            shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxSize(),
+                                        ) { onOpenAllMedia() }
+                                    }
+                                }
+                                repeat(4 - recent.size) { Spacer(Modifier.weight(1f)) }
+                            }
+                        }
+                    }
                     item { InfoRow(Icons.Outlined.PushPin, "Pinned messages") { open(InfoPage.Pinned) } }
                     item { InfoRow(Icons.Outlined.StarOutline, "Saved messages") { open(InfoPage.Saved) } }
                     // The web exposes these through the conversation row's hover menu;
@@ -1015,7 +1091,7 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel) {
                         }
                     }
                     if (!conversation.isGroup && !conversation.isSelfChat && conversation.otherUserId != null) item {
-                        InfoRow(Icons.Outlined.Block, if (conversation.isBlocked) "Unblock user" else "Block user", danger = !conversation.isBlocked, onClick = viewModel::toggleBlock)
+                        InfoRow(Icons.Outlined.Block, if (conversation.isBlocked) "Unblock user" else "Block user", danger = !conversation.isBlocked) { confirmBlock = true }
                     }
                     item { InfoRow(Icons.Outlined.DeleteOutline, "Clear chat", danger = true) { confirmClear = true } }
                     if (ui.conversationCalls.isNotEmpty()) {
@@ -1065,15 +1141,8 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel) {
             }
         }
     }
-    if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text("Clear chat") },
-            text = { Text("Delete all messages in this conversation for you?") },
-            confirmButton = { TextButton(onClick = { confirmClear = false; viewModel.clearChat() }) { Text("Clear", color = colors.danger) } },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
-        )
-    }
+    if (confirmClear) ClearChatDialog(onConfirm = viewModel::clearChat) { confirmClear = false }
+    if (confirmBlock) BlockDialog(conversation, onConfirm = viewModel::toggleBlock) { confirmBlock = false }
 }
 
 @Composable
@@ -1135,15 +1204,7 @@ private fun GroupSettings(ui: ChatUiState, viewModel: ChatViewModel) {
         }
         item { InfoRow(Icons.AutoMirrored.Outlined.ExitToApp, "Leave group", danger = true) { confirmLeave = true } }
     }
-    if (confirmLeave) {
-        AlertDialog(
-            onDismissRequest = { confirmLeave = false },
-            title = { Text("Leave group") },
-            text = { Text("You will stop receiving messages from this group.") },
-            confirmButton = { TextButton(onClick = { confirmLeave = false; viewModel.leaveGroup() }) { Text("Leave", color = colors.danger) } },
-            dismissButton = { TextButton(onClick = { confirmLeave = false }) { Text("Cancel") } },
-        )
-    }
+    if (confirmLeave) LeaveGroupDialog(onConfirm = viewModel::leaveGroup) { confirmLeave = false }
 }
 
 @Composable
@@ -1337,15 +1398,20 @@ private fun MessageBubble(
                                 Box(Modifier.align(Alignment.End)) { footer(false) }
                             }
                             mediaOnly -> Box {
-                                ChatMediaPreview(message = message, onOpenMedia = onOpenMedia, onCancelProcessing = { onCancel() }, onRetryProcessing = { onRetry() }, shape = shape, outgoing = isMine)
+                                ChatMediaPreview(
+                                    message = message, onOpenMedia = { if (selectionActive) onToggleSelect() else onOpenMedia(it) },
+                                    onCancelProcessing = { onCancel() }, onRetryProcessing = { onRetry() }, shape = shape, outgoing = isMine,
+                                    onLongPress = { if (selectionActive) onToggleSelect() else actionsOpen = true },
+                                )
                                 Box(Modifier.align(Alignment.BottomEnd).padding(8.dp)) { footer(true) }
                             }
                             !message.fileUrl.isNullOrBlank() -> {
                                 if (message.formatType != "poll") message.linkPreview?.let { LinkPreviewCard(it) }
                                 ChatMediaPreview(
-                                    message = message, onOpenMedia = onOpenMedia,
+                                    message = message, onOpenMedia = { if (selectionActive) onToggleSelect() else onOpenMedia(it) },
                                     onCancelProcessing = { onCancel() }, onRetryProcessing = { onRetry() },
                                     shape = RoundedCornerShape(SignalDimens.bubbleCornerCollapsed * 3), outgoing = isMine,
+                                    onLongPress = { if (selectionActive) onToggleSelect() else actionsOpen = true },
                                 )
                                 val caption = message.content?.takeIf(String::isNotBlank)
                                 if (caption != null) BubbleTextWithFooter(highlightTerm(caption, searchTerm, signal.highlight), fg, { footer(false) })
@@ -1431,7 +1497,20 @@ private fun MessageBubble(
             ),
             messagePreview = {
                 val preview = message.body().take(400)
-                if (preview.isNotBlank()) Text(
+                // Signal lifts the actual media into the overlay, not its file name.
+                if (!deleted && message.isViewableMedia() && !message.isViewOnce()) Column(horizontalAlignment = if (isMine) Alignment.End else Alignment.Start) {
+                    ChatThumbnail(
+                        resolveChatMediaUrl(message.fileUrl.orEmpty()), message.fileName,
+                        video = message.isVideoAttachment(), shape = RoundedCornerShape(18.dp),
+                    ) {}
+                    message.content?.takeIf(String::isNotBlank)?.let { caption ->
+                        Text(
+                            caption, Modifier.padding(top = 4.dp).widthIn(max = 240.dp).clip(shape).background(bubbleColor)
+                                .padding(horizontal = SignalDimens.bubbleHPad, vertical = SignalDimens.bubbleTopPad),
+                            color = fg, fontSize = SignalDimens.bodyText, maxLines = 4, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                } else if (preview.isNotBlank()) Text(
                     preview,
                     Modifier.widthIn(max = 300.dp).clip(shape).background(bubbleColor.takeIf { it != Color.Transparent } ?: signal.incoming)
                         .padding(horizontal = SignalDimens.bubbleHPad, vertical = SignalDimens.bubbleTopPad),
@@ -1492,6 +1571,8 @@ private fun ForwardMessageDialog(ui: ChatUiState, viewModel: ChatViewModel) {
     }
     AlertDialog(
         onDismissRequest = viewModel::cancelForward,
+        containerColor = signalColors.surface,
+        titleContentColor = signalColors.text,
         title = { Text("Forward message") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1721,11 +1802,23 @@ private fun MessageComposer(
     // Signal swaps the IME for its own emoji / attachment keyboards at the same height.
     var panel by remember { mutableStateOf(ComposerPanel.None) }
     var keyboardHeight by remember { mutableStateOf(300.dp) }
+    // Cursor-aware composer text so emoji insert at the caret, not always at the end.
+    var fieldValue by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))) }
+    if (fieldValue.text != value) {
+        fieldValue = androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))
+    }
+    fun insertAtCursor(emoji: String) {
+        val next = insertAtSelection(fieldValue.text, fieldValue.selection.start, fieldValue.selection.end, emoji)
+        if (next.first.length > 5000) return
+        fieldValue = androidx.compose.ui.text.input.TextFieldValue(next.first, androidx.compose.ui.text.TextRange(next.second))
+        onChange(next.first)
+    }
     val imeBottom = WindowInsets.ime.getBottom(density)
     val navBottom = WindowInsets.navigationBars.getBottom(density)
     LaunchedEffect(imeBottom) {
         val h = with(density) { (imeBottom - navBottom).toDp() }
-        if (h > 200.dp) { keyboardHeight = h; panel = ComposerPanel.None }
+        // The IME is expected while searching emoji; only close the other panels.
+        if (h > 200.dp) { keyboardHeight = h; if (panel != ComposerPanel.EmojiSearch) panel = ComposerPanel.None }
     }
     BackHandler(enabled = panel != ComposerPanel.None) { panel = ComposerPanel.None }
     fun toggle(target: ComposerPanel) {
@@ -1799,7 +1892,8 @@ private fun MessageComposer(
         Modifier.fillMaxWidth().background(signal.background)
             .then(if (panel == ComposerPanel.None) Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)) else Modifier),
     ) {
-        // Determinate once bytes start flowing (OkHttp ProgressRequestBody).
+        // Upload progress now lives on each outgoing bubble (Signal transfer ring),
+        // including voice notes; this legacy bar only shows if `uploading` is set.
         if (uploading) {
             if (uploadProgress != null && uploadProgress > 0f) {
                 androidx.compose.material3.LinearProgressIndicator(progress = { uploadProgress }, modifier = Modifier.fillMaxWidth().height(2.dp), color = signal.primary)
@@ -1877,10 +1971,14 @@ private fun MessageComposer(
                             )
                         }
                         BasicTextField(
-                            value = value,
-                            onValueChange = { onChange(it.take(5000)) },
+                            value = fieldValue,
+                            onValueChange = { next ->
+                                val capped = if (next.text.length > 5000) next.copy(text = next.text.take(5000)) else next
+                                fieldValue = capped
+                                if (capped.text != value) onChange(capped.text)
+                            },
                             modifier = Modifier.weight(1f).padding(vertical = 11.dp)
-                                .onFocusChanged { if (it.isFocused && panel != ComposerPanel.None) panel = ComposerPanel.None },
+                                .onFocusChanged { if (it.isFocused && panel != ComposerPanel.None && panel != ComposerPanel.EmojiSearch) panel = ComposerPanel.None },
                             textStyle = androidx.compose.ui.text.TextStyle(color = signal.text, fontSize = 17.sp, lineHeight = 22.sp),
                             cursorBrush = androidx.compose.ui.graphics.SolidColor(signal.primary),
                             keyboardOptions = KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
@@ -1956,10 +2054,17 @@ private fun MessageComposer(
         }
         when (panel) {
             ComposerPanel.Emoji -> SignalEmojiKeyboard(
-                onEmoji = { onChange(value + it) },
+                onEmoji = ::insertAtCursor,
                 onBackspace = { if (value.isNotEmpty()) onChange(dropLastGrapheme(value)) },
                 height = keyboardHeight,
                 modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
+                onOpenSearch = { panel = ComposerPanel.EmojiSearch },
+            )
+            // Signal: search bar docks above the system keyboard; Back returns to the grid.
+            ComposerPanel.EmojiSearch -> EmojiSearchBar(
+                onEmoji = ::insertAtCursor,
+                onClose = { keyboard?.hide(); panel = ComposerPanel.Emoji },
+                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
             )
             ComposerPanel.Attach -> Box(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) {
                 AttachmentKeyboard(
@@ -1977,7 +2082,14 @@ private fun MessageComposer(
     }
 }
 
-private enum class ComposerPanel { None, Emoji, Attach }
+private enum class ComposerPanel { None, Emoji, EmojiSearch, Attach }
+
+/** Replaces [start, end) of [text] with [insert]; returns the new text and caret position. */
+internal fun insertAtSelection(text: String, start: Int, end: Int, insert: String): Pair<String, Int> {
+    val from = minOf(start, end).coerceIn(0, text.length)
+    val to = maxOf(start, end).coerceIn(0, text.length)
+    return (text.substring(0, from) + insert + text.substring(to)) to (from + insert.length)
+}
 
 /** Backspace for the emoji keyboard: removes one user-perceived character (Android's ICU BreakIterator keeps emoji sequences whole). */
 internal fun dropLastGrapheme(text: String): String {
@@ -2137,9 +2249,13 @@ private fun ThreadHeader(
     viewModel: ChatViewModel,
     onNavigateBack: (() -> Unit)?,
     withCallPermissions: (Boolean, () -> Unit) -> Unit,
+    onOpenAllMedia: () -> Unit = {},
 ) {
     val signal = signalColors
+    val context = LocalContext.current
     var menuOpen by remember { mutableStateOf(false) }
+    var muteMenuOpen by remember { mutableStateOf(false) }
+    var confirm by remember { mutableStateOf<String?>(null) }
     Row(
         Modifier.fillMaxWidth().background(signal.background)
             .statusBarsPadding()
@@ -2168,10 +2284,56 @@ private fun ThreadHeader(
         Icon(Icons.Outlined.Phone, "Voice call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(false) { viewModel.startCall("voice") } }.padding(12.dp), tint = signal.text)
         Box {
             Icon(Icons.Outlined.MoreVert, "More options", Modifier.size(48.dp).clip(CircleShape).clickable { menuOpen = true }.padding(12.dp), tint = signal.text)
-            androidx.compose.material3.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = signal.surface) {
-                androidx.compose.material3.DropdownMenuItem(text = { Text("Search", color = signal.text) }, leadingIcon = { Icon(Icons.Outlined.Search, null, tint = signal.text) }, onClick = { menuOpen = false; viewModel.openThreadSearch() })
-                androidx.compose.material3.DropdownMenuItem(text = { Text("Chat settings", color = signal.text) }, leadingIcon = { Icon(Icons.Outlined.Info, null, tint = signal.text) }, onClick = { menuOpen = false; viewModel.openInfo() })
+            // Signal ConversationOptionsMenu order, limited to what the server supports.
+            SignalDropdownMenu(expanded = menuOpen, onDismiss = { menuOpen = false }) {
+                SignalMenuItem("View all media", Icons.Outlined.PhotoLibrary) { menuOpen = false; viewModel.openInfo(); onOpenAllMedia() }
+                SignalMenuItem("Search", Icons.Outlined.Search) { menuOpen = false; viewModel.openThreadSearch() }
+                if (ui.pinnedMessages.isNotEmpty()) SignalMenuItem("Pinned messages", Icons.Outlined.PushPin) {
+                    menuOpen = false; viewModel.jumpToMessage(ui.pinnedMessages.first())
+                }
+                if (conversation.isMuted) SignalMenuItem("Unmute notifications", Icons.Outlined.Notifications) { menuOpen = false; viewModel.muteFor(null) }
+                else SignalMenuItem("Mute notifications", Icons.Outlined.NotificationsOff) { menuOpen = false; muteMenuOpen = true }
+                SignalMenuItem(if (conversation.isGroup) "Group settings" else "Chat settings", Icons.Outlined.Info) { menuOpen = false; viewModel.openInfo() }
+                SignalMenuItem("Add to home screen", Icons.Outlined.AddToHomeScreen) { menuOpen = false; pinChatShortcut(context, conversation) }
+                SignalMenuItem(if (conversation.isArchived) "Unarchive" else "Archive", Icons.Outlined.Archive) { menuOpen = false; viewModel.toggleArchive() }
+                androidx.compose.material3.HorizontalDivider(color = signal.divider)
+                if (conversation.isGroup) SignalMenuItem("Leave group", Icons.AutoMirrored.Outlined.ExitToApp, danger = true) { menuOpen = false; confirm = "leave" }
+                else if (!conversation.isSelfChat && conversation.otherUserId != null) SignalMenuItem(
+                    if (conversation.isBlocked) "Unblock" else "Block", Icons.Outlined.Block, danger = !conversation.isBlocked,
+                ) { menuOpen = false; confirm = "block" }
+                SignalMenuItem("Clear chat", Icons.Outlined.DeleteSweep, danger = true) { menuOpen = false; confirm = "clear" }
+                SignalMenuItem("Delete chat", Icons.Outlined.DeleteOutline, danger = true) { menuOpen = false; confirm = "delete" }
+            }
+            // Signal mute durations (server accepts 1h | 8h | 1d | 1w | always).
+            SignalDropdownMenu(expanded = muteMenuOpen, onDismiss = { muteMenuOpen = false }) {
+                listOf("1h" to "Mute for 1 hour", "8h" to "Mute for 8 hours", "1d" to "Mute for 1 day", "1w" to "Mute for 7 days", "always" to "Mute always")
+                    .forEach { (duration, label) ->
+                        SignalMenuItem(label, Icons.Outlined.NotificationsOff) { muteMenuOpen = false; viewModel.muteFor(duration) }
+                    }
             }
         }
+    }
+    when (confirm) {
+        "clear" -> ClearChatDialog(onConfirm = viewModel::clearChat) { confirm = null }
+        "block" -> BlockDialog(conversation, onConfirm = viewModel::toggleBlock) { confirm = null }
+        "leave" -> LeaveGroupDialog(onConfirm = viewModel::leaveGroup) { confirm = null }
+        "delete" -> DeleteChatDialog(onConfirm = viewModel::deleteCurrentConversation) { confirm = null }
+    }
+}
+
+/** Signal "Add to home screen": pinned launcher shortcut into this thread via the `aino://chat/{id}` deep link. */
+private fun pinChatShortcut(context: android.content.Context, conversation: ChatConversation) {
+    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse("aino://chat/${conversation.id}"))
+        .setPackage(context.packageName)
+    val shortcut = androidx.core.content.pm.ShortcutInfoCompat.Builder(context, "chat-${conversation.id}")
+        .setShortLabel(conversation.title().take(24))
+        .setLongLabel(conversation.title())
+        .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(context, context.applicationInfo.icon))
+        .setIntent(intent)
+        .build()
+    if (androidx.core.content.pm.ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
+        androidx.core.content.pm.ShortcutManagerCompat.requestPinShortcut(context, shortcut, null)
+    } else {
+        android.widget.Toast.makeText(context, "Your launcher doesn't support shortcuts", android.widget.Toast.LENGTH_SHORT).show()
     }
 }

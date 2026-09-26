@@ -205,7 +205,13 @@ class ChatModelsTest {
     @Test
     fun derivesLastMessagePreviewWithPrivacySafeFallbacks() {
         assertEquals("hello", ChatConversation(1, lastMessage = "hello").preview())
-        assertEquals("Attachment: plan.pdf", ChatConversation(1, lastFileName = "plan.pdf").preview())
+        assertEquals("📎 plan.pdf", ChatConversation(1, lastFileName = "plan.pdf").preview())
+        // Signal list snippets: never the raw upload name for media.
+        assertEquals("📷 Photo", ChatConversation(1, lastFileName = "IMG_2231.jpg", lastFileType = "image/jpeg").preview())
+        assertEquals("🎥 Video", ChatConversation(1, lastFileName = "VID_1.mp4", lastFileType = "video/mp4").preview())
+        assertEquals("🎤 Voice message", ChatConversation(1, lastFileName = "voice.m4a", lastFileType = "audio/mp4").preview())
+        assertEquals("📷 Look at this", ChatConversation(1, lastMessage = "Look at this", lastFileName = "a.png", lastFileType = "image/png").preview())
+        assertEquals("📊 Lunch?", ChatConversation(1, lastMessage = "Lunch?", lastFormatType = "poll").preview())
         assertEquals("Message deleted", ChatConversation(1, lastMessage = "secret", lastDeleted = "2026-09-14T00:00:00Z").preview())
         assertEquals("No messages yet", ChatConversation(1).preview())
     }
@@ -291,11 +297,12 @@ class ChatModelsTest {
     @Test
     fun threadBodyHonoursDeletedAndAttachmentPrecedence() {
         assertEquals("Message deleted", ChatMessage(1, senderId = 2, content = "hidden", createdAt = "2026-09-15T00:00:00Z", deletedAt = "2026-09-15T01:00:00Z").body())
-        assertEquals("Attachment: report.pdf", ChatMessage(2, senderId = 2, createdAt = "2026-09-15T00:00:00Z", fileName = "report.pdf").body())
+        assertEquals("📎 report.pdf", ChatMessage(2, senderId = 2, createdAt = "2026-09-15T00:00:00Z", fileName = "report.pdf").body())
+        assertEquals("📷 Photo", ChatMessage(3, senderId = 2, createdAt = "2026-09-15T00:00:00Z", fileName = "x.jpg", fileType = "image/jpeg").body())
     }
 
     @Test
-    fun reconcilesQueuedMessagesOneToOneByOwnEchoTime() {
+    fun reconcilesQueuedMessagesOneToOneByOwnEcho() {
         val queued = listOf(
             QueuedMessage("one", 12, 4, "one", 1_000),
             QueuedMessage("two", 12, 4, "two", 2_000),
@@ -305,6 +312,60 @@ class ChatModelsTest {
         )
         assertEquals(listOf("two"), reconcileQueuedMessages(queued, messages, 4).map { it.clientMessageId })
         assertEquals(queued, reconcileQueuedMessages(queued, messages, 99))
+    }
+
+    @Test
+    fun reconcileSurvivesDeviceClockAheadOfServer() {
+        // Regression: phone clock 30 s ahead meant the server row looked "older"
+        // than the optimistic bubble, so both rendered ("sent twice").
+        val queued = listOf(QueuedMessage("c1", 12, 4, "hello", 1_000_030_000))
+        val serverEcho = ChatMessage(50, senderId = 4, content = "hello", createdAt = java.time.Instant.ofEpochMilli(1_000_000_000).toString())
+        assertTrue(reconcileQueuedMessages(queued, listOf(serverEcho), 4).isEmpty())
+    }
+
+    @Test
+    fun reconcilePrefersExactClientMessageId() {
+        val queued = listOf(
+            QueuedMessage("a", 12, 4, "same", 1_000),
+            QueuedMessage("b", 12, 4, "same", 2_000),
+        )
+        val echo = ChatMessage(7, senderId = 4, content = "same", createdAt = "2026-09-15T00:00:00Z", clientMessageId = "b")
+        assertEquals(listOf("a"), reconcileQueuedMessages(queued, listOf(echo), 4).map { it.clientMessageId })
+    }
+
+    @Test
+    fun realtimeChatMessageDecodesCamelCaseAndMergesOnce() {
+        val frame = decodeChatRealtime<ChatRealtimeMessage>(
+            Json.parseToJsonElement(
+                """{"id":42,"conversationId":12,"senderId":4,"content":"hi","createdAt":"2026-09-15T00:00:05Z","clientMsgId":"c9","fileType":null}""",
+            ),
+        )!!
+        val message = frame.toChatMessage()
+        assertEquals("c9", message.clientMessageId)
+        val existing = listOf(ChatMessage(41, 12, 8, "earlier", "2026-09-15T00:00:00Z"))
+        val merged = mergeIncomingMessage(existing, message)
+        assertEquals(listOf(41L, 42L), merged.map { it.id })
+        // A replayed echo (or the REST reload) never duplicates the row.
+        assertEquals(merged, mergeIncomingMessage(merged, message))
+    }
+
+    @Test
+    fun pinnedListTracksToggles() {
+        val a = ChatMessage(1, 12, 4, "a", "2026-09-15T00:00:00Z")
+        val b = ChatMessage(2, 12, 4, "b", "2026-09-15T00:01:00Z")
+        val pinned = updatePinnedList(emptyList(), listOf(a, b), 2, isPinned = true)
+        assertEquals(listOf(2L), pinned.map { it.id })
+        val both = updatePinnedList(pinned, listOf(a, b), 1, isPinned = true)
+        assertEquals(listOf(1L, 2L), both.map { it.id })
+        assertEquals(listOf(1L), updatePinnedList(both, listOf(a, b), 2, isPinned = false).map { it.id })
+    }
+
+    @Test
+    fun pendingUploadsJoinThreadChronology() {
+        val messages = listOf(ChatMessage(1, 12, 4, "before", java.time.Instant.ofEpochMilli(1_000).toString()))
+        val items = buildThreadItems(messages, emptyList(), 4, ZoneId.of("UTC"), uploads = listOf(OutgoingMediaItem("m1", 2_000)))
+        assertTrue(items.last() is ThreadItem.PendingUpload)
+        assertEquals("pending-m1", items.last().key)
     }
 
     @Test

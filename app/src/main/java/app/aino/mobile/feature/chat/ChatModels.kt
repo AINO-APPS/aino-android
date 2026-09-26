@@ -34,6 +34,8 @@ data class ChatConversation(
     @SerialName("last_sender_name") val lastSenderName: String? = null,
     @SerialName("last_message_at") val lastMessageAt: String? = null,
     @SerialName("last_file_name") val lastFileName: String? = null,
+    @SerialName("last_file_type") val lastFileType: String? = null,
+    @SerialName("last_format_type") val lastFormatType: String? = null,
     @SerialName("last_deleted") val lastDeleted: String? = null,
     @SerialName("unread_count") val unreadCount: Int = 0,
     @SerialName("member_count") val memberCount: Int? = null,
@@ -53,10 +55,13 @@ data class ChatConversation(
             ?: "Conversation"
     }
 
+    /** Signal list snippet: media rows read "📷 Photo" etc., never the raw upload file name. */
     fun preview(): String = when {
         lastDeleted != null -> "Message deleted"
+        lastFormatType == "poll" -> "📊 ${lastMessage?.takeIf(String::isNotBlank) ?: "Poll"}"
+        !lastFileName.isNullOrBlank() || !lastFileType.isNullOrBlank() ->
+            attachmentSnippet(lastFileType, lastFileName, lastMessage)
         !lastMessage.isNullOrBlank() -> lastMessage
-        !lastFileName.isNullOrBlank() -> "Attachment: $lastFileName"
         else -> "No messages yet"
     }
 
@@ -81,6 +86,23 @@ fun ConversationEntity.toCachedConversation(): ChatConversation = ChatConversati
     groupAvatar = avatarUrl,
     unreadCount = unreadCount,
 )
+
+/**
+ * Signal-style attachment label ("📷 Photo", "🎥 Video", "🎤 Voice message",
+ * "🎞 GIF", "📎 report.pdf"). A caption replaces the generic word, keeping the glyph.
+ */
+fun attachmentSnippet(fileType: String?, fileName: String?, caption: String?): String {
+    val type = fileType.orEmpty().lowercase()
+    val (glyph, label) = when {
+        type == "image/gif" -> "🎞" to "GIF"
+        type.startsWith("image/") -> "📷" to "Photo"
+        type.startsWith("video/") -> "🎥" to "Video"
+        type.startsWith("audio/") -> "🎤" to "Voice message"
+        else -> "📎" to (fileName?.takeIf(String::isNotBlank) ?: "File")
+    }
+    val text = caption?.trim()?.takeIf(String::isNotEmpty) ?: label
+    return "$glyph $text"
+}
 
 private fun parseEpoch(value: String?): Long = runCatching {
     value?.let(Instant::parse)?.toEpochMilli()
@@ -167,7 +189,7 @@ data class ChatMessage(
     fun body(): String = when {
         deletedAt != null -> "Message deleted"
         !content.isNullOrBlank() -> content
-        !fileName.isNullOrBlank() -> "Attachment: $fileName"
+        !fileName.isNullOrBlank() || !fileType.isNullOrBlank() -> attachmentSnippet(fileType, fileName, null)
         else -> ""
     }
 
@@ -547,7 +569,15 @@ sealed interface ThreadItem {
     data class Queued(val message: QueuedMessage) : ThreadItem {
         override val key: String = "queued-${message.clientMessageId}"
     }
+
+    /** Outgoing attachment still uploading (rendered from [OutgoingMediaItem]). */
+    data class PendingUpload(val localId: String, val createdAtEpochMs: Long) : ThreadItem {
+        override val key: String = "pending-$localId"
+    }
 }
+
+/** Minimal chronology handle for an outgoing upload bubble (keeps ChatModels Android-free). */
+data class OutgoingMediaItem(val localId: String, val createdAtEpochMs: Long)
 
 /**
  * Key of the oldest unread incoming message (Signal-style "N unread messages"
@@ -572,6 +602,7 @@ fun buildThreadItems(
     queued: List<QueuedMessage>,
     currentUserId: Long?,
     zoneId: ZoneId = ZoneId.systemDefault(),
+    uploads: List<OutgoingMediaItem> = emptyList(),
 ): List<ThreadItem> {
     val positioned = buildList {
         messages.forEach { message ->
@@ -579,6 +610,9 @@ fun buildThreadItems(
         }
         queued.filter { currentUserId == null || it.senderId == currentUserId }.forEach { message ->
             add(PositionedThreadItem(message.createdAtEpochMs, queued = message))
+        }
+        uploads.forEach { upload ->
+            add(PositionedThreadItem(upload.createdAtEpochMs, upload = upload))
         }
     }.sortedWith(compareBy<PositionedThreadItem> { it.epochMs }.thenBy { it.message?.id ?: Long.MAX_VALUE })
 
@@ -592,7 +626,8 @@ fun buildThreadItems(
         }
         val message = item.message
         if (message == null) {
-            result += ThreadItem.Queued(requireNotNull(item.queued))
+            item.upload?.let { result += ThreadItem.PendingUpload(it.localId, it.createdAtEpochMs) }
+            item.queued?.let { result += ThreadItem.Queued(it) }
             return@forEachIndexed
         }
         val previous = positioned.getOrNull(index - 1)
@@ -622,6 +657,7 @@ private data class PositionedThreadItem(
     val epochMs: Long,
     val message: ChatMessage? = null,
     val queued: QueuedMessage? = null,
+    val upload: OutgoingMediaItem? = null,
 )
 
 fun totalUnread(conversations: List<ChatConversation>): Int =
@@ -669,23 +705,126 @@ fun shouldRefreshConversationList(eventType: String): Boolean {
     }
 }
 
+/**
+ * Drops queued (optimistic) bubbles that the server has already persisted.
+ *
+ * 1. Exact match on `client_msg_id` (realtime echoes and send responses carry it).
+ * 2. Otherwise match one-to-one against own messages with identical text,
+ *    oldest first. This deliberately ignores timestamps: device and server
+ *    clocks drift, and a skewed clock previously left a duplicate bubble
+ *    ("sent twice") until the thread was reopened.
+ */
 fun reconcileQueuedMessages(
     queued: List<QueuedMessage>,
     messages: List<ChatMessage>,
     currentUserId: Long?,
 ): List<QueuedMessage> {
     if (currentUserId == null || queued.isEmpty()) return queued
-    val authoritative = messages.filter { it.senderId == currentUserId }
-        .map { runCatching { Instant.parse(it.createdAt).toEpochMilli() }.getOrDefault(0L) }
-        .sorted()
+    val own = messages.filter { it.senderId == currentUserId && it.deletedAt == null }
+    val acknowledgedIds = own.mapNotNull { it.clientMessageId }.toSet()
+    val remaining = queued.filterNot { it.clientMessageId in acknowledgedIds }
+    val unclaimed = own.filter { it.clientMessageId == null }
+        .sortedBy { parseEpoch(it.createdAt) }
         .toMutableList()
-    return queued.sortedBy { it.createdAtEpochMs }.filter { pending ->
-        val match = authoritative.indexOfFirst { it >= pending.createdAtEpochMs }
+    return remaining.sortedBy { it.createdAtEpochMs }.filter { pending ->
+        val match = unclaimed.indexOfFirst { it.content?.trim() == pending.content.trim() }
         if (match >= 0) {
-            authoritative.removeAt(match)
+            unclaimed.removeAt(match)
             false
         } else true
     }
+}
+
+/**
+ * Server `chat_message` realtime frame. Unlike REST rows it is camelCase
+ * (see `chat.message-send.routes.ts` / `wsHandlers/chatMessage.ts`).
+ */
+@Serializable
+data class ChatRealtimeMessage(
+    val id: Long,
+    val conversationId: Long,
+    val senderId: Long,
+    val senderName: String? = null,
+    val senderAvatar: String? = null,
+    val senderUsername: String? = null,
+    val content: String? = null,
+    val formatType: String? = null,
+    val replyToId: Long? = null,
+    val replyContent: String? = null,
+    val replySenderName: String? = null,
+    val replyFileUrl: String? = null,
+    val replyFileType: String? = null,
+    val replyFileName: String? = null,
+    val fileUrl: String? = null,
+    val fileName: String? = null,
+    val fileType: String? = null,
+    val fileSize: Long? = null,
+    val createdAt: String,
+    val clientMsgId: String? = null,
+    val linkPreview: LinkPreview? = null,
+    val metadata: JsonElement? = null,
+    val mediaJobId: Long? = null,
+    val mediaState: String? = null,
+    val mediaStage: String? = null,
+    val mediaProgress: Int? = null,
+) {
+    fun toChatMessage(): ChatMessage = ChatMessage(
+        id = id,
+        conversationId = conversationId,
+        senderId = senderId,
+        content = content,
+        createdAt = createdAt,
+        senderName = senderName,
+        senderAvatar = senderAvatar,
+        senderUsername = senderUsername,
+        replyToId = replyToId,
+        replyContent = replyContent,
+        replySenderName = replySenderName,
+        replyFileUrl = replyFileUrl,
+        replyFileType = replyFileType,
+        replyFileName = replyFileName,
+        fileName = fileName,
+        fileUrl = fileUrl,
+        fileType = fileType,
+        fileSize = fileSize,
+        formatType = formatType,
+        metadata = metadata,
+        clientMessageId = clientMsgId,
+        linkPreview = linkPreview,
+        mediaJobId = mediaJobId,
+        mediaState = mediaState,
+        mediaStage = mediaStage,
+        mediaProgress = mediaProgress,
+    )
+}
+
+/**
+ * Keeps the Signal pinned bar list (newest pin first) in sync after a pin toggle.
+ * [fallback] supplies the row when it isn't in the loaded thread page.
+ */
+fun updatePinnedList(
+    pinned: List<ChatMessage>,
+    thread: List<ChatMessage>,
+    messageId: Long,
+    isPinned: Boolean,
+    fallback: ChatMessage? = null,
+): List<ChatMessage> {
+    val without = pinned.filterNot { it.id == messageId }
+    if (!isPinned) return without
+    val row = thread.firstOrNull { it.id == messageId } ?: fallback?.copy(pinnedAt = fallback.pinnedAt ?: Instant.now().toString()) ?: return without
+    return listOf(row) + without
+}
+
+/** Web `reconcileOwnMessage`: insert a realtime row once, keeping chronology. */
+fun mergeIncomingMessage(messages: List<ChatMessage>, incoming: ChatMessage): List<ChatMessage> {
+    val index = messages.indexOfFirst { it.id == incoming.id }
+    if (index >= 0) {
+        // Keep richer REST fields (reactions, receipts) but adopt the echo's clientMsgId.
+        val existing = messages[index]
+        if (existing.clientMessageId != null || incoming.clientMessageId == null) return messages
+        return messages.toMutableList().also { it[index] = existing.copy(clientMessageId = incoming.clientMessageId) }
+    }
+    return (messages + incoming).sortedWith(compareBy<ChatMessage> { parseEpoch(it.createdAt) }.thenBy { it.id })
 }
 /** `POST /meetings` body for a group call (fields are explicit: chat JSON omits defaults). */
 @Serializable

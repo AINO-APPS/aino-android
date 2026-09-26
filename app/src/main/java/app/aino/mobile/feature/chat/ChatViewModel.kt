@@ -33,6 +33,45 @@ sealed interface InfoContent {
     data class Files(val files: List<SharedChatFile>) : InfoContent
 }
 
+/**
+ * Signal-style outgoing attachment bubble shown the moment "Send" is tapped
+ * (Signal `TransferControls`): local preview + progress ring until the server
+ * row replaces it.
+ */
+data class PendingMedia(
+    val localId: String,
+    val conversationId: Long,
+    val uri: Uri,
+    val mimeType: String,
+    val fileName: String,
+    val caption: String?,
+    val createdAtEpochMs: Long,
+    val width: Int? = null,
+    val height: Int? = null,
+    /** 0..1 bytes-sent fraction; null until bytes start flowing. */
+    val progress: Float? = null,
+    val state: PendingMediaState = PendingMediaState.Uploading,
+    val error: String? = null,
+) {
+    val isImage get() = mimeType.startsWith("image/")
+    val isVideo get() = mimeType.startsWith("video/")
+}
+
+enum class PendingMediaState { Uploading, Failed }
+
+/**
+ * The server's realtime echo of an upload can beat the HTTP response. Drop the
+ * oldest fully-sent pending bubble of the same type so the row never shows twice.
+ */
+fun dropEchoedPendingMedia(pending: List<PendingMedia>, incoming: ChatMessage, currentUserId: Long?): List<PendingMedia> {
+    if (incoming.senderId != currentUserId || incoming.fileUrl.isNullOrBlank()) return pending
+    val match = pending.filter {
+        it.conversationId == incoming.conversationId && it.state == PendingMediaState.Uploading &&
+            it.mimeType.equals(incoming.fileType, ignoreCase = true) && (it.progress ?: 0f) >= 0.99f
+    }.minByOrNull { it.createdAtEpochMs } ?: return pending
+    return pending - match
+}
+
 data class PendingAttachment(val uri: Uri, val mimeType: String, val fileName: String) {
     val isImage get() = mimeType.startsWith("image/")
     val isVideo get() = mimeType.startsWith("video/")
@@ -52,6 +91,10 @@ data class ChatUiState(
     val selectedConversation: ChatConversation? = null,
     val messages: List<ChatMessage> = emptyList(),
     val queuedMessages: List<QueuedMessage> = emptyList(),
+    /** Outgoing media bubbles still uploading / failed (Signal transfer controls). */
+    val pendingMedia: List<PendingMedia> = emptyList(),
+    /** Pinned messages of the open thread, newest pin first (Signal pinned-message bar). */
+    val pinnedMessages: List<ChatMessage> = emptyList(),
     val receipts: List<ReadReceipt> = emptyList(),
     val typingUserId: Long? = null,
     val threadLoading: Boolean = false,
@@ -256,9 +299,27 @@ class ChatViewModel(
             RealtimeEvent.ChatPin -> {
                 val pin = decodeChatRealtime<ChatPinEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id == pin.conversationId) {
-                    _ui.value = _ui.value.copy(messages = applyRealtimePin(_ui.value.messages, pin))
+                    val messages = applyRealtimePin(_ui.value.messages, pin)
+                    _ui.value = _ui.value.copy(messages = messages, pinnedMessages = updatePinnedList(_ui.value.pinnedMessages, messages, pin.messageId, pin.pinned))
                 }
                 return
+            }
+            RealtimeEvent.ChatMessage -> {
+                // Patch immediately (web `reconcileOwnMessage`): the echo carries
+                // clientMsgId, so the optimistic bubble is swapped in place instead
+                // of sitting next to the persisted row until the thread reloads.
+                val incoming = decodeChatRealtime<ChatRealtimeMessage>(event.data)
+                if (incoming != null && _ui.value.selectedConversation?.id == incoming.conversationId) {
+                    val message = incoming.toChatMessage()
+                    val state = _ui.value
+                    val messages = mergeIncomingMessage(state.messages, message)
+                    _ui.value = state.copy(
+                        messages = messages,
+                        queuedMessages = reconcileQueuedMessages(state.queuedMessages, messages, scope?.userId),
+                        pendingMedia = dropEchoedPendingMedia(state.pendingMedia, message, scope?.userId),
+                        typingUserId = state.typingUserId.takeUnless { it == message.senderId },
+                    )
+                }
             }
             else -> Unit
         }
@@ -392,6 +453,7 @@ class ChatViewModel(
         pendingJump = null
         markRead(conversation)
         refreshThread()
+        refreshPinned(conversation.id)
         // Members feed @mention suggestions (web MentionInput uses convMembers).
         viewModelScope.launch(Dispatchers.IO) {
             val members = runCatching { repository.loadMembers(conversation.id) }.getOrNull() ?: return@launch
@@ -406,6 +468,7 @@ class ChatViewModel(
             selectedConversation = null,
             messages = emptyList(),
             queuedMessages = emptyList(),
+            pinnedMessages = emptyList(),
             receipts = emptyList(),
             typingUserId = null,
             composer = "",
@@ -651,11 +714,13 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.toggleMessagePin(message.id) }.fold(
                 onSuccess = { response ->
+                    val messages = applyRealtimePin(
+                        _ui.value.messages,
+                        ChatPinEvent(message.id, conversationId, response.pinned, scope?.userId),
+                    )
                     _ui.value = _ui.value.copy(
-                        messages = applyRealtimePin(
-                            _ui.value.messages,
-                            ChatPinEvent(message.id, conversationId, response.pinned, scope?.userId),
-                        ),
+                        messages = messages,
+                        pinnedMessages = updatePinnedList(_ui.value.pinnedMessages, messages, message.id, response.pinned, message),
                     )
                 },
                 onFailure = { _ui.value = _ui.value.copy(messages = original, error = it.message ?: "Could not update pinned message") },
@@ -907,58 +972,118 @@ class ChatViewModel(
     ) {
         val conversation = _ui.value.selectedConversation ?: return
         val appContext = context ?: return
-        _ui.value = _ui.value.copy(uploading = true, uploadProgress = 0f, error = null)
-        viewModelScope.launch(Dispatchers.IO) {
+        val resolver = appContext.contentResolver
+        val now = System.currentTimeMillis()
+        // Signal: every item gets its own outgoing bubble immediately, in send order.
+        val pending = items.mapIndexed { index, item ->
+            var name = item.uri.lastPathSegment ?: "file"
             runCatching {
-                items.forEachIndexed { index, item ->
-                    val resolver = appContext.contentResolver
-                    var name = "file"
-                    var size = -1L
-                    resolver.query(item.uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-                        if (cursor.moveToFirst()) {
-                            name = cursor.getString(0) ?: "file"
-                            size = if (cursor.isNull(1)) -1L else cursor.getLong(1)
-                        }
-                    }
-                    val mime = item.mimeType ?: resolver.getType(item.uri) ?: "application/octet-stream"
-                    if (size > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
-                    val bytes = resolver.openInputStream(item.uri)?.use { input ->
-                        val out = java.io.ByteArrayOutputStream()
-                        val buffer = ByteArray(64 * 1024)
-                        var total = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            total += read
-                            if (total > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
-                            out.write(buffer, 0, read)
-                        }
-                        out.toByteArray()
-                    } ?: throw IllegalArgumentException("Could not read the selected file")
-                    validateChatUpload(name, mime, bytes.size.toLong())?.let { throw IllegalArgumentException(it) }
-                    val media = mime.startsWith("image/") || mime.startsWith("video/")
-                    repository.uploadFile(
-                        conversation.id,
-                        ChatUpload(
-                            name, mime, bytes, caption.takeIf { index == 0 },
-                            viewOnce = viewOnce && media,
-                            quality = quality.takeIf { media },
-                            width = item.width, height = item.height,
-                        ),
-                    ) { sent, total ->
-                        if (total > 0) _ui.value = _ui.value.copy(uploadProgress = ((index + sent.toFloat() / total) / items.size).coerceIn(0f, 1f))
-                    }
+                resolver.query(item.uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) name = cursor.getString(0) ?: name
                 }
-            }.fold(
-                onSuccess = {
-                    _ui.value = _ui.value.copy(uploading = false, uploadProgress = null, composer = if (clearComposer) "" else _ui.value.composer)
-                    if (clearComposer) saveDraft(conversation.id, "")
-                    refreshThread()
-                    refresh()
-                },
-                onFailure = { _ui.value = _ui.value.copy(uploading = false, uploadProgress = null, error = it.message ?: "File upload failed") },
+            }
+            val mime = item.mimeType ?: resolver.getType(item.uri) ?: "application/octet-stream"
+            PendingMedia(
+                localId = "media-${UUID.randomUUID()}", conversationId = conversation.id,
+                uri = item.uri, mimeType = mime, fileName = name,
+                caption = caption.takeIf { index == 0 }, createdAtEpochMs = now + index,
+                width = item.width, height = item.height,
             )
         }
+        pending.forEach { pendingOptions[it.localId] = UploadOptions(viewOnce, quality) }
+        _ui.value = _ui.value.copy(
+            pendingMedia = _ui.value.pendingMedia + pending,
+            composer = if (clearComposer) "" else _ui.value.composer,
+            error = null,
+        )
+        if (clearComposer) saveDraft(conversation.id, "")
+        context?.let(app.aino.mobile.core.notifications.NotificationSoundPrefs::playSendConfirmation)
+        startUploads(pending)
+    }
+
+    private data class UploadOptions(val viewOnce: Boolean, val quality: String?)
+    private val pendingOptions = java.util.concurrent.ConcurrentHashMap<String, UploadOptions>()
+
+    /** Uploads run sequentially (server has no albums), one bubble at a time. */
+    private fun startUploads(queue: List<PendingMedia>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            for (media in queue) {
+                if (_ui.value.pendingMedia.none { it.localId == media.localId }) continue // cancelled
+                uploadOne(media)
+            }
+        }
+    }
+
+    private fun updatePending(localId: String, transform: (PendingMedia) -> PendingMedia) {
+        _ui.value = _ui.value.copy(pendingMedia = _ui.value.pendingMedia.map { if (it.localId == localId) transform(it) else it })
+    }
+
+    /** Signal ✕ on the progress ring: removes the bubble (an in-flight request may still land server-side). */
+    fun cancelPendingMedia(localId: String) {
+        pendingOptions.remove(localId)
+        _ui.value = _ui.value.copy(pendingMedia = _ui.value.pendingMedia.filterNot { it.localId == localId })
+    }
+
+    fun retryPendingMedia(localId: String) {
+        val media = _ui.value.pendingMedia.firstOrNull { it.localId == localId && it.state == PendingMediaState.Failed } ?: return
+        startUploads(listOf(media))
+    }
+
+    private fun uploadOne(media: PendingMedia) {
+        val appContext = context ?: return
+        val options = pendingOptions[media.localId] ?: UploadOptions(false, null)
+        updatePending(media.localId) { it.copy(state = PendingMediaState.Uploading, progress = null, error = null) }
+        runCatching {
+            val resolver = appContext.contentResolver
+            var size = -1L
+            resolver.query(media.uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst() && !cursor.isNull(0)) size = cursor.getLong(0)
+            }
+            if (size > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
+            val bytes = resolver.openInputStream(media.uri)?.use { input ->
+                val out = java.io.ByteArrayOutputStream()
+                val buffer = ByteArray(64 * 1024)
+                var total = 0L
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
+                    out.write(buffer, 0, read)
+                }
+                out.toByteArray()
+            } ?: throw IllegalArgumentException("Could not read the selected file")
+            validateChatUpload(media.fileName, media.mimeType, bytes.size.toLong())?.let { throw IllegalArgumentException(it) }
+            val visual = media.isImage || media.isVideo
+            repository.uploadFile(
+                media.conversationId,
+                ChatUpload(
+                    media.fileName, media.mimeType, bytes, media.caption,
+                    viewOnce = options.viewOnce && visual,
+                    quality = options.quality.takeIf { visual },
+                    width = media.width, height = media.height,
+                ),
+            ) { sent, total ->
+                if (total > 0) updatePending(media.localId) { it.copy(progress = (sent.toFloat() / total).coerceIn(0f, 1f)) }
+            }
+        }.fold(
+            onSuccess = { uploaded ->
+                if (_ui.value.pendingMedia.none { it.localId == media.localId }) return // cancelled mid-flight
+                pendingOptions.remove(media.localId)
+                val message = uploaded.copy(conversationId = uploaded.conversationId ?: media.conversationId)
+                val state = _ui.value
+                val inThread = state.selectedConversation?.id == media.conversationId
+                _ui.value = state.copy(
+                    // Swap the local bubble for the persisted row in one state update.
+                    messages = if (inThread) mergeIncomingMessage(state.messages, message) else state.messages,
+                    pendingMedia = state.pendingMedia.filterNot { it.localId == media.localId },
+                )
+                refresh()
+            },
+            onFailure = { error ->
+                updatePending(media.localId) { it.copy(state = PendingMediaState.Failed, progress = null, error = error.message ?: "Upload failed") }
+            },
+        )
     }
 
     /** View-once open: the server claims the single allowed view and returns the URL (null once consumed). */
@@ -1183,6 +1308,40 @@ class ChatViewModel(
     }
 
     fun loadPinnedMessages() = loadInfo { InfoContent.Messages(repository.loadPinnedMessages(it.id)) }
+
+    /** Signal pinned-message bar source; failures leave the bar hidden rather than erroring the thread. */
+    private fun refreshPinned(conversationId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val pinned = runCatching { repository.loadPinnedMessages(conversationId) }.getOrNull() ?: return@launch
+            if (_ui.value.selectedConversation?.id == conversationId) {
+                _ui.value = _ui.value.copy(pinnedMessages = pinned.filter { it.deletedAt == null })
+            }
+        }
+    }
+
+    // ---- Signal overflow-menu actions ----
+    fun muteFor(duration: String?) {
+        val current = _ui.value.selectedConversation ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.setMute(current.id, duration) }.fold(
+                onSuccess = { result -> updateSelected(current.copy(isMuted = result.muted)) },
+                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update mute") },
+            )
+        }
+    }
+
+    fun deleteCurrentConversation() {
+        val current = _ui.value.selectedConversation ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.deleteConversation(current.id) }.fold(
+                onSuccess = {
+                    _ui.value = _ui.value.copy(closeThread = true, showInfo = false)
+                    refresh()
+                },
+                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not delete chat") },
+            )
+        }
+    }
     fun loadSavedMessages() = loadInfo { InfoContent.Messages(repository.loadStarredMessages()) }
     fun loadSharedFiles() = loadInfo { InfoContent.Files(repository.loadSharedFiles(it.id)) }
     fun searchInConversation(term: String) {

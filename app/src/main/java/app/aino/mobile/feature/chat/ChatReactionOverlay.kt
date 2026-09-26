@@ -86,9 +86,26 @@ fun ChatReactionOverlay(
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     var showPicker by remember { mutableStateOf(false) }
     var hovered by remember { mutableStateOf(-1) }
+    var pickerSearch by remember { mutableStateOf(false) }
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { appeared = true }
-    val lift by androidx.compose.animation.core.animateFloatAsState(if (appeared) 1f else 0f, label = "lift")
+    // Signal's long-press entrance: scrim fades, scrubber pops with slight
+    // overshoot, context menu slides/fades in shortly after.
+    val lift by androidx.compose.animation.core.animateFloatAsState(
+        if (appeared) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(200),
+        label = "lift",
+    )
+    val pop by androidx.compose.animation.core.animateFloatAsState(
+        if (appeared) 1f else 0.8f,
+        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 500f),
+        label = "pop",
+    )
+    val menuIn by androidx.compose.animation.core.animateFloatAsState(
+        if (appeared) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(220, delayMillis = 60, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        label = "menu",
+    )
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(signal.scrim.copy(alpha = signal.scrim.alpha * lift)).clickable(onClick = onDismiss)) {
             Column(
@@ -100,7 +117,10 @@ fun ChatReactionOverlay(
                 var cellWidthPx by remember { mutableStateOf(1f) }
                 Row(
                     Modifier
-                        .graphicsLayer { translationY = (1f - lift) * 25.dp.toPx(); alpha = lift }
+                        .graphicsLayer {
+                            scaleX = pop; scaleY = pop; alpha = lift
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (alignEnd) 1f else 0f, 1f)
+                        }
                         .width(SignalDimens.reactionScrubberWidth)
                         .clip(RoundedCornerShape(28.dp)).background(signal.surface)
                         .padding(horizontal = 6.dp, vertical = 4.dp)
@@ -138,7 +158,12 @@ fun ChatReactionOverlay(
                 Box(Modifier.graphicsLayer { scaleX = 0.96f + .04f * lift; scaleY = 0.96f + .04f * lift }) { messagePreview?.invoke() }
                 // Signal context menu card.
                 Column(
-                    Modifier.graphicsLayer { alpha = lift }.width(220.dp).clip(RoundedCornerShape(18.dp)).background(signal.surface).padding(vertical = 6.dp),
+                    Modifier.graphicsLayer {
+                        alpha = menuIn
+                        translationY = (1f - menuIn) * -12.dp.toPx()
+                        scaleX = 0.92f + 0.08f * menuIn; scaleY = scaleX
+                        transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (alignEnd) 1f else 0f, 0f)
+                    }.width(220.dp).clip(RoundedCornerShape(18.dp)).background(signal.surface).padding(vertical = 6.dp),
                 ) {
                     ReactionAction("Reply", Icons.AutoMirrored.Outlined.Reply) { actions.onReply(); onDismiss() }
                     actions.onEdit?.let { ReactionAction("Edit", Icons.Outlined.Edit) { it(); onDismiss() } }
@@ -153,11 +178,16 @@ fun ChatReactionOverlay(
         }
         if (showPicker) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .3f)).clickable { showPicker = false }) {
-                SignalEmojiKeyboard(
+                if (pickerSearch) EmojiSearchBar(
+                    onEmoji = { onReaction(it); onDismiss() },
+                    onClose = { pickerSearch = false },
+                    modifier = Modifier.align(Alignment.BottomCenter).imePadding().clickable(enabled = false) {},
+                ) else SignalEmojiKeyboard(
                     onEmoji = { onReaction(it); onDismiss() },
                     onBackspace = {},
                     modifier = Modifier.align(Alignment.BottomCenter).clickable(enabled = false) {},
                     height = 380.dp,
+                    onOpenSearch = { pickerSearch = true },
                 )
             }
         }

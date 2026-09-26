@@ -30,6 +30,23 @@ class EmojiRecentsTest {
     }
 
     @Test
+    fun emojiSearchRanksKeywordHitsAndFallsBackToUnicodeNames() {
+        assertEquals("👍", searchEmoji("thumbs").first())
+        assertTrue("😂" in searchEmoji("lol"))
+        // Not in the keyword table: found through the Unicode name ("ROCKET").
+        assertTrue("🚀" in searchEmoji("rocket"))
+        assertTrue(searchEmoji("   ").isEmpty())
+        assertTrue(searchEmoji("zzqqxx").isEmpty())
+    }
+
+    @Test
+    fun insertAtSelectionReplacesRangeAndMovesCaret() {
+        assertEquals("hi 👋 there" to 5, insertAtSelection("hi  there", 3, 3, "👋"))
+        assertEquals("a🔥" to 3, insertAtSelection("abc", 1, 3, "🔥"))
+        assertEquals("x😀" to 3, insertAtSelection("x", 9, 9, "😀"))
+    }
+
+    @Test
     fun categoriesAreSubstantial() {
         assertEquals(8, SignalEmojiCategories.size)
         assertTrue(SignalEmojiCategories.all { it.emojis.size >= 60 })

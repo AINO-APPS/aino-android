@@ -2,6 +2,7 @@ package app.aino.mobile.feature.chat
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +39,12 @@ fun formatChatFileSize(bytes: Long?): String? = bytes?.takeIf { it >= 0 }?.let {
     }
 }
 
+/** Server media-job states that still need Signal's transfer ring on the thumbnail. */
+fun ChatMessage.mediaInFlight(): Boolean =
+    mediaState?.lowercase()?.let { it !in setOf("ready", "completed", "failed", "cancelled") } == true
+
+fun ChatMessage.mediaFailed(): Boolean = mediaState?.lowercase() in setOf("failed", "cancelled")
+
 @Composable
 fun ChatMediaPreview(
     message: ChatMessage,
@@ -47,17 +54,74 @@ fun ChatMediaPreview(
     onRetryProcessing: (ChatMessage) -> Unit = {},
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(12.dp),
     outgoing: Boolean = false,
+    /** Long-press must reach the bubble's action overlay; media handles its own clicks. */
+    onLongPress: () -> Unit = {},
 ) {
     val rawUrl = message.fileUrl ?: return
     val url = resolveChatMediaUrl(rawUrl)
+    val visual = message.isImageAttachment() || message.isVideoAttachment()
     Column(modifier.widthIn(max = SignalDimens.mediaMaxWidth + 40.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when {
-            message.isImageAttachment() -> ChatThumbnail(url, message.fileName, video = false, shape = shape) { onOpenMedia(message) }
-            message.isVideoAttachment() -> ChatThumbnail(url, message.fileName, video = true, shape = shape) { onOpenMedia(message) }
+            visual -> Box {
+                ChatThumbnail(url, message.fileName, video = message.isVideoAttachment(), shape = shape, onLongClick = onLongPress) {
+                    if (!message.mediaInFlight()) onOpenMedia(message)
+                }
+                // Signal TransferControls: ring over the dimmed thumbnail while the server transcodes.
+                when {
+                    message.mediaInFlight() -> TransferRing(
+                        progress = message.mediaProgress?.takeIf { it > 0 }?.let { it / 100f },
+                        onCancel = { onCancelProcessing(message) },
+                        modifier = Modifier.matchParentSize().clip(shape),
+                    )
+                    message.mediaFailed() -> TransferRetry(
+                        onRetry = { onRetryProcessing(message) },
+                        modifier = Modifier.matchParentSize().clip(shape),
+                    )
+                }
+            }
             message.fileType?.startsWith("audio/") == true -> ChatVoicePlayer(url, Modifier.fillMaxWidth(), outgoing = outgoing)
-            else -> AttachmentCard(message, url)
+            else -> AttachmentCard(message, url, onLongPress)
         }
-        MediaProcessingState(message, onCancelProcessing, onRetryProcessing)
+        if (!visual) MediaProcessingState(message, onCancelProcessing, onRetryProcessing)
+        message.mediaFailureReason?.takeIf { visual && message.mediaFailed() && it.isNotBlank() }?.let {
+            Text(it, color = LocalWebColors.current.danger, style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+/**
+ * Signal's transfer control: a 48dp translucent disc with a determinate ring
+ * (indeterminate spinner before bytes/progress are known) and an ✕ to cancel.
+ * Fades in/out so the swap to the finished media is smooth.
+ */
+@Composable
+fun TransferRing(progress: Float?, onCancel: (() -> Unit)?, modifier: Modifier = Modifier) {
+    val animated by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = progress ?: 0f,
+        animationSpec = androidx.compose.animation.core.tween(250),
+        label = "transferProgress",
+    )
+    Box(modifier.background(Color.Black.copy(alpha = .28f)), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).background(Color.Black.copy(alpha = .55f))
+                .then(if (onCancel != null) Modifier.clickable(onClickLabel = "Cancel", onClick = onCancel) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (progress == null) CircularProgressIndicator(Modifier.size(40.dp), color = Color.White, strokeWidth = 2.5.dp)
+            else CircularProgressIndicator(progress = { animated }, modifier = Modifier.size(40.dp), color = Color.White, strokeWidth = 2.5.dp, trackColor = Color.White.copy(alpha = .25f))
+            if (onCancel != null) Icon(Icons.Outlined.Close, "Cancel", Modifier.size(20.dp), tint = Color.White)
+        }
+    }
+}
+
+/** Signal failed-transfer state: tap the disc to retry. */
+@Composable
+fun TransferRetry(onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.background(Color.Black.copy(alpha = .28f)), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(48.dp).clip(CircleShape).background(Color.Black.copy(alpha = .55f)).clickable(onClickLabel = "Retry", onClick = onRetry),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Outlined.Refresh, "Retry", Modifier.size(24.dp), tint = Color.White) }
     }
 }
 
@@ -66,11 +130,22 @@ fun ChatMediaPreview(
  * memory+disk cache, downsampled decode). Aspect ratio follows the decoded
  * image, like the web's `--img-aspect`, falling back to 4:3.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun ChatThumbnail(url: String, label: String?, video: Boolean, shape: androidx.compose.ui.graphics.Shape, onClick: () -> Unit) {
+fun ChatThumbnail(
+    url: Any,
+    label: String?,
+    video: Boolean,
+    shape: androidx.compose.ui.graphics.Shape,
+    initialAspect: Float? = null,
+    onLongClick: (() -> Unit)? = null,
+    /** When set, replaces Signal's aspect-fitted bubble box (e.g. square grid cells). */
+    modifier: Modifier? = null,
+    onClick: () -> Unit,
+) {
     val context = LocalContext.current
     val loader = AppContainer.get(context).imageLoader
-    var aspect by remember(url) { mutableFloatStateOf(4f / 3f) }
+    var aspect by remember(url) { mutableFloatStateOf(initialAspect?.takeIf { it > 0f } ?: (4f / 3f)) }
     var failed by remember(url) { mutableStateOf(false) }
     // ponytail: Coil's VideoFrameDecoder needs the file on disk, so a poster downloads the whole video once (then disk-cached); add server-side posters if videos get large.
     val request = remember(url, video) {
@@ -78,8 +153,9 @@ private fun ChatThumbnail(url: String, label: String?, video: Boolean, shape: an
     }
     val (width, height) = signalMediaSize(aspect)
     Box(
-        Modifier.size(width.dp, height.dp)
-            .clip(shape).background(LocalWebColors.current.surface).clickable(onClick = onClick),
+        (modifier ?: Modifier.size(width.dp, height.dp))
+            .clip(shape).background(LocalWebColors.current.surface)
+            .combinedClickable(onClickLabel = "Open media", onLongClickLabel = "Message actions", onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
         AsyncImage(
@@ -112,13 +188,17 @@ fun signalMediaSize(aspect: Float): Pair<Float, Float> {
     return width to height.coerceAtLeast(100f)
 }
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-private fun AttachmentCard(message: ChatMessage, url: String) {
+private fun AttachmentCard(message: ChatMessage, url: String, onLongPress: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var opening by remember(url) { mutableStateOf(false) }
     Surface(
-        Modifier.fillMaxWidth().clickable(enabled = !opening) {
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).combinedClickable(
+            enabled = !opening,
+            onLongClick = onLongPress,
+        ) {
             opening = true
             scope.launch { openChatFile(context, url, message.fileName, message.fileType); opening = false }
         },
@@ -144,9 +224,15 @@ fun MediaProcessingState(message: ChatMessage, onCancel: (ChatMessage) -> Unit, 
     val state = message.mediaState?.lowercase() ?: return
     if (state in setOf("ready", "completed")) return
     val progress = (message.mediaProgress ?: 0).coerceIn(0, 100)
+    // Human wording instead of raw job states ("queued · 0%"), like Signal's "Processing…".
+    val label = when (state) {
+        "failed" -> "Couldn't send"
+        "cancelled" -> "Cancelled"
+        else -> if (progress > 0) "Processing… $progress%" else "Processing…"
+    }
     Column(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(listOfNotNull(message.mediaStage ?: state, message.mediaProgress?.let { "$progress%" }).joinToString(" · "), Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
             IconButton(onClick = { if (state in setOf("failed", "cancelled")) onRetry(message) else onCancel(message) }, Modifier.size(32.dp)) {
                 Icon(if (state in setOf("failed", "cancelled")) Icons.Outlined.Replay else Icons.Outlined.Close, if (state in setOf("failed", "cancelled")) "Retry" else "Cancel", Modifier.size(18.dp))
             }
