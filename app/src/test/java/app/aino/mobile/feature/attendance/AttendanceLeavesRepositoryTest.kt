@@ -124,14 +124,14 @@ class AttendanceLeavesRepositoryTest {
     }
 
     @Test
-    fun clockInCarriesWifiAndGeoSignals() {
+    fun clockInCarriesWifiGeoAndTheVerifiableDeviceCredential() {
         val captured = mutableListOf<ApiRequest>()
-        val repository = repository(captured) { """{"message":"Clocked in"}""" }
+        val repository = repository(captured) { """{"message":"Clocked in","verified_via":"fingerprint"}""" }
 
-        repository.clockIn(
+        val result = repository.clockIn(
             WorkMode.Office,
             LocationProof(10.0, 20.0, 25f),
-            fingerprintVerified = true,
+            DeviceCredentialProof("5.abc", "s3cret"),
             wifiBssid = "AA:BB:CC:DD:EE:FF",
         )
 
@@ -139,6 +139,55 @@ class AttendanceLeavesRepositoryTest {
         assertEquals("tracker/clock-in", captured.single().path)
         assertTrue(body.contains("\"wifi_bssid\":\"AA:BB:CC:DD:EE:FF\""))
         assertTrue(body.contains("\"work_mode\":\"office\""))
-        assertTrue(body.contains("\"fingerprint_verified\":true"))
+        // Server-verified proof replaces the legacy bare flag.
+        assertTrue(body.contains("\"device_credential\":{\"credentialId\":\"5.abc\",\"deviceSecret\":\"s3cret\"}"))
+        assertTrue(!body.contains("fingerprint_verified"))
+        assertEquals("fingerprint", result.verifiedVia)
+    }
+
+    @Test
+    fun remoteClockOutSendsOnlyTheCredential() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) { """{"message":"Logged out. See you tomorrow!"}""" }
+
+        repository.clockOut(null, DeviceCredentialProof("5.abc", "s3cret"))
+
+        val body = captured.single().body!!.toString(Charsets.UTF_8)
+        assertEquals("tracker/clock-out", captured.single().path)
+        assertTrue(body.contains("\"device_credential\""))
+        assertTrue(!body.contains("latitude"))
+    }
+
+    @Test
+    fun unverifiedOrgsSendNoCredential() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) { """{"message":"Logged in successfully"}""" }
+
+        repository.clockIn(WorkMode.Office, null, null)
+
+        val body = captured.single().body!!.toString(Charsets.UTF_8)
+        assertTrue(!body.contains("device_credential"))
+        assertTrue(!body.contains("fingerprint_verified"))
+    }
+
+    @Test
+    fun surfacesTheServerCodeForAnInvalidCredential() {
+        val repository = AttendanceRepository(
+            ApiClient { _ ->
+                throw ApiError.Http(
+                    403,
+                    """{"error":"Your fingerprint sign-in on this device is no longer valid.","code":"DEVICE_CREDENTIAL_INVALID"}""",
+                    "POST",
+                    "url",
+                )
+            },
+        )
+        try {
+            repository.clockIn(WorkMode.Remote, null, DeviceCredentialProof("5.abc", "bad"))
+            fail("expected AttendanceFailure")
+        } catch (error: AttendanceFailure) {
+            assertEquals(403, error.statusCode)
+            assertEquals("DEVICE_CREDENTIAL_INVALID", error.code)
+        }
     }
 }

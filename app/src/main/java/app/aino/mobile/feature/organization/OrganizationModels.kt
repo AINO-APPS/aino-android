@@ -169,15 +169,29 @@ fun departmentOptions(departments: List<Department>): List<Pair<Long?, String>> 
     listOf<Pair<Long?, String>>(null to "No department") + departments.map { it.id to it.name }
 
 enum class OrgTab(val label: String) {
+    Salary("Salary Slips"),
     Departments("My Department"),
     Teams("My Team"),
     Chart("Org Chart"),
     Labels("Task Labels"),
 }
 
-/** Tab order from Organization.tsx (Salary Slips excluded for this phase). */
-fun visibleTabs(role: String?): List<OrgTab> =
-    OrgTab.entries.filter { it != OrgTab.Labels || canManageLabels(role) }
+/**
+ * Tab order from Organization.tsx. Salary Slips (first, the web default) shows
+ * only when the tenant has payroll (product decision; the web always renders it
+ * and lets the feature-gated routes fail); Task Labels is managers-only.
+ */
+fun visibleTabs(role: String?, payroll: Boolean = false): List<OrgTab> =
+    OrgTab.entries.filter { tab ->
+        when (tab) {
+            OrgTab.Salary -> payroll
+            OrgTab.Labels -> canManageLabels(role)
+            else -> true
+        }
+    }
+
+/** The first visible tab: Salary Slips with payroll, otherwise My Department. */
+fun defaultTab(role: String?, payroll: Boolean): OrgTab = visibleTabs(role, payroll).first()
 
 /** A DATE column may arrive as `2026-01-05` or an ISO timestamp; keep the calendar day. */
 fun normalizeDate(value: String?): String? {

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -77,6 +78,7 @@ import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.attendance.AttendanceAction
 import app.aino.mobile.feature.attendance.WorkMode
 import app.aino.mobile.feature.attendance.verify.ClockInVerifySheet
+import app.aino.mobile.feature.attendance.verify.VerifyActions
 import app.aino.mobile.feature.tasks.TasksScreen
 import app.aino.mobile.feature.tasks.TaskViewModel
 import app.aino.mobile.feature.profile.ProfileScreen
@@ -133,6 +135,7 @@ fun AinoApp(
     onBiometricEnroll: () -> Unit,
     onAttendanceLocationPermission: () -> Unit,
     onAttendanceBiometric: () -> Unit,
+    attendanceSystemActions: AttendanceSystemActions,
     onPickChatDocument: () -> Unit,
     onAuthenticatedForPush: () -> Unit,
 ) {
@@ -169,6 +172,12 @@ fun AinoApp(
         factory = app.aino.mobile.feature.notes.NotesViewModel.factory(appContext),
     )
     LaunchedEffect(tenantAuthenticated) { if (!tenantAuthenticated) notes.reset() }
+    // P10.4 web BrandingContext: org branding per signed-in user, public branding when signed out.
+    val brandingStore = androidx.compose.runtime.remember { app.aino.mobile.core.AppContainer.get(appContext).branding }
+    val branding by brandingStore.state.collectAsStateWithLifecycle()
+    LaunchedEffect(tenantAuthenticated, authenticatedUser?.id) {
+        if (tenantAuthenticated && authenticatedUser != null) brandingStore.refresh() else brandingStore.refreshPublic()
+    }
     androidx.lifecycle.compose.LifecycleStartEffect(notes) { onStopOrDispose { notes.flush() } }
     val setDark by androidx.compose.runtime.rememberUpdatedState(onSetDark)
     // Web StatusProvider / ThemeProvider / NotificationPrefsProvider start on tenant sign-in.
@@ -213,9 +222,14 @@ fun AinoApp(
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
                 if (event.type in TASK_REFRESH_EVENTS) tasks.onTaskEvent()
                 when (event.type) {
+                    // Clock/break taken on the web, desktop or another phone:
+                    // refresh the timer + attendance status (cross-device sync).
+                    "attendance_update" -> { dashboard.refresh(); attendance.onRemoteAttendanceChange() }
                     "user_status" -> profile.onStatusEvent(event.data)
                     // Multi-device theme sync (web ThemeContext).
                     "theme_changed" -> themeFromEvent(event.data)?.let { dark -> setDark(dark) }
+                    // Live accent / logo sync (web BrandingContext).
+                    "branding_changed" -> brandingStore.refresh()
                 }
                 notifications.onRealtimeEvent(event.type, event.data)
             }
@@ -241,6 +255,8 @@ fun AinoApp(
             ui.biometricEnrolled,
             auth::login,
             onBiometricLogin,
+            orgName = branding.orgName,
+            logoUrl = if (branding.logoUrl.isNullOrBlank()) null else brandingStore.publicLogoUrl(),
         )
         is AuthState.ChoosingRealm -> RealmChoiceScreen(
             state.realms,
@@ -275,6 +291,7 @@ fun AinoApp(
             onBiometricEnroll,
             onAttendanceLocationPermission,
             onAttendanceBiometric,
+            attendanceSystemActions,
             onPickChatDocument,
             auth::retryFeatureHydration,
             auth::logout,
@@ -317,6 +334,7 @@ private fun AuthenticatedShell(
     onBiometricEnroll: () -> Unit,
     onAttendanceLocationPermission: () -> Unit,
     onAttendanceBiometric: () -> Unit,
+    attendanceSystemActions: AttendanceSystemActions,
     onPickChatDocument: () -> Unit,
     onRetryFeatures: () -> Unit,
     onSignOut: () -> Unit,
@@ -373,6 +391,27 @@ private fun AuthenticatedShell(
     /** Notification / search / note links carry web routes; unknown or ungated ones are ignored. */
     fun openWebLink(link: String) {
         val route = webLinkToRoute(link) ?: return
+        runCatching { nav.navigate(route) { launchSingleTop = true } }
+    }
+    /**
+     * P10.1: routes a web Admin section key. Structure sections that Android
+     * already implements elsewhere keep their screens (Organization for
+     * departments / teams / org chart; web `TAB_ALIASES` sends `labels` to
+     * Agile Config, or to the Task Labels page when agile is off).
+     */
+    fun openAdminSection(key: String) {
+        val allowed = app.aino.mobile.feature.tasks.allowedAdminSections(
+            role, user.orgId, user.tenantFeatures,
+            ungatedPlatformAdmin = user.role == "platform_admin" && user.tenantId == null,
+        ).map { it.key }.toSet()
+        val route = when (key) {
+            "agile" -> ADMIN_AGILE_ROUTE
+            "projects" -> ADMIN_PROJECTS_ROUTE
+            "labels" -> if ("agile" in allowed) ADMIN_AGILE_ROUTE else adminSectionRoute("task-labels")
+            "departments", "teams", "org-chart" -> AinoDestination.Organization.route
+            in ADMIN_PAYROLL_PAGE_KEYS -> adminPayrollRoute(key)
+            else -> adminSectionRoute(key)
+        }
         runCatching { nav.navigate(route) { launchSingleTop = true } }
     }
     // A tapped system notification: chat messages open their thread, everything
@@ -669,6 +708,9 @@ private fun AuthenticatedShell(
             composable(PROFILE_EDIT_ROUTE) {
                 EditProfileScreen(
                     viewModel = profile,
+                    // Web parity: the org's "Allow biometric login" hides new enrollment for sign-in.
+                    biometricLoginAllowed = attendanceUi.policy?.biometricLoginEnabled != false,
+                    attendanceVerificationOn = attendanceUi.policy?.verificationEnabled == true,
                     biometricAvailable = biometricAvailable,
                     biometricEnrolled = biometricEnrolled,
                     biometricMessage = authMessage,
@@ -780,6 +822,11 @@ private fun AuthenticatedShell(
                     userId = user.id,
                     // Web `updateUser({ org_id, role: "super_admin" })` after CreateOrgView.
                     onOrgCreated = { orgId -> auth.updateUser { it.copy(orgId = orgId, role = "super_admin") } },
+                    // P10.3: Salary Slips tab only with the payroll feature (product decision).
+                    payroll = app.aino.mobile.feature.organization.salaryTabEnabled(
+                        user.tenantFeatures,
+                        ungatedPlatformAdmin = user.role == "platform_admin" && user.tenantId == null,
+                    ),
                 )
             }
             // P8: the web Manager Dashboard (Approvals / Team Attendance / Analytics / My Requests).
@@ -825,9 +872,74 @@ private fun AuthenticatedShell(
             )
             if (AinoDestination.Admin in availableMoreDestinations(role, hasReports, user.tenantFeatures, user.orgId)) {
                 composable(AinoDestination.Admin.route) {
-                    app.aino.mobile.feature.tasks.AdminScreen(role, adminSections) { section ->
-                        val route = if (section.key == "agile") ADMIN_AGILE_ROUTE else ADMIN_PROJECTS_ROUTE
-                        nav.navigate(route) { launchSingleTop = true }
+                    app.aino.mobile.feature.tasks.AdminScreen(role, adminSections) { section -> openAdminSection(section.key) }
+                }
+                // P10.1: every Admin section page shares one AdminViewModel scoped to the
+                // Admin entry (a deep link without it on the stack falls back to its own entry).
+                composable(ADMIN_SECTION_ROUTE, arguments = listOf(navArgument("key") { type = NavType.StringType })) { entry ->
+                    val key = entry.arguments?.getString("key") ?: return@composable
+                    val admin = rememberAdminViewModel(nav, entry)
+                    androidx.compose.runtime.LaunchedEffect(role, user.id, user.orgId) { admin.bind(role, user.id, user.orgId) }
+                    RefetchOnResume { admin.loadSection(key, force = true) }
+                    app.aino.mobile.feature.admin.AdminSectionScreen(
+                        viewModel = admin,
+                        sectionKey = key,
+                        onBack = { nav.popBackStack() },
+                        onOpenSection = ::openAdminSection,
+                        onOpenUser = { id -> nav.navigate(adminUserRoute(id)) { launchSingleTop = true } },
+                    )
+                }
+                composable(ADMIN_USER_ROUTE, arguments = listOf(navArgument("userId") { type = NavType.LongType })) { entry ->
+                    val userId = entry.arguments?.getLong("userId") ?: return@composable
+                    val admin = rememberAdminViewModel(nav, entry)
+                    androidx.compose.runtime.LaunchedEffect(role, user.id, user.orgId) { admin.bind(role, user.id, user.orgId) }
+                    app.aino.mobile.feature.admin.AdminUserDetailScreen(
+                        viewModel = admin,
+                        userId = userId,
+                        onBack = { nav.popBackStack() },
+                    )
+                }
+                // P10.3: payroll pages, registered only when the tenant has payroll (web isAllowed).
+                if (adminSections.any { it.key in ADMIN_PAYROLL_PAGE_KEYS }) {
+                    composable(ADMIN_PAYROLL_ROUTE, arguments = listOf(navArgument("key") { type = NavType.StringType })) { entry ->
+                        val key = entry.arguments?.getString("key") ?: return@composable
+                        val payroll = rememberPayrollViewModel(nav, entry)
+                        androidx.compose.runtime.LaunchedEffect(role, user.id, user.orgId) { payroll.bind(role, user.id, user.orgId) }
+                        RefetchOnResume { payroll.loadSection(key, force = true) }
+                        app.aino.mobile.feature.admin.PayrollSectionScreen(
+                            viewModel = payroll,
+                            sectionKey = key,
+                            onBack = { nav.popBackStack() },
+                            onOpenEmployee = { id, name -> nav.navigate(adminPayrollEmployeeRoute(id, name)) { launchSingleTop = true } },
+                            onOpenSlip = { id -> nav.navigate(adminSalarySlipRoute(id)) { launchSingleTop = true } },
+                        )
+                    }
+                    composable(
+                        ADMIN_PAYROLL_EMPLOYEE_ROUTE,
+                        arguments = listOf(
+                            navArgument("userId") { type = NavType.LongType },
+                            navArgument("name") { type = NavType.StringType; defaultValue = "" },
+                        ),
+                    ) { entry ->
+                        val userId = entry.arguments?.getLong("userId") ?: return@composable
+                        val payroll = rememberPayrollViewModel(nav, entry)
+                        androidx.compose.runtime.LaunchedEffect(role, user.id, user.orgId) { payroll.bind(role, user.id, user.orgId) }
+                        app.aino.mobile.feature.admin.PayrollEmployeeScreen(
+                            viewModel = payroll,
+                            userId = userId,
+                            name = entry.arguments?.getString("name").orEmpty(),
+                            onBack = { nav.popBackStack() },
+                        )
+                    }
+                    composable(ADMIN_SALARY_SLIP_ROUTE, arguments = listOf(navArgument("slipId") { type = NavType.LongType })) { entry ->
+                        val slipId = entry.arguments?.getLong("slipId") ?: return@composable
+                        val payroll = rememberPayrollViewModel(nav, entry)
+                        androidx.compose.runtime.LaunchedEffect(role, user.id, user.orgId) { payroll.bind(role, user.id, user.orgId) }
+                        app.aino.mobile.feature.admin.SalarySlipDetailScreen(
+                            viewModel = payroll,
+                            slipId = slipId,
+                            onBack = { nav.popBackStack() },
+                        )
                     }
                 }
             }
@@ -871,7 +983,7 @@ private fun AuthenticatedShell(
                         it != AinoDestination.Admin && it != AinoDestination.Manager
                 }
                 .forEach { destination ->
-                    composable(destination.route) { PlaceholderScreen(destination.label) }
+                    composable(destination.route) { PlaceholderScreen(destination.label, placeholderMessage(destination)) }
                 }
         }
         }
@@ -880,9 +992,19 @@ private fun AuthenticatedShell(
         attendanceUi.verifySession?.let { session ->
             ClockInVerifySheet(
                 session = session,
-                onVerifyIdentity = onAttendanceBiometric,
-                onRetryLocation = { attendance.resumePending(onAttendanceLocationPermission) },
-                onEnrollFace = { attendance.dismissVerify(); nav.navigate(PROFILE_FACE_ROUTE) { launchSingleTop = true } },
+                onLaunchIdentityPrompt = onAttendanceBiometric,
+                onUseFingerprint = {
+                    // Tapping the fingerprint re-arms the prompt; the sheet's
+                    // LaunchedEffect launches it on the new token.
+                    attendance.requestIdentityPrompt()
+                },
+                actions = VerifyActions(
+                    onRetryLocation = { attendance.resumePending(onAttendanceLocationPermission) },
+                    onOpenAppSettings = attendanceSystemActions.openAppSettings,
+                    onEnableLocation = attendanceSystemActions.openLocationSettings,
+                    onSetUpScreenLock = attendanceSystemActions.openSecuritySettings,
+                    onEnableFingerprint = attendanceSystemActions.enableFingerprintForAttendance,
+                ),
                 onClose = attendance::dismissVerify,
             )
         }
@@ -1004,16 +1126,31 @@ private fun AinoShellTopBar(
     // page body and the bottom tab bar (no border) so the chrome reads as one
     // continuous surface, Signal-style.
     val colors = LocalWebColors.current
+    // P10.4 web Navbar `logoSrc`: the org logo when set, else the AINO mark.
+    val shellContext = LocalContext.current
+    val container = androidx.compose.runtime.remember { app.aino.mobile.core.AppContainer.get(shellContext) }
+    val branding by container.branding.state.collectAsStateWithLifecycle()
+    val orgLogo = branding.logoUrl?.takeIf(String::isNotBlank)?.let { app.aino.mobile.core.media.resolveServerMediaUrl(it) }
     Surface(color = colors.bg, tonalElevation = 0.dp) {
         Row(
             Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Image(
-                painterResource(R.drawable.aino_icon),
-                contentDescription = "AINO",
-                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)),
-            )
+            if (orgLogo != null) {
+                coil3.compose.AsyncImage(
+                    model = orgLogo,
+                    imageLoader = container.imageLoader,
+                    contentDescription = branding.orgName ?: "Logo",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                    modifier = Modifier.height(36.dp).widthIn(max = 140.dp),
+                )
+            } else {
+                Image(
+                    painterResource(R.drawable.aino_icon),
+                    contentDescription = "AINO",
+                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)),
+                )
+            }
             Spacer(Modifier.weight(1f))
             Box(
                 Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onSearch),
@@ -1072,7 +1209,7 @@ private val DASHBOARD_REFRESH_EVENTS = setOf(
 private val TASK_REFRESH_EVENTS = setOf("task_assigned", "task_updated")
 
 @Composable
-private fun PlaceholderScreen(title: String) {
+private fun PlaceholderScreen(title: String, message: String) {
     AinoAtmosphere {
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             AinoGlassCard(Modifier.fillMaxWidth()) {
@@ -1080,7 +1217,7 @@ private fun PlaceholderScreen(title: String) {
                     val destination = destinationFor(title)
                     destination?.let { Icon(it.icon, null, Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary) }
                     Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp))
-                    Text("This feature module is next in the native rollout.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
             }
         }
@@ -1089,6 +1226,41 @@ private fun PlaceholderScreen(title: String) {
 
 /** Calendar.tsx refetches on these WS events. */
 private val CALENDAR_REFRESH_EVENTS = setOf("calendar_refresh", "meeting_updated", "meeting_cancelled")
+
+/**
+ * The Admin section / user pages share one [app.aino.mobile.feature.admin.AdminViewModel]
+ * scoped to the Admin hub entry; a deep link that skipped the hub scopes it to [entry].
+ */
+@Composable
+private fun rememberAdminViewModel(
+    nav: androidx.navigation.NavHostController,
+    entry: androidx.navigation.NavBackStackEntry,
+): app.aino.mobile.feature.admin.AdminViewModel {
+    val context = LocalContext.current
+    val owner = androidx.compose.runtime.remember(entry) {
+        runCatching { nav.getBackStackEntry(AinoDestination.Admin.route) }.getOrDefault(entry)
+    }
+    return androidx.lifecycle.viewmodel.compose.viewModel(
+        viewModelStoreOwner = owner,
+        factory = app.aino.mobile.feature.admin.AdminViewModel.factory(context),
+    )
+}
+
+/** P10.3: the payroll pages share one [app.aino.mobile.feature.admin.PayrollViewModel], scoped like the Admin one. */
+@Composable
+private fun rememberPayrollViewModel(
+    nav: androidx.navigation.NavHostController,
+    entry: androidx.navigation.NavBackStackEntry,
+): app.aino.mobile.feature.admin.PayrollViewModel {
+    val context = LocalContext.current
+    val owner = androidx.compose.runtime.remember(entry) {
+        runCatching { nav.getBackStackEntry(AinoDestination.Admin.route) }.getOrDefault(entry)
+    }
+    return androidx.lifecycle.viewmodel.compose.viewModel(
+        viewModelStoreOwner = owner,
+        factory = app.aino.mobile.feature.admin.PayrollViewModel.factory(context),
+    )
+}
 
 /** Web focus/visibility refetch for a per-route ViewModel (skips the first resume, which is the initial load). */
 @Composable

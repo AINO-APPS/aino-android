@@ -49,16 +49,27 @@ enum class LeavesSubTab(val id: String, val label: String, val hrOnly: Boolean) 
 // Verification sheet state (`ClockInVerifyModal` equivalent, P3.7)
 // ---------------------------------------------------------------------------
 
-enum class VerifyStep { Collecting, Ready, Submitting }
+/**
+ * Android verify flow: ① office presence (Wi-Fi / location) → ② fingerprint
+ * or PIN → submit. `Ready` means the identity prompt may be shown (the sheet
+ * auto-launches it once); `Authenticating` means the OS prompt is on screen.
+ */
+enum class VerifyStep { Collecting, Ready, Authenticating, Submitting }
 
-enum class VerifyErrorKind { Location, Face, Generic }
+enum class VerifyErrorKind { Location, Face, Identity, Generic }
+
+/** Remediation the sheet can offer for a verify error (one-tap fixes). */
+enum class VerifyFix { None, RetryLocation, OpenAppSettings, EnableLocation, SetUpScreenLock, EnableFingerprint, Retry }
 
 data class VerifySubmitError(
     val kind: VerifyErrorKind,
     val title: String,
     val message: String,
     val code: String? = null,
+    val fix: VerifyFix = VerifyFix.None,
 )
+
+private val IDENTITY_CODES = setOf("DEVICE_CREDENTIAL_INVALID", "FINGERPRINT_LOCATION_REQUIRED")
 
 private val LOCATION_CODES = setOf(
     "OUTSIDE_GEOFENCE", "LOCATION_REQUIRED", "OFFICE_LOCATION_NOT_CONFIGURED", "LOCATION_TOO_COARSE",
@@ -75,7 +86,11 @@ fun classifySubmitError(message: String, code: String?, action: AttendanceAction
             lower.contains("location") || lower.contains(" m from")))
     val isFace = (code != null && code in FACE_CODES) || (code == null && lower.contains("face"))
     return when {
-        isLocation -> VerifySubmitError(VerifyErrorKind.Location, "Location Mismatch", message, code)
+        code == "DEVICE_CREDENTIAL_INVALID" ->
+            VerifySubmitError(VerifyErrorKind.Identity, "Fingerprint Not Recognised", message, code, VerifyFix.EnableFingerprint)
+        code != null && code in IDENTITY_CODES ->
+            VerifySubmitError(VerifyErrorKind.Location, "Location Mismatch", message, code, VerifyFix.RetryLocation)
+        isLocation -> VerifySubmitError(VerifyErrorKind.Location, "Location Mismatch", message, code, VerifyFix.RetryLocation)
         isFace -> VerifySubmitError(VerifyErrorKind.Face, "Face Mismatch", message, code)
         else -> VerifySubmitError(
             VerifyErrorKind.Generic,
@@ -90,6 +105,12 @@ data class VerifySession(
     val action: AttendanceAction,
     val workMode: WorkMode,
     val step: VerifyStep = VerifyStep.Collecting,
+    /** Step ① applies (office/hybrid clock-in, office-session clock-out). */
+    val needsPresence: Boolean = true,
+    /** Hybrid clock-in: a missing/outside fix downgrades to remote instead of blocking. */
+    val presenceOptional: Boolean = false,
+    /** Office Wi-Fi or an inside-geofence fix proved presence (checked on-device first). */
+    val presenceProven: Boolean = false,
     /** Org has the office Wi-Fi allow-list configured. */
     val wifiConfigured: Boolean = false,
     /** Connected BSSID when on Wi-Fi, else null (mobile data / permissionless). */
@@ -97,8 +118,12 @@ data class VerifySession(
     /** Connected to a registered office AP. */
     val wifiVerified: Boolean = false,
     val location: LocationProof? = null,
+    /** Distance from the office for the status row, when a fix was taken. */
+    val distanceMeters: Int? = null,
     val locationError: String? = null,
     val submitError: VerifySubmitError? = null,
+    /** Bumped each time the identity prompt should (re)launch automatically. */
+    val promptToken: Int = 0,
 )
 
 data class AttendanceUiState(
@@ -704,15 +729,19 @@ class AttendanceViewModel(
     }
 
     fun dismissVerify() {
-        if (_ui.value.verifySession?.step == VerifyStep.Submitting) return
+        val step = _ui.value.verifySession?.step
+        if (step == VerifyStep.Submitting || step == VerifyStep.Authenticating) return
         _ui.value = _ui.value.copy(verifySession = null, pendingAction = null)
     }
 
     /**
-     * Opens the verification flow for a clock action. When the org policy does
-     * not gate attendance the action submits immediately; otherwise the
-     * `ClockInVerifySheet` collects office signals (Wi-Fi BSSID + geolocation)
-     * and the face-capture step gates the device-biometric proof.
+     * Opens the clock flow. Same trigger as web/desktop: when the org does not
+     * enforce attendance verification the action submits directly. Otherwise:
+     *   ① office presence — office Wi-Fi, else a precise location fix checked
+     *      against the geofence on-device (office/hybrid clock-in, office-session
+     *      clock-out). Remote skips this step.
+     *   ② fingerprint / PIN — the sheet auto-launches the OS prompt, which
+     *      unlocks the enrolled device credential; the server verifies it.
      */
     fun prepare(action: AttendanceAction, onPermissionRequired: () -> Unit) {
         // Double-tap / re-entry guard: one clock action at a time.
@@ -729,109 +758,145 @@ class AttendanceViewModel(
             return
         }
         policyRetried = false
-        val verificationRequired = requiresAttendanceVerification(
-            policy, action, _ui.value.workMode, _ui.value.status?.workMode,
-        )
-        if (verificationRequired && _ui.value.workMode == WorkMode.Remote && action == AttendanceAction.ClockIn) {
-            // Remote clock-ins need a face descriptor the mobile app cannot
-            // produce today; say so plainly instead of looping the camera.
-            _ui.value = _ui.value.copy(
-                error = "Remote login requires native face matching. Enroll with the web app or use office login on this device.",
-            )
-            return
-        }
+        val mode = _ui.value.workMode
+        val sessionMode = _ui.value.status?.workMode
         _ui.value = _ui.value.copy(pendingAction = action, error = null)
-        if (!verificationRequired) {
-            submit(fingerprintVerified = false)
+        if (!requiresAttendanceVerification(policy, action, mode, sessionMode)) {
+            submitUnverified()
             return
         }
+        val needsPresence = requiresOfficePresence(policy, action, mode, sessionMode)
+        val optional = officePresenceIsOptional(action, mode)
+        val existing = _ui.value.verifySession?.takeIf { it.action == action }
         _ui.value = _ui.value.copy(
-            verifySession = VerifySession(action = action, workMode = _ui.value.workMode),
+            verifySession = VerifySession(
+                action = action,
+                workMode = mode,
+                step = if (needsPresence) VerifyStep.Collecting else VerifyStep.Ready,
+                needsPresence = needsPresence,
+                presenceOptional = optional,
+                promptToken = (existing?.promptToken ?: 0) + if (needsPresence) 0 else 1,
+            ),
         )
-        viewModelScope.launch(Dispatchers.IO) {
-            // Office signals in the same spirit as the web modal: Wi-Fi BSSID
-            // plus a geolocation fix, either of which can satisfy the server.
-            val bssid = wifiProvider?.currentBssid()
-            val wifiConfigured = policy.wifiVerificationEnabled && policy.officeWifiBssids.isNotEmpty()
-            val allowedBssids = policy.officeWifiBssids.mapNotNull(WifiProvider.Companion::normaliseBssid).toSet()
-            val wifiVerified = wifiConfigured && bssid != null && bssid in allowedBssids
-
-            var proof: LocationProof? = null
-            var locationError: String? = null
-            if (requiresLocation(policy, _ui.value.workMode) && !wifiVerified) {
-                if (!locationProvider.hasPrecisePermission()) {
-                    withContext(Dispatchers.Main) { onPermissionRequired() }
-                    // Stay in Collecting; resumePending() re-enters after the
-                    // permission prompt resolves.
-                    return@launch
-                }
-                runCatching { locationProvider.currentPreciseLocation() }.fold(
-                    onSuccess = { proof = it },
-                    onFailure = { locationError = it.message ?: "Location unavailable" },
-                )
-            }
-            _ui.value = _ui.value.copy(
-                verifySession = VerifySession(
-                    action = action,
-                    workMode = _ui.value.workMode,
-                    step = VerifyStep.Ready,
-                    wifiConfigured = wifiConfigured,
-                    wifiBssid = bssid,
-                    wifiVerified = wifiVerified,
-                    location = proof,
-                    locationError = locationError,
-                ),
-            )
-        }
+        if (!needsPresence) return
+        viewModelScope.launch(Dispatchers.IO) { collectPresence(policy, action, optional, onPermissionRequired) }
     }
 
-    fun submit(fingerprintVerified: Boolean) {
-        // Same fail-loud rule as prepare(): a missing action or policy here
-        // means biometric confirmation returned after state was cleared.
-        val action = _ui.value.pendingAction ?: run {
-            _ui.value = _ui.value.copy(
-                error = "That attendance action expired. Tap clock in or out again.",
-            )
-            return
-        }
-        val policy = _ui.value.policy ?: run {
-            _ui.value = _ui.value.copy(error = "Attendance settings are unavailable. Retrying now.")
-            refresh()
-            return
-        }
-        val session = _ui.value.verifySession
-        val proof = session?.location
-        val verificationRequired = requiresAttendanceVerification(
-            policy,
-            action,
-            _ui.value.workMode,
-            _ui.value.status?.workMode,
-        )
-        val officeProofOk = session?.wifiVerified == true || canUseFingerprintFallback(policy, _ui.value.workMode, proof)
-        if (verificationRequired && !officeProofOk) {
-            val message = session?.locationError ?: proof?.let { officeProofFailure(policy, it) }
-                ?: "Precise office location or the office Wi-Fi is required before confirming."
-            if (session != null) {
-                _ui.value = _ui.value.copy(
-                    verifySession = session.copy(
-                        step = VerifyStep.Ready,
-                        submitError = classifySubmitError(message, "LOCATION_REQUIRED", action),
-                    ),
+    private suspend fun collectPresence(
+        policy: AttendancePolicy,
+        action: AttendanceAction,
+        optional: Boolean,
+        onPermissionRequired: () -> Unit,
+    ) {
+        // Office Wi-Fi first: it proves presence without GPS (same as web).
+        val bssid = wifiProvider?.currentBssid()
+        val wifiConfigured = policy.wifiVerificationEnabled && policy.officeWifiBssids.isNotEmpty()
+        val allowedBssids = policy.officeWifiBssids.mapNotNull(WifiProvider.Companion::normaliseBssid).toSet()
+        val wifiVerified = wifiConfigured && bssid != null && bssid in allowedBssids
+
+        var fix: LocationProof? = null
+        var locationError: VerifySubmitError? = null
+        if (!wifiVerified) {
+            when {
+                !locationProvider.hasPrecisePermission() -> {
+                    // Prompt now; resumePending() re-enters after the dialog.
+                    withContext(Dispatchers.Main) { onPermissionRequired() }
+                    return
+                }
+                !locationProvider.isLocationEnabled() -> locationError = VerifySubmitError(
+                    VerifyErrorKind.Location, "Location Is Off",
+                    "Turn on location to verify you are at the office, or connect to the office Wi-Fi.",
+                    "LOCATION_DISABLED", VerifyFix.EnableLocation,
                 )
-            } else {
-                _ui.value = _ui.value.copy(error = message)
+                else -> runCatching { locationProvider.currentPreciseLocation() }.fold(
+                    onSuccess = { fix = it },
+                    onFailure = {
+                        locationError = VerifySubmitError(
+                            VerifyErrorKind.Location, "Location Unavailable",
+                            it.message ?: "Location unavailable", "LOCATION_REQUIRED", VerifyFix.RetryLocation,
+                        )
+                    },
+                )
             }
+        }
+        val proof = fix
+        val proven = wifiVerified || (proof != null && canUseFingerprintFallback(policy, WorkMode.Office, proof))
+        val lat = policy.officeLatitude
+        val lng = policy.officeLongitude
+        val distance = if (proof != null && lat != null && lng != null) {
+            distanceMeters(proof.latitude, proof.longitude, lat, lng).toInt()
+        } else null
+        // Check the geofence on-device so the user sees why *before* the
+        // fingerprint prompt, not after a server round trip.
+        val blocking = when {
+            proven || optional -> null
+            locationError != null -> locationError
+            proof != null -> classifySubmitError(officeProofFailure(policy, proof), "OUTSIDE_GEOFENCE", action)
+            else -> classifySubmitError("Precise office location or the office Wi-Fi is required.", "LOCATION_REQUIRED", action)
+        }
+        val current = _ui.value.verifySession ?: return
+        _ui.value = _ui.value.copy(
+            verifySession = current.copy(
+                step = VerifyStep.Ready,
+                wifiConfigured = wifiConfigured,
+                wifiBssid = bssid,
+                wifiVerified = wifiVerified,
+                presenceProven = proven,
+                location = proof,
+                distanceMeters = distance,
+                locationError = locationError?.message,
+                submitError = blocking,
+                // Presence settled (or optional for hybrid): launch the prompt.
+                promptToken = if (blocking == null) current.promptToken + 1 else current.promptToken,
+            ),
+        )
+    }
+
+    /** The OS fingerprint/PIN prompt is now on screen (sheet stays put, Cancel disabled). */
+    fun identityPromptShown() {
+        val session = _ui.value.verifySession ?: return
+        if (session.step != VerifyStep.Ready) return
+        _ui.value = _ui.value.copy(verifySession = session.copy(step = VerifyStep.Authenticating, submitError = null))
+    }
+
+    /** Re-launch the identity prompt (user tapped "Use fingerprint / PIN"). */
+    fun requestIdentityPrompt() {
+        val session = _ui.value.verifySession ?: return
+        if (session.step == VerifyStep.Submitting || session.step == VerifyStep.Authenticating) return
+        _ui.value = _ui.value.copy(
+            verifySession = session.copy(step = VerifyStep.Ready, submitError = null, promptToken = session.promptToken + 1),
+        )
+    }
+
+    /**
+     * The OS prompt unlocked the device credential: submit with it. The server
+     * re-checks office presence (Wi-Fi/geofence) and verifies the credential.
+     */
+    fun submitWithCredential(credential: DeviceCredentialProof) {
+        val action = _ui.value.pendingAction ?: run {
+            _ui.value = _ui.value.copy(verifySession = null, error = "That attendance action expired. Tap clock in or out again.")
             return
         }
+        execute(action, _ui.value.verifySession, credential)
+    }
+
+    /** No verification required by the org: submit exactly like web/desktop. */
+    private fun submitUnverified() {
+        val action = _ui.value.pendingAction ?: return
+        execute(action, null, null)
+    }
+
+    private fun execute(action: AttendanceAction, session: VerifySession?, credential: DeviceCredentialProof?) {
         _ui.value = _ui.value.copy(
             clockBusy = true, error = null, message = null,
-            verifySession = session?.copy(step = VerifyStep.Submitting),
+            verifySession = session?.copy(step = VerifyStep.Submitting, submitError = null),
         )
+        val mode = _ui.value.workMode
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 when (action) {
-                    AttendanceAction.ClockIn -> repository.clockIn(_ui.value.workMode, proof, fingerprintVerified, session?.wifiBssid)
-                    AttendanceAction.ClockOut -> repository.clockOut(proof, fingerprintVerified, session?.wifiBssid)
+                    AttendanceAction.ClockIn -> repository.clockIn(mode, session?.location, credential, session?.wifiBssid)
+                    AttendanceAction.ClockOut -> repository.clockOut(session?.location, credential, session?.wifiBssid)
                 }
             }.fold(
                 onSuccess = { result ->
@@ -843,21 +908,22 @@ class AttendanceViewModel(
                     )
                 },
                 onFailure = { error ->
-                    val code = (error as? AttendanceFailure)?.code
+                    val failure = error as? AttendanceFailure
                     val message = error.message ?: "Attendance action failed"
-                    if (session != null) {
+                    val current = _ui.value.verifySession
+                    if (current != null) {
                         _ui.value = _ui.value.copy(
                             clockBusy = false,
-                            verifySession = session.copy(
+                            verifySession = current.copy(
                                 step = VerifyStep.Ready,
-                                submitError = classifySubmitError(message, code, action),
+                                submitError = classifySubmitError(message, failure?.code, action),
                             ),
                         )
                     } else {
                         _ui.value = _ui.value.copy(clockBusy = false, pendingAction = null, error = message)
                     }
                     // "Already logged in" etc. mean our status is stale; resync it.
-                    if ((error as? AttendanceFailure)?.statusCode in 400..409) resyncStatus()
+                    if (failure?.statusCode in 400..409) resyncStatus()
                 },
             )
         }
@@ -870,27 +936,47 @@ class AttendanceViewModel(
         }
     }
 
-    /** Location permission was denied from the verification flow: surface it in the sheet, don't hang in Collecting. */
-    fun locationPermissionDenied() {
+    /** Another device (web tab / desktop) clocked in/out or took a break: refetch. */
+    fun onRemoteAttendanceChange() {
+        if (_ui.value.clockBusy) return
+        resyncStatus()
+    }
+
+    /**
+     * Location permission was not granted from the flow. `permanentlyDenied`
+     * means Android will no longer show the dialog, so offer app settings.
+     */
+    fun locationPermissionDenied(permanentlyDenied: Boolean = false, approximateOnly: Boolean = false) {
         val session = _ui.value.verifySession
-        val message = "Precise location permission is required for verified office attendance. Allow \"Precise\" location, or connect to the office Wi-Fi."
+        val message = when {
+            approximateOnly -> "Only approximate location was allowed. Choose \"Precise\" so the office geofence can be checked, or connect to the office Wi-Fi."
+            permanentlyDenied -> "Location permission is off for AINO. Open app settings → Permissions → Location, choose Allow and turn on Precise location."
+            else -> "Location permission is required to verify you are at the office. Allow precise location, or connect to the office Wi-Fi."
+        }
         if (session == null) { _ui.value = _ui.value.copy(error = message); return }
+        if (session.presenceOptional) {
+            // Hybrid: continue as remote rather than blocking the clock-in.
+            _ui.value = _ui.value.copy(
+                verifySession = session.copy(step = VerifyStep.Ready, locationError = message, promptToken = session.promptToken + 1),
+            )
+            return
+        }
+        val error = VerifySubmitError(
+            VerifyErrorKind.Location, "Location Permission Needed", message, "LOCATION_REQUIRED",
+            if (permanentlyDenied) VerifyFix.OpenAppSettings else VerifyFix.RetryLocation,
+        )
         _ui.value = _ui.value.copy(
-            verifySession = session.copy(
-                step = VerifyStep.Ready,
-                locationError = message,
-                submitError = classifySubmitError(message, "LOCATION_REQUIRED", session.action),
-            ),
+            verifySession = session.copy(step = VerifyStep.Ready, locationError = message, submitError = error),
         )
     }
 
-    /** Device-identity (biometric/credential) prompt failed: show it inside the sheet. */
-    fun reportVerifyError(message: String) {
+    /** The identity prompt failed or is unavailable: show it inside the sheet. */
+    fun reportVerifyError(message: String, fix: VerifyFix = VerifyFix.Retry, title: String = "Verification Failed") {
         val session = _ui.value.verifySession ?: run { _ui.value = _ui.value.copy(error = message); return }
         _ui.value = _ui.value.copy(
             verifySession = session.copy(
                 step = VerifyStep.Ready,
-                submitError = VerifySubmitError(VerifyErrorKind.Generic, "Verification Failed", message, "DEVICE_AUTH"),
+                submitError = VerifySubmitError(VerifyErrorKind.Identity, title, message, "DEVICE_AUTH", fix),
             ),
         )
     }

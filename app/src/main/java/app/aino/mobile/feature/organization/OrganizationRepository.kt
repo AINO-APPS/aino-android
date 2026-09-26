@@ -33,6 +33,38 @@ class OrganizationRepository(
     fun createOrg(name: String): CreateOrgResponse =
         mutate("org", buildJsonObject { put("name", name) }, "POST")
 
+    // ── My salary slips (P10.3 self-service) ────────────────────────────────
+
+    /** Web `Promise.all([getMySalarySlips(), getMyBankDetails()])`. */
+    fun mySalary(): MySalaryData = load {
+        // @api GET compensation/my-slips
+        val slips: List<MySlip> = decode(api.execute(ApiRequest(path = "compensation/my-slips")))
+        // @api GET compensation/my-bank-details
+        val bank = json.decodeFromString<MyBankDetails?>(
+            api.execute(ApiRequest(path = "compensation/my-bank-details")).bodyAsString().ifBlank { "null" },
+        )
+        MySalaryData(slips, bank)
+    }
+
+    /** `application/pdf` bytes of an own published slip (no YTD block). */
+    fun mySlipPdf(id: Long): ByteArray = load {
+        // @api GET compensation/my-slips/:id/pdf
+        api.execute(ApiRequest(path = "compensation/my-slips/$id/pdf", headers = mapOf("Accept" to "application/pdf"))).body
+    }
+
+    /** Saving resets verification server-side (`is_verified = false`). */
+    fun saveMyBankDetails(form: MyBankForm): MessageResult {
+        val body = buildJsonObject {
+            put("account_holder_name", form.accountHolderName)
+            put("account_number", form.accountNumber)
+            put("ifsc_code", form.ifscCode)
+            put("bank_name", form.bankName)
+            put("account_type", form.accountType)
+        }
+        // @api POST compensation/my-bank-details
+        return mutate("compensation/my-bank-details", body, "POST")
+    }
+
     // ── Members (pickers) ───────────────────────────────────────────────────
 
     /**

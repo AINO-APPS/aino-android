@@ -90,6 +90,34 @@ fun taskLinkRoute(task: String?, tab: String?, sprintId: String?): String =
 const val ADMIN_AGILE_ROUTE = "admin/agile"
 const val ADMIN_PROJECTS_ROUTE = "admin/projects"
 
+/** P10.1: one Admin section as a full-screen page (web `/admin?tab=<key>`). */
+const val ADMIN_SECTION_ROUTE = "admin/s/{key}"
+fun adminSectionRoute(key: String): String = "admin/s/" + java.net.URLEncoder.encode(key, "UTF-8")
+
+/** P10.1: the web `UserDrawer` as a full-screen page. */
+const val ADMIN_USER_ROUTE = "admin/users/{userId}"
+fun adminUserRoute(userId: Long): String = "admin/users/$userId"
+
+/** P10.3: a payroll page (web `/admin?tab=compensation|salary-slips|payment-config`). */
+const val ADMIN_PAYROLL_ROUTE = "admin/payroll/{key}"
+fun adminPayrollRoute(key: String): String = "admin/payroll/" + java.net.URLEncoder.encode(key, "UTF-8")
+
+/** `/admin?tab=` keys of the payroll pages. */
+val ADMIN_PAYROLL_PAGE_KEYS = setOf("compensation", "salary-slips", "payment-config")
+
+/** P10.3 Android-only pages: one employee's payroll record, one salary slip. */
+const val ADMIN_PAYROLL_EMPLOYEE_ROUTE = "admin/payroll-employee/{userId}?name={name}"
+fun adminPayrollEmployeeRoute(userId: Long, name: String): String =
+    "admin/payroll-employee/$userId?name=" + java.net.URLEncoder.encode(name, "UTF-8")
+const val ADMIN_SALARY_SLIP_ROUTE = "admin/salary-slip/{slipId}"
+fun adminSalarySlipRoute(slipId: Long): String = "admin/salary-slip/$slipId"
+
+/** `/admin?tab=` keys rendered by the shared Admin section page (web `SECTIONS` + Android-only pages). */
+val ADMIN_SECTION_PAGE_KEYS = setOf(
+    "home", "users", "add", "role-requests", "payroll", "audit", "org-settings",
+    "organizations", "task-labels", "registration", "announcements",
+)
+
 /** P8: `EmployeeDashboard.tsx` — a manager's view of one team member (full screen, own back button). */
 const val MANAGER_MEMBER_ROUTE = "manager/member/{userId}"
 fun managerMemberRoute(userId: Long): String = "manager/member/$userId"
@@ -109,6 +137,11 @@ private val FULL_SCREEN_ROUTES = setOf(
     NOTE_HISTORY_ROUTE,
     ADMIN_AGILE_ROUTE,
     ADMIN_PROJECTS_ROUTE,
+    ADMIN_SECTION_ROUTE,
+    ADMIN_USER_ROUTE,
+    ADMIN_PAYROLL_ROUTE,
+    ADMIN_PAYROLL_EMPLOYEE_ROUTE,
+    ADMIN_SALARY_SLIP_ROUTE,
     MANAGER_MEMBER_ROUTE,
 )
 
@@ -154,6 +187,10 @@ fun webLinkToRoute(link: String, noteRoute: (pageId: String) -> String? = ::note
         path == "/admin" -> when (query["tab"]) {
             "agile", "labels" -> ADMIN_AGILE_ROUTE
             "projects" -> ADMIN_PROJECTS_ROUTE
+            // Web opens the UserDrawer for `userId`; Android's equivalent is the user detail page.
+            "users" -> query["userId"]?.toLongOrNull()?.let(::adminUserRoute) ?: adminSectionRoute("users")
+            in ADMIN_SECTION_PAGE_KEYS -> adminSectionRoute(query.getValue("tab"))
+            in ADMIN_PAYROLL_PAGE_KEYS -> adminPayrollRoute(query.getValue("tab"))
             else -> AinoDestination.Admin.route
         }
         path == "/agile-settings" -> ADMIN_AGILE_ROUTE
@@ -178,6 +215,16 @@ fun bottomBarRoute(route: String?): String? = when (route) {
     TASK_LINK_ROUTE -> AinoDestination.Tasks.route
     SPRINT_INSIGHTS_ROUTE -> AinoDestination.Tasks.route
     else -> route
+}
+
+/**
+ * Body copy for a More-sheet destination without a native screen. The Tenants
+ * console is web / desktop only by product decision (P10.2): its routes need
+ * the platform realm, which Android does not sign in to.
+ */
+fun placeholderMessage(destination: AinoDestination): String = when (destination) {
+    AinoDestination.Tenants -> "The platform console is available on the web and desktop apps. Sign in there to manage tenants."
+    else -> "This feature module is next in the native rollout."
 }
 
 private val roleLevels = mapOf(

@@ -25,6 +25,11 @@ class LocationProvider(private val context: Context) {
         Manifest.permission.ACCESS_FINE_LOCATION,
     ) == PackageManager.PERMISSION_GRANTED
 
+    /** The system Location toggle (Quick Settings) is on. */
+    fun isLocationEnabled(): Boolean = runCatching {
+        LocationManagerCompat.isLocationEnabled(context.getSystemService(LocationManager::class.java))
+    }.getOrDefault(true)
+
     /**
      * The web asks `navigator.geolocation` (fused, high accuracy). GPS alone
      * indoors often never fixes, so: reuse a fresh (<2 min) cached fix, else ask

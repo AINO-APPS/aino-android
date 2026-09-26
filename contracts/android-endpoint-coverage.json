@@ -6,12 +6,197 @@
   },
   "totals": {
     "platform": 464,
-    "covered": 248,
-    "waived": 0,
-    "missing": 216,
+    "covered": 336,
+    "waived": 44,
+    "missing": 84,
     "unmatched": 0
   },
   "covered": [
+    {
+      "method": "GET",
+      "path": "/api/admin/announcements",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/announcements",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/announcements/:id",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/announcements/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/audit-logs",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/invite-codes",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/invite-codes",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/invite-codes/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/organizations",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/organizations",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/organizations/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/organizations/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/organizations/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/pay-periods",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/pay-periods",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/pay-periods/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/registration-settings",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/registration-settings",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/role-requests",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/role-requests/:param/approve",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/role-requests/:param/cancel",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/role-requests/:param/reject",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/stats",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/task-labels",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/task-labels",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/task-labels/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/task-labels/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/users",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/users",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/users/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/users/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/users/:param/assignment",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/users/:param/deactivate",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/users/:param/face-enroll",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/users/:param/reset-password",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/admin/users/:param/role",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/users/import",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
     {
       "method": "GET",
       "path": "/api/agile/config",
@@ -156,6 +341,46 @@
       "method": "POST",
       "path": "/api/auth/logout",
       "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/branding",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/BrandingAdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/branding",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/BrandingAdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/branding/email-templates",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/BrandingAdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/branding/email-templates/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/BrandingAdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/branding/email-templates/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/BrandingAdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/branding/email-templates/:param/preview",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/BrandingAdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/branding/logo",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/BrandingAdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/branding/logo",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/BrandingAdminRepository.kt"
     },
     {
       "method": "GET",
@@ -431,6 +656,176 @@
       "method": "POST",
       "path": "/api/chat/users/:param/block",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/bank-details",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/bank-details/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/bank-details/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/bank-details/:param/approve",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/bank-details/:param/reject",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/bank-details/:param/verify",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/bank-verifications",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/ctc-config",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/compensation/ctc-config",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/disburse",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/disburse/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/disburse/retry/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/disbursements",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/employees",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/employees/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/employees/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/compensation/employees/:param/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/my-bank-details",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/my-bank-details",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/my-slips",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/my-slips/:param/pdf",
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/payment-config",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/compensation/payment-config",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/payment-config/test",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/payroll-run",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/salary-slips",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/salary-slips/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/salary-slips/:param/pdf",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/compensation/salary-slips/:param/publish",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/salary-slips/bulk-publish",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/compensation/templates",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/compensation/templates",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/compensation/templates/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/compensation/templates/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/CompensationRepository.kt"
     },
     {
       "method": "GET",
@@ -788,9 +1183,44 @@
       "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
     },
     {
+      "method": "POST",
+      "path": "/api/org/invite",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/org/members",
       "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org/remove-member",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/roles",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org/roles",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/org/roles/:role_key",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/org/roles/:role_key",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/org/settings",
+      "source": "app/src/main/java/app/aino/mobile/feature/admin/AdminRepository.kt"
     },
     {
       "method": "GET",
@@ -911,6 +1341,16 @@
       "method": "PATCH",
       "path": "/api/projects/:param/archive",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/ProjectsRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/branding",
+      "source": "app/src/main/java/app/aino/mobile/core/branding/Branding.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/branding/logo",
+      "source": "app/src/main/java/app/aino/mobile/core/branding/Branding.kt"
     },
     {
       "method": "GET",

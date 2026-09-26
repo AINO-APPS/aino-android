@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.Business
+import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,7 +46,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 
 /**
  * Organization page — port of `client/src/pages/Organization.tsx`: the org
- * title, the tab strip (My Department · My Team · Org Chart · Task Labels for
+ * title, the tab strip (Salary Slips with payroll · My Department · My Team · Org Chart · Task Labels for
  * managers) and the no-org states. Drawn inside the app shell.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,10 +57,12 @@ fun OrganizationScreen(
     userId: Long,
     onOrgCreated: (orgId: Long) -> Unit,
     modifier: Modifier = Modifier,
+    /** Tenant has payroll: adds the Salary Slips tab (first, default). */
+    payroll: Boolean = false,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = LocalWebColors.current
-    LaunchedEffect(userRole, userId) { viewModel.bind(userRole, userId) }
+    LaunchedEffect(userRole, userId, payroll) { viewModel.bind(userRole, userId, payroll) }
 
     PullToRefreshBox(
         isRefreshing = ui.refreshing,
@@ -96,6 +99,7 @@ fun OrganizationScreen(
                     OrgTabStrip(ui.tabs, ui.tab, viewModel::selectTab)
                     Spacer(Modifier.height(20.dp))
                     when (ui.tab) {
+                        OrgTab.Salary -> if (ui.payroll) MySalarySlipsTab(ui, viewModel)
                         OrgTab.Departments -> DepartmentsTab(ui, viewModel)
                         OrgTab.Teams -> TeamsTab(ui, viewModel)
                         OrgTab.Chart -> OrgChartTab(ui.chart)
@@ -113,6 +117,7 @@ private fun PageTitle(text: String) {
 }
 
 private fun tabIcon(tab: OrgTab): ImageVector = when (tab) {
+    OrgTab.Salary -> Icons.Outlined.CreditCard
     OrgTab.Departments -> Icons.Outlined.Business
     OrgTab.Teams -> Icons.Outlined.Group
     OrgTab.Chart -> Icons.Outlined.AccountTree

@@ -20,10 +20,26 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AccountTree
+import androidx.compose.material.icons.outlined.Apartment
+import androidx.compose.material.icons.outlined.Business
+import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Groups
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Label
+import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.PersonAdd
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.ViewKanban
+import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,16 +59,45 @@ import androidx.compose.ui.unit.em
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 
-/** An Admin panel section (`pages/admin/index.tsx` `SECTIONS`) that exists on Android. */
-data class AdminSection(val key: String, val label: String, val group: String, val icon: ImageVector)
+/**
+ * An Admin panel section (`pages/admin/index.tsx` `SECTIONS`) that exists on Android.
+ * [requires] is the web's `requires` (`orgId` | `super` | `approver`) plus the
+ * Android-only `platform`; [feature] is the tenant feature gate.
+ */
+data class AdminSection(
+    val key: String,
+    val label: String,
+    val group: String,
+    val icon: ImageVector,
+    val requires: String? = null,
+    val feature: String? = null,
+)
 
 /**
- * Only the sections Android implements; the rest of the web registry lands
- * with P10.1. Both require an org and the `agile` feature (`isAllowed`).
+ * The web registry in its order, limited to what Android implements, plus the
+ * Android-only pages for endpoints the web UI never calls (Organizations,
+ * Task Labels, Registration & Invites, Announcements).
  */
 private val ANDROID_ADMIN_SECTIONS = listOf(
-    AdminSection("agile", "Agile Config", "Structure", Icons.Outlined.AccountTree),
-    AdminSection("projects", "Projects", "Structure", Icons.Outlined.Folder),
+    AdminSection("home", "Home", "Overview", Icons.Outlined.Home),
+    AdminSection("users", "Users", "People", Icons.Outlined.People),
+    AdminSection("add", "Add People", "People", Icons.Outlined.PersonAdd),
+    AdminSection("role-requests", "Role Requests", "People", Icons.Outlined.Refresh),
+    AdminSection("departments", "Departments", "Structure", Icons.Outlined.Business, requires = "orgId"),
+    AdminSection("teams", "Teams", "Structure", Icons.Outlined.Groups, requires = "orgId"),
+    AdminSection("org-chart", "Org Chart", "Structure", Icons.Outlined.AccountTree, requires = "orgId"),
+    AdminSection("agile", "Agile Config", "Structure", Icons.Outlined.ViewKanban, requires = "orgId", feature = "agile"),
+    AdminSection("projects", "Projects", "Structure", Icons.Outlined.Folder, requires = "orgId", feature = "agile"),
+    AdminSection("organizations", "Organizations", "Structure", Icons.Outlined.Apartment, requires = "platform"),
+    AdminSection("task-labels", "Task Labels", "Structure", Icons.Outlined.Label),
+    AdminSection("payroll", "Payroll Periods", "Operations", Icons.Outlined.Payments, feature = "payroll"),
+    AdminSection("compensation", "Compensation", "Operations", Icons.Outlined.AccountBalanceWallet, requires = "orgId", feature = "payroll"),
+    AdminSection("salary-slips", "Salary Slips", "Operations", Icons.AutoMirrored.Outlined.ReceiptLong, requires = "orgId", feature = "payroll"),
+    AdminSection("payment-config", "Payment Settings", "Operations", Icons.Outlined.CreditCard, requires = "orgId", feature = "payroll"),
+    AdminSection("audit", "Audit Logs", "Compliance", Icons.Outlined.History),
+    AdminSection("org-settings", "Org Settings", "Settings", Icons.Outlined.Settings, requires = "orgId"),
+    AdminSection("registration", "Registration & Invites", "Settings", Icons.Outlined.VpnKey),
+    AdminSection("announcements", "Announcements", "Settings", Icons.Outlined.Campaign, requires = "super"),
 )
 
 private val ADMIN_GROUP_ORDER = listOf("Overview", "People", "Structure", "Operations", "Compliance", "Settings")
@@ -62,7 +107,7 @@ private val ADMIN_ROLES = setOf("hr_admin", "super_admin", "platform_admin")
 fun canOpenAdmin(role: String?): Boolean = role in ADMIN_ROLES
 
 /**
- * `isAllowed` for the ported sections: `requires: "orgId"` plus `feature: "agile"`.
+ * Web `isAllowed`: the feature gate first, then `requires`.
  * [ungatedPlatformAdmin] mirrors the tenant-less platform admin who bypasses feature gates.
  */
 fun allowedAdminSections(
@@ -72,8 +117,17 @@ fun allowedAdminSections(
     ungatedPlatformAdmin: Boolean = false,
 ): List<AdminSection> {
     if (!canOpenAdmin(role)) return emptyList()
-    val agile = ungatedPlatformAdmin || features["agile"] == true
-    return ANDROID_ADMIN_SECTIONS.filter { orgId != null && agile }
+    return ANDROID_ADMIN_SECTIONS.filter { section ->
+        val featureOk = section.feature == null || ungatedPlatformAdmin || features[section.feature] == true
+        featureOk && when (section.requires) {
+            null -> true
+            "orgId" -> orgId != null
+            "super" -> role == "super_admin" || role == "platform_admin"
+            "platform" -> role == "platform_admin"
+            "approver" -> role in ADMIN_ROLES
+            else -> true
+        }
+    }
 }
 
 /** Sections grouped in the web's `GROUP_ORDER`. */

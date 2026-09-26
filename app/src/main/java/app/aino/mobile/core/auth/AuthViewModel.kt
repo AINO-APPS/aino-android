@@ -103,16 +103,48 @@ class AuthViewModel(
 
     fun biometricCredentialId(): String? = biometricCredentials.credentialId()
 
-    fun enrollBiometric(authenticatedCipher: Cipher, deviceLabel: String) {
+    /** Enrolled before key v2 (biometric-only): one re-enable is needed for PIN + clock-in. */
+    fun biometricNeedsUpgrade(): Boolean = biometricCredentials.needsUpgrade()
+
+    /** API 30+: the key needs a CryptoObject-bound prompt; API 26–29: time-bound after the prompt. */
+    fun biometricUsesCryptoObject(): Boolean = biometricCredentials.usesCryptoObject()
+
+    /**
+     * Enroll this device once for both biometric sign-in and attendance.
+     * `onEnrolled` runs on success (e.g. continue a pending clock-in).
+     */
+    fun enrollBiometric(authenticatedCipher: Cipher, deviceLabel: String, onEnrolled: (() -> Unit)? = null) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 val credential = repository.enrollBiometric(deviceLabel)
                 biometricCredentials.save(credential, authenticatedCipher)
             }.fold(
-                onSuccess = { _ui.update { it.copy(biometricEnrolled = true, message = "Biometric sign-in enabled.", error = null) } },
-                onFailure = { error -> _ui.update { it.copy(error = error.message ?: "Could not enable biometric sign-in") } },
+                onSuccess = {
+                    _ui.update { it.copy(biometricEnrolled = true, message = "Fingerprint enabled for sign-in and clock-in.", error = null) }
+                    onEnrolled?.let { callback -> kotlinx.coroutines.withContext(Dispatchers.Main) { callback() } }
+                },
+                onFailure = { error -> _ui.update { it.copy(error = error.message ?: "Could not enable fingerprint") } },
             )
         }
+    }
+
+    /**
+     * Decrypt the device credential with an authenticated cipher for an
+     * attendance request. Returns null (and wipes the local copy) when the
+     * stored credential cannot be read, so the caller can offer re-enrollment.
+     */
+    fun unlockCredential(authenticatedCipher: Cipher): BiometricCredential? = runCatching {
+        biometricCredentials.read(authenticatedCipher)
+    }.getOrElse {
+        biometricCredentials.clear()
+        _ui.update { it.copy(biometricEnrolled = false) }
+        null
+    }
+
+    /** The server rejected this device's credential (revoked elsewhere): forget it locally. */
+    fun forgetInvalidCredential() {
+        biometricCredentials.clear()
+        _ui.update { it.copy(biometricEnrolled = false) }
     }
 
     fun biometricLogin(authenticatedCipher: Cipher) {
@@ -128,13 +160,22 @@ class AuthViewModel(
 
     fun disableBiometric() {
         biometricCredentials.clear()
-        _ui.update { it.copy(biometricEnrolled = false, message = "Biometric sign-in disabled.") }
+        _ui.update { it.copy(biometricEnrolled = false, message = "Fingerprint sign-in and clock-in disabled on this device.") }
     }
 
     fun reportBiometricError(message: String) = _ui.update { it.copy(error = message) }
 
     fun encryptionCipher(): Cipher = biometricCredentials.createEncryptionCipher()
     fun decryptionCipher(): Cipher? = biometricCredentials.createDecryptionCipher()
+
+    /** Refresh the enrolled flag (e.g. after a pre-v2 credential was dropped). */
+    fun syncBiometricEnrollment() = _ui.update { it.copy(biometricEnrolled = biometricCredentials.isEnrolled()) }
+
+    /** Drop a pre-v2 (biometric-only) credential so it can be re-enabled with PIN support. */
+    fun dropLegacyCredential() {
+        if (biometricCredentials.needsUpgrade()) biometricCredentials.clear()
+        syncBiometricEnrollment()
+    }
 
     /**
      * Renew the server's inactivity window only after real foreground input.

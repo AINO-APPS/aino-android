@@ -210,14 +210,33 @@ class ProjectsRepositoryTest {
     @Test
     fun adminSectionsAreGatedByOrgAndAgileFeature() {
         val agile = mapOf("agile" to true)
-        assertEquals(listOf("agile", "projects"), allowedAdminSections("hr_admin", 3, agile).map { it.key })
-        assertTrue(allowedAdminSections("hr_admin", null, agile).isEmpty())
-        assertTrue(allowedAdminSections("super_admin", 3, emptyMap()).isEmpty())
+        val hr = allowedAdminSections("hr_admin", 3, agile).map { it.key }
+        assertEquals(
+            listOf(
+                "home", "users", "add", "role-requests", "departments", "teams", "org-chart",
+                "agile", "projects", "task-labels", "audit", "org-settings", "registration",
+            ),
+            hr,
+        )
+        // Web isAllowed: no org hides the org-scoped sections; no feature hides agile / payroll.
+        val noOrg = allowedAdminSections("hr_admin", null, agile + ("payroll" to true)).map { it.key }
+        assertFalse("departments" in noOrg || "agile" in noOrg || "org-settings" in noOrg)
+        assertTrue("payroll" in noOrg && "users" in noOrg)
+        // P10.3: the org-scoped payroll pages need the feature and an org, after Payroll Periods.
+        assertFalse("compensation" in noOrg || "salary-slips" in noOrg || "payment-config" in noOrg)
+        val payroll = allowedAdminSections("hr_admin", 3, mapOf("payroll" to true)).map { it.key }
+        assertEquals(listOf("payroll", "compensation", "salary-slips", "payment-config"), payroll.filter { it in setOf("payroll", "compensation", "salary-slips", "payment-config") })
+        assertEquals(payroll.indexOf("payroll") + 1, payroll.indexOf("compensation"))
+        assertFalse("agile" in allowedAdminSections("super_admin", 3, emptyMap()).map { it.key })
         assertTrue(allowedAdminSections("manager", 3, agile).isEmpty())
-        assertEquals(2, allowedAdminSections("platform_admin", 3, emptyMap(), ungatedPlatformAdmin = true).size)
+        // Super admins get announcements; only platform admins get organizations.
+        val superKeys = allowedAdminSections("super_admin", 3, agile).map { it.key }
+        assertTrue("announcements" in superKeys && "organizations" !in superKeys)
+        val platform = allowedAdminSections("platform_admin", 3, emptyMap(), ungatedPlatformAdmin = true).map { it.key }
+        assertTrue(listOf("agile", "projects", "payroll", "organizations", "announcements").all { it in platform })
         val groups = groupAdminSections(allowedAdminSections("super_admin", 3, agile))
-        assertEquals(listOf("Structure"), groups.map { it.first })
-        assertEquals(listOf("Agile Config", "Projects"), groups.single().second.map { it.label })
+        assertEquals(listOf("Overview", "People", "Structure", "Compliance", "Settings"), groups.map { it.first })
+        assertTrue(groups.first { it.first == "Structure" }.second.map { it.label }.containsAll(listOf("Agile Config", "Projects")))
         assertTrue(canOpenAdmin("hr_admin"))
         assertFalse(canOpenAdmin("manager"))
     }

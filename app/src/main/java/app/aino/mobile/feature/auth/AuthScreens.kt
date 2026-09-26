@@ -64,16 +64,19 @@ fun LoginScreen(
     biometricEnrolled: Boolean,
     onLogin: (String, String) -> Unit,
     onBiometricLogin: () -> Unit,
+    /** P10.4 web `Login.tsx`: the tenant's public branding (`org_name`, `/public/branding/logo`). */
+    orgName: String? = null,
+    logoUrl: String? = null,
 ) {
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     val canSubmit = username.isNotBlank() && password.isNotEmpty() && !loading
     AuthFrame {
-        BrandMark()
+        if (logoUrl != null) OrgLogo(logoUrl) else BrandMark()
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Welcome to AINO", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text("Sign in to AINO", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Sign in to ${orgName?.takeIf(String::isNotBlank) ?: "AINO"}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         message?.let { AinoAlert(it, AlertTone.Success) }
         error?.let { AinoAlert(it, AlertTone.Error) }
@@ -181,6 +184,25 @@ private fun BrandMark() {
         contentAlignment = Alignment.Center,
     ) {
         Image(painterResource(R.drawable.aino_icon), contentDescription = "AINO", Modifier.size(44.dp).clip(RoundedCornerShape(11.dp)))
+    }
+}
+
+/** `.auth-logo`: the org logo (no auth header needed; the route is public). Falls back to the AINO mark on error. */
+@Composable
+private fun OrgLogo(url: String) {
+    var failed by remember(url) { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    if (failed) {
+        BrandMark()
+    } else {
+        coil3.compose.AsyncImage(
+            model = url,
+            imageLoader = app.aino.mobile.core.AppContainer.get(context).imageLoader,
+            contentDescription = "Organization",
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            onError = { failed = true },
+            modifier = Modifier.height(56.dp).widthIn(max = 200.dp),
+        )
     }
 }
 

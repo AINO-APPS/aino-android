@@ -16,6 +16,12 @@ class AinoDestinationTest {
     }
 
     @Test
+    fun tenantsPlaceholderPointsToTheWebConsole() {
+        assertTrue(placeholderMessage(AinoDestination.Tenants).contains("web and desktop"))
+        assertEquals("This feature module is next in the native rollout.", placeholderMessage(AinoDestination.Notifications))
+    }
+
+    @Test
     fun destinationFor_returnsNullForUnknownLabel() {
         assertNull(destinationFor("unknown"))
     }

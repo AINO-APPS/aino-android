@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
@@ -67,6 +68,7 @@ fun VerifyErrorBlock(
         isLocked -> Icons.Outlined.Schedule
         error.kind == VerifyErrorKind.Location -> Icons.Outlined.LocationOn
         error.kind == VerifyErrorKind.Face -> Icons.Outlined.Face
+        error.kind == VerifyErrorKind.Identity -> Icons.Outlined.Fingerprint
         else -> Icons.Outlined.ErrorOutline
     }
 

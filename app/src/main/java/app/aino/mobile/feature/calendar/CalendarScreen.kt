@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
+import app.aino.mobile.core.designsystem.tokens.toHexRgb
 import app.aino.mobile.core.designsystem.tokens.rem
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -72,6 +73,8 @@ fun CalendarScreen(
     val colors = LocalWebColors.current
     val zone = remember { ZoneId.systemDefault() }
     LaunchedEffect(userId) { viewModel.userId = userId }
+    // P10.4 web Calendar.tsx: new events and meetings use the org accent.
+    viewModel.accent = colors.primary.toHexRgb()
     val editorOpen = ui.editor != null
     LaunchedEffect(editorOpen) { if (editorOpen) onOpenEditor() }
     // The now-line and past-slot shading follow the clock.
@@ -252,7 +255,7 @@ private fun DayColumn(
                 Modifier.offset(x = left, y = item.startMin.dp).width(colWidth).height(height)
                     .shadow(1.dp, RoundedCornerShape(4.dp))
                     .clip(RoundedCornerShape(4.dp))
-                    .background(Color(parseHexColor(eventColor(item.event))))
+                    .background(Color(parseHexColor(eventColor(item.event, colors.primary.toHexRgb()))))
                     .clickable { viewModel.openEdit(item.event) }
                     .padding(horizontal = 4.dp, vertical = 2.dp),
             ) {
@@ -274,7 +277,7 @@ private fun DayColumn(
 @Composable
 private fun EventChip(event: CalendarEvent, fontRem: Double, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
-        modifier.clip(RoundedCornerShape(3.dp)).background(Color(parseHexColor(eventColor(event))))
+        modifier.clip(RoundedCornerShape(3.dp)).background(Color(parseHexColor(eventColor(event, LocalWebColors.current.primary.toHexRgb()))))
             .clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

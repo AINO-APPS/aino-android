@@ -104,12 +104,16 @@ class AttendanceRepository(
     fun submitOvertime(payload: OvertimePayload): AttendanceMutationResponse =
         mutate<OvertimePayload, AttendanceMutationResponse>("tracker/overtime-request", payload)
 
+    /**
+     * `credential` is the device credential unlocked by the fingerprint / PIN
+     * prompt; the server verifies it (bcrypt, owner, not revoked). Null when
+     * the org does not require attendance verification.
+     */
     fun clockIn(
         mode: WorkMode,
         proof: LocationProof?,
-        fingerprintVerified: Boolean,
+        credential: DeviceCredentialProof?,
         wifiBssid: String? = null,
-        faceDescriptor: List<Float>? = null,
     ): AttendanceActionResponse {
         return mutate<AttendanceActionRequest, AttendanceActionResponse>(
             "tracker/clock-in",
@@ -119,17 +123,15 @@ class AttendanceRepository(
                 longitude = proof?.longitude,
                 accuracy = proof?.accuracyMeters,
                 wifiBssid = wifiBssid,
-                faceDescriptor = faceDescriptor,
-                fingerprintVerified = fingerprintVerified.takeIf { it },
+                deviceCredential = credential,
             ),
         )
     }
 
     fun clockOut(
         proof: LocationProof?,
-        fingerprintVerified: Boolean,
+        credential: DeviceCredentialProof?,
         wifiBssid: String? = null,
-        faceDescriptor: List<Float>? = null,
     ): AttendanceActionResponse = mutate<AttendanceActionRequest, AttendanceActionResponse>(
         "tracker/clock-out",
         AttendanceActionRequest(
@@ -137,8 +139,7 @@ class AttendanceRepository(
             longitude = proof?.longitude,
             accuracy = proof?.accuracyMeters,
             wifiBssid = wifiBssid,
-            faceDescriptor = faceDescriptor,
-            fingerprintVerified = fingerprintVerified.takeIf { it },
+            deviceCredential = credential,
         ),
     )
 

@@ -81,9 +81,10 @@ fun FaceEnrollmentScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
         ) {
             Icon(Icons.Outlined.Info, null, Modifier.size(18.dp), tint = colors.primary)
             Text(
-                (if (enrolled) "To re-enroll" else "To enroll") +
-                    ", open AINO on the web or desktop app and go to Profile → Face Enrollment. " +
-                    "Face capture is not available in the Android app.",
+                "On this phone you clock in and out with your fingerprint or PIN — no face scan needed. " +
+                    "Enable it from Profile → Edit Profile → Fingerprint / PIN (or on your first clock-in). " +
+                    "Face enrollment is used by the web and desktop apps; " +
+                    (if (enrolled) "to re-enroll" else "to enroll") + ", open Profile → Face Enrollment there.",
                 color = colors.text, fontSize = 13.sp,
             )
         }

@@ -108,7 +108,9 @@ enum class RealtimeEvent(
         RealtimeReaction.MeetingState,
     ),
 
-    // ── Work surfaces (7) ────────────────────────────────────────────────
+    // ── Work surfaces (8) ────────────────────────────────────────────────
+    /** Clock-in/out or break taken on another device (web/desktop/Android): refetch tracker status. */
+    AttendanceUpdate("attendance_update", RealtimeDomain.Attendance, RealtimeReaction.Refetch),
     TaskAssigned("task_assigned", RealtimeDomain.Tasks, RealtimeReaction.Refetch),
     ApprovalUpdate("approval_update", RealtimeDomain.Approvals, RealtimeReaction.Refetch),
     LeaveUpdate("leave_update", RealtimeDomain.Leaves, RealtimeReaction.Refetch),
@@ -229,6 +231,7 @@ enum class RealtimeDomain {
     Call,
     Meeting,
     Tasks,
+    Attendance,
     Leaves,
     Approvals,
     Calendar,

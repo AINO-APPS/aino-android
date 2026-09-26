@@ -24,17 +24,42 @@ class AttendanceModelsTest {
     }
 
     @Test
-    fun remoteClockOutDoesNotRequireOfficeVerification() {
-        assertFalse(requiresAttendanceVerification(policy, AttendanceAction.ClockOut, WorkMode.Remote, "remote"))
+    fun fingerprintIsRequiredForEveryClockActionWhenVerificationIsOn() {
+        // Product decision: remote clock-in AND remote-session clock-out need the fingerprint/PIN.
+        assertTrue(requiresAttendanceVerification(policy, AttendanceAction.ClockOut, WorkMode.Remote, "remote"))
         assertTrue(requiresAttendanceVerification(policy, AttendanceAction.ClockIn, WorkMode.Remote, null))
         assertTrue(requiresAttendanceVerification(policy, AttendanceAction.ClockOut, WorkMode.Office, "office"))
     }
 
     @Test
+    fun officePresenceFollowsTheServerRules() {
+        // Clock-in: office + hybrid need presence, remote does not.
+        assertTrue(requiresOfficePresence(policy, AttendanceAction.ClockIn, WorkMode.Office, null))
+        assertTrue(requiresOfficePresence(policy, AttendanceAction.ClockIn, WorkMode.Hybrid, null))
+        assertFalse(requiresOfficePresence(policy, AttendanceAction.ClockIn, WorkMode.Remote, null))
+        // Clock-out: only an office session needs presence (a hybrid session is stored as office/remote).
+        assertTrue(requiresOfficePresence(policy, AttendanceAction.ClockOut, WorkMode.Remote, "office"))
+        assertFalse(requiresOfficePresence(policy, AttendanceAction.ClockOut, WorkMode.Office, "remote"))
+        // Hybrid clock-in falls back to remote instead of blocking.
+        assertTrue(officePresenceIsOptional(AttendanceAction.ClockIn, WorkMode.Hybrid))
+        assertFalse(officePresenceIsOptional(AttendanceAction.ClockIn, WorkMode.Office))
+        assertFalse(officePresenceIsOptional(AttendanceAction.ClockOut, WorkMode.Hybrid))
+    }
+
+    @Test
     fun disabledPolicyNeedsNoLocationOrIdentityGate() {
+        // Web/desktop parity: with verification off, clocking submits directly.
         val disabled = AttendancePolicy(verificationEnabled = false)
         assertFalse(requiresLocation(disabled, WorkMode.Office))
         assertFalse(requiresAttendanceVerification(disabled, AttendanceAction.ClockIn, WorkMode.Office, null))
+        assertFalse(requiresOfficePresence(disabled, AttendanceAction.ClockIn, WorkMode.Office, null))
+    }
+
+    @Test
+    fun biometricLoginFlagDefaultsToEnabledLikeTheServer() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        assertTrue(json.decodeFromString<AttendancePolicy>("{}").biometricLoginEnabled)
+        assertFalse(json.decodeFromString<AttendancePolicy>("""{"biometric_login_enabled":false}""").biometricLoginEnabled)
     }
 
     @Test

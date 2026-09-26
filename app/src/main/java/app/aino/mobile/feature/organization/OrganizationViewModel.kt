@@ -37,10 +37,12 @@ data class TeamEdit(
     val paused: Boolean = false,
 )
 
-enum class NoticeSlot { Departments, Teams, Labels }
+enum class NoticeSlot { Salary, Departments, Teams, Labels }
 
 data class OrganizationUiState(
     val role: String = "",
+    /** Tenant has payroll: shows the Salary Slips tab. */
+    val payroll: Boolean = false,
     val orgLoading: Boolean = false,
     val orgLoaded: Boolean = false,
     val org: OrgInfo? = null,
@@ -51,6 +53,7 @@ data class OrganizationUiState(
     val members: Section<List<OrgMember>> = Section(),
     val chart: Section<OrgChart> = Section(),
     val labels: Section<List<TaskLabel>> = Section(),
+    val salary: Section<MySalaryData> = Section(),
     val notices: Map<NoticeSlot, OrgNotice> = emptyMap(),
     val createOrgError: String? = null,
     val teamEdit: TeamEdit? = null,
@@ -58,12 +61,13 @@ data class OrganizationUiState(
     val busy: Boolean = false,
 ) {
     val isAdmin: Boolean get() = isOrgAdmin(role)
-    val tabs: List<OrgTab> get() = visibleTabs(role)
+    val tabs: List<OrgTab> get() = visibleTabs(role, payroll)
 
     /** Pull-to-refresh spinner: only once content is on screen (first load shows an inline indicator). */
     val refreshing: Boolean get() = orgLoaded && (orgLoading || currentSectionLoading)
 
     private val currentSectionLoading: Boolean get() = when (tab) {
+        OrgTab.Salary -> salary.loading
         OrgTab.Departments -> departments.loading
         OrgTab.Teams -> teams.loading
         OrgTab.Chart -> chart.loading
@@ -77,18 +81,27 @@ class OrganizationViewModel(private val repository: OrganizationRepository) : Vi
     private val noticeJobs = mutableMapOf<NoticeSlot, Job>()
     private var createErrorJob: Job? = null
     private var boundUser: Pair<String, Long>? = null
+    private var tabChosen = false
 
     /**
      * Called by the screen on entry with the signed-in user: a different user
      * resets the page, and every entry refetches in the background like the
-     * web's mount-time react-query refetch.
+     * web's mount-time react-query refetch. [payroll] shows the Salary Slips
+     * tab, which is then the default (web `useState("salary-slips")`).
      */
-    fun bind(userRole: String, userId: Long) {
+    fun bind(userRole: String, userId: Long, payroll: Boolean = false) {
         val key = userRole to userId
         val changed = boundUser != null && boundUser != key
         boundUser = key
-        if (changed) _ui.value = OrganizationUiState()
-        _ui.update { it.copy(role = userRole, tab = if (it.tab in visibleTabs(userRole)) it.tab else OrgTab.Departments) }
+        if (changed) {
+            _ui.value = OrganizationUiState()
+            tabChosen = false
+        }
+        _ui.update {
+            val tabs = visibleTabs(userRole, payroll)
+            val tab = if (tabChosen && it.tab in tabs) it.tab else defaultTab(userRole, payroll)
+            it.copy(role = userRole, payroll = payroll, tab = tab)
+        }
         refresh()
     }
 
@@ -110,6 +123,7 @@ class OrganizationViewModel(private val repository: OrganizationRepository) : Vi
 
     fun selectTab(tab: OrgTab) {
         if (tab !in _ui.value.tabs) return
+        tabChosen = true
         _ui.update { it.copy(tab = tab) }
         // react-query refetches a stale query on mount; cached rows stay visible meanwhile.
         loadTab(tab)
@@ -117,6 +131,7 @@ class OrganizationViewModel(private val repository: OrganizationRepository) : Vi
 
     private fun loadTab(tab: OrgTab) {
         when (tab) {
+            OrgTab.Salary -> if (_ui.value.payroll) loadSalary()
             OrgTab.Departments -> { loadDepartments(); loadMembers() }
             OrgTab.Teams -> { loadTeams(); loadMembers() }
             OrgTab.Chart -> loadChart()
@@ -153,6 +168,29 @@ class OrganizationViewModel(private val repository: OrganizationRepository) : Vi
         set = { s, v -> s.copy(chart = v) },
         fallback = "Failed to fetch org chart",
     ) { repository.orgChart(orgId) }
+
+    private fun loadSalary() = loadSection(
+        get = { it.salary },
+        set = { s, v -> s.copy(salary = v) },
+        fallback = "Failed to fetch salary slips",
+    ) { repository.mySalary() }
+
+    /** `handleSaveBank`: required-field check, save, refetch. */
+    fun saveMyBank(form: MyBankForm, onDone: () -> Unit) {
+        if (!form.complete) return notify(NoticeSlot.Salary, false, "Please fill in all required fields")
+        mutation(
+            action = { repository.saveMyBankDetails(form) },
+            onSuccess = { onDone(); loadSalary() },
+            onError = { notify(NoticeSlot.Salary, false, "Failed to save bank details") },
+        )
+    }
+
+    /** PDF bytes for [onReady]; a failure shows the web's "Failed to download PDF". */
+    fun downloadMySlip(id: Long, onReady: (ByteArray) -> Unit) = mutation(
+        action = { repository.mySlipPdf(id) },
+        onSuccess = onReady,
+        onError = { notify(NoticeSlot.Salary, false, "Failed to download PDF") },
+    )
 
     private fun loadLabels() = loadSection(
         get = { it.labels },

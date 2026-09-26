@@ -30,10 +30,11 @@ class OrganizationLogicTest {
             assertEquals(listOf(OrgTab.Departments, OrgTab.Teams, OrgTab.Chart), visibleTabs(it))
         }
         assertTrue(canManageLabels("manager"))
-        assertEquals(OrgTab.entries.toList(), visibleTabs("manager"))
+        // Without payroll the Salary Slips tab is hidden (P10.3).
+        assertEquals(OrgTab.entries.toList() - OrgTab.Salary, visibleTabs("manager"))
         assertFalse(isOrgAdmin("manager"))
         assertFalse(canManageLabels("team_lead"))
-        assertEquals(listOf("My Department", "My Team", "Org Chart", "Task Labels"), OrgTab.entries.map { it.label })
+        assertEquals(listOf("Salary Slips", "My Department", "My Team", "Org Chart", "Task Labels"), OrgTab.entries.map { it.label })
     }
 
     @Test

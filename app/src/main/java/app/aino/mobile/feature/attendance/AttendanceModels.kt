@@ -56,6 +56,12 @@ data class AttendancePolicy(
     @SerialName("office_wifi_bssids")
     @Serializable(with = BssidListSerializer::class)
     val officeWifiBssids: List<String> = emptyList(),
+    /**
+     * Org admin toggle "Allow biometric login". Like web/desktop it gates only
+     * biometric *sign-in* (`/auth/biometric/login`); attendance fingerprint is
+     * governed by [verificationEnabled]. Defaults to true, as the server does.
+     */
+    @SerialName("biometric_login_enabled") val biometricLoginEnabled: Boolean = true,
 )
 
 /**
@@ -266,9 +272,13 @@ fun attendanceKind(
 }
 
 /**
- * Clock-in/out body, mirroring `client/src/api/workforce.ts` (P3.6):
- * geo fix, office Wi-Fi BSSID, optional face descriptor, plus the native
- * device-biometric fallback the server accepts (`fingerprint_verified`).
+ * Clock-in/out body, mirroring `client/src/api/workforce.ts` (P3.6): geo fix,
+ * office Wi-Fi BSSID, optional face descriptor, plus the native identity proof.
+ *
+ * `device_credential` is the server-verifiable proof: the credential issued by
+ * `/auth/biometric/enroll`, unlocked on-device by the fingerprint / PIN prompt.
+ * `fingerprint_verified` is the legacy bare flag (office-only on the server),
+ * kept for older builds and no longer sent by this client.
  */
 @Serializable
 data class AttendanceActionRequest(
@@ -279,7 +289,12 @@ data class AttendanceActionRequest(
     @SerialName("wifi_bssid") val wifiBssid: String? = null,
     @SerialName("face_descriptor") val faceDescriptor: List<Float>? = null,
     @SerialName("fingerprint_verified") val fingerprintVerified: Boolean? = null,
+    @SerialName("device_credential") val deviceCredential: DeviceCredentialProof? = null,
 )
+
+/** Wire shape of the device credential; field names match `/auth/biometric/login`. */
+@Serializable
+data class DeviceCredentialProof(val credentialId: String, val deviceSecret: String)
 
 @Serializable
 data class AttendanceActionResponse(
@@ -354,18 +369,44 @@ private fun validTime(value: String): Boolean {
 fun requiresLocation(policy: AttendancePolicy, mode: WorkMode): Boolean =
     policy.verificationEnabled && mode != WorkMode.Remote
 
+/**
+ * Whether a clock action goes through the verify flow at all. Same trigger as
+ * web/desktop (`attendance_verification_enabled`). Android additionally
+ * requires the fingerprint/PIN on remote-session clock-out (product decision);
+ * the server verifies the credential when sent but cannot demand it there,
+ * because web/desktop send none for remote clock-out.
+ */
 fun requiresAttendanceVerification(
+    policy: AttendancePolicy,
+    @Suppress("UNUSED_PARAMETER") action: AttendanceAction,
+    @Suppress("UNUSED_PARAMETER") selectedMode: WorkMode,
+    @Suppress("UNUSED_PARAMETER") currentSessionMode: String?,
+): Boolean = policy.verificationEnabled
+
+/**
+ * Whether office presence (office Wi-Fi or an inside-geofence fix) must be
+ * proven. Mirrors the server: clock-in in office/hybrid mode, and clock-out of
+ * an office session. Remote clock-in and remote-session clock-out do not.
+ */
+fun requiresOfficePresence(
     policy: AttendancePolicy,
     action: AttendanceAction,
     selectedMode: WorkMode,
     currentSessionMode: String?,
 ): Boolean {
     if (!policy.verificationEnabled) return false
-    // The server deliberately exempts remote session clock-out from the office
-    // location and identity gate so a remote worker cannot become trapped.
-    if (action == AttendanceAction.ClockOut && currentSessionMode.equals("remote", ignoreCase = true)) return false
-    return true
+    return when (action) {
+        AttendanceAction.ClockIn -> selectedMode != WorkMode.Remote
+        AttendanceAction.ClockOut -> currentSessionMode.equals("office", ignoreCase = true)
+    }
 }
+
+/**
+ * Hybrid clock-in: the server records it as office when presence is proven and
+ * remote otherwise, so it must never be blocked on a missing/outside fix.
+ */
+fun officePresenceIsOptional(action: AttendanceAction, selectedMode: WorkMode): Boolean =
+    action == AttendanceAction.ClockIn && selectedMode == WorkMode.Hybrid
 
 fun canUseFingerprintFallback(policy: AttendancePolicy, mode: WorkMode, proof: LocationProof?): Boolean =
     policy.verificationEnabled && mode != WorkMode.Remote && proof != null &&

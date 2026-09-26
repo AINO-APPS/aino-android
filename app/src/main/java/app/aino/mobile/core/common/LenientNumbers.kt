@@ -70,6 +70,19 @@ object LenientIntSerializer : KSerializer<Int> {
     override fun serialize(encoder: Encoder, value: Int) = encoder.encodeInt(value)
 }
 
+/** Nullable tolerant `Int` (quoted `COUNT(*)`, nullable INTEGER columns). */
+object LenientIntNullableSerializer : KSerializer<Int?> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("app.aino.LenientIntNullable", PrimitiveKind.INT)
+
+    override fun deserialize(decoder: Decoder): Int? = decodeLenientDouble(decoder)?.toInt()
+
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    override fun serialize(encoder: Encoder, value: Int?) {
+        if (value == null) encoder.encodeNull() else encoder.encodeInt(value)
+    }
+}
+
 /**
  * Shared tolerant read. Returns null for JSON null, an absent value, or an
  * empty string — the server sends `""` for a cleared numeric input.

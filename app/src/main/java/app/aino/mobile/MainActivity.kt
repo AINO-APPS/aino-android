@@ -23,6 +23,9 @@ import app.aino.mobile.core.realtime.RealtimeViewModel
 import app.aino.mobile.core.update.UpdateViewModel
 import app.aino.mobile.feature.home.DashboardViewModel
 import app.aino.mobile.feature.attendance.AttendanceViewModel
+import app.aino.mobile.feature.attendance.DeviceCredentialProof
+import app.aino.mobile.feature.attendance.VerifyFix
+import app.aino.mobile.core.navigation.AttendanceSystemActions
 import app.aino.mobile.feature.tasks.TaskViewModel
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.core.push.PushNotifications
@@ -54,8 +57,16 @@ class MainActivity : FragmentActivity() {
     // Android 12+ silently ignores a request for FINE alone; it must be asked
     // together with COARSE. Only a precise grant satisfies the office geofence.
     private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        if (grants[Manifest.permission.ACCESS_FINE_LOCATION] == true) requestPendingAttendanceAction()
-        else attendanceViewModel.locationPermissionDenied()
+        when {
+            grants[Manifest.permission.ACCESS_FINE_LOCATION] == true -> requestPendingAttendanceAction()
+            // Android 12+: the user picked "Approximate" — ask for precise again.
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true ->
+                attendanceViewModel.locationPermissionDenied(approximateOnly = true)
+            // No rationale after a denial means "Don't ask again": only Settings can fix it.
+            !shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) ->
+                attendanceViewModel.locationPermissionDenied(permanentlyDenied = true)
+            else -> attendanceViewModel.locationPermissionDenied()
+        }
     }
     private fun requestLocationPermission() = locationPermission.launch(
         arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
@@ -73,7 +84,9 @@ class MainActivity : FragmentActivity() {
             val themeStore = ThemePreferenceStore(applicationContext)
             val isDark by themeStore.isDark.collectAsState(initial = true)
             val themeScope = rememberCoroutineScope()
-            WebTheme(darkTheme = isDark) {
+            // P10.4: the org accent repaints the palette (web BrandingContext `--primary`).
+            val branding by app.aino.mobile.core.AppContainer.get(applicationContext).branding.state.collectAsState()
+            WebTheme(darkTheme = isDark, accent = branding.accentColor) {
                 AinoApp(
                     authViewModel,
                     updateViewModel,
@@ -88,9 +101,15 @@ class MainActivity : FragmentActivity() {
                     onSetDark = { dark -> themeScope.launch { themeStore.setDark(dark) } },
                     biometricAvailable = biometricAvailable(),
                     onBiometricLogin = ::requestBiometricLogin,
-                    onBiometricEnroll = ::requestBiometricEnrollment,
+                    onBiometricEnroll = { requestBiometricEnrollment() },
                     onAttendanceLocationPermission = { requestLocationPermission() },
                     onAttendanceBiometric = ::requestAttendanceBiometric,
+                    attendanceSystemActions = AttendanceSystemActions(
+                        openAppSettings = ::openAppSettings,
+                        openLocationSettings = ::openLocationSettings,
+                        openSecuritySettings = ::openSecuritySettings,
+                        enableFingerprintForAttendance = { requestBiometricEnrollment(thenClockAction = true) },
+                    ),
                     onPickChatDocument = {
                         chatDocumentPicker.launch(
                             arrayOf(
@@ -214,100 +233,249 @@ class MainActivity : FragmentActivity() {
         PendingCallActionStore.clear(applicationContext)
     }
 
-    private fun biometricAvailable(): Boolean = BiometricManager.from(this).canAuthenticate(
-        BiometricManager.Authenticators.BIOMETRIC_STRONG,
-    ) == BiometricManager.BIOMETRIC_SUCCESS
+    // ── Fingerprint / PIN: one enrolled credential for sign-in and clock-in ──
 
-    private fun requestBiometricEnrollment() {
-        val cipher = runCatching(authViewModel::encryptionCipher).getOrElse {
-            authViewModel.reportBiometricError("Secure biometric storage is unavailable on this device.")
+    /** Fingerprint, secure face unlock, or the device screen lock (PIN/pattern/password). */
+    private val credentialAuthenticators: Int
+        get() = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        } else {
+            // API 26–29 cannot combine DEVICE_CREDENTIAL with BIOMETRIC_STRONG.
+            BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        }
+
+    /** A fingerprint, face unlock or screen lock is set up, so the credential can be used. */
+    private fun biometricAvailable(): Boolean =
+        BiometricManager.from(this).canAuthenticate(credentialAuthenticators) == BiometricManager.BIOMETRIC_SUCCESS
+
+    private fun requestBiometricEnrollment(thenClockAction: Boolean = false) {
+        if (!biometricAvailable()) {
+            val message = "Set up a fingerprint or a screen lock (PIN/pattern) on this phone first."
+            if (thenClockAction) attendanceViewModel.reportVerifyError(message, VerifyFix.SetUpScreenLock, "Screen Lock Needed")
+            else authViewModel.reportBiometricError(message)
             return
         }
-        showBiometricPrompt("Enable biometric sign-in", cipher) { authenticated ->
-            authViewModel.enrollBiometric(authenticated, "Android device")
-        }
-    }
-
-    private fun requestBiometricLogin() {
-        val cipher = authViewModel.decryptionCipher()
-        if (cipher == null) {
-            authViewModel.reportBiometricError("No biometric credential is enrolled on this device.")
-            return
-        }
-        showBiometricPrompt("Sign in to AINO", cipher, authViewModel::biometricLogin)
-    }
-
-    private fun requestPendingAttendanceAction() {
-        attendanceViewModel.resumePending(
-            onPermissionRequired = { requestLocationPermission() },
+        // API 30+: the per-use key needs its cipher before the prompt. API 26–29:
+        // the time-bound key can only be initialised after the prompt, so the
+        // cipher is built inside authenticateForCipher instead.
+        val cipher = if (authViewModel.biometricUsesCryptoObject()) {
+            runCatching(authViewModel::encryptionCipher).getOrElse {
+                val message = "Secure storage is unavailable on this device."
+                if (thenClockAction) attendanceViewModel.reportVerifyError(message) else authViewModel.reportBiometricError(message)
+                return
+            }
+        } else null
+        if (thenClockAction) attendanceViewModel.identityPromptShown()
+        authenticateForCipher(
+            title = "Enable fingerprint for AINO",
+            subtitle = "Used to sign in and to clock in / out",
+            cipher = cipher,
+            onCipher = { authenticated ->
+                authViewModel.enrollBiometric(authenticated, deviceLabel()) {
+                    // Continue the clock action straight away with the new credential.
+                    if (thenClockAction) attendanceViewModel.requestIdentityPrompt()
+                }
+            },
+            onError = { message, _ ->
+                if (thenClockAction) {
+                    attendanceViewModel.reportVerifyError(message ?: "Fingerprint setup cancelled.", VerifyFix.EnableFingerprint, "Fingerprint Not Enabled")
+                } else {
+                    message?.let(authViewModel::reportBiometricError)
+                }
+            },
         )
     }
 
-    private fun requestAttendanceBiometric() {
-        // The server's fingerprint path accepts any OS-level identity check once
-        // office presence is proven, so allow the screen lock as a fallback;
-        // BIOMETRIC_STRONG alone failed silently on devices without a strong sensor.
-        val authenticators = if (android.os.Build.VERSION.SDK_INT >= 30) {
-            BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL
-        } else {
-            BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    private fun requestBiometricLogin() {
+        if (authViewModel.biometricNeedsUpgrade()) {
+            authViewModel.dropLegacyCredential()
+            authViewModel.reportBiometricError("Fingerprint sign-in was upgraded to also accept your PIN. Sign in with your password once, then enable it again.")
+            return
         }
-        val availability = BiometricManager.from(this).canAuthenticate(authenticators)
-        if (availability != BiometricManager.BIOMETRIC_SUCCESS) {
+        withDecryptionCipher(
+            title = "Sign in to AINO",
+            subtitle = "Use your fingerprint or screen lock",
+            onCipher = authViewModel::biometricLogin,
+            onError = { message, _ -> message?.let(authViewModel::reportBiometricError) },
+        )
+    }
+
+    private fun requestPendingAttendanceAction() {
+        attendanceViewModel.resumePending(onPermissionRequired = { requestLocationPermission() })
+    }
+
+    /**
+     * Attendance identity step: unlock the enrolled device credential with the
+     * fingerprint / PIN prompt and submit it. Not enrolled yet → enroll inline
+     * and continue, so the first clock-in never dead-ends.
+     */
+    private fun requestAttendanceBiometric() {
+        if (!biometricAvailable()) {
             attendanceViewModel.reportVerifyError(
-                "Set up a fingerprint, face unlock or screen lock on this device to verify attendance.",
+                "Set up a fingerprint or a screen lock (PIN/pattern) on this phone to clock in and out.",
+                VerifyFix.SetUpScreenLock, "Screen Lock Needed",
             )
             return
         }
+        authViewModel.dropLegacyCredential()
+        if (!authViewModel.ui.value.biometricEnrolled) {
+            requestBiometricEnrollment(thenClockAction = true)
+            return
+        }
+        attendanceViewModel.identityPromptShown()
+        withDecryptionCipher(
+            title = "Verify attendance",
+            subtitle = "Use your fingerprint or screen lock",
+            onCipher = { cipher ->
+                val credential = authViewModel.unlockCredential(cipher)
+                if (credential == null) {
+                    attendanceViewModel.reportVerifyError(
+                        "Fingerprint on this device needs to be enabled again.", VerifyFix.EnableFingerprint, "Fingerprint Reset",
+                    )
+                } else {
+                    attendanceViewModel.submitWithCredential(DeviceCredentialProof(credential.credentialId, credential.deviceSecret))
+                }
+            },
+            onError = { message, cancelled ->
+                if (message == null && !cancelled) return@withDecryptionCipher
+                attendanceViewModel.reportVerifyError(
+                    if (cancelled) "Verification cancelled. Tap the fingerprint to try again." else message ?: "Verification failed.",
+                    if (message?.contains("enable it again", ignoreCase = true) == true) VerifyFix.EnableFingerprint else VerifyFix.Retry,
+                    if (cancelled) "Cancelled" else "Verification Failed",
+                )
+            },
+        )
+    }
+
+    /**
+     * Prompt, then hand back a cipher able to decrypt the stored credential.
+     * A missing or invalidated credential (e.g. a new fingerprint was added)
+     * is reported so the caller can offer re-enrollment.
+     */
+    private fun withDecryptionCipher(
+        title: String,
+        subtitle: String,
+        onCipher: (Cipher) -> Unit,
+        onError: (String?, Boolean) -> Unit,
+    ) {
+        val invalid = "Fingerprint is not enabled on this device (a new fingerprint may have been added). Please enable it again."
+        if (authViewModel.biometricUsesCryptoObject()) {
+            val cipher = runCatching { authViewModel.decryptionCipher() }.getOrNull()
+            if (cipher == null) {
+                authViewModel.syncBiometricEnrollment()
+                onError(invalid, false)
+                return
+            }
+            authenticateForCipher(title, subtitle, cipher, onCipher, onError)
+        } else {
+            // API 26–29: the key is time-bound, so authenticate first, then init the cipher.
+            authenticate(title, subtitle, onSuccess = {
+                val cipher = runCatching { authViewModel.decryptionCipher() }.getOrNull()
+                if (cipher == null) {
+                    authViewModel.syncBiometricEnrollment()
+                    onError(invalid, false)
+                } else {
+                    onCipher(cipher)
+                }
+            }, onError = onError)
+        }
+    }
+
+    /**
+     * Prompt for an encryption/decryption cipher. API 30+ binds the cipher to
+     * the prompt (CryptoObject). API 26–29 uses the time-bound key: prompt
+     * first, then rebuild the encryption cipher inside the validity window.
+     */
+    private fun authenticateForCipher(
+        title: String,
+        subtitle: String,
+        cipher: Cipher?,
+        onCipher: (Cipher) -> Unit,
+        onError: (String?, Boolean) -> Unit,
+    ) {
+        if (cipher == null || !authViewModel.biometricUsesCryptoObject()) {
+            // Encryption on API 26–29: the cipher above was created before auth;
+            // rebuild it inside the validity window once the prompt succeeds.
+            authenticate(title, subtitle, onSuccess = {
+                runCatching(authViewModel::encryptionCipher).fold(
+                    onSuccess = onCipher,
+                    onFailure = { onError("Could not unlock secure storage. Try again.", false) },
+                )
+            }, onError = onError)
+            return
+        }
+        showPrompt(title, subtitle, BiometricPrompt.CryptoObject(cipher), onSuccess = { result ->
+            result.cryptoObject?.cipher?.let(onCipher)
+                ?: onError("Authentication did not unlock the credential. Try again.", false)
+        }, onError = onError)
+    }
+
+    /** Prompt with no CryptoObject (API 26–29 time-bound key path). */
+    private fun authenticate(title: String, subtitle: String, onSuccess: () -> Unit, onError: (String?, Boolean) -> Unit) {
+        showPrompt(title, subtitle, null, onSuccess = { onSuccess() }, onError = onError)
+    }
+
+    private fun showPrompt(
+        title: String,
+        subtitle: String,
+        crypto: BiometricPrompt.CryptoObject?,
+        onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
+        onError: (String?, Boolean) -> Unit,
+    ) {
         val prompt = BiometricPrompt(
             this,
             ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    attendanceViewModel.submit(fingerprintVerified = true)
-                }
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onSuccess(result)
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     val cancelled = errorCode == BiometricPrompt.ERROR_USER_CANCELED ||
                         errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON || errorCode == BiometricPrompt.ERROR_CANCELED
-                    attendanceViewModel.reportVerifyError(if (cancelled) "Identity check cancelled. Tap verify to try again." else errString.toString())
+                    onError(if (cancelled) null else errString.toString(), cancelled)
                 }
             },
         )
-        prompt.authenticate(
-            BiometricPrompt.PromptInfo.Builder()
-                .setTitle("Verify attendance")
-                .setSubtitle("Confirm your identity from the office")
-                .setAllowedAuthenticators(authenticators)
-                .build(),
-        )
+        // DEVICE_CREDENTIAL in the authenticator set supplies the "Use PIN"
+        // button itself, so no negative button text may be set.
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .setAllowedAuthenticators(credentialAuthenticators)
+            .setConfirmationRequired(false)
+            .build()
+        runCatching {
+            if (crypto != null) prompt.authenticate(info, crypto) else prompt.authenticate(info)
+        }.onFailure { onError(it.message ?: "Could not start fingerprint verification.", false) }
     }
 
-    private fun showBiometricPrompt(title: String, cipher: Cipher, onSuccess: (Cipher) -> Unit) {
-        val prompt = BiometricPrompt(
-            this,
-            ContextCompat.getMainExecutor(this),
-            object : BiometricPrompt.AuthenticationCallback() {
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    result.cryptoObject?.cipher?.let(onSuccess)
-                        ?: authViewModel.reportBiometricError("Biometric authorization did not unlock the credential.")
-                }
+    private fun deviceLabel(): String =
+        listOfNotNull(android.os.Build.MANUFACTURER?.replaceFirstChar(Char::titlecase), android.os.Build.MODEL)
+            .joinToString(" ").ifBlank { "Android device" }.take(100)
 
-                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
-                        authViewModel.reportBiometricError(errString.toString())
-                    }
-                }
-            },
-        )
-        prompt.authenticate(
-            BiometricPrompt.PromptInfo.Builder()
-                .setTitle(title)
-                .setSubtitle("Use your fingerprint or strong face unlock")
-                .setNegativeButtonText("Cancel")
-                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
-                .build(),
-            BiometricPrompt.CryptoObject(cipher),
-        )
+    // ── One-tap fixes from the verify sheet ──
+
+    private fun openAppSettings() {
+        runCatching {
+            startActivity(
+                android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                    .setData(android.net.Uri.fromParts("package", packageName, null)),
+            )
+        }
+    }
+
+    private fun openLocationSettings() {
+        runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }
+    }
+
+    /** Fingerprint / screen-lock enrollment (Android 11+ has a direct enroll screen). */
+    private fun openSecuritySettings() {
+        val enroll = if (android.os.Build.VERSION.SDK_INT >= 30) {
+            android.content.Intent(android.provider.Settings.ACTION_BIOMETRIC_ENROLL)
+                .putExtra(android.provider.Settings.EXTRA_BIOMETRIC_AUTHENTICATORS_ALLOWED, credentialAuthenticators)
+        } else {
+            android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)
+        }
+        runCatching { startActivity(enroll) }
+            .onFailure { runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)) } }
     }
 }

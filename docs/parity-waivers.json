@@ -1,5 +1,226 @@
 {
   "schemaVersion": 1,
   "policy": "Waivers require an endpoint key, an owner and a non-empty reason. Pending implementation work is not a waiver.",
-  "waivers": []
+  "waivers": [
+    {
+      "key": "GET /api/admin/tenants",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "DELETE /api/admin/tenants/:param",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/:param",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/:param",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/:param/access-requests",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/:param/access-requests",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/:param/domain",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/:param/exit-impersonate",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/:param/features",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/:param/impersonate",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/:param/impersonation-session",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/:param/limits",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/:param/plan",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/:param/reactivate",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/:param/seed",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/:param/stats",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/:param/suspend",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/:param/users",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/:param/users",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/:param/users/:param/deactivate",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/access-requests",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "DELETE /api/admin/tenants/access-requests/:param",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/alerts",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/announcements",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/announcements",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "DELETE /api/admin/tenants/announcements/:param",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/announcements/:param",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/audit-logs",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/impersonation-policy",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/impersonation-policy",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/overview",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/plan-catalog",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/plan-catalog",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/plan-catalog/reset",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/platform-config",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/platform-config",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/platform-users",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/platform-users",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "PUT /api/admin/tenants/platform-users/:param/deactivate",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/tenants/platform-users/:param/links",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/platform-users/:param/links",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "DELETE /api/admin/tenants/platform-users/:param/links/:param",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "POST /api/admin/tenants/platform-users/:param/reset-password",
+      "owner": "product (P10.2)",
+      "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    }
+  ]
 }

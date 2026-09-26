@@ -34,6 +34,10 @@ import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 @Composable
 fun EditProfileScreen(
     viewModel: ProfileViewModel,
+    /** Org "Allow biometric login" (web OrgSettings); gates sign-in use only. */
+    biometricLoginAllowed: Boolean = true,
+    /** Org enforces attendance verification, where the same credential clocks in/out. */
+    attendanceVerificationOn: Boolean = false,
     biometricAvailable: Boolean,
     biometricEnrolled: Boolean,
     biometricMessage: String?,
@@ -93,15 +97,32 @@ fun EditProfileScreen(
         }
 
         // Android counterpart of the modal's desktop "Biometric Login (this device)" section.
-        ProfileSection("Biometric Login (this device)", Icons.Outlined.Fingerprint) {
+        // One enrollment serves sign-in and attendance clock-in/out.
+        val showSection = biometricLoginAllowed || attendanceVerificationOn || biometricEnrolled
+        if (showSection) ProfileSection("Fingerprint / PIN (this device)", Icons.Outlined.Fingerprint) {
             SectionBody {
                 SectionDescription(
-                    "Sign in to the Android app with your fingerprint or face unlock instead of a password. " +
-                        "The credential is stored encrypted on this device and your biometric never leaves it.",
+                    buildString {
+                        append("Use your fingerprint, face unlock or phone PIN ")
+                        append(
+                            when {
+                                biometricLoginAllowed && attendanceVerificationOn -> "to sign in and to clock in / out"
+                                attendanceVerificationOn -> "to clock in / out"
+                                else -> "to sign in"
+                            },
+                        )
+                        append(" on this phone. A credential is stored encrypted on this device; your fingerprint never leaves it.")
+                    },
                 )
+                if (!biometricLoginAllowed) {
+                    Text(
+                        "Biometric sign-in is turned off by your organization. Password sign-in is still required.",
+                        color = colors.textSecondary, fontSize = 13.sp,
+                    )
+                }
                 if (!biometricAvailable && !biometricEnrolled) {
                     Text(
-                        "No biometric hardware is set up on this device. Enroll a fingerprint or face unlock in " +
+                        "No fingerprint or screen lock is set up on this phone. Add one in " +
                             "Android Settings → Security, then reopen this page.",
                         color = colors.danger, fontSize = 13.sp,
                     )
@@ -120,10 +141,10 @@ fun EditProfileScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         if (disabling) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        else { Icon(Icons.Outlined.Delete, null, Modifier.size(16.dp)); Text("  Disable biometric sign-in") }
+                        else { Icon(Icons.Outlined.Delete, null, Modifier.size(16.dp)); Text("  Disable on this device") }
                     }
-                } else if (biometricAvailable) {
-                    ProfileButton("Enable biometric sign-in", "Working…", false, onEnableBiometric, icon = Icons.Outlined.Add)
+                } else if (biometricAvailable && (biometricLoginAllowed || attendanceVerificationOn)) {
+                    ProfileButton("Enable fingerprint / PIN", "Working…", false, onEnableBiometric, icon = Icons.Outlined.Add)
                 }
             }
         }

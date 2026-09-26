@@ -6,10 +6,11 @@
     "path": "server/**/*.ts"
   },
   "totals": {
-    "events": 73
+    "events": 74
   },
   "events": [
     "approval_update",
+    "attendance_update",
     "branding_changed",
     "calendar_refresh",
     "call_accepted",

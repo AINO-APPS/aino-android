@@ -56,6 +56,11 @@ class AppContainer private constructor(private val context: Context) {
         .crossfade(true)
         .build()
 
+    /** P10.4: the org logo + accent (web `BrandingContext`). */
+    val branding: app.aino.mobile.core.branding.BrandingStore by lazy {
+        app.aino.mobile.core.branding.BrandingStore(app.aino.mobile.core.branding.BrandingRepository(api))
+    }
+
     /** Lazily created on first (main-thread) use from the UI. */
     val audio: app.aino.mobile.core.media.SharedAudioPlayer by lazy {
         app.aino.mobile.core.media.SharedAudioPlayer(context, mediaHttp)

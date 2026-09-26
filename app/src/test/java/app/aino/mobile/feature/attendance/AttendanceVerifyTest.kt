@@ -47,6 +47,22 @@ class AttendanceVerifyTest {
     }
 
     @Test
+    fun deviceCredentialErrorsOfferReEnrollmentAndLocationErrorsOfferRetry() {
+        val identity = classifySubmitError("no longer valid", "DEVICE_CREDENTIAL_INVALID", AttendanceAction.ClockIn)
+        assertEquals(VerifyErrorKind.Identity, identity.kind)
+        assertEquals(VerifyFix.EnableFingerprint, identity.fix)
+
+        val legacy = classifySubmitError("only from the office", "FINGERPRINT_LOCATION_REQUIRED", AttendanceAction.ClockIn)
+        assertEquals(VerifyErrorKind.Location, legacy.kind)
+        assertEquals(VerifyFix.RetryLocation, legacy.fix)
+
+        assertEquals(
+            VerifyFix.RetryLocation,
+            classifySubmitError("You are 320 m from the office", "OUTSIDE_GEOFENCE", AttendanceAction.ClockOut).fix,
+        )
+    }
+
+    @Test
     fun fallsBackToKeywordSniffingWithoutACode() {
         assertEquals(
             VerifyErrorKind.Location,

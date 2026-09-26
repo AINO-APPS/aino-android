@@ -24,13 +24,16 @@ fun rememberWebColors(darkTheme: Boolean): WebColors =
 /**
  * Provides web-parity tokens + (P1.8) drives the Material3 color scheme so the
  * whole app repaints without restart when the user toggles the theme.
+ * [accent] is the org branding accent (P10.4, see [withBrandAccent]).
  */
 @Composable
 fun WebTheme(
     darkTheme: Boolean = true,
+    accent: String? = null,
     content: @Composable () -> Unit,
 ) {
-    val colors = rememberWebColors(darkTheme)
+    val base = rememberWebColors(darkTheme)
+    val colors = remember(base, accent) { base.withBrandAccent(accent) }
     CompositionLocalProvider(
         LocalWebColors provides colors,
         LocalWebDimens provides WebDimens,

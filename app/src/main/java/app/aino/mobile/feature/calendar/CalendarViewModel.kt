@@ -61,6 +61,8 @@ class CalendarViewModel(
     private var conflictJob: Job? = null
     private val searchJobs = mutableMapOf<PickerKind, Job>()
     var userId: Long? = null
+    /** Org branding accent (web `branding.accent_color || "#2383e2"`), set by the screen. */
+    var accent: String = DEFAULT_ACCENT
 
     init {
         refresh()
@@ -111,14 +113,14 @@ class CalendarViewModel(
     }
 
     fun openCreate(day: LocalDate, hour: Int?) {
-        val form = createForm(day, hour, clock()) ?: return
+        val form = createForm(day, hour, clock(), accent) ?: return
         _ui.update { it.copy(editor = EventEditor(form = form)) }
     }
 
     fun openEdit(event: CalendarEvent) {
         val editor = EventEditor(
             eventId = event.id,
-            form = editForm(event, zone()),
+            form = editForm(event, zone(), accent),
             meetingCode = event.meetingCode,
             meetingCreatedBy = event.meetingCreatedBy,
         )
