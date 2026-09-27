@@ -1,6 +1,7 @@
 package app.aino.mobile.feature.chat
 
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -94,5 +95,24 @@ class SignalChatLogicTest {
     @Test fun `emoji backspace removes one character`() {
         assertEquals("ab", dropLastGrapheme("abc"))
         assertEquals("", dropLastGrapheme(""))
+    }
+
+    @Test fun `quoted media remains a quoted reply without text`() {
+        assertTrue(message().copy(replyToId = 9, replyContent = null, replyFileUrl = "/image.png").hasQuotedReply())
+        assertTrue(message().copy(replyToId = 9, replyFileType = "video/mp4").hasQuotedReply())
+        assertTrue(!message().hasQuotedReply())
+    }
+
+    @Test fun `only short emoji messages get larger text`() {
+        assertEquals(48.sp, emojiMessageSize("👍"))
+        assertEquals(48.sp, emojiMessageSize("👨‍👩‍👧"))
+        assertEquals(48.sp, emojiMessageSize("🇮🇳"))
+        assertEquals(48.sp, emojiMessageSize("👍🏽"))
+        assertEquals(40.sp, emojiMessageSize("❤️ ❤️"))
+        assertEquals(32.sp, emojiMessageSize("😀😀😀"))
+        assertEquals(SignalDimens.bodyText, emojiMessageSize("😀😀😀😀"))
+        assertEquals(SignalDimens.bodyText, emojiMessageSize("Hello 😀"))
+        assertEquals(SignalDimens.bodyText, emojiMessageSize("123"))
+        assertEquals(SignalDimens.bodyText, emojiMessageSize(""))
     }
 }

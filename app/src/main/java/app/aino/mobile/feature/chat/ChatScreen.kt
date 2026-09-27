@@ -498,7 +498,7 @@ private fun ConversationRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.clip(CircleShape).clickable(onClickLabel = "Open contact details") {
+            Modifier.clickable(onClickLabel = "Open contact details") {
                 if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) viewModel.toggleConversationSelection(conversation.id)
                 else sheetOpen = true
             },
@@ -1343,7 +1343,7 @@ private fun MessageBubble(
     val deleted = message.deletedAt != null
     val viewOnce = !deleted && message.isViewOnce() && (message.fileType?.startsWith("image/") == true || message.fileType?.startsWith("video/") == true)
     val mediaOnly = !deleted && !viewOnce && message.isViewableMedia() && message.content.isNullOrBlank() &&
-        message.replyContent == null && message.forwardedFromId == null && !(showSender && isGroup && !isMine)
+        !message.hasQuotedReply() && message.forwardedFromId == null && !(showSender && isGroup && !isMine)
     val shape = messageBubbleShape(isMine, startsGroup, endsGroup)
     val bubbleColor = when {
         deleted -> Color.Transparent
@@ -1432,7 +1432,7 @@ private fun MessageBubble(
                                 Text("Forwarded", color = fgMuted, fontSize = 13.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                             }
                         }
-                        if (!deleted) message.replyContent?.let { SignalQuote(message, isMine, fg) }
+                        if (!deleted && message.hasQuotedReply()) SignalQuote(message, isMine, fg)
                         when {
                             deleted -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Icon(Icons.Outlined.Block, null, Modifier.size(16.dp), tint = signal.textSecondary)
@@ -1524,7 +1524,10 @@ private fun MessageBubble(
                             }
                             else -> {
                                 message.linkPreview?.let { LinkPreviewCard(it) }
-                                BubbleTextWithFooter(highlightTerm(message.body(), searchTerm, signal.highlight), fg, { footer(false) })
+                                BubbleTextWithFooter(
+                                    highlightTerm(message.body(), searchTerm, signal.highlight), fg, { footer(false) },
+                                    fontSize = emojiMessageSize(message.body()),
+                                )
                             }
                         }
                     }
@@ -1616,7 +1619,10 @@ private fun SignalQuote(message: ChatMessage, isMine: Boolean, fg: Color) {
         Column(Modifier.weight(1f, fill = false).padding(horizontal = 8.dp, vertical = 6.dp)) {
             Text(message.replySenderName.orEmpty(), color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             Text(
-                message.replyContent?.takeIf(String::isNotBlank) ?: message.replyFileName ?: "Attachment",
+                message.replyContent?.takeIf(String::isNotBlank)
+                    ?: if (message.replyFileType != null || message.replyFileName != null)
+                        attachmentSnippet(message.replyFileType, message.replyFileName, null)
+                    else "Original message unavailable",
                 color = fg.copy(alpha = .85f), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
         }
@@ -1821,7 +1827,7 @@ private fun QueuedBubble(message: QueuedMessage) {
                         )
                         SignalReceiptIcon(DeliveryTick.Sending, signal.onOutgoingSecondary)
                     }
-                })
+                }, fontSize = emojiMessageSize(message.content))
             }
         }
     }
@@ -2050,6 +2056,15 @@ private fun MessageComposer(
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp).weight(1f)) {
                     Text(banner.first, color = signal.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     Text(banner.second, color = signal.textSecondary, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+                replyingTo?.fileUrl?.takeIf { replyingTo.fileType?.startsWith("image/") == true }?.let { url ->
+                    coil3.compose.AsyncImage(
+                        model = resolveChatMediaUrl(url),
+                        imageLoader = app.aino.mobile.core.AppContainer.get(context).imageLoader,
+                        contentDescription = "Quoted image",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.size(44.dp),
+                    )
                 }
                 Icon(
                     Icons.Outlined.Close, if (editingMessage != null) "Cancel edit" else "Cancel reply",

@@ -193,6 +193,9 @@ data class ChatMessage(
         else -> ""
     }
 
+    fun hasQuotedReply(): Boolean = replyToId != null || replyContent != null ||
+        replyFileUrl != null || replyFileName != null || replyFileType != null
+
     fun toEntity(scope: CacheScope, fallbackConversationId: Long): MessageEntity = MessageEntity(
         tenantId = scope.tenantId,
         userId = scope.userId,

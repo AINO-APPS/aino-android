@@ -84,6 +84,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.aino.mobile.core.AppContainer
@@ -167,6 +168,7 @@ fun BubbleTextWithFooter(
     color: Color,
     footer: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    fontSize: TextUnit = SignalDimens.bodyText,
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     Layout(
@@ -174,7 +176,7 @@ fun BubbleTextWithFooter(
             Text(
                 text,
                 color = color,
-                style = TextStyle(fontSize = SignalDimens.bodyText, lineHeight = SignalDimens.bodyLine),
+                style = TextStyle(fontSize = fontSize, lineHeight = if (fontSize == SignalDimens.bodyText) SignalDimens.bodyLine else fontSize * 1.2f),
                 onTextLayout = { layout = it },
             )
             footer()
@@ -192,6 +194,33 @@ fun BubbleTextWithFooter(
             textPlaceable.place(0, 0)
             footerPlaceable.place(width - footerPlaceable.width, height - footerPlaceable.height)
         }
+    }
+}
+
+internal fun emojiMessageSize(text: String): TextUnit {
+    val trimmed = text.trim()
+    if (trimmed.isEmpty()) return SignalDimens.bodyText
+    val breaks = java.text.BreakIterator.getCharacterInstance()
+    breaks.setText(trimmed)
+    var count = 0
+    var start = breaks.first()
+    while (true) {
+        val end = breaks.next()
+        if (end == java.text.BreakIterator.DONE) break
+        val part = trimmed.substring(start, end)
+        start = end
+        if (part.isBlank()) continue
+        val points = part.codePoints().toArray()
+        if (points.none { Character.getType(it) == Character.OTHER_SYMBOL.toInt() || it == 0x20E3 } ||
+            points.any { Character.isLetter(it) || (Character.isDigit(it) && 0x20E3 !in points) || Character.isWhitespace(it) }
+        ) return SignalDimens.bodyText
+        if (++count > 3) return SignalDimens.bodyText
+    }
+    return when (count) {
+        1 -> 48.sp
+        2 -> 40.sp
+        3 -> 32.sp
+        else -> SignalDimens.bodyText
     }
 }
 
