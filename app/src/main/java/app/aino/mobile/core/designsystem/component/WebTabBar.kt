@@ -93,7 +93,7 @@ private fun androidx.compose.foundation.layout.RowScope.TabItem(
         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
     ) {
         Box {
-            Icon(destination.icon, destination.label, Modifier.size(22.dp), tint = tint)
+            Icon(destination.icon, destination.label, Modifier.size(26.dp), tint = tint)
             if (badge > 0) {
                 Box(
                     Modifier.align(Alignment.TopEnd)

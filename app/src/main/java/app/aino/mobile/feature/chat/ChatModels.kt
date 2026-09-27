@@ -326,6 +326,13 @@ private val ChatMessage.metaObject: kotlinx.serialization.json.JsonObject?
 fun ChatMessage.isViewOnce(): Boolean =
     (metaObject?.get("viewOnce") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
 
+/** width / height from upload metadata, so the bubble is sized before the image loads. */
+fun ChatMessage.mediaAspect(): Float? {
+    val w = (metaObject?.get("width") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull() ?: return null
+    val h = (metaObject?.get("height") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull() ?: return null
+    return if (w > 0f && h > 0f) w / h else null
+}
+
 fun ChatMessage.viewedBy(): List<Long> =
     (metaObject?.get("viewedBy") as? kotlinx.serialization.json.JsonArray)
         ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() }.orEmpty()

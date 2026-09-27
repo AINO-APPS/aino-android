@@ -38,11 +38,39 @@ fun formatChatFileSize(bytes: Long?): String? = bytes?.takeIf { it >= 0 }?.let {
     }
 }
 
-/** Server media-job states that still need Signal's transfer ring on the thumbnail. */
+/**
+ * Server media-job states. The pipeline only fingerprints a file that is already
+ * stored and servable, so these never gate display (Signal shows media as soon as
+ * it exists); only a failed job surfaces a retry.
+ */
 fun ChatMessage.mediaInFlight(): Boolean =
     mediaState?.lowercase()?.let { it !in setOf("ready", "completed", "failed", "cancelled") } == true
 
 fun ChatMessage.mediaFailed(): Boolean = mediaState?.lowercase() in setOf("failed", "cancelled")
+
+/**
+ * Session memory for chat media. Files this device just sent map their server URL
+ * to the local copy, so the delivered bubble keeps showing the already-decoded
+ * image/voice note (no refetch blink). Decoded aspect ratios are kept per model so
+ * a bubble that remounts never starts at the 4:3 fallback and resizes.
+ */
+object ChatMediaMemory {
+    private val localByUrl = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val aspects = java.util.concurrent.ConcurrentHashMap<String, Float>()
+
+    fun rememberSent(fileUrl: String?, local: android.net.Uri, aspect: Float?) {
+        if (fileUrl.isNullOrBlank()) return
+        val key = local.toString()
+        localByUrl[fileUrl] = key
+        (aspect ?: aspects[key])?.let { putAspect(fileUrl, it) }
+    }
+
+    fun localFor(fileUrl: String?): String? = fileUrl?.let(localByUrl::get)
+    fun aspect(key: Any?): Float? = key?.toString()?.let(aspects::get)
+    fun putAspect(key: Any?, aspect: Float) {
+        if (key != null && aspect > 0f) aspects[key.toString()] = aspect
+    }
+}
 
 @Composable
 fun ChatMediaPreview(
@@ -58,27 +86,22 @@ fun ChatMediaPreview(
 ) {
     val rawUrl = message.fileUrl ?: return
     val url = resolveChatMediaUrl(rawUrl)
+    // Sent from this device this session: keep showing the local copy (no refetch).
+    val local = ChatMediaMemory.localFor(rawUrl)
     val visual = message.isImageAttachment() || message.isVideoAttachment()
     Column(modifier.widthIn(max = SignalDimens.mediaMaxWidth + 40.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         when {
             visual -> Box {
-                ChatThumbnail(url, message.fileName, video = message.isVideoAttachment(), shape = shape, onLongClick = onLongPress) {
-                    if (!message.mediaInFlight()) onOpenMedia(message)
-                }
-                // Signal TransferControls: ring over the dimmed thumbnail while the server transcodes.
-                when {
-                    message.mediaInFlight() -> TransferRing(
-                        progress = message.mediaProgress?.takeIf { it > 0 }?.let { it / 100f },
-                        onCancel = { onCancelProcessing(message) },
-                        modifier = Modifier.matchParentSize().clip(shape),
-                    )
-                    message.mediaFailed() -> TransferRetry(
-                        onRetry = { onRetryProcessing(message) },
-                        modifier = Modifier.matchParentSize().clip(shape),
-                    )
-                }
+                ChatThumbnail(
+                    local ?: url, message.fileName, video = message.isVideoAttachment(), shape = shape,
+                    initialAspect = ChatMediaMemory.aspect(rawUrl) ?: message.mediaAspect(), onLongClick = onLongPress,
+                ) { onOpenMedia(message) }
+                if (message.mediaFailed()) TransferRetry(
+                    onRetry = { onRetryProcessing(message) },
+                    modifier = Modifier.matchParentSize().clip(shape),
+                )
             }
-            message.fileType?.startsWith("audio/") == true -> ChatVoicePlayer(url, Modifier.fillMaxWidth(), outgoing = outgoing, waveSeed = message.fileName ?: url)
+            message.fileType?.startsWith("audio/") == true -> ChatVoicePlayer(local ?: url, Modifier.fillMaxWidth(), outgoing = outgoing, waveSeed = message.fileName ?: url)
             else -> AttachmentCard(message, url, onLongPress)
         }
         if (!visual) MediaProcessingState(message, onCancelProcessing, onRetryProcessing)
@@ -144,7 +167,7 @@ fun ChatThumbnail(
 ) {
     val context = LocalContext.current
     val loader = AppContainer.get(context).imageLoader
-    var aspect by remember(url) { mutableFloatStateOf(initialAspect?.takeIf { it > 0f } ?: (4f / 3f)) }
+    var aspect by remember(url) { mutableFloatStateOf(initialAspect?.takeIf { it > 0f } ?: ChatMediaMemory.aspect(url) ?: (4f / 3f)) }
     var failed by remember(url) { mutableStateOf(false) }
     // ponytail: Coil's VideoFrameDecoder needs the file on disk, so a poster downloads the whole video once (then disk-cached); add server-side posters if videos get large.
     val request = remember(url, video) {
@@ -165,7 +188,10 @@ fun ChatThumbnail(
             modifier = Modifier.fillMaxSize(),
             onSuccess = { state ->
                 val image = state.result.image
-                if (image.width > 0 && image.height > 0) aspect = image.width.toFloat() / image.height
+                if (image.width > 0 && image.height > 0) {
+                    aspect = image.width.toFloat() / image.height
+                    ChatMediaMemory.putAspect(url, aspect)
+                }
             },
             onError = { failed = true },
         )
@@ -221,22 +247,16 @@ private fun AttachmentCard(message: ChatMessage, url: String, onLongPress: () ->
 @Composable
 fun MediaProcessingState(message: ChatMessage, onCancel: (ChatMessage) -> Unit, onRetry: (ChatMessage) -> Unit, modifier: Modifier = Modifier) {
     val state = message.mediaState?.lowercase() ?: return
-    if (state in setOf("ready", "completed")) return
-    val progress = (message.mediaProgress ?: 0).coerceIn(0, 100)
-    // Human wording instead of raw job states ("queued · 0%"), like Signal's "Processing…".
-    val label = when (state) {
-        "failed" -> "Couldn't send"
-        "cancelled" -> "Cancelled"
-        else -> if (progress > 0) "Processing… $progress%" else "Processing…"
-    }
+    // The file is already servable while the job runs; only a failure needs UI.
+    if (state !in setOf("failed", "cancelled")) return
+    val label = if (state == "failed") "Couldn't send" else "Cancelled"
     Column(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
-            IconButton(onClick = { if (state in setOf("failed", "cancelled")) onRetry(message) else onCancel(message) }, Modifier.size(32.dp)) {
-                Icon(if (state in setOf("failed", "cancelled")) HeroIcons.ArrowUturnLeft else HeroIcons.XMark, if (state in setOf("failed", "cancelled")) "Retry" else "Cancel", Modifier.size(18.dp))
+            IconButton(onClick = { onRetry(message) }, Modifier.size(32.dp)) {
+                Icon(HeroIcons.ArrowPath, "Retry", Modifier.size(18.dp))
             }
         }
-        if (state !in setOf("failed", "cancelled")) LinearProgressIndicator(progress = { progress / 100f }, Modifier.fillMaxWidth())
         message.mediaFailureReason?.takeIf(String::isNotBlank)?.let { Text(it, color = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.danger, style = MaterialTheme.typography.labelSmall) }
     }
 }

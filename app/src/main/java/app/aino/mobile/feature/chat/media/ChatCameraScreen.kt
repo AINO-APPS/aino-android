@@ -143,14 +143,25 @@ fun ChatCameraScreen(
         val provider = context.cameraProvider()
         val selector = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
         val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+        // What you frame is what you send (Signal's capture matches its viewport):
+        // share the on-screen viewport so CameraX crops photo/video output to the
+        // visible preview instead of saving the wider full-sensor frame.
+        var viewPort = previewView.viewPort
+        var waited = 0
+        while (viewPort == null && waited < 1_000) { delay(16); waited += 16; viewPort = previewView.viewPort }
+        previewView.display?.rotation?.let { imageCapture.targetRotation = it; videoCapture.targetRotation = it }
+        fun group(vararg cases: androidx.camera.core.UseCase) = androidx.camera.core.UseCaseGroup.Builder().apply {
+            viewPort?.let(::setViewPort)
+            cases.forEach(::addUseCase)
+        }.build()
         provider.unbindAll()
         camera = try {
-            provider.bindToLifecycle(lifecycleOwner, selector, preview, imageCapture, videoCapture).also { videoSupported = true }
+            provider.bindToLifecycle(lifecycleOwner, selector, group(preview, imageCapture, videoCapture)).also { videoSupported = true }
         } catch (e: Exception) {
             videoSupported = false
             runCatching {
                 provider.unbindAll()
-                provider.bindToLifecycle(lifecycleOwner, selector, preview, imageCapture)
+                provider.bindToLifecycle(lifecycleOwner, selector, group(preview, imageCapture))
             }.getOrNull()
         }
     }

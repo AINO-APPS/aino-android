@@ -27,7 +27,7 @@ enum class RealtimeEvent(
      */
     val reaction: RealtimeReaction,
 ) {
-    // ── Chat (20) ────────────────────────────────────────────────────────
+    // ── Chat (21) ────────────────────────────────────────────────────────
     ChatMessage("chat_message", RealtimeDomain.Chat, RealtimeReaction.PatchThenReconcile),
     ChatTyping("chat_typing", RealtimeDomain.Chat, RealtimeReaction.Ephemeral),
     ChatReaction("chat_reaction", RealtimeDomain.Chat, RealtimeReaction.PatchThenReconcile),
@@ -39,6 +39,7 @@ enum class RealtimeEvent(
     ChatMediaJob("chat_media_job", RealtimeDomain.Chat, RealtimeReaction.Patch),
     ChatPollVote("chat_poll_vote", RealtimeDomain.Chat, RealtimeReaction.Patch),
     ChatViewOnce("chat_view_once", RealtimeDomain.Chat, RealtimeReaction.Patch),
+    ChatMessageDelivered("chat_message_delivered", RealtimeDomain.Chat, RealtimeReaction.Patch),
     ChatCleared("chat_cleared", RealtimeDomain.Chat, RealtimeReaction.Refetch),
     ChatUserBlocked("chat_user_blocked", RealtimeDomain.Chat, RealtimeReaction.Refetch),
     ChatConvArchived("chat_conv_archived", RealtimeDomain.Chat, RealtimeReaction.Refetch),

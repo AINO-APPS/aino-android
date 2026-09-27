@@ -41,6 +41,16 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
                     .onFailure { android.util.Log.w("AinoPush", "Conversation notification failed", it) }
                     .isSuccess
                 displayFallback = !shown
+                // Signal: a message that reached the device is "delivered" even if the app is closed.
+                validated.data["messageId"]?.toLongOrNull()?.let { id ->
+                    scope.launch {
+                        runCatching {
+                            app.aino.mobile.core.AppContainer.get(applicationContext).api.execute(
+                                app.aino.mobile.core.network.ApiRequest(method = "POST", path = "chat/messages/$id/delivered", body = ByteArray(0)),
+                            )
+                        }
+                    }
+                }
             }
             PushKind.IncomingCall -> {
                 val extras = incomingCallServiceExtras(

@@ -864,6 +864,24 @@ target. No code, constants or assets were copied; the AINO version is an
 independent Compose implementation (popup overlay, spring animations, own
 dimensions and timings, AINO state machine `VoicePhase`).
 
+### 0.10.1 — media, receipts, view-once, camera
+
+| ID  | Defect (root cause) | Fix | Status |
+| --- | ------------------- | --- | ------ |
+| R17 | Voice notes showed `--:--` until played: duration came only from the player, and the server stores none. | `AudioDurationCache`: measures a note once on-device (local file, or one authenticated fetch into cache) and persists the length; the bubble shows it before playback. | DONE |
+| R18 | Sent voice notes/files showed "Processing… %" with a bar and ✕, and images/videos a transfer ring, until the server media job finished — although that job only fingerprints an already-servable file. | Server job state no longer gates display; only a failed job shows retry. The upload ring stays on the pending bubble (real bytes in flight). | DONE |
+| R19 | Sent images blinked and resized: the delivered row reloaded from the network into a 4:3 placeholder. Received media showed a long "downloading" ring. | Sent media keeps its local copy for the session (`ChatMediaMemory`); bubbles size from upload `width`/`height` metadata or remembered decoded aspects. | DONE |
+| R20 | Deleted / "deleted for me" media stayed in All media and the info strip. | Shared-file list filters hidden ids and is pruned on every delete path (own, selection, realtime). | DONE |
+| R21 | Ticks never passed Sent: Android never acknowledged delivery and the server never announced it. | Android acks delivery (socket, push, thread load; once per id); server emits `chat_message_delivered`; Signal-shaped glyphs (one / two circled checks, two filled discs) with delivered + read in the org accent. | DONE |
+| R22 | Senders could re-open their own view-once media (UI, All media, and the server allowed it). | Sender bubble is status-only; server rejects sender views (`VIEW_ONCE_SENDER`) and omits view-once rows from shared files. | DONE |
+| R23 | In-chat camera photos were wider than the preview: `ImageCapture` saved the full 4:3 frame while the preview was cropped to the screen. | Use cases bind in a `UseCaseGroup` with the `PreviewView` viewport, so photos and videos match what was framed. | DONE |
+| R24 | Bottom-bar and More icons were small. | 22→26dp and 18→22dp. | DONE |
+
+External reference (per `docs/SOURCE_PROVENANCE.md`), 2026-09-27: Signal Android
+`audio/AudioFileInfo.java` (duration + waveform derived on-device and stored)
+and `feature/media-send/.../CameraXFragment.kt` (fixed portrait viewport; media
+matches it) were read for behaviour only. No code, constants or assets copied.
+
 ---
 
 ### PHASE 5 — Profile / account surface

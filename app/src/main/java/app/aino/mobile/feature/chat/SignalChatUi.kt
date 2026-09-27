@@ -90,13 +90,13 @@ import app.aino.mobile.core.designsystem.icons.HeroIcons
 // ---------------------------------------------------------------------------
 
 /**
- * Port of the web `DeliveryStatus.tsx` SVG ticks (16×16 viewBox, drawn at 15dp):
+ * Signal-shaped receipts (independent drawing on a 21×16 grid, drawn 20×15dp):
  *  - Sending   → faint ring + spinning quarter arc
- *  - Sent      → a single check
- *  - Delivered → a check inside one circle
- *  - Read      → outer ring + filled disc with the check punched out
- * [punchThrough] is the colour of the punched-out check (web `--read-check-bg`):
- * the bubble fill, or the dark media pill.
+ *  - Sent      → one circled check
+ *  - Delivered → two overlapping circled checks
+ *  - Read      → two overlapping filled discs with the checks punched out
+ * [punchThrough] is the colour behind the glyph (the bubble fill, or the dark
+ * media pill): it punches the checks and separates the overlapping circles.
  */
 @Composable
 internal fun SignalReceiptIcon(
@@ -119,35 +119,40 @@ internal fun SignalReceiptIcon(
             label = "tickSpinAngle",
         ).value
     } else 0f
-    Canvas(modifier.padding(start = 3.dp).size(15.dp).semantics { contentDescription = label }) {
-        val u = size.minDimension / 16f
+    Canvas(modifier.padding(start = 3.dp).size(width = 20.dp, height = 15.dp).semantics { contentDescription = label }) {
+        val u = size.height / 16f
         fun p(x: Float, y: Float) = Offset(x * u, y * u)
-        fun check(color: Color, width: Float, a: Offset, b: Offset, c: Offset) {
-            val path = androidx.compose.ui.graphics.Path().apply { moveTo(a.x, a.y); lineTo(b.x, b.y); lineTo(c.x, c.y) }
+        fun check(color: Color, width: Float, cx: Float) {
+            val path = androidx.compose.ui.graphics.Path().apply {
+                moveTo((cx - 3f) * u, 8.2f * u); lineTo((cx - 0.9f) * u, 10.3f * u); lineTo((cx + 3.2f) * u, 5.9f * u)
+            }
             drawPath(path, color, style = Stroke(width * u, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
         }
-        val center = p(8f, 8f)
+        val r = 6.2f
+        fun outlined(cx: Float, separate: Boolean) {
+            if (separate) drawCircle(punchThrough, (r + 1.3f) * u, p(cx, 8f))
+            drawCircle(tint, r * u, p(cx, 8f), style = Stroke(1.3f * u))
+            check(tint, 1.5f, cx)
+        }
+        fun filled(cx: Float, separate: Boolean) {
+            if (separate) drawCircle(punchThrough, (r + 1.3f) * u, p(cx, 8f))
+            drawCircle(tint, (r + 0.65f) * u, p(cx, 8f))
+            check(punchThrough, 1.5f, cx)
+        }
         when (tick) {
             DeliveryTick.Sending -> {
+                val center = p(8f, 8f)
                 drawCircle(tint.copy(alpha = tint.alpha * .35f), 6f * u, center, style = Stroke(1.5f * u))
                 rotate(spin, center) {
                     drawArc(tint, -90f, 90f, false, topLeft = p(2f, 2f), size = androidx.compose.ui.geometry.Size(12f * u, 12f * u), style = Stroke(1.5f * u, cap = StrokeCap.Round))
                 }
             }
-            DeliveryTick.Sent -> check(tint, 1.6f, p(3.5f, 8.5f), p(6.5f, 11.5f), p(12.5f, 4.5f))
-            DeliveryTick.Delivered -> {
-                drawCircle(tint, 7f * u, center, style = Stroke(1.3f * u))
-                check(tint, 1.5f, p(4.6f, 8.2f), p(6.8f, 10.4f), p(11.4f, 5.6f))
-            }
-            DeliveryTick.Read -> {
-                drawCircle(tint, 7f * u, center, style = Stroke(1.1f * u))
-                drawCircle(tint, 5.2f * u, center)
-                check(punchThrough, 1.4f, p(5.4f, 8.1f), p(7.2f, 9.9f), p(10.7f, 6f))
-            }
+            DeliveryTick.Sent -> outlined(8f, separate = false)
+            DeliveryTick.Delivered -> { outlined(7.5f, separate = false); outlined(13.5f, separate = true) }
+            DeliveryTick.Read -> { filled(7.5f, separate = false); filled(13.5f, separate = true) }
         }
     }
 }
-
 // ---------------------------------------------------------------------------
 // Bubble text + inline footer (time/receipt share the last line when it fits).
 // ---------------------------------------------------------------------------
@@ -322,7 +327,8 @@ fun ViewOnceContent(message: ChatMessage, state: ViewOnceState, outgoing: Boolea
     val signal = signalColors
     val fg = if (outgoing) signal.onOutgoing else signal.onIncoming
     val video = message.fileType?.startsWith("video/") == true
-    val openable = state == ViewOnceState.Unopened || state == ViewOnceState.SentUnviewed || state == ViewOnceState.SentViewed
+    // Signal: only recipients can open view-once media; the sender just sees its status.
+    val openable = state == ViewOnceState.Unopened
     val label = when (state) {
         ViewOnceState.Unopened, ViewOnceState.SentUnviewed -> if (video) "Video" else "Photo"
         ViewOnceState.Viewed, ViewOnceState.SentViewed -> "Viewed"

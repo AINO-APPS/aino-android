@@ -1737,17 +1737,16 @@ internal fun deliveryTick(message: ChatMessage, receipts: List<ReadReceipt>, par
 }
 
 /**
- * Web `DeliveryStatus.tsx` colours: sending/sent `--text-muted`, delivered
- * `--text-secondary`, read `--primary` (org accent). Over media everything is
- * white on the dark pill ([onMedia]).
+ * Tick colours: sending/sent muted; delivered and read in the org accent
+ * (`--primary`). Over media everything is white on the dark pill ([onMedia]).
  */
 @Composable
 private fun DeliveryTickIcon(tick: DeliveryTick, onMedia: Boolean) {
     val signal = signalColors
     val tint = when {
         onMedia -> Color.White
-        tick == DeliveryTick.Read -> signal.tickRead
-        tick == DeliveryTick.Delivered -> signal.tickDelivered
+        // Delivered and read both use the org accent; the glyph shape tells them apart.
+        tick == DeliveryTick.Read || tick == DeliveryTick.Delivered -> signal.tickRead
         else -> signal.tickMuted
     }
     SignalReceiptIcon(tick, tint, punchThrough = if (onMedia) Color.Black.copy(alpha = .55f) else signal.outgoing)

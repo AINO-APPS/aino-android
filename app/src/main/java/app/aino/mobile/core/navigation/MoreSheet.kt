@@ -53,12 +53,12 @@ fun MoreSheet(
                     .background(if (active) colors.bgHover else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(10.dp))
                     .padding(horizontal = 12.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Icon(
                     destination.icon,
                     null,
-                    Modifier.size(18.dp),
+                    Modifier.size(22.dp),
                     tint = if (active) colors.text else colors.textSecondary,
                 )
                 Text(

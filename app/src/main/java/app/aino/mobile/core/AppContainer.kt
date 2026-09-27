@@ -65,6 +65,9 @@ class AppContainer private constructor(private val context: Context) {
     val audio: app.aino.mobile.core.media.SharedAudioPlayer by lazy {
         app.aino.mobile.core.media.SharedAudioPlayer(context, mediaHttp)
     }
+    val audioDurations: app.aino.mobile.core.media.AudioDurationCache by lazy {
+        app.aino.mobile.core.media.AudioDurationCache(context, mediaHttp)
+    }
 
     companion object {
         @Volatile private var instance: AppContainer? = null

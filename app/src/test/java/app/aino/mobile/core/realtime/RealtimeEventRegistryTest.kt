@@ -17,8 +17,8 @@ import org.junit.Test
 class RealtimeEventRegistryTest {
     @Test
     fun routesTheCompleteServerSurface() {
-        // 74 = 67 sendToUser types (incl. attendance_update) + 6 tenant-wide broadcast types + task_assigned.
-        assertEquals(74, RealtimeEvent.entries.size)
+        // 75 = 68 sendToUser types (incl. attendance_update, chat_message_delivered) + 6 tenant-wide broadcast types + task_assigned.
+        assertEquals(75, RealtimeEvent.entries.size)
         assertEquals(RealtimeEvent.AttendanceUpdate, RealtimeEvent.from("attendance_update"))
     }
 

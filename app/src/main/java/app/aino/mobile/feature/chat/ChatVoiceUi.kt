@@ -55,18 +55,6 @@ fun formatVoiceTime(milliseconds: Long): String {
     return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
-private suspend fun android.content.Context.localAudioDurationMs(url: String): Long =
-    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        runCatching {
-            android.media.MediaMetadataRetriever().run {
-                try {
-                    setDataSource(this@localAudioDurationMs, android.net.Uri.parse(url))
-                    extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                } finally { release() }
-            }
-        }.getOrDefault(0L)
-    }
-
 /** Deterministic pseudo-waveform (the server stores no peaks): 0.2..1 bar heights seeded by the url. */
 fun voiceWaveform(seed: String, bars: Int = 46): List<Float> {
     var x = seed.hashCode().toLong() and 0xffffffffL
@@ -94,15 +82,16 @@ fun ChatVoicePlayer(
 ) {
     val signal = signalColors
     val context = LocalContext.current
-    val player = AppContainer.get(context).audio
+    val container = AppContainer.get(context)
+    val player = container.audio
     val state by player.state.collectAsStateWithLifecycle()
     val current = state.url == url
     val playing = current && state.playing
-    // Local files (drafts, pending sends) know their length before first play.
-    val localDuration by produceState(0L, url) {
-        if (url.startsWith("content:") || url.startsWith("file:")) value = context.localAudioDurationMs(url)
+    // Signal-like: the length is known before first play (measured once, then cached).
+    val knownDuration by produceState(container.audioDurations.cached(url), url) {
+        if (value <= 0) value = container.audioDurations.duration(url)
     }
-    val duration = (if (current) state.durationMs else player.durationOf(url)).takeIf { it > 0 } ?: localDuration
+    val duration = (if (current) state.durationMs else player.durationOf(url)).takeIf { it > 0 } ?: knownDuration
     val position = if (current) state.positionMs else 0
     val progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val fg = if (outgoing) signal.onOutgoing else signal.onIncoming

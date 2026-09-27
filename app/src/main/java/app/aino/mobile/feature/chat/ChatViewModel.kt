@@ -33,6 +33,12 @@ sealed interface InfoContent {
     data class Files(val files: List<SharedChatFile>) : InfoContent
 }
 
+/** Drops deleted or locally hidden messages from the shared-media list (All media, info strip). */
+internal fun pruneSharedFiles(content: InfoContent?, removed: Set<Long>): InfoContent? =
+    if (content is InfoContent.Files && removed.isNotEmpty() && content.files.any { it.id in removed }) {
+        InfoContent.Files(content.files.filterNot { it.id in removed })
+    } else content
+
 /**
  * Signal-style outgoing attachment bubble shown the moment "Send" is tapped
  * (Signal `TransferControls`): local preview + progress ring until the server
@@ -71,14 +77,20 @@ fun zeroUnread(conversations: List<ChatConversation>, conversationId: Long?): Li
  * The server's realtime echo of an upload can beat the HTTP response. Drop the
  * oldest fully-sent pending bubble of the same type so the row never shows twice.
  */
-fun dropEchoedPendingMedia(pending: List<PendingMedia>, incoming: ChatMessage, currentUserId: Long?): List<PendingMedia> {
-    if (incoming.senderId != currentUserId || incoming.fileUrl.isNullOrBlank()) return pending
-    val match = pending.filter {
+fun dropEchoedPendingMedia(pending: List<PendingMedia>, incoming: ChatMessage, currentUserId: Long?): List<PendingMedia> =
+    echoedPendingMedia(pending, incoming, currentUserId)?.let { pending - it } ?: pending
+
+/** The fully uploaded local bubble that [incoming] (our own echo) replaces, if any. */
+fun echoedPendingMedia(pending: List<PendingMedia>, incoming: ChatMessage, currentUserId: Long?): PendingMedia? {
+    if (incoming.senderId != currentUserId || incoming.fileUrl.isNullOrBlank()) return null
+    return pending.filter {
         it.conversationId == incoming.conversationId && it.state == PendingMediaState.Uploading &&
             it.mimeType.equals(incoming.fileType, ignoreCase = true) && (it.progress ?: 0f) >= 0.99f
-    }.minByOrNull { it.createdAtEpochMs } ?: return pending
-    return pending - match
+    }.minByOrNull { it.createdAtEpochMs }
 }
+
+private fun PendingMedia.aspect(): Float? =
+    if (width != null && height != null && width > 0 && height > 0) width.toFloat() / height else null
 
 data class PendingAttachment(val uri: Uri, val mimeType: String, val fileName: String) {
     val isImage get() = mimeType.startsWith("image/")
@@ -334,7 +346,15 @@ class ChatViewModel(
                     _ui.value = _ui.value.copy(
                         messages = applyRealtimeDelete(_ui.value.messages, delete),
                         editingMessage = _ui.value.editingMessage?.takeUnless { it.id == delete.messageId },
+                        infoContent = pruneSharedFiles(_ui.value.infoContent, setOf(delete.messageId)),
                     )
+                }
+                return
+            }
+            RealtimeEvent.ChatMessageDelivered -> {
+                val delivered = decodeChatRealtime<ChatDeliveredEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id == delivered.conversationId) {
+                    _ui.value = _ui.value.copy(messages = applyDelivered(_ui.value.messages, delivered))
                 }
                 return
             }
@@ -358,9 +378,13 @@ class ChatViewModel(
                 // clientMsgId, so the optimistic bubble is swapped in place instead
                 // of sitting next to the persisted row until the thread reloads.
                 val incoming = decodeChatRealtime<ChatRealtimeMessage>(event.data)
+                incoming?.toChatMessage()?.let { received -> acknowledgeDelivery(listOf(received)) }
                 if (incoming != null && _ui.value.selectedConversation?.id == incoming.conversationId) {
                     val message = incoming.toChatMessage()
                     val state = _ui.value
+                    echoedPendingMedia(state.pendingMedia, message, scope?.userId)?.let {
+                        ChatMediaMemory.rememberSent(message.fileUrl, it.uri, it.aspect())
+                    }
                     val messages = mergeIncomingMessage(state.messages, message)
                     _ui.value = state.copy(
                         messages = messages,
@@ -392,6 +416,12 @@ class ChatViewModel(
             refresh()
             if (_ui.value.selectedConversation != null) refreshThread()
         }
+    }
+
+    /** Delivery receipts for messages that reached this device (see [DeliveryReceipts]). */
+    private fun acknowledgeDelivery(messages: List<ChatMessage>) {
+        val ids = DeliveryReceipts.pending(messages, scope?.userId).takeIf { it.isNotEmpty() } ?: return
+        viewModelScope.launch(Dispatchers.IO) { DeliveryReceipts.send(repository, ids) }
     }
 
     /** The open thread, but only while its screen is resumed. */
@@ -588,6 +618,7 @@ class ChatViewModel(
                         threadFromCache = false,
                     )
                     restoreDraftTargets(conversation.id, messages)
+                    acknowledgeDelivery(messages.takeLast(50))
                 },
                 onFailure = { error ->
                     val cached = runCatching { scopedCache.messageSnapshot(conversation.id) }.getOrDefault(emptyList())
@@ -748,6 +779,7 @@ class ChatViewModel(
         _ui.value = _ui.value.copy(
             messages = applyRealtimeDelete(original, ChatDeleteEvent(message.id, message.conversationId ?: _ui.value.selectedConversation?.id ?: return)),
             editingMessage = _ui.value.editingMessage?.takeUnless { it.id == message.id },
+            infoContent = pruneSharedFiles(_ui.value.infoContent, setOf(message.id)),
             error = null,
         )
         viewModelScope.launch(Dispatchers.IO) {
@@ -924,7 +956,7 @@ class ChatViewModel(
         val conversationId = _ui.value.selectedConversation?.id ?: return
         val hidden = _ui.value.hiddenMessageIds + _ui.value.selectedMessageIds
         saveHidden(conversationId, hidden)
-        _ui.value = _ui.value.copy(hiddenMessageIds = hidden, selectedMessageIds = emptySet())
+        _ui.value = _ui.value.copy(hiddenMessageIds = hidden, selectedMessageIds = emptySet(), infoContent = pruneSharedFiles(_ui.value.infoContent, hidden))
     }
 
     private fun hiddenKey(conversationId: Long): String? = draftKey(conversationId)?.replace(":draft:", ":hidden:")
@@ -1142,6 +1174,7 @@ class ChatViewModel(
                 if (_ui.value.pendingMedia.none { it.localId == media.localId }) return // cancelled mid-flight
                 pendingOptions.remove(media.localId)
                 val message = uploaded.copy(conversationId = uploaded.conversationId ?: media.conversationId)
+                ChatMediaMemory.rememberSent(message.fileUrl, media.uri, media.aspect())
                 val state = _ui.value
                 val inThread = state.selectedConversation?.id == media.conversationId
                 _ui.value = state.copy(
@@ -1160,10 +1193,11 @@ class ChatViewModel(
     /** View-once open: the server claims the single allowed view and returns the URL (null once consumed). */
     fun openViewOnce(message: ChatMessage, onUrl: (String?) -> Unit) {
         val me = scope?.userId ?: return
+        if (message.senderId == me) return // Senders can't re-open their own view-once media.
         viewModelScope.launch(Dispatchers.IO) {
             val url = runCatching { repository.viewMessage(message.id) }.getOrNull()?.fileUrl
             val event = ChatViewOnceEvent(message.id, message.conversationId ?: 0, me)
-            if (message.senderId != me) _ui.value = _ui.value.copy(messages = applyViewOnce(_ui.value.messages, event))
+            _ui.value = _ui.value.copy(messages = applyViewOnce(_ui.value.messages, event))
             kotlinx.coroutines.withContext(Dispatchers.Main) { onUrl(url) }
         }
     }
@@ -1173,7 +1207,7 @@ class ChatViewModel(
         val conversationId = _ui.value.selectedConversation?.id ?: return
         val hidden = _ui.value.hiddenMessageIds + message.id
         saveHidden(conversationId, hidden)
-        _ui.value = _ui.value.copy(hiddenMessageIds = hidden)
+        _ui.value = _ui.value.copy(hiddenMessageIds = hidden, infoContent = pruneSharedFiles(_ui.value.infoContent, hidden))
     }
 
     // ---- Signal in-chat search: toolbar field + "x of y" stepping ----
@@ -1472,7 +1506,9 @@ class ChatViewModel(
         }
     }
     fun loadSavedMessages() = loadInfo { InfoContent.Messages(repository.loadStarredMessages()) }
-    fun loadSharedFiles() = loadInfo { InfoContent.Files(repository.loadSharedFiles(it.id)) }
+    fun loadSharedFiles() = loadInfo { conversation ->
+        pruneSharedFiles(InfoContent.Files(repository.loadSharedFiles(conversation.id)), _ui.value.hiddenMessageIds)!!
+    }
     fun searchInConversation(term: String) {
         if (term.trim().length < 2) { _ui.value = _ui.value.copy(infoContent = InfoContent.Messages(emptyList())); return }
         loadInfo { InfoContent.Messages(repository.searchMessages(term.trim(), it.id)) }
