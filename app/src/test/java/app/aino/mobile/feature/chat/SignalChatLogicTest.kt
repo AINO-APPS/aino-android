@@ -16,20 +16,36 @@ class SignalChatLogicTest {
         mapOf("viewOnce" to JsonPrimitive(true), "viewedBy" to JsonArray(viewers.map { JsonPrimitive(it) })),
     )
 
-    @Test fun `bubble corners collapse only on the sender side inside a group`() {
-        val single = messageBubbleShape(isMine = true, startsGroup = true, endsGroup = true)
+    @Test fun `bubble corners follow the web notch on the first bubble of a block`() {
+        val firstMine = messageBubbleShape(isMine = true, startsGroup = true, endsGroup = false)
         val middleMine = messageBubbleShape(isMine = true, startsGroup = false, endsGroup = false)
-        val middleTheirs = messageBubbleShape(isMine = false, startsGroup = false, endsGroup = false)
+        val firstTheirs = messageBubbleShape(isMine = false, startsGroup = true, endsGroup = true)
         val size = androidx.compose.ui.geometry.Size(100f, 100f)
         val density = androidx.compose.ui.unit.Density(1f)
-        assertEquals(18f, single.topEnd.toPx(size, density))
-        assertEquals(18f, single.bottomEnd.toPx(size, density))
-        assertEquals(4f, middleMine.topEnd.toPx(size, density))
-        assertEquals(4f, middleMine.bottomEnd.toPx(size, density))
-        assertEquals(18f, middleMine.topStart.toPx(size, density))
-        assertEquals(4f, middleTheirs.topStart.toPx(size, density))
-        assertEquals(18f, middleTheirs.topEnd.toPx(size, density))
-        assertEquals(18.dp, SignalDimens.bubbleCorner)
+        // .myBubble { border-radius: 16px 4px 16px 16px }
+        assertEquals(16f, firstMine.topStart.toPx(size, density))
+        assertEquals(4f, firstMine.topEnd.toPx(size, density))
+        assertEquals(16f, firstMine.bottomEnd.toPx(size, density))
+        assertEquals(16f, firstMine.bottomStart.toPx(size, density))
+        // .mine.grouped .myBubble { border-radius: 16px }
+        assertEquals(16f, middleMine.topEnd.toPx(size, density))
+        assertEquals(16f, middleMine.bottomEnd.toPx(size, density))
+        // .theirBubble { border-radius: 4px 16px 16px 16px }
+        assertEquals(4f, firstTheirs.topStart.toPx(size, density))
+        assertEquals(16f, firstTheirs.topEnd.toPx(size, density))
+        assertEquals(16.dp, SignalDimens.bubbleCorner)
+    }
+
+    @Test fun `chat palette follows the org accent like the web bubbles`() {
+        val accent = androidx.compose.ui.graphics.Color(0xFFE91E63)
+        val web = app.aino.mobile.core.designsystem.tokens.WebColorsDark.copy(primary = accent)
+        val colors = orgChatColors(SignalDark, web)
+        assertEquals(accent, colors.tickRead)
+        assertEquals(accent, colors.primary)
+        assertEquals(1f, colors.outgoing.alpha, 0f)
+        assertEquals(1f, colors.incoming.alpha, 0f)
+        assertTrue(colors.outgoing != colors.incoming)
+        assertTrue(colors.outgoing.red > colors.incoming.red)
     }
 
     @Test fun `view once states for sender and recipient`() {

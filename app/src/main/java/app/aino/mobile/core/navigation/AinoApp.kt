@@ -163,6 +163,19 @@ fun AinoApp(
         factory = app.aino.mobile.feature.notifications.NotificationsViewModel.factory(appContext),
     )
     LaunchedEffect(tenantAuthenticated) { if (!tenantAuthenticated) notifications.reset() }
+    // The dashboard + attendance ViewModels outlive sign-in (MainActivity
+    // scope). Load them only once a tenant token exists — a token-less
+    // `tracker/status` is rejected with HTTP 400 by the server's requireTenant
+    // and that stale error used to surface on the home screen after login.
+    LaunchedEffect(tenantAuthenticated, authenticatedUser?.id) {
+        if (tenantAuthenticated && authenticatedUser != null) {
+            dashboard.refresh()
+            attendance.refresh()
+        } else {
+            dashboard.reset()
+            attendance.reset()
+        }
+    }
     androidx.lifecycle.compose.LifecycleResumeEffect(tenantAuthenticated) {
         if (tenantAuthenticated) notifications.start()
         onPauseOrDispose { notifications.stop() }

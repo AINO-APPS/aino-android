@@ -68,6 +68,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
@@ -96,40 +98,64 @@ import kotlin.math.max
 // Receipts: Signal's circle-check glyphs, drawn in Compose (no Signal assets).
 // ---------------------------------------------------------------------------
 
-/** Sending = clock, Sent = one check in a ring, Delivered = two rings, Read = two filled rings. */
+/**
+ * Port of the web `DeliveryStatus.tsx` SVG ticks (16×16 viewBox, drawn at 15dp):
+ *  - Sending   → faint ring + spinning quarter arc
+ *  - Sent      → a single check
+ *  - Delivered → a check inside one circle
+ *  - Read      → outer ring + filled disc with the check punched out
+ * [punchThrough] is the colour of the punched-out check (web `--read-check-bg`):
+ * the bubble fill, or the dark media pill.
+ */
 @Composable
-internal fun SignalReceiptIcon(tick: DeliveryTick, tint: Color, modifier: Modifier = Modifier) {
+internal fun SignalReceiptIcon(
+    tick: DeliveryTick,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    punchThrough: Color = Color.White,
+) {
     val label = when (tick) {
         DeliveryTick.Sending -> "Sending"
         DeliveryTick.Sent -> "Sent"
         DeliveryTick.Delivered -> "Delivered"
         DeliveryTick.Read -> "Read"
     }
-    val double = tick == DeliveryTick.Delivered || tick == DeliveryTick.Read
-    Canvas(modifier.size(width = if (double) 19.dp else 12.dp, height = 12.dp).semantics { contentDescription = label }) {
-        val r = size.height / 2 - 0.6.dp.toPx()
-        val stroke = 1.2.dp.toPx()
-        fun ring(cx: Float, filled: Boolean) {
-            val center = Offset(cx, size.height / 2)
-            if (filled) drawCircle(tint, r + stroke / 2, center) else drawCircle(tint, r, center, style = Stroke(stroke))
-            if (tick == DeliveryTick.Sending) {
-                drawLine(tint, center, center.copy(y = center.y - r * .6f), stroke, StrokeCap.Round)
-                drawLine(tint, center, center.copy(x = center.x + r * .5f), stroke, StrokeCap.Round)
-                return
-            }
-            val c = if (filled) tintOnFill(tint) else tint
-            drawLine(c, Offset(center.x - r * .45f, center.y + r * .02f), Offset(center.x - r * .1f, center.y + r * .38f), stroke, StrokeCap.Round)
-            drawLine(c, Offset(center.x - r * .1f, center.y + r * .38f), Offset(center.x + r * .48f, center.y - r * .32f), stroke, StrokeCap.Round)
+    val spin = if (tick == DeliveryTick.Sending) {
+        val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "tickSpin")
+        transition.animateFloat(
+            0f, 360f,
+            androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(900, easing = androidx.compose.animation.core.LinearEasing)),
+            label = "tickSpinAngle",
+        ).value
+    } else 0f
+    Canvas(modifier.padding(start = 3.dp).size(15.dp).semantics { contentDescription = label }) {
+        val u = size.minDimension / 16f
+        fun p(x: Float, y: Float) = Offset(x * u, y * u)
+        fun check(color: Color, width: Float, a: Offset, b: Offset, c: Offset) {
+            val path = androidx.compose.ui.graphics.Path().apply { moveTo(a.x, a.y); lineTo(b.x, b.y); lineTo(c.x, c.y) }
+            drawPath(path, color, style = Stroke(width * u, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
         }
-        if (double) {
-            ring(size.width - size.height / 2, tick == DeliveryTick.Read)
-            ring(size.height / 2, tick == DeliveryTick.Read)
-        } else ring(size.width / 2, false)
+        val center = p(8f, 8f)
+        when (tick) {
+            DeliveryTick.Sending -> {
+                drawCircle(tint.copy(alpha = tint.alpha * .35f), 6f * u, center, style = Stroke(1.5f * u))
+                rotate(spin, center) {
+                    drawArc(tint, -90f, 90f, false, topLeft = p(2f, 2f), size = androidx.compose.ui.geometry.Size(12f * u, 12f * u), style = Stroke(1.5f * u, cap = StrokeCap.Round))
+                }
+            }
+            DeliveryTick.Sent -> check(tint, 1.6f, p(3.5f, 8.5f), p(6.5f, 11.5f), p(12.5f, 4.5f))
+            DeliveryTick.Delivered -> {
+                drawCircle(tint, 7f * u, center, style = Stroke(1.3f * u))
+                check(tint, 1.5f, p(4.6f, 8.2f), p(6.8f, 10.4f), p(11.4f, 5.6f))
+            }
+            DeliveryTick.Read -> {
+                drawCircle(tint, 7f * u, center, style = Stroke(1.1f * u))
+                drawCircle(tint, 5.2f * u, center)
+                check(punchThrough, 1.4f, p(5.4f, 8.1f), p(7.2f, 9.9f), p(10.7f, 6f))
+            }
+        }
     }
 }
-
-/** Check colour inside a filled (read) ring: the bubble colour punches through. */
-private fun tintOnFill(tint: Color): Color = if (tint.red + tint.green + tint.blue > 2.2f) Color(0xFF2C6BED) else Color.White
 
 // ---------------------------------------------------------------------------
 // Bubble text + inline footer (time/receipt share the last line when it fits).

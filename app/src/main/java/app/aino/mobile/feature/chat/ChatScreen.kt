@@ -86,6 +86,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.People
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.MoreHoriz
@@ -1264,6 +1265,7 @@ private fun MessageBubble(
     var actionsOpen by remember { mutableStateOf(false) }
     var reactionsOpen by remember { mutableStateOf(false) }
     val signal = signalColors
+    val saveMedia = rememberChatMediaSaver()
     // Web ChatMessages: `format_type 'meeting'` rows render a MeetingCard, not a bubble.
     val meetingMeta = message.metadata?.takeIf { message.formatType == "meeting" } as? kotlinx.serialization.json.JsonObject
     val meetingCode = (meetingMeta?.get("meetingCode") as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
@@ -1312,7 +1314,7 @@ private fun MessageBubble(
             if (message.pinnedAt != null) Icon(Icons.Outlined.PushPin, "Pinned message", Modifier.size(12.dp), tint = tint)
             if (message.editedAt != null && !deleted) Text("Edited", color = tint, fontSize = SignalDimens.footerText)
             Text(bubbleTime(message.createdAt), color = tint, fontSize = SignalDimens.footerText)
-            if (isMine && !deleted) DeliveryTickIcon(deliveryTick(message, receipts, participantCount), readTint = tint, mutedTint = tint)
+            if (isMine && !deleted) DeliveryTickIcon(deliveryTick(message, receipts, participantCount), onMedia)
         }
     }
     val showAvatarColumn = isGroup && !isMine
@@ -1343,7 +1345,14 @@ private fun MessageBubble(
                         Modifier.widthIn(max = bubbleMax)
                             .clip(shape)
                             .background(bubbleColor)
-                            .then(if (deleted) Modifier.border(1.dp, signal.divider, shape) else Modifier)
+                            .then(
+                                when {
+                                    deleted -> Modifier.border(1.dp, signal.divider, shape)
+                                    // Web `.myBubble { border: 1px solid color-mix(--primary 16%) }`.
+                                    isMine && !mediaOnly -> Modifier.border(1.dp, signal.outgoingBorder, shape)
+                                    else -> Modifier
+                                },
+                            )
                             .then(
                                 if (mediaOnly) Modifier
                                 else Modifier.padding(
@@ -1355,7 +1364,8 @@ private fun MessageBubble(
                     ) {
                         if (!isMine && isGroup && showSender && !deleted) Text(
                             message.senderName ?: message.senderUsername.orEmpty(),
-                            color = senderColor(message.senderId, signal.isDark),
+                            // Web `.senderName { color: var(--primary); opacity: .85 }`.
+                            color = signal.primary.copy(alpha = .85f),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                         )
@@ -1434,6 +1444,15 @@ private fun MessageBubble(
                                         Text(message.fileName, color = fg, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         message.fileSize?.let { Text(formatFileSize(it), color = fgMuted, fontSize = 13.sp) }
                                     }
+                                    message.fileUrl?.takeIf { it.isNotBlank() && !selectionActive }?.let { url ->
+                                        Icon(
+                                            Icons.Outlined.Download, "Save to device",
+                                            Modifier.size(36.dp).clip(CircleShape)
+                                                .clickable { saveMedia(resolveChatMediaUrl(url), message.fileName, message.fileType) }
+                                                .padding(7.dp),
+                                            tint = fg,
+                                        )
+                                    }
                                 }
                                 if (!message.mediaState.isNullOrBlank() && message.mediaState !in setOf("ready", "completed")) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1494,6 +1513,10 @@ private fun MessageBubble(
                 },
                 pinned = message.pinnedAt != null,
                 starred = message.starred,
+                // View-once media is never saveable (Signal).
+                onSaveToDevice = message.fileUrl?.takeIf { it.isNotBlank() && !deleted && !message.isViewOnce() }?.let { url ->
+                    { saveMedia(resolveChatMediaUrl(url), message.fileName, message.fileType) }
+                },
             ),
             messagePreview = {
                 val preview = message.body().take(400)
@@ -1528,10 +1551,11 @@ private fun SignalQuote(message: ChatMessage, isMine: Boolean, fg: Color) {
     val signal = signalColors
     val quoteShape = RoundedCornerShape(SignalDimens.quoteCorner)
     Row(
-        Modifier.clip(quoteShape).background(if (isMine) Color.White.copy(alpha = .22f) else if (signal.isDark) Color.White.copy(alpha = .08f) else Color.White.copy(alpha = .6f))
+        // Web ReplyPreview: neutral wash + org-accent rule on both sides (bubbles are no longer solid blue).
+        Modifier.clip(quoteShape).background(if (signal.isDark) Color.White.copy(alpha = .08f) else Color.Black.copy(alpha = .05f))
             .height(androidx.compose.foundation.layout.IntrinsicSize.Min),
     ) {
-        Box(Modifier.width(4.dp).fillMaxHeight().background(if (isMine) Color.White else signal.primary))
+        Box(Modifier.width(4.dp).fillMaxHeight().background(signal.primary))
         Column(Modifier.weight(1f, fill = false).padding(horizontal = 8.dp, vertical = 6.dp)) {
             Text(message.replySenderName.orEmpty(), color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             Text(
@@ -1553,12 +1577,6 @@ private fun SignalQuote(message: ChatMessage, isMine: Boolean, fg: Color) {
 }
 
 /** Signal colours group sender names from a fixed palette keyed by the sender. */
-private fun senderColor(senderId: Long, dark: Boolean): Color {
-    val light = listOf(0xFFD00B0B, 0xFFC72A0A, 0xFFB34209, 0xFF9C5711, 0xFF866118, 0xFF76681E, 0xFF6C6C13, 0xFF5E6E0C, 0xFF507406, 0xFF3D7406, 0xFF2D7906, 0xFF1A7906, 0xFF067906, 0xFF067919, 0xFF06792D, 0xFF067940, 0xFF067953, 0xFF067462, 0xFF067474, 0xFF077288, 0xFF086DA0, 0xFF0A69C7, 0xFF0D59F2, 0xFF3454F4, 0xFF5151F6, 0xFF6447F5, 0xFF7A3DF5, 0xFF8F2AF4, 0xFFA20CED, 0xFFAF0BD0, 0xFFB80AB8, 0xFFC20AA3)
-    val base = Color(light[(senderId.mod(light.size.toLong())).toInt()])
-    return if (dark) androidx.compose.ui.graphics.lerp(base, Color.White, .45f) else base
-}
-
 /** Signal bubbles show the local clock time ("10:42 AM"), not a relative age. */
 private fun bubbleTime(value: String): String = parseChatInstant(value)?.let {
     DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).format(it.atZone(ZoneId.systemDefault()))
@@ -1659,24 +1677,20 @@ private fun DateSeparator(date: LocalDate) {
         )
     }
 }
-/** Rounded on the outside of a group and tight toward consecutive bubbles. */
+/**
+ * Web `MessageBubble.module.css`: 16px corners, with the first bubble of a
+ * sender block squared on the sender's top corner (`.myBubble 16 4 16 16`,
+ * `.theirBubble 4 16 16 16`); grouped continuations are fully rounded.
+ * [endsGroup] is kept for call-site compatibility.
+ */
+@Suppress("UNUSED_PARAMETER")
 internal fun messageBubbleShape(isMine: Boolean, startsGroup: Boolean, endsGroup: Boolean): RoundedCornerShape {
     val large = SignalDimens.bubbleCorner
-    val tight = SignalDimens.bubbleCornerCollapsed
+    val notch = if (startsGroup) SignalDimens.bubbleCornerCollapsed else large
     return if (isMine) {
-        RoundedCornerShape(
-            topStart = large,
-            topEnd = if (startsGroup) large else tight,
-            bottomStart = large,
-            bottomEnd = if (endsGroup) large else tight,
-        )
+        RoundedCornerShape(topStart = large, topEnd = notch, bottomStart = large, bottomEnd = large)
     } else {
-        RoundedCornerShape(
-            topStart = if (startsGroup) large else tight,
-            topEnd = large,
-            bottomStart = if (endsGroup) large else tight,
-            bottomEnd = large,
-        )
+        RoundedCornerShape(topStart = notch, topEnd = large, bottomStart = large, bottomEnd = large)
     }
 }
 
@@ -1707,9 +1721,21 @@ internal fun deliveryTick(message: ChatMessage, receipts: List<ReadReceipt>, par
     }
 }
 
+/**
+ * Web `DeliveryStatus.tsx` colours: sending/sent `--text-muted`, delivered
+ * `--text-secondary`, read `--primary` (org accent). Over media everything is
+ * white on the dark pill ([onMedia]).
+ */
 @Composable
-private fun DeliveryTickIcon(tick: DeliveryTick, readTint: Color, mutedTint: Color) {
-    SignalReceiptIcon(tick, if (tick == DeliveryTick.Read) readTint else mutedTint)
+private fun DeliveryTickIcon(tick: DeliveryTick, onMedia: Boolean) {
+    val signal = signalColors
+    val tint = when {
+        onMedia -> Color.White
+        tick == DeliveryTick.Read -> signal.tickRead
+        tick == DeliveryTick.Delivered -> signal.tickDelivered
+        else -> signal.tickMuted
+    }
+    SignalReceiptIcon(tick, tint, punchThrough = if (onMedia) Color.Black.copy(alpha = .55f) else signal.outgoing)
 }
 
 private fun parseChatInstant(value: String): Instant? = runCatching {

@@ -66,7 +66,11 @@ object PushNotifications {
             !app.aino.mobile.core.notifications.NotificationSoundPrefs.notificationAudible(context)
         }
         val notification = NotificationCompat.Builder(context, channel)
-            .setSmallIcon(R.drawable.aino_icon)
+            // Status-bar icons are alpha-only masks, so a monochrome glyph is
+            // used there; the coloured logo shows as the large icon when expanded.
+            .setSmallIcon(R.drawable.ic_stat_aino)
+            .setColor(ChatNotifications.brandColor(context))
+            .setLargeIcon(ChatNotifications.appLogo(context))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

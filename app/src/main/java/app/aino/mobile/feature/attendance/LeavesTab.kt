@@ -124,8 +124,12 @@ fun LeavesTab(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
 @Composable
 private fun WithdrawDialog(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
     val candidate = ui.withdrawCandidate ?: return
+    val colors = LocalWebColors.current
     AlertDialog(
         onDismissRequest = { viewModel.confirmWithdraw(null) },
+        containerColor = colors.bgElevated,
+        titleContentColor = colors.text,
+        textContentColor = colors.textSecondary,
         title = { Text("Withdraw Leave Request") },
         text = {
             Text(

@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.dp
 
 /** Radii from global.css (P1.1). */
@@ -45,6 +47,19 @@ fun WebTheme(
     }
 }
 
+/**
+ * The web `--surface` / `--surface-hover` tokens are translucent washes (4–8%
+ * alpha) meant to sit on a page. Material3 uses `surfaceContainerHigh` as the
+ * default AlertDialog / DatePicker / TimePicker container, so mapping the raw
+ * token made every default dialog see-through. Composite onto the elevated
+ * background so the slots are always fully opaque but keep the same tint.
+ */
+internal fun opaqueSurface(token: Color, base: Color): Color =
+    if (token.alpha >= 1f) token else token.compositeOver(base)
+
+internal fun surfaceContainerHighFor(c: WebColors): Color = opaqueSurface(c.surface, c.bgElevated)
+internal fun surfaceContainerHighestFor(c: WebColors): Color = opaqueSurface(c.surfaceHover, c.bgElevated)
+
 private fun darkColorSchemeFor(c: WebColors) = androidx.compose.material3.darkColorScheme(
     primary = c.primary,
     onPrimary = c.onAccent,
@@ -60,8 +75,8 @@ private fun darkColorSchemeFor(c: WebColors) = androidx.compose.material3.darkCo
     surfaceContainerLowest = c.bg,
     surfaceContainerLow = c.bgSecondary,
     surfaceContainer = c.bgElevated,
-    surfaceContainerHigh = c.surface,
-    surfaceContainerHighest = c.surfaceHover,
+    surfaceContainerHigh = surfaceContainerHighFor(c),
+    surfaceContainerHighest = surfaceContainerHighestFor(c),
     outline = c.border,
     outlineVariant = c.glassBorder,
     error = c.danger,
@@ -82,8 +97,8 @@ private fun lightColorSchemeFor(c: WebColors) = androidx.compose.material3.light
     surfaceContainerLowest = c.bg,
     surfaceContainerLow = c.bgSecondary,
     surfaceContainer = c.bgElevated,
-    surfaceContainerHigh = c.surface,
-    surfaceContainerHighest = c.surfaceHover,
+    surfaceContainerHigh = surfaceContainerHighFor(c),
+    surfaceContainerHighest = surfaceContainerHighestFor(c),
     outline = c.border,
     outlineVariant = c.glassBorder,
     error = c.danger,

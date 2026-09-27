@@ -225,7 +225,18 @@ class AttendanceViewModel(
     private var refreshAgain = false
     private var policyRetried = false
 
-    init { refresh() }
+    // No refresh() in init: MainActivity creates this before sign-in and a
+    // token-less `tracker/status` answers HTTP 400 (requireTenant). AinoApp
+    // refreshes once a tenant session exists and calls reset() on sign-out.
+
+    /** Sign-out: forget the previous user's attendance state. */
+    fun reset() {
+        refreshAgain = false
+        policyRetried = false
+        loadedTabs.clear()
+        loadedTabs.add(AttendanceTab.Overview)
+        _ui.value = AttendanceUiState()
+    }
 
     // ------------------------------------------------------------------
     // Overview tab (calendar)
@@ -272,7 +283,7 @@ class AttendanceViewModel(
                 overtimeRequests = overtime,
                 manualClockIn = if (_ui.value.manualEditMode) _ui.value.manualClockIn
                     else loadedPolicy.officeStartTime?.takeIf(::validOfficeStart) ?: _ui.value.manualClockIn,
-                error = if (statusFresh) status.exceptionOrNull()?.let { it.message ?: "Could not load attendance status" } else _ui.value.error,
+                error = if (statusFresh) status.exceptionOrNull()?.let { app.aino.mobile.core.network.userFacingMessage(it, "Could not load attendance status") } else _ui.value.error,
             )
             if (refreshAgain) { refreshAgain = false; refresh() }
         }

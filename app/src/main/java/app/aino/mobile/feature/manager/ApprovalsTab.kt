@@ -80,6 +80,9 @@ internal fun ApprovalsTab(ui: ManagerUiState, viewModel: ManagerViewModel) {
     if (ui.rejectTargetId != null) {
         AlertDialog(
             onDismissRequest = viewModel::cancelReject,
+            containerColor = colors.bgElevated,
+            titleContentColor = colors.text,
+            textContentColor = colors.textSecondary,
             title = { Text("Reject Request") },
             text = {
                 Column {

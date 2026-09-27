@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
@@ -78,6 +79,7 @@ fun ChatMediaViewer(media: List<ChatMessage>, startMessageId: Long, secure: Bool
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pager = rememberPagerState(media.indexOfFirst { it.id == startMessageId }.coerceAtLeast(0)) { media.size }
+    val save = rememberChatMediaSaver()
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         // Signal view-once: block screenshots/recents thumbnails while open.
         if (secure) {
@@ -104,6 +106,14 @@ fun ChatMediaViewer(media: List<ChatMessage>, startMessageId: Long, secure: Bool
                     Text(current.senderName ?: current.senderUsername.orEmpty(), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
                     if (media.size > 1) Text("${pager.currentPage + 1} of ${media.size}", color = Color.White.copy(alpha = .7f), fontSize = 12.sp)
                 }
+                // Signal media viewer: Save to device (never for view-once media).
+                if (!secure) Icon(
+                    Icons.Outlined.Download, "Save",
+                    Modifier.size(40.dp).clickable {
+                        save(resolveChatMediaUrl(current.fileUrl.orEmpty()), current.fileName, current.fileType)
+                    }.padding(8.dp),
+                    tint = Color.White,
+                )
                 if (!secure) Icon(
                     Icons.Outlined.Share, "Share",
                     Modifier.size(40.dp).clickable {

@@ -29,7 +29,10 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
     private var isManager: Boolean = false
 
     init {
-        refresh()
+        // No refresh() here: this ViewModel is created by MainActivity before
+        // sign-in, and a token-less `tracker/status` is rejected by the
+        // server's requireTenant (HTTP 400). The shell calls refresh() once a
+        // tenant session exists (AinoApp) and reset() on sign-out.
         viewModelScope.launch {
             while (isActive) {
                 delay(1_000)
@@ -57,10 +60,16 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
                     val (floor, breaks) = liveDurations(snapshot.status, snapshot.loadedAtEpochMs, System.currentTimeMillis())
                     _ui.value = DashboardUiState(false, snapshot, floor, breaks)
                 },
-                onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Could not load dashboard") },
+                onFailure = { _ui.value = _ui.value.copy(loading = false, error = app.aino.mobile.core.network.userFacingMessage(it, "Could not load dashboard")) },
             )
             if (refreshAgain) { refreshAgain = false; refresh() }
         }
+    }
+
+    /** Sign-out: drop the previous user's snapshot and any stale error. */
+    fun reset() {
+        refreshAgain = false
+        _ui.value = DashboardUiState()
     }
 
     fun approve(id: Long) = act { repository.approveRequest(id) }

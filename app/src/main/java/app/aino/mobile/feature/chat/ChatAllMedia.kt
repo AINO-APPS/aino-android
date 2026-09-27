@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PlayArrow
@@ -176,6 +177,7 @@ private fun FileList(items: List<SharedChatFile>, icon: ImageVector, empty: Stri
     val signal = signalColors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val save = rememberChatMediaSaver()
     if (items.isEmpty()) { EmptyTab(icon, empty); return }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
         items(items, key = { "file-${it.id}" }) { file ->
@@ -198,6 +200,13 @@ private fun FileList(items: List<SharedChatFile>, icon: ImageVector, empty: Stri
                         color = signal.textSecondary, fontSize = 13.sp, maxLines = 1,
                     )
                 }
+                Icon(
+                    Icons.Outlined.Download, "Save to device",
+                    Modifier.size(40.dp).clip(RoundedCornerShape(20.dp))
+                        .clickable { save(resolveChatMediaUrl(file.fileUrl), file.fileName, file.fileType) }
+                        .padding(8.dp),
+                    tint = signal.textSecondary,
+                )
             }
         }
     }

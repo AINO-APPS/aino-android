@@ -451,6 +451,8 @@ class ChatViewModel(
             error = null,
         )
         pendingJump = null
+        // Opening a thread clears its system notification (Signal behaviour).
+        context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversation.id) }
         markRead(conversation)
         refreshThread()
         refreshPinned(conversation.id)

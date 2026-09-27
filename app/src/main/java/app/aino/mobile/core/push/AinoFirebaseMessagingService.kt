@@ -10,7 +10,6 @@ import app.aino.mobile.core.auth.KeystoreTokenStore
 import app.aino.mobile.core.call.CallRingService
 import app.aino.mobile.core.call.incomingCallServiceExtras
 import app.aino.mobile.core.call.IncomingCallDismissals
-import app.aino.mobile.core.notifications.ConversationNotifications
 
 class AinoFirebaseMessagingService : FirebaseMessagingService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -35,16 +34,14 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
         if (!PushDeduplicator(applicationContext).accept(validated.dedupeKey)) return
         var displayFallback = true
         when (validated.kind) {
-            PushKind.ChatMessage -> ConversationNotifications.ensureConversation(
-                applicationContext,
-                mapOf(
-                    "conversationId" to validated.data.getValue("conversationId"),
-                    "title" to validated.data.getValue("title"),
-                    "senderId" to validated.data.getValue("senderId"),
-                    "senderName" to validated.data.getValue("senderName"),
-                    "parentChannelId" to PushNotifications.MESSAGES,
-                ),
-            )
+            // Signal-style MessagingStyle with Reply / Mark-as-read. FCM delivers
+            // onMessageReceived on a worker thread, so the avatar fetch is safe here.
+            PushKind.ChatMessage -> {
+                val shown = runCatching { ChatNotifications.show(applicationContext, validated) }
+                    .onFailure { android.util.Log.w("AinoPush", "Conversation notification failed", it) }
+                    .isSuccess
+                displayFallback = !shown
+            }
             PushKind.IncomingCall -> {
                 val extras = incomingCallServiceExtras(
                     validated.data,

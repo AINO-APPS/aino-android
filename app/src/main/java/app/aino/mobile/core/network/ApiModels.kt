@@ -36,6 +36,24 @@ sealed class ApiError(message: String, cause: Throwable? = null) : IOException(m
     ) : ApiError("Network failure for $requestMethod $requestUrl", cause)
 }
 
+/**
+ * A message fit for the UI: the server's `{"error": "..."}` text for HTTP
+ * failures (never the raw "HTTP 400 for GET https://…" transport string), a
+ * connectivity hint for network failures, otherwise the throwable's message.
+ */
+fun userFacingMessage(error: Throwable, fallback: String): String = when (error) {
+    is ApiError.Http -> serverErrorText(error.responseBody) ?: fallback
+    is ApiError.Network -> "Can't reach the server. Check your connection and try again."
+    else -> error.message?.takeUnless { it.startsWith("HTTP ") } ?: fallback
+}
+
+private val ERROR_FIELD = Regex("\"(?:error|message)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+
+internal fun serverErrorText(body: String): String? =
+    ERROR_FIELD.find(body)?.groupValues?.get(1)
+        ?.replace("\\\"", "\"")?.replace("\\n", " ")?.trim()
+        ?.takeIf(String::isNotEmpty)
+
 fun interface TokenProvider {
     fun getToken(): String?
 }

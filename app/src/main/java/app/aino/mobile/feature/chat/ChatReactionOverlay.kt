@@ -62,6 +62,8 @@ data class ReactionActions(
     val pinned: Boolean = false,
     val starred: Boolean = false,
     val onSelect: (() -> Unit)? = null,
+    /** Signal "Save" for attachments: writes the file to the device's shared storage. */
+    val onSaveToDevice: (() -> Unit)? = null,
 )
 
 /** Signal's default reaction scrubber set. */
@@ -169,6 +171,7 @@ fun ChatReactionOverlay(
                     actions.onEdit?.let { ReactionAction("Edit", Icons.Outlined.Edit) { it(); onDismiss() } }
                     ReactionAction("Forward", Icons.AutoMirrored.Outlined.Forward) { actions.onForward(); onDismiss() }
                     actions.onCopy?.let { ReactionAction("Copy", Icons.Outlined.ContentCopy) { it(); onDismiss() } }
+        actions.onSaveToDevice?.let { ReactionAction("Save to device", Icons.Outlined.Download) { it(); onDismiss() } }
                     actions.onSelect?.let { ReactionAction("Select", Icons.Outlined.CheckCircleOutline) { it(); onDismiss() } }
                     ReactionAction(if (actions.pinned) "Unpin" else "Pin", Icons.Outlined.PushPin) { actions.onPin(); onDismiss() }
                     ReactionAction(if (actions.starred) "Unsave" else "Save", if (actions.starred) Icons.Outlined.Star else Icons.Outlined.StarOutline) { actions.onStar(); onDismiss() }

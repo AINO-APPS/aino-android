@@ -173,6 +173,9 @@ fun WorkTimerCard(
     if (confirmLogout) {
         AlertDialog(
             onDismissRequest = { confirmLogout = false },
+            containerColor = colors.bgElevated,
+            titleContentColor = colors.text,
+            textContentColor = colors.textSecondary,
             title = { Text("Logout") },
             text = { Text("You've worked ${formatMinutes(floorMinutes)} today. Are you sure you want to logout?") },
             confirmButton = { TextButton(onClick = { confirmLogout = false; onAction("clock_out") }) { Text(if (loading) "Logging out..." else "Logout", color = colors.danger) } },
