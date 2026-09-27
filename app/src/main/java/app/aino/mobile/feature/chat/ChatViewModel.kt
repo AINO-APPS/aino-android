@@ -59,6 +59,13 @@ data class PendingMedia(
 
 enum class PendingMediaState { Uploading, Failed }
 
+internal const val MARK_READ_DEBOUNCE_MS = 300L
+
+/** The row of the thread being read never shows unread (Signal clears it as messages are seen). */
+fun zeroUnread(conversations: List<ChatConversation>, conversationId: Long?): List<ChatConversation> =
+    if (conversationId == null) conversations
+    else conversations.map { if (it.id == conversationId && it.unreadCount != 0) it.copy(unreadCount = 0) else it }
+
 /**
  * The server's realtime echo of an upload can beat the HTTP response. Drop the
  * oldest fully-sent pending bubble of the same type so the row never shows twice.
@@ -141,6 +148,8 @@ data class ChatUiState(
     val threadSearchMatches: List<Long> = emptyList(),
     val threadSearchIndex: Int = -1,
     val messageResults: List<ChatMessage> = emptyList(),
+    /** Just-archived chat offered for Undo (Signal "Chat archived" snackbar). */
+    val archiveUndo: ChatConversation? = null,
     val error: String? = null,
     val message: String? = null,
 ) {
@@ -166,16 +175,57 @@ class ChatViewModel(
     private var globalSearchJob: Job? = null
     private var threadSearchJob: Job? = null
     private var pendingJump: Pair<Long, Long>? = null
+    private var pendingSettings: Long? = null
     private val mentionedIds = mutableSetOf<Long>()
     private var realtimeSend: (RealtimeEnvelope) -> Boolean = { false }
+    private val markReadJobs = mutableMapOf<Long, Job>()
 
+    init {
+        // A push swallowed for the on-screen thread: mark read and pull the message
+        // in case the realtime socket missed it (Signal marks the visible thread read).
+        viewModelScope.launch {
+            app.aino.mobile.core.push.VisibleThread.suppressed.collect { id ->
+                if (_ui.value.selectedConversation?.id == id) {
+                    scheduleMarkRead(id)
+                    scheduleRefresh()
+                }
+            }
+        }
+    }
+
+    /** The thread screen resumed (Signal `setVisibleThread`): suppress its notifications and mark it read. */
+    fun onThreadVisible(conversationId: Long) {
+        if (_ui.value.selectedConversation?.id != conversationId) return
+        app.aino.mobile.core.push.VisibleThread.set(conversationId)
+        context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversationId) }
+        scheduleMarkRead(conversationId)
+    }
+
+    /**
+     * Signal `MarkReadHelper`: zero the row now, send one debounced read mark
+     * per burst of messages instead of one request per message.
+     */
+    private fun scheduleMarkRead(conversationId: Long) {
+        _ui.value = _ui.value.copy(conversations = zeroUnread(_ui.value.conversations, conversationId))
+        synchronized(markReadJobs) {
+            markReadJobs.remove(conversationId)?.cancel()
+            markReadJobs[conversationId] = viewModelScope.launch(Dispatchers.IO) {
+                delay(MARK_READ_DEBOUNCE_MS)
+                runCatching { repository.markRead(conversationId) }
+                synchronized(markReadJobs) { markReadJobs.remove(conversationId) }
+            }
+        }
+    }
     /** Injected from the process-owned realtime ViewModel after composition. */
     fun setRealtimeSender(sender: (RealtimeEnvelope) -> Boolean) {
         realtimeSend = sender
     }
 
     fun startCall(callType: String) {
-        val conversation = _ui.value.selectedConversation ?: return
+        startCall(_ui.value.selectedConversation ?: return, callType)
+    }
+
+    fun startCall(conversation: ChatConversation, callType: String) {
         val appContext = context ?: return
         if (conversation.isGroup) {
             startGroupCall(conversation, callType)
@@ -223,7 +273,7 @@ class ChatViewModel(
                     val presence = runCatching { repository.loadPresence(userIds) }.getOrDefault(emptyMap())
                     _ui.value = _ui.value.copy(
                         loading = false,
-                        conversations = conversations,
+                        conversations = zeroUnread(conversations, visibleConversationId()),
                         presence = presence,
                         fromCache = false,
                     )
@@ -234,7 +284,7 @@ class ChatViewModel(
                     val cached = runCatching { scopedCache.snapshot() }.getOrDefault(emptyList())
                     _ui.value = _ui.value.copy(
                         loading = false,
-                        conversations = cached,
+                        conversations = zeroUnread(cached, visibleConversationId()),
                         presence = emptyMap(),
                         fromCache = cached.isNotEmpty(),
                         error = if (cached.isEmpty()) error.message ?: "Could not load conversations" else null,
@@ -319,14 +369,24 @@ class ChatViewModel(
                         pendingMedia = dropEchoedPendingMedia(state.pendingMedia, message, scope?.userId),
                         typingUserId = state.typingUserId.takeUnless { it == message.senderId },
                     )
+                    // Read live, as Signal does for the thread on screen.
+                    if (message.senderId != scope?.userId && visibleConversationId() == incoming.conversationId) {
+                        scheduleMarkRead(incoming.conversationId)
+                    }
                 }
             }
             else -> Unit
         }
         if (!shouldRefreshConversationList(event.type)) return
-        // Reconnect replay and multi-device fan-out can deliver a burst of
-        // equivalent invalidations. One authoritative refresh after a short
-        // coalescing window is enough and avoids overlapping REST/cache writes.
+        scheduleRefresh()
+    }
+
+    /**
+     * Reconnect replay and multi-device fan-out can deliver a burst of
+     * equivalent invalidations. One authoritative refresh after a short
+     * coalescing window is enough and avoids overlapping REST/cache writes.
+     */
+    private fun scheduleRefresh() {
         realtimeRefresh?.cancel()
         realtimeRefresh = viewModelScope.launch {
             delay(150)
@@ -334,6 +394,10 @@ class ChatViewModel(
             if (_ui.value.selectedConversation != null) refreshThread()
         }
     }
+
+    /** The open thread, but only while its screen is resumed. */
+    private fun visibleConversationId(): Long? =
+        _ui.value.selectedConversation?.id?.takeIf(app.aino.mobile.core.push.VisibleThread::isVisible)
 
     fun updateUserSearch(value: String) {
         _ui.value = _ui.value.copy(userSearch = value, error = null)
@@ -451,9 +515,10 @@ class ChatViewModel(
             error = null,
         )
         pendingJump = null
-        // Opening a thread clears its system notification (Signal behaviour).
+        // Opening a thread clears its system notification (Signal behaviour);
+        // the screen's ON_RESUME (onThreadVisible) coalesces into the same read mark.
         context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversation.id) }
-        markRead(conversation)
+        scheduleMarkRead(conversation.id)
         refreshThread()
         refreshPinned(conversation.id)
         // Members feed @mention suggestions (web MentionInput uses convMembers).
@@ -461,11 +526,16 @@ class ChatViewModel(
             val members = runCatching { repository.loadMembers(conversation.id) }.getOrNull() ?: return@launch
             if (_ui.value.selectedConversation?.id == conversation.id) _ui.value = _ui.value.copy(members = members)
         }
+        if (pendingSettings == conversation.id) { pendingSettings = null; openInfo() }
     }
+
+    /** Recipient sheet "Chat settings": open the thread straight onto its info page. */
+    fun openSettingsOnOpen(conversationId: Long) { pendingSettings = conversationId }
 
     fun closeConversation() {
         typingExpiry?.cancel()
         typingDispatch?.cancel()
+        _ui.value.selectedConversation?.let { app.aino.mobile.core.push.VisibleThread.clear(it.id) }
         _ui.value = _ui.value.copy(
             selectedConversation = null,
             messages = emptyList(),
@@ -1246,14 +1316,14 @@ class ChatViewModel(
 
     fun closeInfo() { _ui.value = _ui.value.copy(showInfo = false) }
 
-    fun togglePin() {
-        val current = _ui.value.selectedConversation ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.togglePinConversation(current.id) }.fold(
-                onSuccess = { updateSelected(current.copy(isPinned = it.pinned)); refresh() },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update pin") },
-            )
-        }
+    fun togglePin(conversation: ChatConversation? = _ui.value.selectedConversation) {
+        val current = conversation ?: return
+        updateConversation(
+            current, current.copy(isPinned = !current.isPinned), "Could not update pin",
+            request = { repository.togglePinConversation(current.id) },
+            reconcile = { c, r -> c.copy(isPinned = r.pinned) },
+            after = { refresh() },
+        )
     }
 
     fun toggleFavourite() {
@@ -1267,26 +1337,41 @@ class ChatViewModel(
     }
     fun toggleMute() {
         val current = _ui.value.selectedConversation ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.setMute(current.id, if (current.isMuted) null else "always") }.fold(
-                onSuccess = { result -> updateSelected(current.copy(isMuted = result.muted)) },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update mute") },
-            )
-        }
+        muteFor(current, if (current.isMuted) null else "always")
     }
 
-    fun toggleArchive() {
-        val current = _ui.value.selectedConversation ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.toggleArchive(current.id) }.fold(
-                onSuccess = { result ->
-                    updateSelected(current.copy(isArchived = result.archived))
-                    closeConversation()
-                    refresh()
-                },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not archive conversation") },
-            )
-        }
+    fun toggleArchive(conversation: ChatConversation? = _ui.value.selectedConversation, undoable: Boolean = false) {
+        val current = conversation ?: return
+        val archiving = !current.isArchived
+        updateConversation(
+            current, current.copy(isArchived = archiving), "Could not archive conversation",
+            request = { repository.toggleArchive(current.id) },
+            reconcile = { c, r -> c.copy(isArchived = r.archived) },
+            after = {
+                if (_ui.value.selectedConversation?.id == current.id) closeConversation()
+                // Signal: "Chat archived" snackbar with Undo.
+                if (undoable && archiving) _ui.value = _ui.value.copy(archiveUndo = current.copy(isArchived = true))
+                refresh()
+            },
+        )
+    }
+
+    /** Signal snackbar Undo: puts the just-archived chat back. */
+    fun undoArchive() {
+        val archived = _ui.value.archiveUndo ?: return
+        _ui.value = _ui.value.copy(archiveUndo = null)
+        toggleArchive(archived)
+    }
+
+    fun dismissArchiveUndo() { _ui.value = _ui.value.copy(archiveUndo = null) }
+
+    /** Signal list "Mark as unread". */
+    fun markUnread(conversation: ChatConversation) {
+        if (conversation.unreadCount > 0) return
+        updateConversation(
+            conversation, conversation.copy(unreadCount = 1), "Could not mark conversation unread",
+            request = { repository.markUnread(conversation.id) },
+        )
     }
 
     private fun updateSelected(conversation: ChatConversation) {
@@ -1294,6 +1379,36 @@ class ChatViewModel(
             selectedConversation = conversation,
             conversations = _ui.value.conversations.map { if (it.id == conversation.id) conversation else it },
         )
+    }
+
+    /** Patches a conversation in the list and, when it is the open one, in the thread. */
+    private fun patchConversation(conversation: ChatConversation) {
+        val state = _ui.value
+        _ui.value = state.copy(
+            selectedConversation = state.selectedConversation?.let { if (it.id == conversation.id) conversation else it },
+            conversations = state.conversations.map { if (it.id == conversation.id) conversation else it },
+        )
+    }
+
+    /** Optimistic list action: show [optimistic] now, reconcile with the server, or roll back to [original]. */
+    private fun <R> updateConversation(
+        original: ChatConversation,
+        optimistic: ChatConversation,
+        failure: String,
+        request: () -> R,
+        reconcile: (ChatConversation, R) -> ChatConversation = { c, _ -> c },
+        after: () -> Unit = {},
+    ) {
+        patchConversation(optimistic)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching(request).fold(
+                onSuccess = { patchConversation(reconcile(optimistic, it)); after() },
+                onFailure = {
+                    patchConversation(original)
+                    _ui.value = _ui.value.copy(error = it.message ?: failure)
+                },
+            )
+        }
     }
 
     // ---- Conversation info sub-pages (web ConversationInfoPanel entry points) ----
@@ -1323,21 +1438,34 @@ class ChatViewModel(
 
     // ---- Signal overflow-menu actions ----
     fun muteFor(duration: String?) {
-        val current = _ui.value.selectedConversation ?: return
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.setMute(current.id, duration) }.fold(
-                onSuccess = { result -> updateSelected(current.copy(isMuted = result.muted)) },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update mute") },
-            )
-        }
+        muteFor(_ui.value.selectedConversation ?: return, duration)
+    }
+
+    /** Signal mute durations: 1h | 8h | 1d | 1w | always; null unmutes. */
+    fun muteFor(conversation: ChatConversation, duration: String?) {
+        updateConversation(
+            conversation, conversation.copy(isMuted = duration != null), "Could not update mute",
+            request = { repository.setMute(conversation.id, duration) },
+            reconcile = { c, r -> c.copy(isMuted = r.muted) },
+        )
     }
 
     fun deleteCurrentConversation() {
-        val current = _ui.value.selectedConversation ?: return
+        deleteConversation(_ui.value.selectedConversation ?: return)
+    }
+
+    fun deleteConversation(conversation: ChatConversation) {
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.deleteConversation(current.id) }.fold(
+            runCatching { repository.deleteConversation(conversation.id) }.fold(
                 onSuccess = {
-                    _ui.value = _ui.value.copy(closeThread = true, showInfo = false)
+                    val state = _ui.value
+                    val wasOpen = state.selectedConversation?.id == conversation.id
+                    _ui.value = state.copy(
+                        conversations = state.conversations.filterNot { it.id == conversation.id },
+                        closeThread = wasOpen || state.closeThread,
+                        showInfo = if (wasOpen) false else state.showInfo,
+                    )
+                    context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversation.id) }
                     refresh()
                 },
                 onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not delete chat") },
@@ -1352,11 +1480,15 @@ class ChatViewModel(
     }
 
     fun toggleBlock() {
-        val current = _ui.value.selectedConversation ?: return
+        toggleBlock(_ui.value.selectedConversation ?: return)
+    }
+
+    fun toggleBlock(conversation: ChatConversation) {
+        val current = conversation
         val userId = current.otherUserId ?: return
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { if (current.isBlocked) repository.unblockUser(userId) else repository.blockUser(userId) }.fold(
-                onSuccess = { updateSelected(current.copy(isBlocked = it.blocked)); refresh() },
+                onSuccess = { patchConversation(current.copy(isBlocked = it.blocked)); refresh() },
                 onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update block") },
             )
         }

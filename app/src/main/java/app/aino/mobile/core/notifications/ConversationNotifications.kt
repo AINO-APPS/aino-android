@@ -29,6 +29,7 @@ object ConversationNotifications {
     fun ensureConversation(
         context: Context,
         options: Map<String, String>,
+        iconBitmap: android.graphics.Bitmap? = null,
     ): Map<String, String>? {
         val conversationId = options["conversationId"].orEmpty().trim()
         val title = options["title"].orEmpty().trim().ifEmpty { "Conversation" }
@@ -54,7 +55,8 @@ object ConversationNotifications {
                 )
                 .setName(senderName)
 
-            loadLocalIcon(avatarUri)?.let { personBuilder.setIcon(it) }
+            val icon = loadLocalIcon(avatarUri) ?: iconBitmap?.let(IconCompat::createWithAdaptiveBitmap)
+            icon?.let { personBuilder.setIcon(it) }
             val person = personBuilder.build()
 
             val launchIntent = context.packageManager
@@ -78,7 +80,7 @@ object ConversationNotifications {
                 .setPersons(arrayOf(person))
                 .setCategories(setOf("android.shortcut.conversation"))
 
-            loadLocalIcon(avatarUri)?.let { shortcutBuilder.setIcon(it) }
+            icon?.let { shortcutBuilder.setIcon(it) }
 
             ShortcutManagerCompat.pushDynamicShortcut(context, shortcutBuilder.build())
 

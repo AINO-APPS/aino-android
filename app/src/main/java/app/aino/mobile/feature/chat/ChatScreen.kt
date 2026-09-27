@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imeAnimationTarget
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
@@ -164,6 +165,7 @@ fun ChatScreen(
     var activeTab by remember { mutableStateOf(ChatListTab.Chat) }
     var searchOpen by remember { mutableStateOf(false) }
     var newGroupOpen by remember { mutableStateOf(false) }
+    var archivedOpen by remember { mutableStateOf(false) }
     val query = ui.userSearch.trim()
     LaunchedEffect(conversationId, ui.conversations) {
         if (conversationId != null && ui.selectedConversation?.id != conversationId) {
@@ -183,10 +185,10 @@ fun ChatScreen(
         }
     }
     BackHandler(enabled = ui.selectedCallIds.isNotEmpty()) { viewModel.cancelCallSelection() }
-    val visibleConversations = remember(ui.conversations, activeTab, query) {
+    val visibleConversations = remember(ui.conversations, activeTab, query, archivedOpen) {
         ui.conversations.filter { conversation ->
             val inTab = when (activeTab) {
-                ChatListTab.Chat -> !conversation.isMeetingChat && !conversation.isArchived
+                ChatListTab.Chat -> !conversation.isMeetingChat && conversation.isArchived == archivedOpen
                 ChatListTab.Meet -> meetingsEnabled && conversation.isMeetingChat && !conversation.isArchived
                 ChatListTab.Calls -> false
             }
@@ -210,6 +212,7 @@ fun ChatScreen(
         viewModel.searchAllMessages(query)
     }
     BackHandler(enabled = searchOpen) { searchOpen = false; viewModel.updateUserSearch("") }
+    BackHandler(enabled = archivedOpen && !searchOpen && ui.selectedConversationIds.isEmpty()) { archivedOpen = false }
     val openConversation: (ChatConversation) -> Unit = { conversation ->
         if (onOpenConversation != null) onOpenConversation(conversation.id) else viewModel.openConversation(conversation)
     }
@@ -320,12 +323,13 @@ fun ChatScreen(
                         val ordered = visibleConversations.filter(ChatConversation::isPinned) +
                             visibleConversations.filter { it.isFavourite && !it.isPinned } +
                             visibleConversations.filter { !it.isPinned && !it.isFavourite }
+                        if (archivedOpen) item(key = "archived-header") { ArchivedHeader { archivedOpen = false } }
                         if (visibleConversations.isEmpty()) item(key = "chat-empty") {
-                            HonestEmpty(Icons.Outlined.ChatBubbleOutline, if (ui.loading) "Loading conversations…" else "No conversations yet")
+                            HonestEmpty(Icons.Outlined.ChatBubbleOutline, if (ui.loading) "Loading conversations…" else if (archivedOpen) "No archived chats" else "No conversations yet")
                         }
                         items(ordered, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation) }
                         val archivedCount = ui.conversations.count { it.isArchived && !it.isMeetingChat }
-                        if (archivedCount > 0) item(key = "archived") { ArchivedRow(archivedCount) }
+                        if (archivedCount > 0 && !archivedOpen) item(key = "archived") { ArchivedRow(archivedCount) { archivedOpen = true } }
                     }
                 }
             }
@@ -340,6 +344,14 @@ fun ChatScreen(
                 containerColor = if (signal.isDark) Color(0xFF2B3A5A) else Color(0xFFD2DFFB),
                 contentColor = signal.text,
             ) { Icon(Icons.Outlined.Edit, "New chat") }
+        }
+        // Signal "Chat archived" snackbar with Undo.
+        ui.archiveUndo?.let { archived ->
+            LaunchedEffect(archived.id) { kotlinx.coroutines.delay(4_000); viewModel.dismissArchiveUndo() }
+            androidx.compose.material3.Snackbar(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 88.dp),
+                action = { TextButton(onClick = viewModel::undoArchive) { Text("Undo", color = signal.primary) } },
+            ) { Text("Chat archived") }
         }
     }
 }
@@ -460,21 +472,37 @@ private fun ConversationRow(
 ) {
     val signal = signalColors
     val unread = conversation.unreadCount > 0
+    var menuOpen by remember { mutableStateOf(false) }
+    var muteOpen by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
+    var sheetOpen by remember { mutableStateOf(false) }
+    val open = {
+        if (onOpenConversation != null) onOpenConversation(conversation.id) else viewModel.openConversation(conversation)
+    }
+    Box {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 72.dp)
-            .background(if (selected) signal.primary.copy(alpha = .14f) else Color.Transparent)
+            .background(if (selected || menuOpen) signal.primary.copy(alpha = .14f) else Color.Transparent)
             .combinedClickable(
                 onClick = {
                     if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) viewModel.toggleConversationSelection(conversation.id)
-                    else if (onOpenConversation != null) onOpenConversation(conversation.id)
-                    else viewModel.openConversation(conversation)
+                    else open()
                 },
-                onLongClick = { viewModel.toggleConversationSelection(conversation.id) },
+                // Signal: long-press opens the context menu; while selecting it keeps toggling.
+                onLongClick = {
+                    if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) viewModel.toggleConversationSelection(conversation.id)
+                    else menuOpen = true
+                },
             )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box {
+        Box(
+            Modifier.clip(CircleShape).clickable(onClickLabel = "Open contact details") {
+                if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) viewModel.toggleConversationSelection(conversation.id)
+                else sheetOpen = true
+            },
+        ) {
             ConversationAvatar(conversation, presence, SignalDimens.listAvatar)
             if (selected) Box(
                 Modifier.align(Alignment.BottomEnd).size(20.dp).background(signal.primary, CircleShape).border(2.dp, signal.background, CircleShape),
@@ -514,6 +542,18 @@ private fun ConversationRow(
             }
         }
     }
+    ConversationContextMenu(
+        expanded = menuOpen,
+        conversation = conversation,
+        viewModel = viewModel,
+        onDismiss = { menuOpen = false },
+        onChooseMute = { muteOpen = true },
+        onConfirmDelete = { confirmDelete = true },
+    )
+    MuteDurationMenu(muteOpen, { muteOpen = false }) { viewModel.muteFor(conversation, it) }
+    }
+    if (confirmDelete) DeleteChatDialog(onConfirm = { viewModel.deleteConversation(conversation) }) { confirmDelete = false }
+    if (sheetOpen) RecipientSheet(conversation, presence, viewModel, onOpen = open) { sheetOpen = false }
 }
 
 /** Signal list timestamps: time today, weekday this week, else "MMM d". */
@@ -562,7 +602,24 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     val conversation = ui.selectedConversation ?: return
     val signal = signalColors
     val context = LocalContext.current
-    val threadPending = remember(ui.pendingMedia, conversation.id) { ui.pendingMedia.filter { it.conversationId == conversation.id } }
+    // Signal ConversationFragment onResume/onPause → MessageNotifier visible thread.
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(conversation.id, lifecycleOwner) {
+        val id = conversation.id
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> viewModel.onThreadVisible(id)
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> app.aino.mobile.core.push.VisibleThread.clear(id)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            app.aino.mobile.core.push.VisibleThread.clear(id)
+        }
+    }
+    val threadPending =  remember(ui.pendingMedia, conversation.id) { ui.pendingMedia.filter { it.conversationId == conversation.id } }
     val threadItems = remember(ui.messages, ui.queuedMessages, ui.currentUserId, ui.hiddenMessageIds, threadPending) {
         buildThreadItems(
             ui.messages.filterNot { it.id in ui.hiddenMessageIds }, ui.queuedMessages, ui.currentUserId,
@@ -1796,6 +1853,7 @@ private fun TypingBubble() {
         }
     }
 }
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun MessageComposer(
     value: String,
@@ -1827,7 +1885,9 @@ private fun MessageComposer(
     val density = androidx.compose.ui.platform.LocalDensity.current
     // Signal swaps the IME for its own emoji / attachment keyboards at the same height.
     var panel by remember { mutableStateOf(ComposerPanel.None) }
-    var keyboardHeight by remember { mutableStateOf(300.dp) }
+    var keyboardHeight by remember { mutableStateOf(KeyboardHeightStore.get(context).dp) }
+    // Holds the drawer's space while the IME slides back in, so the composer never dips.
+    var awaitingIme by remember { mutableStateOf(false) }
     // Cursor-aware composer text so emoji insert at the caret, not always at the end.
     var fieldValue by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value, androidx.compose.ui.text.TextRange(value.length))) }
     if (fieldValue.text != value) {
@@ -1840,15 +1900,34 @@ private fun MessageComposer(
         onChange(next.first)
     }
     val imeBottom = WindowInsets.ime.getBottom(density)
+    val imeTarget = WindowInsets.imeAnimationTarget.getBottom(density)
     val navBottom = WindowInsets.navigationBars.getBottom(density)
-    LaunchedEffect(imeBottom) {
-        val h = with(density) { (imeBottom - navBottom).toDp() }
-        // The IME is expected while searching emoji; only close the other panels.
-        if (h > 200.dp) { keyboardHeight = h; if (panel != ComposerPanel.EmojiSearch) panel = ComposerPanel.None }
+    // Signal records the IME height only from settled insets (DISPATCH_MODE_STOP);
+    // mid-animation frames while the keyboard hides are what made the drawer short.
+    LaunchedEffect(imeBottom, imeTarget) {
+        if (imeTarget > navBottom && imeBottom == imeTarget) {
+            val h = with(density) { (imeBottom - navBottom).toDp() }
+            KeyboardHeightStore.save(context, h.value)
+            keyboardHeight = KeyboardHeightStore.get(context).dp
+            awaitingIme = false
+        }
+    }
+    // The IME starting to open replaces the emoji/attachment drawer (never its hide frames).
+    val imeOpening = imeTarget > navBottom
+    LaunchedEffect(imeOpening) {
+        if (imeOpening && (panel == ComposerPanel.Emoji || panel == ComposerPanel.Attach)) {
+            awaitingIme = true
+            panel = ComposerPanel.None
+        }
+    }
+    LaunchedEffect(awaitingIme) {
+        // Hardware keyboards never raise the IME; don't hold the space forever.
+        if (awaitingIme) { kotlinx.coroutines.delay(800); awaitingIme = false }
     }
     BackHandler(enabled = panel != ComposerPanel.None) { panel = ComposerPanel.None }
     fun toggle(target: ComposerPanel) {
-        if (panel == target) { panel = ComposerPanel.None; keyboard?.show() } else { keyboard?.hide(); panel = target }
+        if (panel == target) { awaitingIme = true; panel = ComposerPanel.None; keyboard?.show() }
+        else { keyboard?.hide(); panel = target }
     }
     // ---- Voice note state machine (see VoiceNoteRecorder.kt) ----
     val voice = remember { VoiceNoteRecorder(context) }
@@ -1916,7 +1995,13 @@ private fun MessageComposer(
     // itself never pans, so this is the only place the keyboard is accounted for.
     Column(
         Modifier.fillMaxWidth().background(signal.background)
-            .then(if (panel == ComposerPanel.None) Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)) else Modifier),
+            .then(
+                when {
+                    panel != ComposerPanel.None -> Modifier
+                    awaitingIme -> Modifier.padding(bottom = maxOf(keyboardHeight + with(density) { navBottom.toDp() }, with(density) { imeBottom.toDp() }))
+                    else -> Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                },
+            ),
     ) {
         // Upload progress now lives on each outgoing bubble (Signal transfer ring),
         // including voice notes; this legacy bar only shows if `uploading` is set.
@@ -2126,7 +2211,7 @@ internal fun dropLastGrapheme(text: String): String {
     return text.substring(0, it.previous().coerceAtLeast(0))
 }
 @Composable
-private fun ConversationAvatar(conversation: ChatConversation, presence: ChatPresence?, size: androidx.compose.ui.unit.Dp = 48.dp) {
+internal fun ConversationAvatar(conversation: ChatConversation, presence: ChatPresence?, size: androidx.compose.ui.unit.Dp = 48.dp) {
     val signal = signalColors
     Box(Modifier.size(size)) {
         when {
@@ -2190,13 +2275,25 @@ private fun SearchHint(text: String, progress: Boolean) {
 }
 
 @Composable
-private fun ArchivedRow(count: Int) {
+private fun ArchivedRow(count: Int, onClick: () -> Unit) {
     val signal = signalColors
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(SignalDimens.listAvatar), contentAlignment = Alignment.Center) {
             Icon(Icons.Outlined.Archive, null, Modifier.size(24.dp), tint = signal.textSecondary)
         }
         Text("Archived chats ($count)", Modifier.padding(start = 16.dp), color = signal.text, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun ArchivedHeader(onBack: () -> Unit) {
+    val signal = signalColors
+    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.AutoMirrored.Outlined.ArrowBack, "Back to chats",
+            Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onBack).padding(12.dp), tint = signal.text,
+        )
+        Text("Archived chats", Modifier.padding(start = 8.dp), color = signal.text, fontSize = 18.sp, fontWeight = FontWeight.Medium)
     }
 }
 @Composable
@@ -2330,13 +2427,7 @@ private fun ThreadHeader(
                 SignalMenuItem("Clear chat", Icons.Outlined.DeleteSweep, danger = true) { menuOpen = false; confirm = "clear" }
                 SignalMenuItem("Delete chat", Icons.Outlined.DeleteOutline, danger = true) { menuOpen = false; confirm = "delete" }
             }
-            // Signal mute durations (server accepts 1h | 8h | 1d | 1w | always).
-            SignalDropdownMenu(expanded = muteMenuOpen, onDismiss = { muteMenuOpen = false }) {
-                listOf("1h" to "Mute for 1 hour", "8h" to "Mute for 8 hours", "1d" to "Mute for 1 day", "1w" to "Mute for 7 days", "always" to "Mute always")
-                    .forEach { (duration, label) ->
-                        SignalMenuItem(label, Icons.Outlined.NotificationsOff) { muteMenuOpen = false; viewModel.muteFor(duration) }
-                    }
-            }
+            MuteDurationMenu(muteMenuOpen, { muteMenuOpen = false }) { viewModel.muteFor(it) }
         }
     }
     when (confirm) {

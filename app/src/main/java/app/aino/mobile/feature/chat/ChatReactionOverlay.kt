@@ -189,7 +189,7 @@ fun ChatReactionOverlay(
                     onEmoji = { onReaction(it); onDismiss() },
                     onBackspace = {},
                     modifier = Modifier.align(Alignment.BottomCenter).clickable(enabled = false) {},
-                    height = 380.dp,
+                    height = KeyboardHeightStore.get(androidx.compose.ui.platform.LocalContext.current).dp,
                     onOpenSearch = { pickerSearch = true },
                 )
             }

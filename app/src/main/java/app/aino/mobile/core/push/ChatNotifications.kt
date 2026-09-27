@@ -27,9 +27,9 @@ import app.aino.mobile.feature.chat.resolveChatMediaUrl
  * MessagingStyle with stacked unread lines, sender avatars, a conversation
  * shortcut, inline **Reply** (RemoteInput) and **Mark as read**.
  *
- * The status-bar small icon is monochrome by platform rule; the coloured AINO
- * logo is the fallback large/person icon, and Android 11+ badges conversation
- * notifications with the launcher icon.
+ * The status-bar small icon is monochrome by platform rule. Large and person
+ * icons are always circular sender avatars, falling back to Signal-style
+ * initials — never the launcher logo, which One UI renders oversized.
  */
 object ChatNotifications {
     const val KEY_REPLY = "aino_reply_text"
@@ -46,7 +46,7 @@ object ChatNotifications {
         val isGroup: Boolean,
         val channelId: String,
         val shortcutId: String?,
-        val avatar: Bitmap?,
+        val largeIcon: Bitmap,
     )
 
     private val meta = mutableMapOf<Long, Meta>()
@@ -55,13 +55,25 @@ object ChatNotifications {
     fun show(context: Context, push: ValidatedPush) {
         val data = push.data
         val conversationId = data.getValue("conversationId").toLong()
+        // Signal DefaultMessageNotifier: the thread on screen is marked read and
+        // never notifies; only the short in-conversation tone may play.
+        if (VisibleThread.isVisible(conversationId)) {
+            cancel(context, conversationId)
+            VisibleThread.reportSuppressed(conversationId)
+            if (NotificationSoundPrefs.notificationAudible(context)) playInThreadTone(context)
+            return
+        }
         val isGroup = data["isGroup"] == "true"
         val senderName = data.getValue("senderName")
         val title = if (isGroup) data["groupName"]?.takeIf(String::isNotBlank) ?: data.getValue("title") else senderName
+        val senderKey = "aino-user-${data.getValue("senderId")}"
         val token = AppContainer.get(context).tokens.getToken()
         val avatar = data["senderAvatar"]?.takeIf(String::isNotBlank)?.let {
             AvatarLoader.load(context, resolveChatMediaUrl(it), token)
         }
+        // Group: the conversation's own identity; 1:1: the sender's photo or initials.
+        val conversationKey = if (isGroup) "aino-conversation-$conversationId" else senderKey
+        val largeIcon = if (isGroup) NotificationAvatars.fallback(title, conversationKey) else avatar ?: NotificationAvatars.fallback(title, conversationKey)
         val conversation = ConversationNotifications.ensureConversation(
             context,
             mapOf(
@@ -71,12 +83,14 @@ object ChatNotifications {
                 "senderName" to senderName,
                 "parentChannelId" to PushNotifications.MESSAGES,
             ),
+            // One UI draws the conversation shortcut's icon; without one it shows the app logo.
+            iconBitmap = if (isGroup || avatar == null) NotificationAvatars.fallback(title, conversationKey, adaptive = true) else avatar,
         )
         val info = Meta(
             push, title, isGroup,
             channelId = conversation?.get("channelId") ?: PushNotifications.MESSAGES,
             shortcutId = conversation?.get("shortcutId"),
-            avatar = avatar,
+            largeIcon = largeIcon,
         )
         synchronized(this) { meta[conversationId] = info }
         val lines = ChatNotificationHistory.append(
@@ -84,7 +98,7 @@ object ChatNotifications {
             ChatNotificationLine(
                 text = stripSenderPrefix(data["body"].orEmpty(), senderName, isGroup),
                 timestampMs = System.currentTimeMillis(),
-                senderKey = "aino-user-${data.getValue("senderId")}",
+                senderKey = senderKey,
                 senderName = senderName,
                 senderAvatar = data["senderAvatar"],
             ),
@@ -118,10 +132,13 @@ object ChatNotifications {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
-        val logo = appLogo(context)
-        val logoIcon = logo?.let(IconCompat::createWithBitmap)
-        val senderIcon = info.avatar?.let(IconCompat::createWithBitmap) ?: logoIcon
-        val latestSenderKey = "aino-user-${info.push.data.getValue("senderId")}"
+        val token = runCatching { AppContainer.get(context).tokens.getToken() }.getOrNull()
+        // One icon per sender: their (disk-cached) photo, else Signal's initials fallback.
+        val icons = mutableMapOf<String, IconCompat>()
+        fun iconFor(line: ChatNotificationLine, key: String): IconCompat = icons.getOrPut(key) {
+            val photo = line.senderAvatar?.takeIf(String::isNotBlank)?.let { AvatarLoader.load(context, resolveChatMediaUrl(it), token) }
+            IconCompat.createWithBitmap(photo ?: NotificationAvatars.fallback(line.senderName, key))
+        }
         val me = Person.Builder().setKey(SELF_KEY).setName("You").build()
         val style = NotificationCompat.MessagingStyle(me)
             .setGroupConversation(info.isGroup)
@@ -131,7 +148,7 @@ object ChatNotifications {
                 Person.Builder()
                     .setKey(key)
                     .setName(line.senderName)
-                    .setIcon(if (key == latestSenderKey) senderIcon else logoIcon)
+                    .setIcon(iconFor(line, key))
                     .build()
             }
             style.addMessage(NotificationCompat.MessagingStyle.Message(line.text, line.timestampMs, person))
@@ -148,7 +165,7 @@ object ChatNotifications {
         val builder = NotificationCompat.Builder(context, info.channelId)
             .setSmallIcon(R.drawable.ic_stat_aino)
             .setColor(brandColor(context))
-            .setLargeIcon(info.avatar ?: logo)
+            .setLargeIcon(info.largeIcon)
             .setStyle(style)
             .setContentTitle(info.title)
             .setContentText(lines.lastOrNull()?.text.orEmpty())
@@ -196,10 +213,18 @@ object ChatNotifications {
 
     @Volatile private var cachedLogo: Bitmap? = null
 
-    /** The coloured AINO logo (drawable/aino_icon.png), shown in the expanded notification. */
+    /** The AINO logo circle-cropped, for non-chat notifications (a square large icon is blown up by One UI). */
     fun appLogo(context: Context): Bitmap? = cachedLogo ?: runCatching {
-        BitmapFactory.decodeResource(context.resources, R.drawable.aino_icon)
+        BitmapFactory.decodeResource(context.resources, R.drawable.aino_icon)?.let(NotificationAvatars::circle)
     }.getOrNull()?.also { cachedLogo = it }
+
+    /** Signal's short in-conversation alert for a message landing in the thread on screen. */
+    private fun playInThreadTone(context: Context) {
+        runCatching {
+            val uri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION) ?: return
+            android.media.RingtoneManager.getRingtone(context, uri)?.play()
+        }
+    }
 
     /** Org accent (web BrandingContext `--primary`) tints the notification header; default AINO blue. */
     fun brandColor(context: Context): Int {

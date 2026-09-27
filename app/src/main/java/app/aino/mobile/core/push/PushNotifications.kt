@@ -39,6 +39,8 @@ object PushNotifications {
             NotificationManagerCompat.from(context).cancel(notificationId(push))
             return
         }
+        val chatId = push.data["conversationId"]?.toLongOrNull()
+        if (push.kind == PushKind.ChatMessage && chatId != null && VisibleThread.isVisible(chatId)) return
         val privateCall = push.kind == PushKind.IncomingCall && !push.data.containsKey("callerName")
         val title = if (privateCall) push.data.getValue("title") else push.data["title"] ?: push.data["callerName"] ?: "AINO"
         val body = if (privateCall) "Tap to answer" else push.data["body"].orEmpty()
