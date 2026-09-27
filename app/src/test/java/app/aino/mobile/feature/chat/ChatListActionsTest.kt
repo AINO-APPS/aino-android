@@ -30,6 +30,8 @@ import org.junit.Test
 class ChatListActionsTest {
     private val captured = CopyOnWriteArrayList<ApiRequest>()
     @Volatile private var failMutations = false
+    /** Holds mutation requests so the optimistic state can be asserted before the server answers. */
+    @Volatile private var hold: java.util.concurrent.CountDownLatch? = null
     private val conversationsJson = """[
         {"id":1,"updated_at":"2026-09-14T09:00:00Z","is_group":false,"other_user_id":8,"other_full_name":"Asha K",
          "unread_count":0,"is_pinned":false,"is_muted":false,"is_archived":false},
@@ -42,6 +44,7 @@ class ChatListActionsTest {
     private fun viewModel(): ChatViewModel {
         val api = ApiClient { request ->
             captured += request
+            if (request.method != "GET") hold?.await(3, java.util.concurrent.TimeUnit.SECONDS)
             if (failMutations && request.method != "GET") {
                 throw ApiError.Http(500, """{"error":"Server said no"}""", request.method, request.path)
             }
@@ -69,16 +72,20 @@ class ChatListActionsTest {
 
     @Test fun `pin shows immediately and hits the pin endpoint`() {
         val vm = viewModel()
+        val gate = java.util.concurrent.CountDownLatch(1).also { hold = it }
         vm.togglePin(vm.row(1))
         assertTrue(vm.row(1).isPinned)
+        gate.countDown()
         await { captured.any { it.path == "chat/conversations/1/pin" } }
     }
 
     @Test fun `failed mute rolls the row back and reports the server error`() {
         val vm = viewModel()
         failMutations = true
+        val gate = java.util.concurrent.CountDownLatch(1).also { hold = it }
         vm.muteFor(vm.row(1), "8h")
         assertTrue(vm.row(1).isMuted)
+        gate.countDown()
         await { vm.ui.value.error != null }
         assertFalse(vm.row(1).isMuted)
         assertEquals("Server said no", vm.ui.value.error)
@@ -86,8 +93,10 @@ class ChatListActionsTest {
 
     @Test fun `mark as unread flags the row`() {
         val vm = viewModel()
+        val gate = java.util.concurrent.CountDownLatch(1).also { hold = it }
         vm.markUnread(vm.row(1))
         assertEquals(1, vm.row(1).unreadCount)
+        gate.countDown()
         await { captured.any { it.path == "chat/conversations/1/unread" } }
     }
 
