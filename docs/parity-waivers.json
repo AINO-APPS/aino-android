@@ -3,6 +3,11 @@
   "policy": "Waivers require an endpoint key, an owner and a non-empty reason. Pending implementation work is not a waiver.",
   "waivers": [
     {
+      "key": "POST /api/auth/activity",
+      "owner": "auth (R14)",
+      "reason": "Sessions no longer idle out (product decision 2026-09-27: stay signed in until a newer sign-in elsewhere). The endpoint is kept only for older clients; Android no longer sends inactivity pings. See WEB_PARITY_PLAN.md R14."
+    },
+    {
       "key": "GET /api/admin/tenants",
       "owner": "product (P10.2)",
       "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."

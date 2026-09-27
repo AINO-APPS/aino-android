@@ -8,10 +8,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Forward
-import androidx.compose.material.icons.automirrored.outlined.Reply
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.sp
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 // Verbatim parity with aino-platform's `ReactionPicker.tsx` quick-reaction row.
 val DefaultQuickReactions = listOf("👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "🎉", "👎", "💯")
@@ -155,7 +152,7 @@ fun ChatReactionOverlay(
                     Box(
                         Modifier.size(40.dp).clip(CircleShape).background(signal.background).clickable { showPicker = true },
                         contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Outlined.Add, "More reactions", tint = signal.text) }
+                    ) { Icon(HeroIcons.Plus, "More reactions", tint = signal.text) }
                 }
                 Box(Modifier.graphicsLayer { scaleX = 0.96f + .04f * lift; scaleY = 0.96f + .04f * lift }) { messagePreview?.invoke() }
                 // Signal context menu card.
@@ -167,15 +164,15 @@ fun ChatReactionOverlay(
                         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (alignEnd) 1f else 0f, 0f)
                     }.width(220.dp).clip(RoundedCornerShape(18.dp)).background(signal.surface).padding(vertical = 6.dp),
                 ) {
-                    ReactionAction("Reply", Icons.AutoMirrored.Outlined.Reply) { actions.onReply(); onDismiss() }
-                    actions.onEdit?.let { ReactionAction("Edit", Icons.Outlined.Edit) { it(); onDismiss() } }
-                    ReactionAction("Forward", Icons.AutoMirrored.Outlined.Forward) { actions.onForward(); onDismiss() }
-                    actions.onCopy?.let { ReactionAction("Copy", Icons.Outlined.ContentCopy) { it(); onDismiss() } }
-        actions.onSaveToDevice?.let { ReactionAction("Save to device", Icons.Outlined.Download) { it(); onDismiss() } }
-                    actions.onSelect?.let { ReactionAction("Select", Icons.Outlined.CheckCircleOutline) { it(); onDismiss() } }
-                    ReactionAction(if (actions.pinned) "Unpin" else "Pin", Icons.Outlined.PushPin) { actions.onPin(); onDismiss() }
-                    ReactionAction(if (actions.starred) "Unsave" else "Save", if (actions.starred) Icons.Outlined.Star else Icons.Outlined.StarOutline) { actions.onStar(); onDismiss() }
-                    actions.onDelete?.let { ReactionAction("Delete", Icons.Outlined.Delete, destructive = true) { it(); onDismiss() } }
+                    ReactionAction("Reply", HeroIcons.ArrowUturnLeft) { actions.onReply(); onDismiss() }
+                    actions.onEdit?.let { ReactionAction("Edit", HeroIcons.PencilSquare) { it(); onDismiss() } }
+                    ReactionAction("Forward", HeroIcons.ArrowUturnRight) { actions.onForward(); onDismiss() }
+                    actions.onCopy?.let { ReactionAction("Copy", HeroIcons.DocumentDuplicate) { it(); onDismiss() } }
+        actions.onSaveToDevice?.let { ReactionAction("Save to device", HeroIcons.ArrowDownTray) { it(); onDismiss() } }
+                    actions.onSelect?.let { ReactionAction("Select", HeroIcons.CheckCircle) { it(); onDismiss() } }
+                    ReactionAction(if (actions.pinned) "Unpin" else "Pin", HeroIcons.PushPin) { actions.onPin(); onDismiss() }
+                    ReactionAction(if (actions.starred) "Unsave" else "Save", if (actions.starred) HeroIcons.Star else HeroIcons.Star) { actions.onStar(); onDismiss() }
+                    actions.onDelete?.let { ReactionAction("Delete", HeroIcons.Trash, destructive = true) { it(); onDismiss() } }
                 }
             }
         }
@@ -263,9 +260,9 @@ fun EmojiPicker(
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Choose a reaction", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                IconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "Close emoji picker") }
+                IconButton(onClick = onDismiss) { Icon(HeroIcons.XMark, "Close emoji picker") }
             }
-            OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Search emoji or category") }, leadingIcon = { Icon(Icons.Outlined.Search, null) })
+            OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Search emoji or category") }, leadingIcon = { Icon(HeroIcons.MagnifyingGlass, null) })
             Spacer(Modifier.height(8.dp))
             val visible = remember(query, categories) { if (query.isBlank()) categories else categories.mapNotNull { c ->
                 if (c.name.contains(query, true)) c else c.copy(emojis = c.emojis.filter { it.contains(query) }).takeIf { it.emojis.isNotEmpty() }

@@ -11,15 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.outlined.Apartment
-import androidx.compose.material.icons.outlined.Coffee
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.TextButton
@@ -43,6 +34,7 @@ import app.aino.mobile.core.designsystem.component.WebCard
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.WebColors
 import app.aino.mobile.core.common.formatMinutes
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * `WorkTimerCard` port (P2.3). State machine: logged_out / on_floor / on_break.
@@ -86,7 +78,7 @@ fun WorkTimerCard(
 
     WebCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Timer, null, Modifier.size(14.dp), tint = colors.textSecondary)
+            Icon(HeroIcons.Clock, null, Modifier.size(14.dp), tint = colors.textSecondary)
             Text("Work Timer", color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.padding(start = 6.dp))
             Box(Modifier.weight(1f))
             Box(Modifier.size(9.dp).background(when (state) { "on_floor" -> colors.success; "on_break" -> colors.warning; else -> colors.textMuted }, CircleShape))
@@ -128,14 +120,14 @@ fun WorkTimerCard(
         }
         eta?.let {
             Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Schedule, null, Modifier.size(12.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.Clock, null, Modifier.size(12.dp), tint = colors.textSecondary)
                 Text(" ${targetMinutes / 60}hr by ", color = colors.textSecondary, fontSize = 12.sp)
                 Text(it, color = colors.text, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
         }
         if (overtime > 0) {
             Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Bolt, null, Modifier.size(12.dp), tint = colors.warning)
+                Icon(HeroIcons.Bolt, null, Modifier.size(12.dp), tint = colors.warning)
                 Text(" Overtime: ", color = colors.warning, fontSize = 12.sp)
                 Text(formatMinutes(overtime), color = colors.warning, fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
@@ -144,8 +136,8 @@ fun WorkTimerCard(
         when {
             state == "logged_out" && !dailyTargetMet -> {
                 Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ModeButton("Office", workMode == "office", Icons.Outlined.Apartment, colors, Modifier.weight(1f)) { onWorkMode("office") }
-                    ModeButton("Remote", workMode == "remote", Icons.Outlined.Home, colors, Modifier.weight(1f)) { onWorkMode("remote") }
+                    ModeButton("Office", workMode == "office", HeroIcons.BuildingOffice2, colors, Modifier.weight(1f)) { onWorkMode("office") }
+                    ModeButton("Remote", workMode == "remote", HeroIcons.Home, colors, Modifier.weight(1f)) { onWorkMode("remote") }
                 }
                 Button(onClick = { onAction("clock_in") }, enabled = !loading, modifier = Modifier.fillMaxWidth().padding(top = 10.dp), colors = ButtonDefaults.buttonColors(containerColor = colors.success)) {
                     Text(if (loading) "Logging in..." else "▶ Login", color = colors.onAccent)
@@ -156,15 +148,15 @@ fun WorkTimerCard(
                 Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state == "on_floor") {
                         Button(onClick = { onBreak(true) }, enabled = !loading, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = colors.warning)) {
-                            Icon(Icons.Outlined.Coffee, null, Modifier.size(14.dp)); Text(" Break", color = colors.onAccent)
+                            Icon(HeroIcons.Cup, null, Modifier.size(14.dp)); Text(" Break", color = colors.onAccent)
                         }
                     } else {
                         Button(onClick = { onBreak(false) }, enabled = !loading, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = colors.success)) {
-                            Icon(Icons.Outlined.PlayArrow, null, Modifier.size(14.dp)); Text(" Resume", color = colors.onAccent)
+                            Icon(HeroIcons.Play, null, Modifier.size(14.dp)); Text(" Resume", color = colors.onAccent)
                         }
                     }
                     Button(onClick = { confirmLogout = true }, enabled = !loading, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = colors.danger)) {
-                        Icon(Icons.AutoMirrored.Outlined.Logout, null, Modifier.size(14.dp)); Text(" Logout", color = colors.onAccent)
+                        Icon(HeroIcons.ArrowRightStartOnRectangle, null, Modifier.size(14.dp)); Text(" Logout", color = colors.onAccent)
                     }
                 }
             }

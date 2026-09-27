@@ -21,12 +21,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Icon
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowForward
-import androidx.compose.material.icons.outlined.Fingerprint
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +48,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 @Composable
 fun LoginScreen(
@@ -94,7 +89,7 @@ fun LoginScreen(
             onClick = { onLogin(username, password) },
             enabled = canSubmit,
             modifier = Modifier.fillMaxWidth(),
-            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.padding(end = 8.dp).size(18.dp), tint = Color.White) },
+            leadingIcon = { Icon(HeroIcons.ArrowRight, null, Modifier.padding(end = 8.dp).size(18.dp), tint = Color.White) },
         )
         if (biometricAvailable && biometricEnrolled) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -109,7 +104,7 @@ fun LoginScreen(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Fingerprint, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(HeroIcons.FingerPrint, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                 Text("Sign in with biometrics", Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
             }
         }
@@ -153,7 +148,7 @@ fun ChangePasswordScreen(displayName: String, loading: Boolean, error: String?, 
             { onSubmit(current, next, confirmation) },
             Modifier.fillMaxWidth(),
             !loading,
-            leadingIcon = { Icon(Icons.Outlined.Lock, null, Modifier.padding(end = 8.dp).size(18.dp), tint = Color.White) },
+            leadingIcon = { Icon(HeroIcons.LockClosed, null, Modifier.padding(end = 8.dp).size(18.dp), tint = Color.White) },
         )
     }
 }
@@ -227,7 +222,7 @@ private fun AinoTextField(
             keyboardOptions = KeyboardOptions(keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Text),
             trailingIcon = if (isPassword && onTogglePassword != null) {{
                 Icon(
-                    if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                    if (passwordVisible) HeroIcons.EyeSlash else HeroIcons.Eye,
                     if (passwordVisible) "Hide password" else "Show password",
                     Modifier.size(18.dp).clickable(onClick = onTogglePassword),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,

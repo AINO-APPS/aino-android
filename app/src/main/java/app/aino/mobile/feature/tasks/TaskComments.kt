@@ -25,9 +25,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,6 +56,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import java.io.File
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** `utils.getAvatarUrl`: bare file names live under `/uploads/avatars/`. */
 internal fun avatarPath(avatar: String?): String? = avatar?.takeIf(String::isNotBlank)?.let { if (it.startsWith("/")) it else "/uploads/avatars/$it" }
@@ -176,7 +174,7 @@ private fun CommentAttachment(c: TaskComment) {
                 .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.AttachFile, null, Modifier.size(14.dp), tint = colors.textSecondary)
+            Icon(HeroIcons.PaperClip, null, Modifier.size(14.dp), tint = colors.textSecondary)
             Spacer(Modifier.width(6.dp))
             Text(c.fileName ?: "Attachment", color = colors.primary, fontSize = 0.8.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -204,11 +202,11 @@ private fun CommentComposer(taskId: Long, users: List<AssignableUser>, viewModel
                 Modifier.background(colors.surfaceHover, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.AttachFile, null, Modifier.size(13.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.PaperClip, null, Modifier.size(13.dp), tint = colors.textSecondary)
                 Spacer(Modifier.width(4.dp))
                 Text(f.name, color = colors.text, fontSize = 0.78.rem, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 Spacer(Modifier.width(4.dp))
-                Icon(Icons.Outlined.Close, "Remove attachment", Modifier.size(13.dp).clickable { file = null }, tint = colors.textMuted)
+                Icon(HeroIcons.XMark, "Remove attachment", Modifier.size(13.dp).clickable { file = null }, tint = colors.textMuted)
             }
         }
         if (suggestions.isNotEmpty()) {
@@ -235,7 +233,7 @@ private fun CommentComposer(taskId: Long, users: List<AssignableUser>, viewModel
             Box(
                 Modifier.padding(start = 6.dp).size(36.dp).clip(CircleShape).clickable { picker.launch("*/*") },
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Outlined.AttachFile, "Attach a file", Modifier.size(18.dp), tint = colors.textSecondary) }
+            ) { Icon(HeroIcons.PaperClip, "Attach a file", Modifier.size(18.dp), tint = colors.textSecondary) }
             val canSend = text.isNotBlank() || file != null
             Box(
                 Modifier

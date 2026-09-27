@@ -16,11 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Business
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private enum class ChartView { Dept, Tree }
 
@@ -78,9 +74,9 @@ internal fun OrgChartTab(section: Section<OrgChart>) {
             search,
             { search = it },
             placeholder = "Filter by name, role, or manager…",
-            leadingIcon = { Icon(Icons.Outlined.Search, null, Modifier.size(16.dp)) },
+            leadingIcon = { Icon(HeroIcons.MagnifyingGlass, null, Modifier.size(16.dp)) },
             trailingIcon = if (search.isNotEmpty()) {
-                { IconButton(onClick = { search = "" }) { Icon(Icons.Outlined.Close, "Clear", Modifier.size(16.dp)) } }
+                { IconButton(onClick = { search = "" }) { Icon(HeroIcons.XMark, "Clear", Modifier.size(16.dp)) } }
             } else null,
         )
         Text(plural(total, "member"), color = colors.textSecondary, fontSize = 0.8.rem)
@@ -136,8 +132,8 @@ private fun ViewToggle(active: ChartView, onSelect: (ChartView) -> Unit) {
     val shape = RoundedCornerShape(8.dp)
     Row(Modifier.fillMaxWidth().clip(shape).border(1.dp, colors.border, shape)) {
         listOf(
-            Triple(ChartView.Dept, "By Department", Icons.Outlined.Business),
-            Triple(ChartView.Tree, "Reporting Lines", Icons.Outlined.Group),
+            Triple(ChartView.Dept, "By Department", HeroIcons.BuildingOffice),
+            Triple(ChartView.Tree, "Reporting Lines", HeroIcons.UserGroup),
         ).forEach { (mode, label, icon) ->
             val selected = mode == active
             Row(
@@ -188,7 +184,7 @@ private fun DeptCard(
 
     ChartPanel {
         Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Business, null, Modifier.size(18.dp), tint = colors.textSecondary)
+            Icon(HeroIcons.BuildingOffice, null, Modifier.size(18.dp), tint = colors.textSecondary)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -219,7 +215,7 @@ private fun DeptCard(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Group, null, Modifier.size(13.dp), tint = colors.text)
+                        Icon(HeroIcons.UserGroup, null, Modifier.size(13.dp), tint = colors.text)
                         Spacer(Modifier.width(5.dp))
                         Text(team.name, color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 0.9.rem, modifier = Modifier.weight(1f, fill = false))
                         Spacer(Modifier.width(6.dp))

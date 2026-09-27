@@ -31,52 +31,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.FormatIndentDecrease
-import androidx.compose.material.icons.automirrored.outlined.FormatIndentIncrease
-import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.AlternateEmail
-import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CheckBox
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.DataObject
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.EmojiEmotions
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.FormatBold
-import androidx.compose.material.icons.outlined.FormatItalic
-import androidx.compose.material.icons.outlined.FormatListNumbered
-import androidx.compose.material.icons.outlined.FormatQuote
-import androidx.compose.material.icons.outlined.FormatStrikethrough
-import androidx.compose.material.icons.outlined.FormatUnderlined
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.HorizontalRule
-import androidx.compose.material.icons.outlined.KeyboardHide
-import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.LockOpen
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.SubdirectoryArrowRight
-import androidx.compose.material.icons.outlined.TextFields
-import androidx.compose.material.icons.outlined.Title
-import androidx.compose.material.icons.outlined.Unarchive
-import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Today
-import androidx.compose.material.icons.outlined.RocketLaunch
-import androidx.compose.material.icons.outlined.Timer
-import androidx.compose.material.icons.outlined.AssignmentTurnedIn
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -118,6 +72,7 @@ import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import kotlinx.coroutines.launch
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 // ── Slash menu (SlashMenu.tsx, Android-editable subset) ───────────────────
 
@@ -129,30 +84,30 @@ private val CODE_LANGUAGES = listOf(
 )
 
 internal val SLASH_COMMANDS: List<SlashCommand> = listOf(
-    SlashCommand("h1", "Heading 1", "Large section title", Icons.Outlined.Title, listOf("h1", "heading1", "title")),
-    SlashCommand("h2", "Heading 2", "Medium section title", Icons.Outlined.Title, listOf("h2", "heading2", "subtitle")),
-    SlashCommand("h3", "Heading 3", "Small section title", Icons.Outlined.Title, listOf("h3", "heading3")),
-    SlashCommand("p", "Text", "Plain paragraph", Icons.Outlined.TextFields, listOf("p", "paragraph", "text")),
-    SlashCommand("ul", "Bulleted list", "Simple bullet list", Icons.AutoMirrored.Outlined.FormatListBulleted, listOf("ul", "bullet", "unordered")),
-    SlashCommand("ol", "Numbered list", "Ordered list", Icons.Outlined.FormatListNumbered, listOf("ol", "numbered", "ordered")),
-    SlashCommand("todo", "To-do list", "Checkbox list", Icons.Outlined.CheckBox, listOf("todo", "check", "task", "checkbox")),
-    SlashCommand("quote", "Quote", "Blockquote", Icons.Outlined.FormatQuote, listOf("quote", "blockquote")),
-    SlashCommand("code", "Code block", "Monospace block (auto-detect)", Icons.Outlined.Code, listOf("code", "codeblock", "pre")),
+    SlashCommand("h1", "Heading 1", "Large section title", HeroIcons.H1, listOf("h1", "heading1", "title")),
+    SlashCommand("h2", "Heading 2", "Medium section title", HeroIcons.H1, listOf("h2", "heading2", "subtitle")),
+    SlashCommand("h3", "Heading 3", "Small section title", HeroIcons.H1, listOf("h3", "heading3")),
+    SlashCommand("p", "Text", "Plain paragraph", HeroIcons.Text, listOf("p", "paragraph", "text")),
+    SlashCommand("ul", "Bulleted list", "Simple bullet list", HeroIcons.ListBullet, listOf("ul", "bullet", "unordered")),
+    SlashCommand("ol", "Numbered list", "Ordered list", HeroIcons.NumberedList, listOf("ol", "numbered", "ordered")),
+    SlashCommand("todo", "To-do list", "Checkbox list", HeroIcons.SquareCheck, listOf("todo", "check", "task", "checkbox")),
+    SlashCommand("quote", "Quote", "Blockquote", HeroIcons.ChatBubbleBottomCenterText, listOf("quote", "blockquote")),
+    SlashCommand("code", "Code block", "Monospace block (auto-detect)", HeroIcons.CodeBracket, listOf("code", "codeblock", "pre")),
 ) + CODE_LANGUAGES.map { (id, label) ->
-    SlashCommand("code-$id", "Code · $label", "$label code block", Icons.Outlined.Code, listOf("code", id, label.lowercase()))
+    SlashCommand("code-$id", "Code · $label", "$label code block", HeroIcons.CodeBracket, listOf("code", id, label.lowercase()))
 } + listOf(
-    SlashCommand("divider", "Divider", "Horizontal rule", Icons.Outlined.HorizontalRule, listOf("divider", "hr", "rule", "separator")),
-    SlashCommand("timestamp", "Timestamp", "Insert current date and time", Icons.Outlined.Schedule, listOf("timestamp", "date", "time", "now")),
-    SlashCommand("today", "Today", "Insert today's date as a chip", Icons.Outlined.Today, listOf("today", "date", "now")),
-    SlashCommand("pagelink", "Link to page", "Insert link to another note", Icons.Outlined.Link, listOf("link", "page", "pagelink", "wiki")),
-    SlashCommand("toc", "Table of contents", "Auto-generate from headings", Icons.Outlined.AccountTree, listOf("toc", "contents", "outline")),
-    SlashCommand("sprint", "Sprint board", "Embed live sprint board & burndown", Icons.Outlined.RocketLaunch, listOf("sprint", "board", "burndown", "kanban", "scrum")),
-    SlashCommand("time", "Time tracking", "Insert today's tracked time summary", Icons.Outlined.Timer, listOf("time", "hours", "clock", "track", "timer", "timesheet")),
-    SlashCommand("promote-task", "Convert to task", "Promote checklist item to a real task", Icons.Outlined.AssignmentTurnedIn, listOf("task", "promote", "convert", "todo", "create task")),
-    SlashCommand("oneonone", "1-on-1 with prefill", "Auto-prefilled 1-on-1 for a direct report", Icons.Outlined.Groups, listOf("oneonone", "1on1", "1-on-1", "one on one", "manager", "report")),
-    SlashCommand("link-task", "Link task", "Link a task to this page", Icons.Outlined.CheckBox, listOf("link", "task", "linked")),
-    SlashCommand("link-event", "Link event", "Link a calendar event to this page", Icons.Outlined.CalendarMonth, listOf("link", "event", "calendar", "linked")),
-    SlashCommand("link-meeting", "Link meeting", "Link a meeting to this page", Icons.Outlined.Videocam, listOf("link", "meeting", "linked")),
+    SlashCommand("divider", "Divider", "Horizontal rule", HeroIcons.Minus, listOf("divider", "hr", "rule", "separator")),
+    SlashCommand("timestamp", "Timestamp", "Insert current date and time", HeroIcons.Clock, listOf("timestamp", "date", "time", "now")),
+    SlashCommand("today", "Today", "Insert today's date as a chip", HeroIcons.Calendar, listOf("today", "date", "now")),
+    SlashCommand("pagelink", "Link to page", "Insert link to another note", HeroIcons.Link, listOf("link", "page", "pagelink", "wiki")),
+    SlashCommand("toc", "Table of contents", "Auto-generate from headings", HeroIcons.RectangleGroup, listOf("toc", "contents", "outline")),
+    SlashCommand("sprint", "Sprint board", "Embed live sprint board & burndown", HeroIcons.RocketLaunch, listOf("sprint", "board", "burndown", "kanban", "scrum")),
+    SlashCommand("time", "Time tracking", "Insert today's tracked time summary", HeroIcons.Clock, listOf("time", "hours", "clock", "track", "timer", "timesheet")),
+    SlashCommand("promote-task", "Convert to task", "Promote checklist item to a real task", HeroIcons.ClipboardDocumentCheck, listOf("task", "promote", "convert", "todo", "create task")),
+    SlashCommand("oneonone", "1-on-1 with prefill", "Auto-prefilled 1-on-1 for a direct report", HeroIcons.UserGroup, listOf("oneonone", "1on1", "1-on-1", "one on one", "manager", "report")),
+    SlashCommand("link-task", "Link task", "Link a task to this page", HeroIcons.SquareCheck, listOf("link", "task", "linked")),
+    SlashCommand("link-event", "Link event", "Link a calendar event to this page", HeroIcons.CalendarDays, listOf("link", "event", "calendar", "linked")),
+    SlashCommand("link-meeting", "Link meeting", "Link a meeting to this page", HeroIcons.VideoCamera, listOf("link", "meeting", "linked")),
 )
 
 /** SlashMenu filter: label contains, or any alias starts with / contains the query. */
@@ -269,10 +224,10 @@ fun NoteEditorScreen(
             SaveBadge(ui.save, ui.saveError)
             if (page != null) {
                 IconButton(onClick = { if (onOpenHistory != null) onOpenHistory(pageId) else showHistory = true }) {
-                    Icon(Icons.Outlined.History, "Version history", tint = colors.textSecondary)
+                    Icon(HeroIcons.Clock, "Version history", tint = colors.textSecondary)
                 }
                 Box {
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Outlined.MoreVert, "More options", tint = colors.textSecondary) }
+                    IconButton(onClick = { menuOpen = true }) { Icon(HeroIcons.EllipsisVertical, "More options", tint = colors.textSecondary) }
                     EditorMenu(
                         expanded = menuOpen,
                         page = page,
@@ -439,7 +394,7 @@ private fun SaveBadge(status: SaveStatus, error: String?) {
         SaveStatus.Idle -> return
     }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(end = 4.dp).widthInMax(140)) {
-        if (status == SaveStatus.Saved) Icon(Icons.Outlined.Check, null, tint = tint, modifier = Modifier.size(12.dp))
+        if (status == SaveStatus.Saved) Icon(HeroIcons.Check, null, tint = tint, modifier = Modifier.size(12.dp))
         Text(text, color = tint, fontSize = 0.72.rem, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 2.dp))
     }
 }
@@ -456,17 +411,17 @@ private fun EditorMenu(expanded: Boolean, page: NotePage, onDismiss: () -> Unit,
             leadingIcon = { Icon(icon, null, tint = if (danger) colors.danger else colors.textSecondary) },
             onClick = { onAction(id) },
         )
-        item("pin", if (page.pinned) "Unpin" else "Pin to top", Icons.Outlined.PushPin)
-        item("lock", if (page.readOnly) "Unlock for editing" else "Lock as read-only", if (page.readOnly) Icons.Outlined.LockOpen else Icons.Outlined.Lock)
-        item("duplicate", "Duplicate", Icons.Outlined.ContentCopy)
-        item("archive", if (page.archived) "Unarchive" else "Archive", if (page.archived) Icons.Outlined.Unarchive else Icons.Outlined.Archive)
+        item("pin", if (page.pinned) "Unpin" else "Pin to top", HeroIcons.PushPin)
+        item("lock", if (page.readOnly) "Unlock for editing" else "Lock as read-only", if (page.readOnly) HeroIcons.LockOpen else HeroIcons.LockClosed)
+        item("duplicate", "Duplicate", HeroIcons.DocumentDuplicate)
+        item("archive", if (page.archived) "Unarchive" else "Archive", if (page.archived) HeroIcons.ArchiveBoxArrowDown else HeroIcons.ArchiveBox)
         HorizontalDivider(color = colors.border)
-        item("share", "Share page…", Icons.Outlined.Share)
-        item("icon", "Change icon / cover", Icons.Outlined.EmojiEmotions)
-        item("move", "Move to folder", Icons.Outlined.Folder)
-        item("subpage", "Add sub-page", Icons.Outlined.SubdirectoryArrowRight)
+        item("share", "Share page…", HeroIcons.Share)
+        item("icon", "Change icon / cover", HeroIcons.FaceSmile)
+        item("move", "Move to folder", HeroIcons.Folder)
+        item("subpage", "Add sub-page", HeroIcons.ArrowTurnDownRight)
         HorizontalDivider(color = colors.border)
-        item("delete", "Delete", Icons.Outlined.Delete, danger = true)
+        item("delete", "Delete", HeroIcons.Trash, danger = true)
     }
 }
 
@@ -530,7 +485,7 @@ private fun MetaRow(page: NotePage, folders: List<NoteFolder>, readOnly: Boolean
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Chip(Icons.Outlined.Folder, folderPath(page.folderId, folders).ifEmpty { "No folder" }, onClick = if (readOnly) null else onFolder)
+        Chip(HeroIcons.Folder, folderPath(page.folderId, folders).ifEmpty { "No folder" }, onClick = if (readOnly) null else onFolder)
         page.tags.forEach { tag ->
             val tint = androidx.compose.ui.graphics.Color(tagColorArgb(tag))
             Row(
@@ -565,7 +520,7 @@ private fun LockedBanner() {
         Modifier.fillMaxWidth().padding(top = 10.dp).background(colors.warning.copy(alpha = 0.12f), RoundedCornerShape(8.dp)).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.Lock, null, tint = colors.warning, modifier = Modifier.size(14.dp))
+        Icon(HeroIcons.LockClosed, null, tint = colors.warning, modifier = Modifier.size(14.dp))
         Text("This page is locked. Choose Unlock for editing in the ⋮ menu to enable editing.", color = colors.text, fontSize = 0.8.rem, modifier = Modifier.padding(start = 8.dp))
     }
 }
@@ -622,38 +577,38 @@ private fun EditorToolbar(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                ToolButton(Icons.Outlined.Add, "Insert block") { onSheet(EditorSheet.Insert) }
+                ToolButton(HeroIcons.Plus, "Insert block") { onSheet(EditorSheet.Insert) }
                 BlockStyleMenu(session)
                 val inline = block != null && block.type != BlockType.CODE
-                ToolButton(Icons.Outlined.FormatBold, "Bold", session.isMarkActive(MarkType.BOLD), inline) { session.toggleMark(MarkType.BOLD) }
-                ToolButton(Icons.Outlined.FormatItalic, "Italic", session.isMarkActive(MarkType.ITALIC), inline) { session.toggleMark(MarkType.ITALIC) }
-                ToolButton(Icons.Outlined.FormatUnderlined, "Underline", session.isMarkActive(MarkType.UNDERLINE), inline) { session.toggleMark(MarkType.UNDERLINE) }
-                ToolButton(Icons.Outlined.FormatStrikethrough, "Strikethrough", session.isMarkActive(MarkType.STRIKE), inline) { session.toggleMark(MarkType.STRIKE) }
-                ToolButton(Icons.Outlined.DataObject, "Inline code", session.isMarkActive(MarkType.CODE), inline) { session.toggleMark(MarkType.CODE) }
-                ToolButton(Icons.Outlined.Link, "Insert link", session.isMarkActive(MarkType.LINK), inline) { onSheet(EditorSheet.Url) }
-                ToolButton(Icons.AutoMirrored.Outlined.FormatListBulleted, "Bullet list", block?.type == BlockType.LIST_ITEM && block.listType == ListType.BULLET) {
+                ToolButton(HeroIcons.Bold, "Bold", session.isMarkActive(MarkType.BOLD), inline) { session.toggleMark(MarkType.BOLD) }
+                ToolButton(HeroIcons.Italic, "Italic", session.isMarkActive(MarkType.ITALIC), inline) { session.toggleMark(MarkType.ITALIC) }
+                ToolButton(HeroIcons.Underline, "Underline", session.isMarkActive(MarkType.UNDERLINE), inline) { session.toggleMark(MarkType.UNDERLINE) }
+                ToolButton(HeroIcons.Strikethrough, "Strikethrough", session.isMarkActive(MarkType.STRIKE), inline) { session.toggleMark(MarkType.STRIKE) }
+                ToolButton(HeroIcons.CodeBracketSquare, "Inline code", session.isMarkActive(MarkType.CODE), inline) { session.toggleMark(MarkType.CODE) }
+                ToolButton(HeroIcons.Link, "Insert link", session.isMarkActive(MarkType.LINK), inline) { onSheet(EditorSheet.Url) }
+                ToolButton(HeroIcons.ListBullet, "Bullet list", block?.type == BlockType.LIST_ITEM && block.listType == ListType.BULLET) {
                     session.setBlockType(BlockType.LIST_ITEM, listType = ListType.BULLET)
                 }
-                ToolButton(Icons.Outlined.FormatListNumbered, "Numbered list", block?.type == BlockType.LIST_ITEM && block.listType == ListType.ORDERED) {
+                ToolButton(HeroIcons.NumberedList, "Numbered list", block?.type == BlockType.LIST_ITEM && block.listType == ListType.ORDERED) {
                     session.setBlockType(BlockType.LIST_ITEM, listType = ListType.ORDERED)
                 }
-                ToolButton(Icons.Outlined.CheckBox, "Checklist", block?.type == BlockType.LIST_ITEM && block.listType.isCheck) {
+                ToolButton(HeroIcons.SquareCheck, "Checklist", block?.type == BlockType.LIST_ITEM && block.listType.isCheck) {
                     session.setBlockType(BlockType.LIST_ITEM, listType = ListType.UNCHECKED)
                 }
                 if (block?.type == BlockType.LIST_ITEM) {
-                    ToolButton(Icons.AutoMirrored.Outlined.FormatIndentDecrease, "Outdent", enabled = block.indent > 0) { session.indent(-1) }
-                    ToolButton(Icons.AutoMirrored.Outlined.FormatIndentIncrease, "Indent") { session.indent(1) }
+                    ToolButton(HeroIcons.Bars3BottomLeft, "Outdent", enabled = block.indent > 0) { session.indent(-1) }
+                    ToolButton(HeroIcons.Bars3BottomRight, "Indent") { session.indent(1) }
                 }
-                ToolButton(Icons.Outlined.AlternateEmail, "Mention", enabled = inline) {
+                ToolButton(HeroIcons.AtSymbol, "Mention", enabled = inline) {
                     val b = session.focusedBlock() ?: return@ToolButton
                     val pos = session.selection(b.id).start
                     val before = b.content.text.getOrNull(pos - 1)
                     session.insertText(if (before == null || before.isWhitespace()) "@" else " @")
                 }
-                ToolButton(Icons.Outlined.Description, "Link to page", enabled = inline) {
+                ToolButton(HeroIcons.DocumentText, "Link to page", enabled = inline) {
                     onSheet(EditorSheet.PageLink(session.focusedBlock()?.let { FocusTarget(it.id, session.selection(it.id).start) }))
                 }
-                ToolButton(Icons.Outlined.KeyboardHide, "Hide keyboard") {
+                ToolButton(HeroIcons.ChevronDoubleDown, "Hide keyboard") {
                     keyboard?.hide()
                     focusManager.clearFocus()
                 }
@@ -707,7 +662,7 @@ private fun ContextAction(session: NoteEditorSession, pages: List<NotePage>, onO
         Modifier.fillMaxWidth().clickable(onClick = action).padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.AutoMirrored.Outlined.OpenInNew, null, tint = colors.primary, modifier = Modifier.size(16.dp))
+        Icon(HeroIcons.ArrowTopRightOnSquare, null, tint = colors.primary, modifier = Modifier.size(16.dp))
         Text(label, color = colors.primary, fontSize = 0.85.rem, modifier = Modifier.padding(start = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
@@ -735,7 +690,7 @@ private fun BlockStyleMenu(session: NoteEditorSession) {
     var open by remember { mutableStateOf(false) }
     val block = session.focusedBlock()
     Box {
-        ToolButton(Icons.Outlined.Title, "Heading style", block?.type == BlockType.HEADING) { open = true }
+        ToolButton(HeroIcons.H1, "Heading style", block?.type == BlockType.HEADING) { open = true }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, containerColor = colors.bgElevated) {
             listOf(
                 Triple("Text", BlockType.PARAGRAPH, 0), Triple("Heading 1", BlockType.HEADING, 1), Triple("Heading 2", BlockType.HEADING, 2),
@@ -757,7 +712,7 @@ private fun BlockStyleMenu(session: NoteEditorSession) {
 @Composable
 private fun InsertSheet(onPick: (SlashCommand) -> Unit, onDismiss: () -> Unit) {
     NotesSheet(onDismiss) {
-        SheetTitle("Insert block", icon = Icons.Outlined.Add)
+        SheetTitle("Insert block", icon = HeroIcons.Plus)
         LazyColumn(Modifier.heightIn(max = 480.dp)) {
             items(SLASH_COMMANDS, key = { it.id }) { c -> CommandRow(c) { onPick(c) } }
         }
@@ -774,7 +729,7 @@ private fun SectionHeader(icon: ImageVector, title: String, action: String? = nu
         Text(title, color = colors.textSecondary, fontWeight = FontWeight.SemiBold, fontSize = 0.82.rem, modifier = Modifier.padding(start = 6.dp).weight(1f))
         if (action != null && onAction != null) {
             Row(Modifier.clickable(onClick = onAction).padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Add, null, tint = colors.primary, modifier = Modifier.size(14.dp))
+                Icon(HeroIcons.Plus, null, tint = colors.primary, modifier = Modifier.size(14.dp))
                 Text(action, color = colors.primary, fontSize = 0.8.rem)
             }
         }
@@ -797,7 +752,7 @@ private fun PageRow(page: NotePage, subtitle: String?, trailing: String, onClick
 @Composable
 private fun SubPagesSection(viewModel: NotesViewModel, page: NotePage, pages: List<NotePage>, onOpenPage: (String) -> Unit) {
     val children = remember(page.id, pages) { childPages(page.id, pages) }
-    SectionHeader(Icons.Outlined.SubdirectoryArrowRight, "Sub-pages" + if (children.isNotEmpty()) " (${children.size})" else "", "Add") {
+    SectionHeader(HeroIcons.ArrowTurnDownRight, "Sub-pages" + if (children.isNotEmpty()) " (${children.size})" else "", "Add") {
         onOpenPage(viewModel.createSubPage(page.id))
     }
     if (children.isEmpty()) {
@@ -811,7 +766,7 @@ private fun SubPagesSection(viewModel: NotesViewModel, page: NotePage, pages: Li
 private fun BacklinksSection(page: NotePage, pages: List<NotePage>, onOpenPage: (String) -> Unit) {
     val links = remember(page.id, pages) { backlinks(page.id, pages) }
     if (links.isEmpty()) return
-    SectionHeader(Icons.Outlined.Link, "Linked from ${links.size} ${if (links.size == 1) "page" else "pages"}")
+    SectionHeader(HeroIcons.Link, "Linked from ${links.size} ${if (links.size == 1) "page" else "pages"}")
     links.forEach { p -> PageRow(p, null, formatNoteDate(p.updatedAt)) { onOpenPage(p.id) } }
 }
 
@@ -830,7 +785,7 @@ private fun LinkedItemsSection(viewModel: NotesViewModel, pageId: String, versio
     }
     val visible = links.filter { it.detail != null }
     Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(top = 20.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Outlined.Link, null, tint = colors.textMuted, modifier = Modifier.size(14.dp))
+        Icon(HeroIcons.Link, null, tint = colors.textMuted, modifier = Modifier.size(14.dp))
         Text("Linked items", color = colors.textSecondary, fontWeight = FontWeight.SemiBold, fontSize = 0.82.rem, modifier = Modifier.padding(start = 6.dp))
         if (visible.isNotEmpty()) {
             Text("${visible.size}", color = colors.primary, fontSize = 0.7.rem, modifier = Modifier.padding(start = 6.dp).background(colors.primary.copy(alpha = 0.12f), RoundedCornerShape(8.dp)).padding(horizontal = 6.dp))
@@ -858,7 +813,7 @@ private fun LinkedItemsSection(viewModel: NotesViewModel, pageId: String, versio
                         }
                         IconButton(onClick = {
                             scope.launch { viewModel.removeLink(pageId, type, link.entityId).onSuccess { links = links - link } }
-                        }, modifier = Modifier.size(32.dp)) { Icon(Icons.Outlined.Close, "Unlink", tint = colors.textMuted, modifier = Modifier.size(14.dp)) }
+                        }, modifier = Modifier.size(32.dp)) { Icon(HeroIcons.XMark, "Unlink", tint = colors.textMuted, modifier = Modifier.size(14.dp)) }
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("Remove link") }, onClick = {
@@ -877,7 +832,7 @@ private fun LinkedItemsSection(viewModel: NotesViewModel, pageId: String, versio
                 Modifier.border(1.dp, colors.border, RoundedCornerShape(14.dp)).clickable { onAdd(type) }.padding(horizontal = 10.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Add, null, tint = colors.textSecondary, modifier = Modifier.size(12.dp))
+                Icon(HeroIcons.Plus, null, tint = colors.textSecondary, modifier = Modifier.size(12.dp))
                 Icon(entityIcon(type), null, tint = colors.textSecondary, modifier = Modifier.size(12.dp).padding(start = 2.dp))
                 Text(label, color = colors.textSecondary, fontSize = 0.78.rem, modifier = Modifier.padding(start = 4.dp))
             }

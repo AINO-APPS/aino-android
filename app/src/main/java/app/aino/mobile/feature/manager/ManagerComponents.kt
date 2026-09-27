@@ -14,16 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Assignment
-import androidx.compose.material.icons.automirrored.outlined.FactCheck
-import androidx.compose.material.icons.automirrored.outlined.Undo
-import androidx.compose.material.icons.outlined.AccessTime
-import androidx.compose.material.icons.outlined.Business
-import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Insights
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -39,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import app.aino.mobile.core.common.getLeaveType
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** `pages/manager/constants.ts` `formatMin`. */
 fun formatMin(totalMin: Int): String {
@@ -228,7 +219,7 @@ internal fun RequestDetails(row: ApprovalRow) {
                 Text("${meta.leaveType} • ${meta.date}$durationSuffix", color = colors.text, fontSize = 0.82.rem)
             }
             "leave_withdraw" -> {
-                Icon(Icons.AutoMirrored.Outlined.Undo, null, Modifier.size(13.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.ArrowUturnLeft, null, Modifier.size(13.dp), tint = colors.textSecondary)
                 Spacer(Modifier.width(4.dp))
                 Text("Withdraw", color = colors.text, fontSize = 0.82.rem)
                 Spacer(Modifier.width(4.dp))
@@ -238,14 +229,14 @@ internal fun RequestDetails(row: ApprovalRow) {
                 Text("${meta.leaveType} • ${meta.date}$prevSuffix", color = colors.text, fontSize = 0.82.rem)
             }
             "manual_entry" -> {
-                Icon(Icons.Outlined.EditNote, null, Modifier.size(13.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.PencilSquare, null, Modifier.size(13.dp), tint = colors.textSecondary)
                 Spacer(Modifier.width(4.dp))
                 val clockOutSuffix = meta.clockOut?.let { " → $it" }.orEmpty()
                 val modeSuffix = meta.workMode?.let { " ($it)" }.orEmpty()
                 Text("${meta.date} • ${meta.clockIn}$clockOutSuffix$modeSuffix", color = colors.text, fontSize = 0.82.rem)
             }
             "overtime" -> {
-                Icon(Icons.Outlined.AccessTime, null, Modifier.size(13.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.Clock, null, Modifier.size(13.dp), tint = colors.textSecondary)
                 Spacer(Modifier.width(4.dp))
                 Text("${meta.date} • ${meta.hours}h", color = colors.text, fontSize = 0.82.rem)
             }
@@ -260,7 +251,7 @@ internal fun WorkModeLabel(workMode: String?) {
     val colors = LocalWebColors.current
     val remote = workMode == "remote"
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(if (remote) Icons.Outlined.Home else Icons.Outlined.Business, null, Modifier.size(13.dp), tint = colors.textSecondary)
+        Icon(if (remote) HeroIcons.Home else HeroIcons.BuildingOffice, null, Modifier.size(13.dp), tint = colors.textSecondary)
         Spacer(Modifier.width(4.dp))
         Text(if (remote) "Remote" else "Office", color = colors.textSecondary, fontSize = 0.82.rem)
     }
@@ -318,8 +309,8 @@ internal fun ManagerCellLabel(label: String) {
 
 /** Icon mapping helper for the tab strip. */
 internal fun tabIcon(tab: ManagerTab): ImageVector = when (tab) {
-    ManagerTab.Attendance -> Icons.Outlined.Schedule
-    ManagerTab.Approvals -> Icons.AutoMirrored.Outlined.FactCheck
-    ManagerTab.Analytics -> Icons.Outlined.Insights
-    ManagerTab.Requests -> Icons.AutoMirrored.Outlined.Assignment
+    ManagerTab.Attendance -> HeroIcons.Clock
+    ManagerTab.Approvals -> HeroIcons.ClipboardDocumentCheck
+    ManagerTab.Analytics -> HeroIcons.PresentationChartLine
+    ManagerTab.Requests -> HeroIcons.ClipboardDocumentList
 }

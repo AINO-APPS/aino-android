@@ -18,31 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Article
-import androidx.compose.material.icons.automirrored.outlined.ArrowForward
-import androidx.compose.material.icons.automirrored.outlined.Assignment
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.Apartment
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.BeachAccess
-import androidx.compose.material.icons.outlined.Business
-import androidx.compose.material.icons.outlined.CalendarToday
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.CheckBox
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.EventAvailable
-import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.PersonAdd
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.RocketLaunch
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -75,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.component.AinoFullPage
 import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** GlobalSearch as a full page; the field is focused with the keyboard up on entry. */
 @OptIn(ExperimentalFoundationApi::class)
@@ -100,7 +76,7 @@ fun SearchScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Outlined.Search, null, tint = colors.text.copy(alpha = 0.6f), modifier = Modifier.size(17.dp))
+            Icon(HeroIcons.MagnifyingGlass, null, tint = colors.text.copy(alpha = 0.6f), modifier = Modifier.size(17.dp))
             BasicTextField(
                 value = ui.query,
                 onValueChange = viewModel::onQueryChange,
@@ -133,7 +109,7 @@ fun SearchScreen(
             }
             if (ui.query.isNotEmpty()) {
                 IconButton(onClick = viewModel::clear, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Outlined.Close, "Clear search", tint = colors.textMuted, modifier = Modifier.size(16.dp))
+                    Icon(HeroIcons.XMark, "Clear search", tint = colors.textMuted, modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -206,7 +182,7 @@ private fun SearchResultRow(row: SearchRow, onClick: () -> Unit) {
             ) {
                 val fg = badge.fg?.let(::Color) ?: colors.textMuted
                 Text(badge.text, color = fg, fontSize = 11.sp, maxLines = 1)
-                if (badge.go) Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = fg, modifier = Modifier.size(12.dp))
+                if (badge.go) Icon(HeroIcons.ArrowRight, null, tint = fg, modifier = Modifier.size(12.dp))
             }
         }
     }
@@ -220,34 +196,34 @@ private fun highlighted(html: String, highlight: Color): AnnotatedString = build
 
 private fun rowIcon(row: SearchRow): ImageVector = when (row.kind) {
     SearchKind.Nav -> navIconVector(row.navIcon ?: NavIcon.Home)
-    SearchKind.Task -> Icons.AutoMirrored.Outlined.Assignment
-    SearchKind.Note -> Icons.Outlined.Description
-    SearchKind.Event -> Icons.Outlined.CalendarToday
-    SearchKind.Leave -> Icons.Outlined.BeachAccess
-    SearchKind.Sprint -> Icons.Outlined.RocketLaunch
-    SearchKind.User -> Icons.Outlined.Person
-    SearchKind.Log -> Icons.AutoMirrored.Outlined.Article
+    SearchKind.Task -> HeroIcons.ClipboardDocumentList
+    SearchKind.Note -> HeroIcons.DocumentText
+    SearchKind.Event -> HeroIcons.Calendar
+    SearchKind.Leave -> HeroIcons.Sun
+    SearchKind.Sprint -> HeroIcons.RocketLaunch
+    SearchKind.User -> HeroIcons.User
+    SearchKind.Log -> HeroIcons.Newspaper
 }
 
 private fun navIconVector(icon: NavIcon): ImageVector = when (icon) {
-    NavIcon.Home -> Icons.Outlined.Home
-    NavIcon.Calendar -> Icons.Outlined.CalendarToday
-    NavIcon.CheckSquare -> Icons.Outlined.CheckBox
-    NavIcon.FileText -> Icons.Outlined.Description
-    NavIcon.MessageSquare -> Icons.Outlined.ChatBubbleOutline
-    NavIcon.CalendarCheck -> Icons.Outlined.EventAvailable
-    NavIcon.Palmtree -> Icons.Outlined.BeachAccess
-    NavIcon.BarChart3 -> Icons.Outlined.BarChart
-    NavIcon.FileEdit -> Icons.Outlined.EditNote
-    NavIcon.Building2 -> Icons.Outlined.Business
-    NavIcon.ClipboardList -> Icons.AutoMirrored.Outlined.Assignment
-    NavIcon.Wallet -> Icons.Outlined.AccountBalanceWallet
-    NavIcon.Users -> Icons.Outlined.Group
-    NavIcon.Settings -> Icons.Outlined.Settings
-    NavIcon.User -> Icons.Outlined.Person
-    NavIcon.UserPlus -> Icons.Outlined.PersonAdd
-    NavIcon.Download -> Icons.Outlined.Download
-    NavIcon.ScrollText -> Icons.AutoMirrored.Outlined.Article
-    NavIcon.RefreshCw -> Icons.Outlined.Refresh
-    NavIcon.Building -> Icons.Outlined.Apartment
+    NavIcon.Home -> HeroIcons.Home
+    NavIcon.Calendar -> HeroIcons.Calendar
+    NavIcon.CheckSquare -> HeroIcons.SquareCheck
+    NavIcon.FileText -> HeroIcons.DocumentText
+    NavIcon.MessageSquare -> HeroIcons.ChatBubbleOvalLeft
+    NavIcon.CalendarCheck -> HeroIcons.CalendarDays
+    NavIcon.Palmtree -> HeroIcons.Sun
+    NavIcon.BarChart3 -> HeroIcons.ChartBar
+    NavIcon.FileEdit -> HeroIcons.PencilSquare
+    NavIcon.Building2 -> HeroIcons.BuildingOffice
+    NavIcon.ClipboardList -> HeroIcons.ClipboardDocumentList
+    NavIcon.Wallet -> HeroIcons.Wallet
+    NavIcon.Users -> HeroIcons.UserGroup
+    NavIcon.Settings -> HeroIcons.Cog6Tooth
+    NavIcon.User -> HeroIcons.User
+    NavIcon.UserPlus -> HeroIcons.UserPlus
+    NavIcon.Download -> HeroIcons.ArrowDownTray
+    NavIcon.ScrollText -> HeroIcons.Newspaper
+    NavIcon.RefreshCw -> HeroIcons.ArrowPath
+    NavIcon.Building -> HeroIcons.BuildingOffice2
 }

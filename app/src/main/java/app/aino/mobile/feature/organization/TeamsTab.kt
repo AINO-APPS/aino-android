@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val WEEK_OPTIONS = (1..8).map { it to it.toString() }
 private val MODE_OPTIONS = listOf(
@@ -143,7 +142,7 @@ private fun SprintConfigEditor(edit: TeamEdit, busy: Boolean, viewModel: Organiz
             OrgHint("Length of each sprint (1-8 weeks)")
         }
         Column {
-            OrgFieldLabel("Sprint Start Date", icon = Icons.Outlined.CalendarMonth)
+            OrgFieldLabel("Sprint Start Date", icon = HeroIcons.CalendarDays)
             OrgDateField(edit.sprintStartDate, { v -> viewModel.updateTeamEdit { it.copy(sprintStartDate = v) } })
             OrgHint("First sprint's start date (sprints auto-calculated from this)")
         }

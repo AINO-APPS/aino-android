@@ -5,8 +5,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +24,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.video.videoFrameMillis
 import kotlinx.coroutines.launch
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** Attachment URLs resolve exactly like every other server upload path. */
 fun resolveChatMediaUrl(value: String, origin: String = NetworkConfig.serverOrigin): String =
@@ -79,7 +78,7 @@ fun ChatMediaPreview(
                     )
                 }
             }
-            message.fileType?.startsWith("audio/") == true -> ChatVoicePlayer(url, Modifier.fillMaxWidth(), outgoing = outgoing)
+            message.fileType?.startsWith("audio/") == true -> ChatVoicePlayer(url, Modifier.fillMaxWidth(), outgoing = outgoing, waveSeed = message.fileName ?: url)
             else -> AttachmentCard(message, url, onLongPress)
         }
         if (!visual) MediaProcessingState(message, onCancelProcessing, onRetryProcessing)
@@ -109,7 +108,7 @@ fun TransferRing(progress: Float?, onCancel: (() -> Unit)?, modifier: Modifier =
         ) {
             if (progress == null) CircularProgressIndicator(Modifier.size(40.dp), color = Color.White, strokeWidth = 2.5.dp)
             else CircularProgressIndicator(progress = { animated }, modifier = Modifier.size(40.dp), color = Color.White, strokeWidth = 2.5.dp, trackColor = Color.White.copy(alpha = .25f))
-            if (onCancel != null) Icon(Icons.Outlined.Close, "Cancel", Modifier.size(20.dp), tint = Color.White)
+            if (onCancel != null) Icon(HeroIcons.XMark, "Cancel", Modifier.size(20.dp), tint = Color.White)
         }
     }
 }
@@ -121,7 +120,7 @@ fun TransferRetry(onRetry: () -> Unit, modifier: Modifier = Modifier) {
         Box(
             Modifier.size(48.dp).clip(CircleShape).background(Color.Black.copy(alpha = .55f)).clickable(onClickLabel = "Retry", onClick = onRetry),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Outlined.Refresh, "Retry", Modifier.size(24.dp), tint = Color.White) }
+        ) { Icon(HeroIcons.ArrowPath, "Retry", Modifier.size(24.dp), tint = Color.White) }
     }
 }
 
@@ -171,9 +170,9 @@ fun ChatThumbnail(
             onError = { failed = true },
         )
         when {
-            failed -> Icon(Icons.Outlined.BrokenImage, "Media unavailable", tint = LocalWebColors.current.textMuted)
+            failed -> Icon(HeroIcons.Photo, "Media unavailable", tint = LocalWebColors.current.textMuted)
             video -> Box(Modifier.size(46.dp).background(Color.Black.copy(alpha = .55f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.PlayArrow, "Play video", Modifier.size(28.dp), tint = Color.White)
+                Icon(HeroIcons.Play, "Play video", Modifier.size(28.dp), tint = Color.White)
             }
         }
     }
@@ -207,14 +206,14 @@ private fun AttachmentCard(message: ChatMessage, url: String, onLongPress: () ->
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp).background(app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.primary.copy(alpha = .12f), RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Description, "Document", tint = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.primary)
+                Icon(HeroIcons.DocumentText, "Document", tint = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.primary)
             }
             Column(Modifier.padding(start = 10.dp).weight(1f)) {
                 Text(message.fileName ?: "File", fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(listOfNotNull(message.fileType, formatChatFileSize(message.fileSize)).joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.textSecondary)
             }
             if (opening) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Outlined.OpenInNew, "Open", Modifier.size(19.dp))
+            else Icon(HeroIcons.ArrowTopRightOnSquare, "Open", Modifier.size(19.dp))
         }
     }
 }
@@ -234,7 +233,7 @@ fun MediaProcessingState(message: ChatMessage, onCancel: (ChatMessage) -> Unit, 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
             IconButton(onClick = { if (state in setOf("failed", "cancelled")) onRetry(message) else onCancel(message) }, Modifier.size(32.dp)) {
-                Icon(if (state in setOf("failed", "cancelled")) Icons.Outlined.Replay else Icons.Outlined.Close, if (state in setOf("failed", "cancelled")) "Retry" else "Cancel", Modifier.size(18.dp))
+                Icon(if (state in setOf("failed", "cancelled")) HeroIcons.ArrowUturnLeft else HeroIcons.XMark, if (state in setOf("failed", "cancelled")) "Retry" else "Cancel", Modifier.size(18.dp))
             }
         }
         if (state !in setOf("failed", "cancelled")) LinearProgressIndicator(progress = { progress / 100f }, Modifier.fillMaxWidth())

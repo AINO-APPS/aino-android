@@ -9,11 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.RemoveModerator
-import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -27,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Web `/profile/face` (`FaceEnrollment.tsx`). Enrolling needs the web's
@@ -62,11 +58,11 @@ fun FaceEnrollmentScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 }
                 enrolled -> {
-                    Icon(Icons.Outlined.VerifiedUser, null, Modifier.size(20.dp), tint = tint)
+                    Icon(HeroIcons.ShieldCheck, null, Modifier.size(20.dp), tint = tint)
                     Text("Enrolled" + (localDate(face?.enrolledAt)?.let { " on $it" } ?: ""), color = colors.text, fontWeight = FontWeight.SemiBold)
                 }
                 else -> {
-                    Icon(Icons.Outlined.RemoveModerator, null, Modifier.size(20.dp), tint = tint)
+                    Icon(HeroIcons.ShieldExclamation, null, Modifier.size(20.dp), tint = tint)
                     Text("Not enrolled yet", color = colors.text, fontWeight = FontWeight.SemiBold)
                 }
             }
@@ -79,7 +75,7 @@ fun FaceEnrollmentScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
             Modifier.fillMaxWidth().background(colors.primaryGlow, shape).padding(14.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Outlined.Info, null, Modifier.size(18.dp), tint = colors.primary)
+            Icon(HeroIcons.InformationCircle, null, Modifier.size(18.dp), tint = colors.primary)
             Text(
                 "On this phone you clock in and out with your fingerprint or PIN — no face scan needed. " +
                     "Enable it from Profile → Edit Profile → Fingerprint / PIN (or on your first clock-in). " +
@@ -90,7 +86,7 @@ fun FaceEnrollmentScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
         }
 
         if (enrolled) {
-            ProfileButton("Clear Enrollment", "Clearing…", busy, { viewModel.askClearFace(true) }, danger = true, icon = Icons.Outlined.Delete)
+            ProfileButton("Clear Enrollment", "Clearing…", busy, { viewModel.askClearFace(true) }, danger = true, icon = HeroIcons.Trash)
         }
 
         ProfileSection("Tips for a good enrollment") {

@@ -17,12 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CallEnd
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MicOff
-import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material.icons.outlined.VideocamOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,6 +46,7 @@ import app.aino.mobile.core.call.webrtc.VideoRenderer
 import app.aino.mobile.core.designsystem.component.avatarInitials
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val Sky = Color(0xFF0EA5E9)
 
@@ -108,12 +103,12 @@ fun MeetingPipWidget(state: MeetingState, session: MeetingSession, onOpen: () ->
             Modifier.fillMaxWidth().background(Color(0xFF16161E)).padding(horizontal = 10.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
         ) {
-            PipButton(if (state.muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, if (state.muted) "Unmute" else "Mute", state.muted, onClick = session::toggleMute)
-            PipButton(if (state.videoOff) Icons.Outlined.VideocamOff else Icons.Outlined.Videocam, if (state.videoOff) "Start video" else "Stop video", state.videoOff, onClick = session::toggleVideo)
+            PipButton(if (state.muted) HeroIcons.MicrophoneSlash else HeroIcons.Microphone, if (state.muted) "Unmute" else "Mute", state.muted, onClick = session::toggleMute)
+            PipButton(if (state.videoOff) HeroIcons.VideoCameraSlash else HeroIcons.VideoCamera, if (state.videoOff) "Start video" else "Stop video", state.videoOff, onClick = session::toggleVideo)
             Box(
                 Modifier.size(30.dp).clip(CircleShape).background(MrDanger).clickable(onClickLabel = "Leave meeting", onClick = session::leave),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Outlined.CallEnd, "Leave meeting", Modifier.size(15.dp), tint = Color.White) }
+            ) { Icon(HeroIcons.PhoneXMark, "Leave meeting", Modifier.size(15.dp), tint = Color.White) }
         }
     }
 }

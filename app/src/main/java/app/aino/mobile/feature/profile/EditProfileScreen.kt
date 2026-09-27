@@ -5,16 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Computer
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Fingerprint
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.Smartphone
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -29,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** Web `EditProfileModal` as a full page; section order and copy follow the modal. */
 @Composable
@@ -58,7 +49,7 @@ fun EditProfileScreen(
     fun busy(form: ProfileForm) = form in ui.busy
 
     ProfilePage("Edit Profile", onBack) {
-        ProfileSection("Name & Username", Icons.Outlined.Person) {
+        ProfileSection("Name & Username", HeroIcons.User) {
             SectionBody {
                 ProfileTextField("Full Name", ui.draftName, { viewModel.updateDraft(name = it) }, "Your full name")
                 ProfileTextField("Username", ui.draftUsername, { viewModel.updateDraft(username = it) }, "username", prefix = "@")
@@ -71,7 +62,7 @@ fun EditProfileScreen(
             }
         }
 
-        ProfileSection("Email Address", Icons.Outlined.Email) {
+        ProfileSection("Email Address", HeroIcons.Envelope) {
             SectionBody {
                 ProfileTextField("Email", ui.draftEmail, { viewModel.updateDraft(email = it) }, "you@example.com", KeyboardType.Email)
                 NoticeText(ui.notices[ProfileForm.Email])
@@ -83,7 +74,7 @@ fun EditProfileScreen(
             }
         }
 
-        ProfileSection("Change Password", Icons.Outlined.Lock) {
+        ProfileSection("Change Password", HeroIcons.LockClosed) {
             SectionBody {
                 ProfileTextField("Current Password", ui.currentPassword, { viewModel.updateDraft(currentPassword = it) }, "Enter current password", password = true)
                 ProfileTextField("New Password", ui.newPassword, { viewModel.updateDraft(newPassword = it) }, "Min 8 characters", password = true)
@@ -99,7 +90,7 @@ fun EditProfileScreen(
         // Android counterpart of the modal's desktop "Biometric Login (this device)" section.
         // One enrollment serves sign-in and attendance clock-in/out.
         val showSection = biometricLoginAllowed || attendanceVerificationOn || biometricEnrolled
-        if (showSection) ProfileSection("Fingerprint / PIN (this device)", Icons.Outlined.Fingerprint) {
+        if (showSection) ProfileSection("Fingerprint / PIN (this device)", HeroIcons.FingerPrint) {
             SectionBody {
                 SectionDescription(
                     buildString {
@@ -141,16 +132,16 @@ fun EditProfileScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         if (disabling) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        else { Icon(Icons.Outlined.Delete, null, Modifier.size(16.dp)); Text("  Disable on this device") }
+                        else { Icon(HeroIcons.Trash, null, Modifier.size(16.dp)); Text("  Disable on this device") }
                     }
                 } else if (biometricAvailable && (biometricLoginAllowed || attendanceVerificationOn)) {
-                    ProfileButton("Enable fingerprint / PIN", "Working…", false, onEnableBiometric, icon = Icons.Outlined.Add)
+                    ProfileButton("Enable fingerprint / PIN", "Working…", false, onEnableBiometric, icon = HeroIcons.Plus)
                 }
             }
         }
 
         if (ui.biometricDevices.isNotEmpty()) {
-            ProfileSection("Devices with biometric sign-in", Icons.Outlined.Smartphone) {
+            ProfileSection("Devices with biometric sign-in", HeroIcons.DevicePhoneMobile) {
                 SectionBody {
                     SectionDescription(
                         "These devices can sign in to your account with Face ID, Touch ID, or Windows Hello. " +
@@ -159,7 +150,7 @@ fun EditProfileScreen(
                     NoticeText(ui.notices[ProfileForm.Devices])
                     ui.biometricDevices.forEach { device ->
                         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Icon(if (device.platform == "desktop") Icons.Outlined.Computer else Icons.Outlined.Smartphone, null, Modifier.size(18.dp), tint = colors.textSecondary)
+                            Icon(if (device.platform == "desktop") HeroIcons.ComputerDesktop else HeroIcons.DevicePhoneMobile, null, Modifier.size(18.dp), tint = colors.textSecondary)
                             Column(Modifier.weight(1f)) {
                                 Text(device.deviceLabel ?: biometricPlatformLabel(device.platform), color = colors.text, fontSize = 14.sp)
                                 Text(
@@ -171,7 +162,7 @@ fun EditProfileScreen(
                                 onClick = { viewModel.revokeBiometricDevice(device.id, thisDeviceCredentialId, onThisDeviceRevoked) },
                                 enabled = !busy(ProfileForm.Devices),
                             ) {
-                                Icon(Icons.Outlined.Delete, "Remove device", tint = colors.textSecondary)
+                                Icon(HeroIcons.Trash, "Remove device", tint = colors.textSecondary)
                             }
                         }
                     }
@@ -179,7 +170,7 @@ fun EditProfileScreen(
             }
         }
 
-        ProfileSection("Danger Zone", Icons.Outlined.WarningAmber, danger = true) {
+        ProfileSection("Danger Zone", HeroIcons.ExclamationTriangle, danger = true) {
             SectionBody {
                 SectionDescription("Permanently delete your account and all associated data. This action cannot be undone.")
                 if (!ui.deleteConfirming) {
@@ -191,7 +182,7 @@ fun EditProfileScreen(
                     ProfileButton(
                         "Yes, Delete Forever", "Deleting…", busy(ProfileForm.Delete),
                         { viewModel.deleteAccount(onAccountDeleted) },
-                        danger = true, icon = Icons.Outlined.Delete,
+                        danger = true, icon = HeroIcons.Trash,
                     )
                     OutlinedButton(onClick = { viewModel.askDeleteAccount(false) }, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
                 }

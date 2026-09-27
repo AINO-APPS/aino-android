@@ -15,17 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.HelpOutline
-import androidx.compose.material.icons.outlined.LocalOffer
-import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,12 +42,13 @@ import kotlinx.coroutines.withContext
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private fun typeIcon(value: String): ImageVector = when (value) {
-    "bug" -> Icons.Outlined.BugReport
-    "feature_request" -> Icons.Outlined.AutoAwesome
-    "access_issue" -> Icons.Outlined.Shield
-    else -> Icons.Outlined.HelpOutline
+    "bug" -> HeroIcons.BugAnt
+    "feature_request" -> HeroIcons.Sparkles
+    "access_issue" -> HeroIcons.ShieldCheck
+    else -> HeroIcons.QuestionMarkCircle
 }
 
 private val SHORT_DATE = DateTimeFormatter.ofPattern("M/d/yyyy", Locale.US)
@@ -126,22 +116,22 @@ fun ServiceDeskTab(viewModel: TaskViewModel, @Suppress("UNUSED_PARAMETER") role:
             WebSelect(listOf("" to "All Types") + TICKET_TYPES.map { it.value to it.label }, filterType, { filterType = it }, Modifier.fillMaxWidth())
             WebButton(
                 if (formOpen) "Cancel" else "New Ticket", { formOpen = !formOpen }, Modifier.fillMaxWidth(),
-                style = BtnStyle.Primary, icon = if (formOpen) Icons.Outlined.Close else Icons.Outlined.Add,
+                style = BtnStyle.Primary, icon = if (formOpen) HeroIcons.XMark else HeroIcons.Plus,
             )
         }
         if (formOpen) {
             GlassPanel(padding = 24.dp) {
                 Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Add, null, Modifier.size(16.dp), tint = colors.text)
+                    Icon(HeroIcons.Plus, null, Modifier.size(16.dp), tint = colors.text)
                     Spacer(Modifier.width(5.dp))
                     Text("New Service Desk Ticket", color = colors.text, fontSize = 1.rem, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Icon(Icons.Outlined.Close, "Close", Modifier.size(14.dp).clickable { formOpen = false }, tint = colors.textMuted)
+                    Icon(HeroIcons.XMark, "Close", Modifier.size(14.dp).clickable { formOpen = false }, tint = colors.textMuted)
                 }
                 WebTextField(title, { title = it }, "Ticket title...", maxLength = 200)
                 Spacer(Modifier.height(20.dp))
                 WebTextField(description, { description = it }, "Provide details: steps to reproduce (for bugs), expected behavior, etc.", singleLine = false, minLines = 3)
                 Spacer(Modifier.height(16.dp))
-                FieldLabel("Type", Icons.Outlined.LocalOffer)
+                FieldLabel("Type", HeroIcons.Tag)
                 WebSelect(TICKET_TYPES.map { it.value to it.label }, type, { type = it }, Modifier.fillMaxWidth())
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.4.dp)) {
@@ -227,12 +217,12 @@ fun ServiceDeskTab(viewModel: TaskViewModel, @Suppress("UNUSED_PARAMETER") role:
                                 Text(localeDate(ticket.createdAt), color = colors.textMuted, fontSize = 0.72.rem)
                                 if (canDeleteTicket(ticket, ui.userId)) {
                                     Icon(
-                                        Icons.Outlined.Delete, "Cancel this ticket",
+                                        HeroIcons.Trash, "Cancel this ticket",
                                         Modifier.size(16.dp).clickable(enabled = deletingId != ticket.id) { confirmDelete = ticket },
                                         tint = colors.textMuted,
                                     )
                                 }
-                                Icon(if (open) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, Modifier.size(16.dp), tint = colors.text)
+                                Icon(if (open) HeroIcons.ChevronUp else HeroIcons.ChevronDown, null, Modifier.size(16.dp), tint = colors.text)
                             }
                         }
                         if (open) {

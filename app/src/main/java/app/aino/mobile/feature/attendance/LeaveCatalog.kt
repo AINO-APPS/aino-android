@@ -1,10 +1,9 @@
 package app.aino.mobile.feature.attendance
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.ui.graphics.Color
 import app.aino.mobile.core.common.DEFAULT_LEAVE_TYPE_MAP as DEFAULT_TYPE_MAP
 import app.aino.mobile.core.common.LeaveTypeMeta
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Port of `client/src/constants/leaves.ts` (P3.3): leave-status metadata and
@@ -61,7 +60,7 @@ fun buildLeaveTypeMeta(policies: List<LeavePolicy>): Map<String, LeaveTypeMeta> 
         val base = DEFAULT_TYPE_MAP[policy.leaveType] ?: LeaveTypeMeta(
             value = policy.leaveType,
             label = prettify(policy.leaveType),
-            icon = Icons.Outlined.EditNote,
+            icon = HeroIcons.PencilSquare,
             color = Color(0xFF6366F1),
             bg = Color(0x196366F1),
         )

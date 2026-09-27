@@ -847,6 +847,23 @@ URL resolution, speeds, mentions, unread divider, link detection, WS frame),
 `AttendanceVerifyTest` (office-proof messages, fix selection), `ResponseDecodeTest`
 (object BSSIDs, chat link previews, leave policies, manual entries); full unit suite green.
 
+### 0.10.0 — voice recorder, persistent sign-in, icon system
+
+| ID  | Defect (root cause) | Fix | Status |
+| --- | ------------------- | --- | ------ |
+| R12 | Holding the mic gave no hint that sliding up locks: the lock pill and enlarged button were drawn inside the composer pill, whose `clip()` hid them. | `MicHoldButton` draws a floating 72dp record button (spring pop-in, follows the finger left *or* up) and a rising lock pill with a bobbing chevron in an unclipped `Popup`; "‹ Slide to cancel" slides in, follows the finger and fades toward the cancel point; a short tap shows a "Tap and hold…" tooltip. | DONE |
+| R13 | A sent voice note first rendered as a generic file row with a spinner, then swapped to the voice bubble; a legacy composer `LinearProgressIndicator` also remained. | Pending audio renders the real `ChatVoicePlayer` bubble (local file playable, duration read up front, waveform seeded by file name so the delivered bubble matches) with a thin ring around the play button and the Sending clock → ticks; legacy bar and `uploadProgress` plumbing removed. | DONE |
+| R14 | Users were signed out after 8h (tenant JWT expiry; `/auth/refresh` rejects expired tokens) or 2 days idle. | Server: sessions never idle out; one long-lived token TTL (`AUTH_TOKEN_TTL_SECONDS`, rolled forward by refresh) and persistent cookies. A session still ends on logout, password change, or a newer sign-in anywhere (one session per user). Android: a terminal socket close or rejected stored credential signs out with "signed in on another device"; inactivity pings removed. | DONE |
+| R15 | Launcher icon was a plain 192px PNG, so launchers shrank it onto a white plate; no themed icon. | Adaptive icon from the desktop master artwork (`scripts/generate-launcher-icon.py`): transparent background, safe-zone-fitted foreground, monochrome layer. | DONE |
+| R16 | Mixed Material icon set. | Heroicons Outline (MIT) via generated `core/designsystem/icons/HeroIcons.kt` (`scripts/generate-heroicons.py`); `material-icons-extended` removed. | DONE |
+
+External reference (per `docs/SOURCE_PROVENANCE.md`), 2026-09-27: Signal Android
+`components/MicrophoneRecorderView.java` was read for behaviour only — hold,
+slide-left-to-cancel, slide-up-to-lock, one-axis finger tracking, delayed lock
+target. No code, constants or assets were copied; the AINO version is an
+independent Compose implementation (popup overlay, spring animations, own
+dimensions and timings, AINO state machine `VoicePhase`).
+
 ---
 
 ### PHASE 5 — Profile / account surface

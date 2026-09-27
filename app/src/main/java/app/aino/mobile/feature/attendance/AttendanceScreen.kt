@@ -17,11 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.BeachAccess
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val HR_ROLES = setOf("hr_admin", "super_admin", "platform_admin")
 
@@ -115,10 +111,10 @@ fun AttendanceScreen(
 }
 
 private fun tabIcon(tab: AttendanceTab): ImageVector = when (tab) {
-    AttendanceTab.Overview -> Icons.Outlined.CalendarMonth
-    AttendanceTab.Leaves -> Icons.Outlined.BeachAccess
-    AttendanceTab.Manual -> Icons.Outlined.EditNote
-    AttendanceTab.Analytics -> Icons.Outlined.BarChart
+    AttendanceTab.Overview -> HeroIcons.CalendarDays
+    AttendanceTab.Leaves -> HeroIcons.Sun
+    AttendanceTab.Manual -> HeroIcons.PencilSquare
+    AttendanceTab.Analytics -> HeroIcons.ChartBar
 }
 
 /** `.tabs` strip: surface container, 12px radius; active tab is primary-filled. */

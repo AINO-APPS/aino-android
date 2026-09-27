@@ -26,16 +26,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountTree
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.LocalOffer
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.component.AinoFullPage
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Admin → Agile Config (`pages/AgileSettings.tsx` + `AgileSettings.module.css`
@@ -144,9 +135,9 @@ private fun AgileHeader(ui: AgileSettingsUiState) {
             Text("Customise your team's work item types, workflow states and estimation rules.", color = colors.textMuted, fontSize = 0.78.rem)
         }
         val (icon, text, fg, bg) = if (ui.perms.canEdit) {
-            Quad(Icons.Outlined.VerifiedUser, ui.perms.editorLabel(), colors.success, colors.success.copy(alpha = 0.14f))
+            Quad(HeroIcons.ShieldCheck, ui.perms.editorLabel(), colors.success, colors.success.copy(alpha = 0.14f))
         } else {
-            Quad(Icons.Outlined.Lock, "Read-only", colors.textMuted, colors.bgSecondary)
+            Quad(HeroIcons.LockClosed, "Read-only", colors.textMuted, colors.bgSecondary)
         }
         Row(
             Modifier.background(bg, RoundedCornerShape(999.dp)).padding(horizontal = 12.dp, vertical = 6.dp),
@@ -165,10 +156,10 @@ private data class Quad(val icon: ImageVector, val text: String, val fg: Color, 
 private fun AgileTabs(selected: AgileTab, onSelect: (AgileTab) -> Unit) {
     val colors = LocalWebColors.current
     val icons = mapOf(
-        AgileTab.General to Icons.Outlined.Settings,
-        AgileTab.Types to Icons.Outlined.Layers,
-        AgileTab.Workflow to Icons.Outlined.AccountTree,
-        AgileTab.Labels to Icons.Outlined.LocalOffer,
+        AgileTab.General to HeroIcons.Cog6Tooth,
+        AgileTab.Types to HeroIcons.Square3Stack3d,
+        AgileTab.Workflow to HeroIcons.RectangleGroup,
+        AgileTab.Labels to HeroIcons.Tag,
     )
     Column {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -234,7 +225,7 @@ private fun SectionHead(title: String, canEdit: Boolean, adding: Boolean, addTex
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(title.uppercase(), color = LocalWebColors.current.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
-        if (canEdit) WebButton(if (adding) "Cancel" else addText, onToggle, style = BtnStyle.Primary, small = true, icon = Icons.Outlined.Add)
+        if (canEdit) WebButton(if (adding) "Cancel" else addText, onToggle, style = BtnStyle.Primary, small = true, icon = HeroIcons.Plus)
     }
 }
 
@@ -305,7 +296,7 @@ private fun GeneralTab(ui: AgileSettingsUiState, viewModel: AgileSettingsViewMod
             Modifier.fillMaxWidth(),
             style = BtnStyle.Primary,
             enabled = canEdit && !ui.saving,
-            icon = Icons.Outlined.Save,
+            icon = HeroIcons.DocumentCheck,
         )
     }
 }
@@ -388,7 +379,7 @@ private fun DeleteCell(canEdit: Boolean, onDelete: () -> Unit) {
         Box(
             Modifier.clip(RoundedCornerShape(6.dp)).background(LocalWebColors.current.danger).clickable(onClickLabel = "Delete", onClick = onDelete)
                 .padding(horizontal = 9.6.dp, vertical = 5.dp),
-        ) { Icon(Icons.Outlined.Delete, "Delete", Modifier.size(13.dp), tint = Color.White) }
+        ) { Icon(HeroIcons.Trash, "Delete", Modifier.size(13.dp), tint = Color.White) }
     }
 }
 
@@ -641,7 +632,7 @@ private fun LabelsTab(ui: AgileSettingsUiState, viewModel: AgileSettingsViewMode
         }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.LocalOffer, null, Modifier.size(15.dp), tint = colors.text)
+                Icon(HeroIcons.Tag, null, Modifier.size(15.dp), tint = colors.text)
                 Spacer(Modifier.width(6.dp))
                 Text("Task Labels", color = colors.text, fontWeight = FontWeight.Bold, fontSize = 1.05.rem)
             }

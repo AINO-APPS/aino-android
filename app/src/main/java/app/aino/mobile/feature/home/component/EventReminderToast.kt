@@ -10,9 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.NotificationsActive
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -23,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 data class EventReminder(val id: String, val title: String, val timeLabel: String)
 
@@ -40,14 +38,14 @@ fun EventReminderToast(reminders: List<EventReminder>, onDismiss: (String) -> Un
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Box(Modifier.size(30.dp).background(colors.primaryGlow, CircleShape), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.NotificationsActive, null, Modifier.size(15.dp), tint = colors.primary)
+                    Icon(HeroIcons.BellAlert, null, Modifier.size(15.dp), tint = colors.primary)
                 }
                 Column(Modifier.weight(1f)) {
                     Text(reminder.title, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     Text("starts ${reminder.timeLabel}", color = colors.textMuted, fontSize = 11.sp)
                 }
                 IconButton(onClick = { onDismiss(reminder.id) }, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Outlined.Close, "Dismiss", tint = colors.textMuted, modifier = Modifier.size(16.dp))
+                    Icon(HeroIcons.XMark, "Dismiss", tint = colors.textMuted, modifier = Modifier.size(16.dp))
                 }
             }
         }

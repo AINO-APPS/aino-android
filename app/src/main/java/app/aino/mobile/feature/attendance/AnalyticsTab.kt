@@ -20,17 +20,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Apartment
-import androidx.compose.material.icons.outlined.Assignment
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.BeachAccess
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.NotificationsActive
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +38,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Analytics tab (P3.5) — port of `pages/analytics/index.tsx`: date-range
@@ -134,13 +124,13 @@ private fun WidgetsTiles(widgets: TrackerWidgets) {
     val colors = LocalWebColors.current
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile(formatMinutes(widgets.avgFloorMinutes.toInt()), "Avg Work Time", colors.text, Modifier.weight(1f), Icons.Outlined.BarChart)
+            StatTile(formatMinutes(widgets.avgFloorMinutes.toInt()), "Avg Work Time", colors.text, Modifier.weight(1f), HeroIcons.ChartBar)
             StatTile(
                 "${widgets.punctualityPercent.toInt()}%",
                 "Punctuality",
                 if (widgets.punctualityPercent >= 80) colors.success else colors.warning,
                 Modifier.weight(1f),
-                Icons.Outlined.Timer,
+                HeroIcons.Clock,
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -153,13 +143,13 @@ private fun WidgetsTiles(widgets: TrackerWidgets) {
                     else -> colors.danger
                 },
                 Modifier.weight(1f),
-                Icons.Outlined.CalendarMonth,
+                HeroIcons.CalendarDays,
             )
             StatTile("${widgets.targetMetDays}/${widgets.workDays}", "8hr Target Met", colors.primary, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile(widgets.leaveCount.toString(), "Leaves (Month)", colors.warning, Modifier.weight(1f), Icons.Outlined.BeachAccess)
-            StatTile("${widgets.officeDays} / ${widgets.remoteDays}", "Office / Remote", colors.text, Modifier.weight(1f), Icons.Outlined.Apartment)
+            StatTile(widgets.leaveCount.toString(), "Leaves (Month)", colors.warning, Modifier.weight(1f), HeroIcons.Sun)
+            StatTile("${widgets.officeDays} / ${widgets.remoteDays}", "Office / Remote", colors.text, Modifier.weight(1f), HeroIcons.BuildingOffice2)
         }
     }
 }
@@ -182,7 +172,7 @@ private fun NotificationRoutingTile(metrics: NotificationMetrics?) {
             .padding(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.NotificationsActive, null, Modifier.size(18.dp).padding(end = 4.dp), tint = colors.primary)
+            Icon(HeroIcons.BellAlert, null, Modifier.size(18.dp).padding(end = 4.dp), tint = colors.primary)
             Text(routingSuccessLabel(metrics), color = valueColor, fontWeight = FontWeight.ExtraBold, fontSize = 1.15.rem)
         }
         Text("Notification Routing", color = colors.textMuted, fontSize = 0.72.rem, modifier = Modifier.padding(top = 3.dp))
@@ -212,8 +202,8 @@ private fun SummaryTiles(data: List<AttendanceDay>) {
             StatTile("$daysMet / $workingDays", "Days Met 8hr Target", colors.success, Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatTile(officeDays.toString(), "Office Days", colors.primary, Modifier.weight(1f), Icons.Outlined.Apartment)
-            StatTile(remoteDays.toString(), "Remote Days", colors.success, Modifier.weight(1f), Icons.Outlined.Home)
+            StatTile(officeDays.toString(), "Office Days", colors.primary, Modifier.weight(1f), HeroIcons.BuildingOffice2)
+            StatTile(remoteDays.toString(), "Remote Days", colors.success, Modifier.weight(1f), HeroIcons.Home)
         }
     }
 }
@@ -227,7 +217,7 @@ private fun dayLabel(date: String): String = runCatching {
 private fun WorkBreakChartCard(data: List<AttendanceDay>) {
     val colors = LocalWebColors.current
     AttendanceCard {
-        CardTitle(Icons.Outlined.BarChart, "Work vs Break (hours)")
+        CardTitle(HeroIcons.ChartBar, "Work vs Break (hours)")
         if (data.isEmpty()) {
             Text("No data for this period", color = colors.textMuted, fontSize = 0.85.rem, modifier = Modifier.padding(top = 12.dp))
             return@AttendanceCard
@@ -262,7 +252,7 @@ private fun WorkBreakChartCard(data: List<AttendanceDay>) {
 private fun TrendChartCard(data: List<AttendanceDay>) {
     val colors = LocalWebColors.current
     AttendanceCard {
-        CardTitle(Icons.Outlined.Timer, "Work Trend (hours)")
+        CardTitle(HeroIcons.Clock, "Work Trend (hours)")
         if (data.isEmpty()) {
             Text("No data for this period", color = colors.textMuted, fontSize = 0.85.rem, modifier = Modifier.padding(top = 12.dp))
             return@AttendanceCard
@@ -313,7 +303,7 @@ private fun DistributionRow(data: List<AttendanceDay>) {
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         AttendanceCard {
-            CardTitle(Icons.Outlined.Timer, "Time Distribution")
+            CardTitle(HeroIcons.Clock, "Time Distribution")
             Donut(
                 segments = listOf(totalFloor to colors.primary, totalBreak to colors.warning),
                 centerLabel = formatMinutes((totalFloor + totalBreak).toInt()),
@@ -325,7 +315,7 @@ private fun DistributionRow(data: List<AttendanceDay>) {
             }
         }
         AttendanceCard {
-            CardTitle(Icons.Outlined.Apartment, "Work Mode Split")
+            CardTitle(HeroIcons.BuildingOffice2, "Work Mode Split")
             Donut(
                 segments = listOf(officeDays to colors.primary, remoteDays to colors.success),
                 centerLabel = "${(officeDays + remoteDays).toInt()} days",
@@ -369,7 +359,7 @@ private fun Donut(segments: List<Pair<Float, Color>>, centerLabel: String, modif
 private fun HistoryLogCard(history: List<AttendanceDay>) {
     val colors = LocalWebColors.current
     AttendanceCard {
-        CardTitle(Icons.Outlined.Assignment, "Daily Log")
+        CardTitle(HeroIcons.ClipboardDocumentList, "Daily Log")
         Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (history.isEmpty()) {
                 Text("No data for this period", color = colors.textMuted, fontSize = 0.85.rem)
@@ -400,7 +390,7 @@ private fun HistoryLogCard(history: List<AttendanceDay>) {
                                 .padding(horizontal = 8.dp, vertical = 2.dp),
                         ) {
                             Icon(
-                                if (remote) Icons.Outlined.Home else Icons.Outlined.Apartment,
+                                if (remote) HeroIcons.Home else HeroIcons.BuildingOffice2,
                                 null,
                                 Modifier.size(12.dp),
                                 tint = if (remote) Color(0xFF0EA5E9) else colors.primary,
@@ -419,7 +409,7 @@ private fun HistoryLogCard(history: List<AttendanceDay>) {
                         LogCell("Total", formatMinutes(day.floorMinutes + day.breakMinutes), colors.text)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                if (met) Icons.Outlined.Check else Icons.Outlined.Close,
+                                if (met) HeroIcons.Check else HeroIcons.XMark,
                                 null,
                                 Modifier.size(12.dp),
                                 tint = if (met) colors.success else colors.danger,

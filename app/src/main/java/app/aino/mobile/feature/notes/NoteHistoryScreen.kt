@@ -19,10 +19,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountTree
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +47,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 enum class DiffType { EQ, ADD, DEL }
 data class DiffLine(val type: DiffType, val text: String)
@@ -166,7 +163,7 @@ fun NoteHistoryScreen(viewModel: NotesViewModel, pageId: String, onBack: () -> U
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 if (previewLoading) CircularProgressIndicator(color = colors.primary)
                 else Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.Description, null, tint = colors.textMuted, modifier = Modifier.size(36.dp))
+                    Icon(HeroIcons.DocumentText, null, tint = colors.textMuted, modifier = Modifier.size(36.dp))
                     Text("Select a version to preview it", color = colors.textMuted)
                 }
             }
@@ -177,8 +174,8 @@ fun NoteHistoryScreen(viewModel: NotesViewModel, pageId: String, onBack: () -> U
             Text(fmtDate(snap.savedAt), color = colors.textMuted, fontSize = 0.78.rem)
             Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.border(1.dp, colors.border, RoundedCornerShape(8.dp))) {
-                    ModeButton(Icons.Outlined.Description, "Preview", !diffMode) { diffMode = false }
-                    ModeButton(Icons.Outlined.AccountTree, "Diff vs current", diffMode) { diffMode = true }
+                    ModeButton(HeroIcons.DocumentText, "Preview", !diffMode) { diffMode = false }
+                    ModeButton(HeroIcons.RectangleGroup, "Diff vs current", diffMode) { diffMode = true }
                 }
                 Spacer(Modifier.weight(1f))
                 Button(
@@ -190,7 +187,7 @@ fun NoteHistoryScreen(viewModel: NotesViewModel, pageId: String, onBack: () -> U
                     enabled = !restoring,
                     colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                 ) {
-                    Icon(Icons.Outlined.Restore, null, modifier = Modifier.size(14.dp))
+                    Icon(HeroIcons.ArrowPath, null, modifier = Modifier.size(14.dp))
                     Text(if (restoring) "Restoring…" else "Restore", modifier = Modifier.padding(start = 4.dp))
                 }
             }

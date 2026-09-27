@@ -2,8 +2,6 @@ package app.aino.mobile.feature.organization
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,6 +18,7 @@ import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import app.aino.mobile.core.media.openDownloadedBytes
 import kotlinx.coroutines.launch
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * `pages/attendance/MySalarySlips.tsx` (Organization → Salary Slips): bank
@@ -52,7 +51,7 @@ private fun BankDetailsCard(bank: MyBankDetails?, busy: Boolean, viewModel: Orga
     var editing by remember { mutableStateOf(false) }
     var form by remember(bank) { mutableStateOf(myBankFormFor(bank)) }
     OrgRowCard {
-        OrgFieldLabel("Bank Details", Icons.Outlined.AccountBalance)
+        OrgFieldLabel("Bank Details", HeroIcons.BuildingLibrary)
         if (bank != null && !editing) {
             OrgCell("Account Holder", bank.accountHolderName?.ifEmpty { null } ?: "-")
             OrgCell("Account Number", bank.accountNumber.orEmpty())

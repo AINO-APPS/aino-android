@@ -16,12 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountTree
-import androidx.compose.material.icons.outlined.Business
-import androidx.compose.material.icons.outlined.CreditCard
-import androidx.compose.material.icons.outlined.Group
-import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -43,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Organization page — port of `client/src/pages/Organization.tsx`: the org
@@ -117,11 +112,11 @@ private fun PageTitle(text: String) {
 }
 
 private fun tabIcon(tab: OrgTab): ImageVector = when (tab) {
-    OrgTab.Salary -> Icons.Outlined.CreditCard
-    OrgTab.Departments -> Icons.Outlined.Business
-    OrgTab.Teams -> Icons.Outlined.Group
-    OrgTab.Chart -> Icons.Outlined.AccountTree
-    OrgTab.Labels -> Icons.Outlined.LocalOffer
+    OrgTab.Salary -> HeroIcons.CreditCard
+    OrgTab.Departments -> HeroIcons.BuildingOffice
+    OrgTab.Teams -> HeroIcons.UserGroup
+    OrgTab.Chart -> HeroIcons.RectangleGroup
+    OrgTab.Labels -> HeroIcons.Tag
 }
 
 /** `.orgTabs` at phone width: a two-per-row grid of bordered tabs. */

@@ -26,18 +26,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CheckBox
-import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.LocalCafe
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Place
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.RocketLaunch
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Stop
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -82,6 +70,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 import app.aino.mobile.core.media.resolveServerMediaUrl
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 // ── Styling ────────────────────────────────────────────────────────────────
 
@@ -305,7 +294,7 @@ private fun ListMarker(block: NoteBlock, number: Int?, enabled: Boolean, onToggl
     Box(Modifier.width(28.dp).padding(top = 1.dp), contentAlignment = Alignment.TopCenter) {
         when {
             block.listType.isCheck -> Icon(
-                if (block.listType == ListType.CHECKED) Icons.Outlined.CheckBox else Icons.Outlined.CheckBoxOutlineBlank,
+                if (block.listType == ListType.CHECKED) HeroIcons.SquareCheck else HeroIcons.Square,
                 contentDescription = if (block.listType == ListType.CHECKED) "Checked" else "Unchecked",
                 tint = if (block.listType == ListType.CHECKED) colors.primary else colors.textMuted,
                 modifier = Modifier.size(22.dp).let { if (enabled) it.clickable(onClick = onToggle) else it },
@@ -566,7 +555,7 @@ internal fun OpaqueBlockCard(block: NoteBlock, modifier: Modifier) {
 private fun ReadOnlyHint(modifier: Modifier) {
     val colors = LocalWebColors.current
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Outlined.Lock, null, tint = colors.textMuted, modifier = Modifier.size(12.dp))
+        Icon(HeroIcons.LockClosed, null, tint = colors.textMuted, modifier = Modifier.size(12.dp))
         Text("Edit this block on the web", color = colors.textMuted, fontSize = 0.72.rem, modifier = Modifier.padding(start = 4.dp))
     }
 }
@@ -598,7 +587,7 @@ internal fun SprintEmbedCard(viewModel: NotesViewModel, modifier: Modifier) {
         when {
             state == null -> Text("Loading sprint data…", color = colors.textMuted, fontSize = 0.85.rem)
             data?.sprint == null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.RocketLaunch, null, tint = colors.textMuted, modifier = Modifier.size(16.dp))
+                Icon(HeroIcons.RocketLaunch, null, tint = colors.textMuted, modifier = Modifier.size(16.dp))
                 Text("No active sprint", color = colors.textMuted, fontSize = 0.85.rem, modifier = Modifier.padding(start = 6.dp))
             }
             else -> {
@@ -611,7 +600,7 @@ internal fun SprintEmbedCard(viewModel: NotesViewModel, modifier: Modifier) {
                 val pending = stats?.long("pending") ?: 0
                 val pct = if (total > 0) Math.round(done * 100.0 / total) else 0
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.RocketLaunch, null, tint = colors.primary, modifier = Modifier.size(14.dp))
+                    Icon(HeroIcons.RocketLaunch, null, tint = colors.primary, modifier = Modifier.size(14.dp))
                     Text(sprint.str("name").orEmpty(), color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 0.9.rem,
                         modifier = Modifier.padding(start = 6.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text("${sprint.str("start_date").orEmpty().take(10)} → ${sprint.str("end_date").orEmpty().take(10)}", color = colors.textMuted, fontSize = 0.72.rem)
@@ -626,9 +615,9 @@ internal fun SprintEmbedCard(viewModel: NotesViewModel, modifier: Modifier) {
                     if (rest > 0.001f) Spacer(Modifier.weight(rest))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatChip(Icons.Outlined.CheckCircle, "$done/$total done ($pct%)", colors.textSecondary)
-                    StatChip(Icons.Outlined.Schedule, "$inProgress in progress", STATUS_COLORS.getValue("in_progress"))
-                    StatChip(Icons.Outlined.ErrorOutline, "$inReview in review", STATUS_COLORS.getValue("in_review"))
+                    StatChip(HeroIcons.CheckCircle, "$done/$total done ($pct%)", colors.textSecondary)
+                    StatChip(HeroIcons.Clock, "$inProgress in progress", STATUS_COLORS.getValue("in_progress"))
+                    StatChip(HeroIcons.ExclamationCircle, "$inReview in review", STATUS_COLORS.getValue("in_review"))
                 }
                 Text(
                     if (collapsed) "Show tasks ▸" else "Hide tasks ▾",
@@ -674,19 +663,19 @@ internal fun TimeTrackingCard(viewModel: NotesViewModel, modifier: Modifier) {
         when {
             state == null -> Text("Loading time data…", color = colors.textMuted, fontSize = 0.85.rem)
             data == null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Schedule, null, tint = colors.textMuted, modifier = Modifier.size(14.dp))
+                Icon(HeroIcons.Clock, null, tint = colors.textMuted, modifier = Modifier.size(14.dp))
                 Text("No time data for today", color = colors.textMuted, fontSize = 0.85.rem, modifier = Modifier.padding(start = 6.dp))
             }
             else -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Schedule, null, tint = colors.primary, modifier = Modifier.size(14.dp))
+                    Icon(HeroIcons.Clock, null, tint = colors.primary, modifier = Modifier.size(14.dp))
                     Text("Today's Time", color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 0.9.rem, modifier = Modifier.padding(start = 6.dp).weight(1f))
-                    if (data.isActive) Badge(Icons.Outlined.PlayArrow, "Active", colors.success)
-                    else if (data.lastClockOut != null) Badge(Icons.Outlined.Stop, "Done", colors.textMuted)
+                    if (data.isActive) Badge(HeroIcons.Play, "Active", colors.success)
+                    else if (data.lastClockOut != null) Badge(HeroIcons.Stop, "Done", colors.textMuted)
                 }
                 Row(Modifier.fillMaxWidth()) {
                     Metric("${jsNumber(data.hoursWorked)}h", "Worked", Modifier.weight(1f))
-                    Metric("${jsNumber(data.breakHours)}h", "Break", Modifier.weight(1f), Icons.Outlined.LocalCafe)
+                    Metric("${jsNumber(data.breakHours)}h", "Break", Modifier.weight(1f), HeroIcons.Cup)
                     Metric(data.firstClockIn?.let(clock::time) ?: "—", "Clock In", Modifier.weight(1f))
                     Metric(data.lastClockOut?.let(clock::time) ?: "—", "Clock Out", Modifier.weight(1f))
                 }
@@ -697,7 +686,7 @@ internal fun TimeTrackingCard(viewModel: NotesViewModel, modifier: Modifier) {
                         "hybrid" -> "🔄 Hybrid"
                         else -> mode
                     }
-                    StatChip(Icons.Outlined.Place, label, colors.textSecondary)
+                    StatChip(HeroIcons.MapPin, label, colors.textSecondary)
                 }
             }
         }

@@ -173,7 +173,6 @@ class MainActivity : FragmentActivity() {
 
     override fun onUserInteraction() {
         super.onUserInteraction()
-        authViewModel.recordUserActivity()
         profileViewModel.recordActivity()
     }
 

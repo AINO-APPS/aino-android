@@ -24,14 +24,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.outlined.CallEnd
-import androidx.compose.material.icons.outlined.Cameraswitch
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.MicOff
-import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material.icons.outlined.VideocamOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,6 +51,7 @@ import app.aino.mobile.core.call.webrtc.VideoRenderer
 import app.aino.mobile.core.designsystem.component.UserAvatar
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Signal-style 1:1 call screen (outgoing and connected), with the web's copy:
@@ -137,7 +130,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
                     verticalAlignment = Alignment.Top,
                 ) {
                     Icon(
-                        Icons.Outlined.KeyboardArrowDown,
+                        HeroIcons.ChevronDown,
                         "Picture-in-picture",
                         Modifier.size(44.dp).clip(CircleShape).clickable(enabled = connected, onClick = minimise).padding(8.dp),
                         tint = Color.White.copy(alpha = if (connected) 1f else .4f),
@@ -145,7 +138,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
                     Column(Modifier.weight(1f).padding(start = 4.dp, top = 4.dp)) {
                         Text(ui.peerName.ifBlank { "Unknown" }, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (ui.remoteMuted && connected) Icon(Icons.Outlined.MicOff, "Muted", Modifier.size(15.dp), tint = Color.White)
+                            if (ui.remoteMuted && connected) Icon(HeroIcons.MicrophoneSlash, "Muted", Modifier.size(15.dp), tint = Color.White)
                             Text(status, color = Color.White.copy(alpha = .85f), fontSize = 14.sp)
                         }
                     }
@@ -158,20 +151,20 @@ fun ActiveCallScreen(controller: ActiveCallController) {
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    CallToggle(Icons.AutoMirrored.Outlined.VolumeUp, "Speaker", ui.speakerOn, controller::toggleSpeaker)
+                    CallToggle(HeroIcons.SpeakerWave, "Speaker", ui.speakerOn, controller::toggleSpeaker)
                     if (ui.isVideo) {
                         CallToggle(
-                            if (ui.videoOff) Icons.Outlined.VideocamOff else Icons.Outlined.Videocam,
+                            if (ui.videoOff) HeroIcons.VideoCameraSlash else HeroIcons.VideoCamera,
                             if (ui.videoOff) "Turn on camera (V)" else "Turn off camera (V)",
                             !ui.videoOff,
                             controller::toggleVideo,
                         )
                     }
-                    CallToggle(Icons.Outlined.MicOff, if (ui.muted) "Unmute (M)" else "Mute (M)", ui.muted, controller::toggleMute)
+                    CallToggle(HeroIcons.MicrophoneSlash, if (ui.muted) "Unmute (M)" else "Mute (M)", ui.muted, controller::toggleMute)
                     Box(
                         Modifier.size(56.dp).clip(CircleShape).background(CallRed).clickable(onClickLabel = "End call (E)", onClick = controller::hangUp),
                         contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Outlined.CallEnd, "End call (E)", Modifier.size(26.dp), tint = Color.White) }
+                    ) { Icon(HeroIcons.PhoneXMark, "End call (E)", Modifier.size(26.dp), tint = Color.White) }
                 }
             }
         }
@@ -220,7 +213,7 @@ private fun SelfPreview(ui: ActiveCallUi, swapped: Boolean, onSwap: () -> Unit, 
         VideoRenderer(if (showRemote) ui.remoteVideo else ui.localVideo, Modifier.fillMaxSize(), mirror = !showRemote, overlay = true)
         if (!swapped) {
             Icon(
-                Icons.Outlined.Cameraswitch,
+                HeroIcons.ArrowPathRoundedSquare,
                 "Switch camera",
                 Modifier.align(Alignment.BottomEnd).padding(6.dp).size(32.dp).clip(CircleShape)
                     .background(Color.Black.copy(alpha = .45f)).clickable(onClick = onFlip).padding(6.dp),

@@ -25,22 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.CheckBox
-import androidx.compose.material.icons.outlined.CheckBoxOutlineBlank
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Inventory2
-import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Save
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
@@ -82,6 +66,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * `TaskDetailModal` at ≤768px: the modal is full screen. Header (badges +
@@ -123,7 +108,7 @@ private fun DetailHeader(task: Task, ui: TaskUiState, viewModel: TaskViewModel, 
                     Modifier.background(colors.warning.copy(alpha = 0.15f), RoundedCornerShape(99.dp)).padding(horizontal = 9.6.dp, vertical = 3.2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Outlined.Inventory2, null, Modifier.size(12.dp), tint = colors.warning)
+                    Icon(HeroIcons.ArchiveBox, null, Modifier.size(12.dp), tint = colors.warning)
                     Spacer(Modifier.width(3.dp))
                     Text("Backlog", color = colors.warning, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold)
                 }
@@ -133,7 +118,7 @@ private fun DetailHeader(task: Task, ui: TaskUiState, viewModel: TaskViewModel, 
                     Modifier.background(colors.primary.copy(alpha = 0.15f), RoundedCornerShape(99.dp)).padding(horizontal = 9.6.dp, vertical = 3.2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(12.dp), tint = colors.primary)
+                    Icon(HeroIcons.CalendarDays, null, Modifier.size(12.dp), tint = colors.primary)
                     Spacer(Modifier.width(3.dp))
                     Text(date.take(10), color = colors.primary, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold)
                 }
@@ -141,16 +126,16 @@ private fun DetailHeader(task: Task, ui: TaskUiState, viewModel: TaskViewModel, 
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.4.dp, Alignment.End), verticalAlignment = Alignment.CenterVertically) {
             if (!ui.detailEditing) {
-                WebButton("Edit", viewModel::startEdit, small = true, icon = Icons.Outlined.Edit)
+                WebButton("Edit", viewModel::startEdit, small = true, icon = HeroIcons.PencilSquare)
                 if (ui.userId != null && ui.userId == task.userId) {
-                    WebButton("Delete", { viewModel.requestDelete(task) }, style = BtnStyle.Danger, small = true, icon = Icons.Outlined.Delete)
+                    WebButton("Delete", { viewModel.requestDelete(task) }, style = BtnStyle.Danger, small = true, icon = HeroIcons.Trash)
                 }
             } else {
-                WebButton("Save Changes", onSave, style = BtnStyle.Primary, small = true, icon = Icons.Outlined.Save)
+                WebButton("Save Changes", onSave, style = BtnStyle.Primary, small = true, icon = HeroIcons.DocumentCheck)
                 WebButton("Cancel Edit", viewModel::cancelEdit, small = true)
             }
             Box(Modifier.size(32.dp).clip(RoundedCornerShape(50)).clickable(onClick = viewModel::closeDetail), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Close, "Close", Modifier.size(16.dp), tint = colors.textMuted)
+                Icon(HeroIcons.XMark, "Close", Modifier.size(16.dp), tint = colors.textMuted)
             }
         }
     }
@@ -249,7 +234,7 @@ private fun ViewMode(task: Task, ui: TaskUiState, viewModel: TaskViewModel) {
         formatDueDate(task.dueDate)?.let { due ->
             val overdue = isDueOverdue(task.dueDate) && task.status != "done"
             MetaItem("Due date") {
-                Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(12.dp), tint = if (overdue) colors.danger else colors.text)
+                Icon(HeroIcons.CalendarDays, null, Modifier.size(12.dp), tint = if (overdue) colors.danger else colors.text)
                 Spacer(Modifier.width(3.dp))
                 Text(due, color = if (overdue) colors.danger else colors.text, fontSize = 0.88.rem, fontWeight = if (overdue) FontWeight.SemiBold else FontWeight.Normal)
             }
@@ -359,7 +344,7 @@ private fun EditMode(task: Task, ui: TaskUiState, viewModel: TaskViewModel, draf
         }
         if (ui.projects.isNotEmpty()) {
             Column {
-                FieldLabel("Project", Icons.Outlined.Folder)
+                FieldLabel("Project", HeroIcons.Folder)
                 if (task.projectId != null) {
                     // One-way: an issue key is permanent once assigned.
                     val tint = task.project?.color?.let { hexColor(it) }
@@ -369,7 +354,7 @@ private fun EditMode(task: Task, ui: TaskUiState, viewModel: TaskViewModel, draf
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.Folder, null, Modifier.size(12.dp), tint = tint ?: colors.text)
+                        Icon(HeroIcons.Folder, null, Modifier.size(12.dp), tint = tint ?: colors.text)
                         Spacer(Modifier.width(6.dp))
                         Text(task.issueKey ?: task.project?.key ?: "—", color = tint ?: colors.text, fontSize = 12.dp.value.let { 0.75.rem }, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
                     }
@@ -381,9 +366,9 @@ private fun EditMode(task: Task, ui: TaskUiState, viewModel: TaskViewModel, draf
         StoryPointPicker(draft.storyPoints, { onDraft(draft.copy(storyPoints = it)) }, ui.agile)
         Row {
             if (backlogLike) {
-                WebButton("Schedule to Day", { viewModel.schedule(task.id, task.title, draft.dueDate, closeAfter = true) }, small = true, icon = Icons.Outlined.CalendarMonth)
+                WebButton("Schedule to Day", { viewModel.schedule(task.id, task.title, draft.dueDate, closeAfter = true) }, small = true, icon = HeroIcons.CalendarDays)
             } else {
-                WebButton("Move to Backlog", { viewModel.unschedule(task.id, task.title, closeAfter = true) }, small = true, icon = Icons.Outlined.Inventory2)
+                WebButton("Move to Backlog", { viewModel.unschedule(task.id, task.title, closeAfter = true) }, small = true, icon = HeroIcons.ArchiveBox)
             }
         }
         BlockerControl(task, ui, viewModel)
@@ -428,7 +413,7 @@ private fun BlockerControl(task: Task, ui: TaskUiState, viewModel: TaskViewModel
                     .padding(horizontal = 10.dp, vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.ErrorOutline, null, Modifier.size(13.dp), tint = tint)
+                Icon(HeroIcons.ExclamationCircle, null, Modifier.size(13.dp), tint = tint)
                 Spacer(Modifier.width(4.dp))
                 Text(if (task.isBlocked) "Blocked" else "Mark blocked", color = tint, fontSize = 0.78.rem, fontWeight = FontWeight.SemiBold)
             }
@@ -493,7 +478,7 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TaskUiState, viewModel: T
         items.forEachIndexed { index, item ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    if (item.done) Icons.Outlined.CheckBox else Icons.Outlined.CheckBoxOutlineBlank,
+                    if (item.done) HeroIcons.SquareCheck else HeroIcons.Square,
                     if (item.done) "Mark incomplete" else "Mark complete",
                     Modifier.size(20.dp).clickable(enabled = !saving) {
                         val next = items.toList().mapIndexed { i, c -> if (i == index) c.copy(done = !c.done) else c }
@@ -528,7 +513,7 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TaskUiState, viewModel: T
                         }
                     },
                 )
-                Icon(Icons.Outlined.Close, "Remove criterion", Modifier.size(16.dp).clickable {
+                Icon(HeroIcons.XMark, "Remove criterion", Modifier.size(16.dp).clickable {
                     val next = items.toList().filterIndexed { i, _ -> i != index }
                     items.removeAt(index)
                     persist(next)
@@ -536,7 +521,7 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TaskUiState, viewModel: T
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Add, null, Modifier.size(13.dp), tint = colors.textMuted)
+            Icon(HeroIcons.Plus, null, Modifier.size(13.dp), tint = colors.textMuted)
             Spacer(Modifier.width(6.dp))
             WebTextField(
                 adding, { adding = it }, "Add a criterion and press Enter…", maxLength = 500,
@@ -599,7 +584,7 @@ private fun ParentChildPanel(task: Task, ui: TaskUiState, viewModel: TaskViewMod
         PanelBox {
             val rollup = children?.rollup
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Link, null, Modifier.size(13.dp), tint = colors.text)
+                Icon(HeroIcons.Link, null, Modifier.size(13.dp), tint = colors.text)
                 Spacer(Modifier.width(4.dp))
                 Text("Child tickets", color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold)
                 if (rollup != null && rollup.totalChildren > 0) {
@@ -647,7 +632,7 @@ private fun ParentChildPanel(task: Task, ui: TaskUiState, viewModel: TaskViewMod
                     Modifier.weight(1f, fill = false).background(colors.surface, RoundedCornerShape(99.dp)).border(1.dp, colors.border, RoundedCornerShape(99.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Outlined.Link, null, Modifier.size(11.dp), tint = colors.textMuted)
+                    Icon(HeroIcons.Link, null, Modifier.size(11.dp), tint = colors.textMuted)
                     Spacer(Modifier.width(4.dp))
                     Text("Part of ", color = colors.textMuted, fontSize = 0.75.rem)
                     Text(
@@ -655,12 +640,12 @@ private fun ParentChildPanel(task: Task, ui: TaskUiState, viewModel: TaskViewMod
                         modifier = Modifier.weight(1f, fill = false).clickable { openLinked(viewModel, p.id) },
                     )
                     Spacer(Modifier.width(4.dp))
-                    Icon(Icons.Outlined.Close, "Detach from parent", Modifier.size(11.dp).clickable { setParent(null) }, tint = colors.textMuted)
+                    Icon(HeroIcons.XMark, "Detach from parent", Modifier.size(11.dp).clickable { setParent(null) }, tint = colors.textMuted)
                 }
                 if (!picking) Text("Change parent", color = colors.primary, fontSize = 0.75.rem, modifier = Modifier.clickable { picking = true })
             } else if (!picking) {
                 Row(Modifier.clickable { picking = true }, verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Link, null, Modifier.size(11.dp), tint = colors.primary)
+                    Icon(HeroIcons.Link, null, Modifier.size(11.dp), tint = colors.primary)
                     Spacer(Modifier.width(4.dp))
                     Text("Link to parent…", color = colors.primary, fontSize = 0.75.rem)
                 }
@@ -708,10 +693,10 @@ private fun DependenciesPanel(taskId: Long, ui: TaskUiState, viewModel: TaskView
     }
     PanelBox {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Link, null, Modifier.size(13.dp), tint = colors.text)
+            Icon(HeroIcons.Link, null, Modifier.size(13.dp), tint = colors.text)
             Spacer(Modifier.width(4.dp))
             Text("Dependencies", color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            WebButton(if (adding) "Cancel" else "Add", { adding = !adding }, small = true, icon = Icons.Outlined.Add)
+            WebButton(if (adding) "Cancel" else "Add", { adding = !adding }, small = true, icon = HeroIcons.Plus)
         }
         if (adding) {
             WebSelect(DEP_TYPES, linkType, { linkType = it }, Modifier.fillMaxWidth())
@@ -742,7 +727,7 @@ private fun DependenciesPanel(taskId: Long, ui: TaskUiState, viewModel: TaskView
                         dep.title, color = if (dep.isBlocked) colors.danger else colors.text, fontSize = 0.82.rem, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).clickable { openLinked(viewModel, dep.id) },
                     )
-                    Icon(Icons.Outlined.Close, "Remove link", Modifier.size(14.dp).clickable {
+                    Icon(HeroIcons.XMark, "Remove link", Modifier.size(14.dp).clickable {
                         scope.launch {
                             val result = withContext(Dispatchers.IO) { runCatching { viewModel.repo.removeDependency(taskId, dep.linkId) } }
                             result.onSuccess { reloadKey++ }.onFailure { error = it.message?.takeIf { m -> m != "Task action failed" } ?: "Failed to remove link" }
@@ -786,7 +771,7 @@ private fun TaskPicker(
                 Modifier.weight(1f).background(colors.inputBg, RoundedCornerShape(6.dp)).border(1.dp, colors.inputBorder, RoundedCornerShape(6.dp)).padding(start = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Search, null, Modifier.size(12.dp), tint = colors.textMuted)
+                Icon(HeroIcons.MagnifyingGlass, null, Modifier.size(12.dp), tint = colors.textMuted)
                 WebTextField(search, { search = it }, placeholder, modifier = Modifier.border(0.dp, Color.Transparent), fontSize = 0.82.rem)
             }
             if (onCancel != null) {
@@ -905,7 +890,7 @@ private fun CustomFieldsEditor(task: Task, viewModel: TaskViewModel) {
                             .onFailure { error = it.message?.takeIf { m -> m != "Task action failed" } ?: "Failed to save custom fields" }
                         saving = false
                     }
-                }, style = BtnStyle.Primary, small = true, enabled = !saving, icon = Icons.Outlined.Save)
+                }, style = BtnStyle.Primary, small = true, enabled = !saving, icon = HeroIcons.DocumentCheck)
             }
         }
         if (error.isNotEmpty()) Text(error, color = colors.danger, fontSize = 0.78.rem)
@@ -968,8 +953,8 @@ private fun DetailTabs(task: Task, ui: TaskUiState, viewModel: TaskViewModel) {
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth()) {
-            DetailTabButton(Icons.Outlined.ChatBubbleOutline, "Comments", ui.detailComments.size, ui.detailTab == DetailTab.Comments) { viewModel.setDetailTab(DetailTab.Comments) }
-            DetailTabButton(Icons.Outlined.Schedule, "History", ui.history.size, ui.detailTab == DetailTab.History) { viewModel.setDetailTab(DetailTab.History) }
+            DetailTabButton(HeroIcons.ChatBubbleOvalLeft, "Comments", ui.detailComments.size, ui.detailTab == DetailTab.Comments) { viewModel.setDetailTab(DetailTab.Comments) }
+            DetailTabButton(HeroIcons.Clock, "History", ui.history.size, ui.detailTab == DetailTab.History) { viewModel.setDetailTab(DetailTab.History) }
         }
         Box(Modifier.fillMaxWidth().height(2.dp).background(colors.border))
         Spacer(Modifier.height(16.dp))

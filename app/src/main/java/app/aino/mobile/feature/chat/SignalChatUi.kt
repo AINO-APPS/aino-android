@@ -34,17 +34,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.AllInclusive
-import androidx.compose.material.icons.outlined.CameraAlt
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.Poll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -94,6 +83,7 @@ import coil3.video.videoFrameMillis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 // ---------------------------------------------------------------------------
 // Receipts: Signal's circle-check glyphs, drawn in Compose (no Signal assets).
@@ -289,7 +279,7 @@ fun ThreadSearchToolbar(query: String, onQuery: (String) -> Unit, onClose: () ->
         Modifier.fillMaxWidth().background(signal.background).statusBarsPadding().height(SignalDimens.toolbarHeight).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Close search", Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClose).padding(12.dp), tint = signal.text)
+        Icon(HeroIcons.ArrowLeft, "Close search", Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClose).padding(12.dp), tint = signal.text)
         BasicTextField(
             query, onQuery,
             Modifier.weight(1f).focusRequester(focus),
@@ -299,7 +289,7 @@ fun ThreadSearchToolbar(query: String, onQuery: (String) -> Unit, onClose: () ->
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             decorationBox = { inner -> Box { if (query.isEmpty()) Text("Search", color = signal.textSecondary, fontSize = 17.sp); inner() } },
         )
-        if (query.isNotEmpty()) Icon(Icons.Outlined.Close, "Clear", Modifier.size(48.dp).clip(CircleShape).clickable { onQuery("") }.padding(12.dp), tint = signal.textSecondary)
+        if (query.isNotEmpty()) Icon(HeroIcons.XMark, "Clear", Modifier.size(48.dp).clip(CircleShape).clickable { onQuery("") }.padding(12.dp), tint = signal.textSecondary)
     }
 }
 
@@ -318,8 +308,8 @@ fun ThreadSearchBottomBar(index: Int, count: Int, searching: Boolean, onOlder: (
             },
             Modifier.weight(1f), color = signal.textSecondary, fontSize = 15.sp,
         )
-        Icon(Icons.Outlined.KeyboardArrowUp, "Older match", Modifier.size(44.dp).clip(CircleShape).clickable(enabled = index < count - 1, onClick = onOlder).padding(10.dp), tint = if (index < count - 1) signal.text else signal.textSecondary.copy(alpha = .4f))
-        Icon(Icons.Outlined.KeyboardArrowDown, "Newer match", Modifier.size(44.dp).clip(CircleShape).clickable(enabled = index > 0, onClick = onNewer).padding(10.dp), tint = if (index > 0) signal.text else signal.textSecondary.copy(alpha = .4f))
+        Icon(HeroIcons.ChevronUp, "Older match", Modifier.size(44.dp).clip(CircleShape).clickable(enabled = index < count - 1, onClick = onOlder).padding(10.dp), tint = if (index < count - 1) signal.text else signal.textSecondary.copy(alpha = .4f))
+        Icon(HeroIcons.ChevronDown, "Newer match", Modifier.size(44.dp).clip(CircleShape).clickable(enabled = index > 0, onClick = onNewer).padding(10.dp), tint = if (index > 0) signal.text else signal.textSecondary.copy(alpha = .4f))
     }
 }
 
@@ -344,7 +334,7 @@ fun ViewOnceContent(message: ChatMessage, state: ViewOnceState, outgoing: Boolea
     ) {
         Box(Modifier.size(28.dp).border(1.5.dp, fg.copy(alpha = if (state == ViewOnceState.Viewed) .4f else 1f), CircleShape), contentAlignment = Alignment.Center) {
             if (loading) CircularProgressIndicator(Modifier.size(14.dp), color = fg, strokeWidth = 2.dp)
-            else if (state == ViewOnceState.Viewed || state == ViewOnceState.SentViewed) Icon(Icons.Outlined.AllInclusive, null, Modifier.size(16.dp), tint = fg.copy(alpha = .6f))
+            else if (state == ViewOnceState.Viewed || state == ViewOnceState.SentViewed) Icon(HeroIcons.Infinity, null, Modifier.size(16.dp), tint = fg.copy(alpha = .6f))
             else Text("1", color = fg, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
         Text(label, color = fg.copy(alpha = if (state == ViewOnceState.Viewed) .6f else 1f), fontSize = 15.sp, fontWeight = FontWeight.Medium)
@@ -449,7 +439,7 @@ fun AttachmentKeyboard(
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize().background(signal.divider),
                             )
-                            if (media.mimeType.startsWith("video/")) Icon(Icons.Outlined.PlayArrow, null, Modifier.align(Alignment.BottomStart).padding(4.dp).size(18.dp), tint = Color.White)
+                            if (media.mimeType.startsWith("video/")) Icon(HeroIcons.Play, null, Modifier.align(Alignment.BottomStart).padding(4.dp).size(18.dp), tint = Color.White)
                             Box(
                                 Modifier.align(Alignment.TopEnd).padding(6.dp).size(22.dp)
                                     .background(if (order >= 0) signal.primary else Color.Black.copy(alpha = .25f), CircleShape)
@@ -470,10 +460,10 @@ fun AttachmentKeyboard(
             }
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            AttachButton(Icons.Outlined.PhotoLibrary, "Gallery", onGallery)
-            AttachButton(Icons.Outlined.CameraAlt, "Camera", onCamera)
-            AttachButton(Icons.Outlined.Description, "File", onFile)
-            if (showPoll) AttachButton(Icons.Outlined.Poll, "Poll", onPoll)
+            AttachButton(HeroIcons.Photo, "Gallery", onGallery)
+            AttachButton(HeroIcons.Camera, "Camera", onCamera)
+            AttachButton(HeroIcons.DocumentText, "File", onFile)
+            if (showPoll) AttachButton(HeroIcons.ChartBar, "Poll", onPoll)
         }
     }
 }

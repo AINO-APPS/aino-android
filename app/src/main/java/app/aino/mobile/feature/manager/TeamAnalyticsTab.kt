@@ -16,14 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AlarmOn
-import androidx.compose.material.icons.outlined.Business
-import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material.icons.outlined.GpsFixed
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -44,6 +36,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 import app.aino.mobile.core.common.roleLabel
 import java.time.LocalDate
 import kotlin.math.roundToInt
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val RANGES = listOf("7" to "This Week", "30" to "This Month", "90" to "This Quarter", "custom" to "Custom Range")
 
@@ -217,14 +210,14 @@ private fun SummaryGrid(data: TeamAnalyticsResponse) {
     val avgHours = "%.1f".format(data.avgHours)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SummaryCard(Icons.Outlined.Groups, "${data.totalMembers}", "Team Members", Modifier.weight(1f))
-            SummaryCard(Icons.Outlined.Timer, "${avgHours}h", "Avg Hours/Day", Modifier.weight(1f))
-            SummaryCard(Icons.Outlined.Checklist, "${data.totalTasksDone}", "Planner Completed", Modifier.weight(1f))
+            SummaryCard(HeroIcons.UserGroup, "${data.totalMembers}", "Team Members", Modifier.weight(1f))
+            SummaryCard(HeroIcons.Clock, "${avgHours}h", "Avg Hours/Day", Modifier.weight(1f))
+            SummaryCard(HeroIcons.ClipboardDocumentCheck, "${data.totalTasksDone}", "Planner Completed", Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SummaryCard(Icons.Outlined.GpsFixed, "${data.avgTargetMet}%", "Avg Target Met", Modifier.weight(1f))
-            SummaryCard(Icons.Outlined.AlarmOn, "${data.avgPunctuality}%", "Avg Punctuality", Modifier.weight(1f))
-            SummaryCard(Icons.Outlined.Checklist, "${data.pendingApprovals}", "Pending Approvals", Modifier.weight(1f), amber = true)
+            SummaryCard(HeroIcons.ViewfinderCircle, "${data.avgTargetMet}%", "Avg Target Met", Modifier.weight(1f))
+            SummaryCard(HeroIcons.BellAlert, "${data.avgPunctuality}%", "Avg Punctuality", Modifier.weight(1f))
+            SummaryCard(HeroIcons.ClipboardDocumentCheck, "${data.pendingApprovals}", "Pending Approvals", Modifier.weight(1f), amber = true)
         }
     }
 }
@@ -331,9 +324,9 @@ private fun AnalyticsExpandedDetails(member: AnalyticsMember, targetMinutes: Int
         Column {
             Text("Work Mode", color = colors.textMuted, fontSize = 0.66.rem)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Business, null, Modifier.width(13.dp).height(13.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.BuildingOffice, null, Modifier.width(13.dp).height(13.dp), tint = colors.textSecondary)
                 Text(" ${member.officeDays} · ", color = colors.text, fontSize = 0.78.rem)
-                Icon(Icons.Outlined.Home, null, Modifier.width(13.dp).height(13.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.Home, null, Modifier.width(13.dp).height(13.dp), tint = colors.textSecondary)
                 Text(" ${member.remoteDays}", color = colors.text, fontSize = 0.78.rem)
             }
         }

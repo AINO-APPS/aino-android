@@ -12,21 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.CheckCircleOutline
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.MarkChatRead
-import androidx.compose.material.icons.outlined.MarkChatUnread
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.NotificationsOff
-import androidx.compose.material.icons.outlined.Phone
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Unarchive
-import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -44,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** Signal mute durations (server accepts 1h | 8h | 1d | 1w | always). */
 internal val MuteDurations = listOf(
@@ -58,7 +44,7 @@ internal val MuteDurations = listOf(
 internal fun MuteDurationMenu(expanded: Boolean, onDismiss: () -> Unit, onPick: (String) -> Unit) {
     SignalDropdownMenu(expanded = expanded, onDismiss = onDismiss) {
         MuteDurations.forEach { (duration, label) ->
-            SignalMenuItem(label, Icons.Outlined.NotificationsOff) { onDismiss(); onPick(duration) }
+            SignalMenuItem(label, HeroIcons.BellSlash) { onDismiss(); onPick(duration) }
         }
     }
 }
@@ -80,15 +66,15 @@ internal fun ConversationContextMenu(
         @Composable
         fun item(label: String, icon: ImageVector, danger: Boolean = false, action: () -> Unit) =
             SignalMenuItem(label, icon, danger) { onDismiss(); action() }
-        item(if (conversation.isPinned) "Unpin chat" else "Pin chat", Icons.Outlined.PushPin) { viewModel.togglePin(conversation) }
-        if (conversation.unreadCount > 0) item("Mark as read", Icons.Outlined.MarkChatRead) { viewModel.markRead(conversation) }
-        else item("Mark as unread", Icons.Outlined.MarkChatUnread) { viewModel.markUnread(conversation) }
-        if (conversation.isMuted) item("Unmute notifications", Icons.Outlined.Notifications) { viewModel.muteFor(conversation, null) }
-        else item("Mute notifications", Icons.Outlined.NotificationsOff, action = onChooseMute)
-        item("Select", Icons.Outlined.CheckCircleOutline) { viewModel.toggleConversationSelection(conversation.id) }
-        if (conversation.isArchived) item("Unarchive", Icons.Outlined.Unarchive) { viewModel.toggleArchive(conversation) }
-        else item("Archive", Icons.Outlined.Archive) { viewModel.toggleArchive(conversation, undoable = true) }
-        item("Delete", Icons.Outlined.DeleteOutline, danger = true, action = onConfirmDelete)
+        item(if (conversation.isPinned) "Unpin chat" else "Pin chat", HeroIcons.PushPin) { viewModel.togglePin(conversation) }
+        if (conversation.unreadCount > 0) item("Mark as read", HeroIcons.ChatBubbleLeft) { viewModel.markRead(conversation) }
+        else item("Mark as unread", HeroIcons.ChatBubbleLeftEllipsis) { viewModel.markUnread(conversation) }
+        if (conversation.isMuted) item("Unmute notifications", HeroIcons.Bell) { viewModel.muteFor(conversation, null) }
+        else item("Mute notifications", HeroIcons.BellSlash, action = onChooseMute)
+        item("Select", HeroIcons.CheckCircle) { viewModel.toggleConversationSelection(conversation.id) }
+        if (conversation.isArchived) item("Unarchive", HeroIcons.ArchiveBoxArrowDown) { viewModel.toggleArchive(conversation) }
+        else item("Archive", HeroIcons.ArchiveBox) { viewModel.toggleArchive(conversation, undoable = true) }
+        item("Delete", HeroIcons.Trash, danger = true, action = onConfirmDelete)
     }
 }
 
@@ -122,18 +108,18 @@ internal fun RecipientSheet(
                 Text(it, Modifier.padding(top = 2.dp), color = signal.textSecondary, fontSize = 15.sp, maxLines = 1)
             }
             Row(Modifier.fillMaxWidth().padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SheetButton(Icons.Outlined.ChatBubbleOutline, "Message", Modifier.weight(1f)) { onDismiss(); onOpen() }
+                SheetButton(HeroIcons.ChatBubbleOvalLeft, "Message", Modifier.weight(1f)) { onDismiss(); onOpen() }
                 if (canCall) {
-                    SheetButton(Icons.Outlined.Phone, "Voice", Modifier.weight(1f)) {
+                    SheetButton(HeroIcons.Phone, "Voice", Modifier.weight(1f)) {
                         withCallPermissions(false) { onDismiss(); viewModel.startCall(conversation, "voice") }
                     }
-                    SheetButton(Icons.Outlined.Videocam, "Video", Modifier.weight(1f)) {
+                    SheetButton(HeroIcons.VideoCamera, "Video", Modifier.weight(1f)) {
                         withCallPermissions(true) { onDismiss(); viewModel.startCall(conversation, "video") }
                     }
                 }
                 Box(Modifier.weight(1f)) {
                     SheetButton(
-                        if (conversation.isMuted) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff,
+                        if (conversation.isMuted) HeroIcons.Bell else HeroIcons.BellSlash,
                         if (conversation.isMuted) "Unmute" else "Mute",
                         Modifier.fillMaxWidth(),
                     ) { if (conversation.isMuted) viewModel.muteFor(conversation, null) else muteOpen = true }
@@ -142,12 +128,12 @@ internal fun RecipientSheet(
             }
         }
         Spacer(Modifier.height(12.dp))
-        SheetRow(Icons.Outlined.Info, if (conversation.isGroup) "Group settings" else "Chat settings") {
+        SheetRow(HeroIcons.InformationCircle, if (conversation.isGroup) "Group settings" else "Chat settings") {
             viewModel.openSettingsOnOpen(conversation.id)
             onDismiss()
             onOpen()
         }
-        if (oneToOne) SheetRow(Icons.Outlined.Block, if (conversation.isBlocked) "Unblock" else "Block", danger = !conversation.isBlocked) {
+        if (oneToOne) SheetRow(HeroIcons.NoSymbol, if (conversation.isBlocked) "Unblock" else "Block", danger = !conversation.isBlocked) {
             confirmBlock = true
         }
         Spacer(Modifier.height(24.dp))

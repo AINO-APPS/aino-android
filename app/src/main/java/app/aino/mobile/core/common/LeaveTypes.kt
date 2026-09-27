@@ -1,13 +1,8 @@
 package app.aino.mobile.core.common
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.BeachAccess
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.EditNote
-import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.Thermostat
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Built-in leave types from `client/src/constants/leaves.ts`, shared by
@@ -21,11 +16,11 @@ data class LeaveTypeMeta(
     val bg: Color,
 )
 
-private val SickLeave = LeaveTypeMeta("sick", "Sick Leave", Icons.Outlined.Thermostat, Color(0xFFEF4444), Color(0x19EF4444))
-private val HolidayLeave = LeaveTypeMeta("holiday", "Holiday", Icons.Outlined.BeachAccess, Color(0xFFF59E0B), Color(0x19F59E0B))
-private val PlannedLeave = LeaveTypeMeta("planned", "Planned Leave", Icons.Outlined.CalendarMonth, Color(0xFF0EA5E9), Color(0x190EA5E9))
-private val PersonalLeave = LeaveTypeMeta("personal", "Personal", Icons.Outlined.PersonOutline, Color(0xFF10B981), Color(0x1910B981))
-private val OtherLeave = LeaveTypeMeta("other", "Other", Icons.Outlined.EditNote, Color(0xFF0EA5E9), Color(0x190EA5E9))
+private val SickLeave = LeaveTypeMeta("sick", "Sick Leave", HeroIcons.FaceFrown, Color(0xFFEF4444), Color(0x19EF4444))
+private val HolidayLeave = LeaveTypeMeta("holiday", "Holiday", HeroIcons.Sun, Color(0xFFF59E0B), Color(0x19F59E0B))
+private val PlannedLeave = LeaveTypeMeta("planned", "Planned Leave", HeroIcons.CalendarDays, Color(0xFF0EA5E9), Color(0x190EA5E9))
+private val PersonalLeave = LeaveTypeMeta("personal", "Personal", HeroIcons.User, Color(0xFF10B981), Color(0x1910B981))
+private val OtherLeave = LeaveTypeMeta("other", "Other", HeroIcons.PencilSquare, Color(0xFF0EA5E9), Color(0x190EA5E9))
 
 val DEFAULT_LEAVE_TYPES: List<LeaveTypeMeta> = listOf(SickLeave, HolidayLeave, PlannedLeave, PersonalLeave, OtherLeave)
 

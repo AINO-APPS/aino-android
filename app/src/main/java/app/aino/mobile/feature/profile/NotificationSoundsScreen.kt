@@ -14,13 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.VolumeOff
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.outlined.AlternateEmail
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Phone
-import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
@@ -45,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.notifications.NotificationSoundPrefs
 import app.aino.mobile.core.push.PushNotifications
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Web `NotificationSoundsModal` as a full page. Prefs sync with the web; tone
@@ -77,7 +71,7 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
     ProfilePage("Notification sounds", onBack) {
         ProfileSection {
             ProfileRow(
-                icon = if (muted) Icons.AutoMirrored.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp,
+                icon = if (muted) HeroIcons.SpeakerXMark else HeroIcons.SpeakerWave,
                 label = "Mute all sounds",
                 supporting = "Disables every ringtone, message and mention sound until turned off.",
                 onClick = { viewModel.updatePref("muteAll", !muted) },
@@ -93,7 +87,7 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
 
         ProfileSection("Calls") {
             ProfileRow(
-                Icons.Outlined.Phone, "Incoming call ringtone",
+                HeroIcons.Phone, "Incoming call ringtone",
                 onClick = {
                     ringtonePicker.launch(
                         Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
@@ -113,9 +107,9 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
         }
 
         ProfileSection("Messages") {
-            ProfileRow(Icons.Outlined.ChatBubbleOutline, "New message", { openChannelSettings(context, PushNotifications.MESSAGES) }, supporting = messageSound, enabled = !muted)
+            ProfileRow(HeroIcons.ChatBubbleOvalLeft, "New message", { openChannelSettings(context, PushNotifications.MESSAGES) }, supporting = messageSound, enabled = !muted)
             RowDivider()
-            ProfileRow(Icons.Outlined.AlternateEmail, "Mention / @-tag", { openChannelSettings(context, PushNotifications.MESSAGES) }, supporting = messageSound, enabled = !muted)
+            ProfileRow(HeroIcons.AtSymbol, "Mention / @-tag", { openChannelSettings(context, PushNotifications.MESSAGES) }, supporting = messageSound, enabled = !muted)
         }
 
         ProfileSection("Behavior") {
@@ -141,7 +135,7 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedButton(onClick = { viewModel.resetPrefs(); revision++ }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Outlined.RestartAlt, null, Modifier.size(16.dp))
+                Icon(HeroIcons.ArrowPath, null, Modifier.size(16.dp))
                 Text("  Reset to defaults")
             }
             androidx.compose.material3.Button(onClick = onBack, modifier = Modifier.weight(1f)) { Text("Done") }

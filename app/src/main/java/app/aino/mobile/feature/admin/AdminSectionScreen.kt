@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -26,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.component.AinoFullPage
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** Page titles; web `SECTIONS` labels plus the Android-only pages. */
 fun adminSectionTitle(key: String): String = when (key) {
@@ -63,7 +62,7 @@ fun AdminSectionScreen(
         onBack = onBack,
         actions = {
             IconButton(onClick = { viewModel.loadSection(sectionKey, force = true) }) {
-                Icon(Icons.Outlined.Refresh, "Refresh", tint = LocalWebColors.current.text)
+                Icon(HeroIcons.ArrowPath, "Refresh", tint = LocalWebColors.current.text)
             }
         },
     ) {

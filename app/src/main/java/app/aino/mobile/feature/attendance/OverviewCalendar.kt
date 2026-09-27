@@ -14,10 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.ChevronLeft
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +29,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val WEEKDAYS = listOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 
@@ -87,7 +84,7 @@ fun OverviewCalendarTab(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
 
     AttendanceCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(18.dp), tint = colors.text)
+            Icon(HeroIcons.CalendarDays, null, Modifier.size(18.dp), tint = colors.text)
             Text(
                 "Attendance Calendar",
                 color = colors.text,
@@ -96,7 +93,7 @@ fun OverviewCalendarTab(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
                 modifier = Modifier.padding(start = 8.dp),
             )
             Spacer(Modifier.weight(1f))
-            MonthNavButton(Icons.Outlined.ChevronLeft, "Previous month") { viewModel.changeMonth(-1) }
+            MonthNavButton(HeroIcons.ChevronLeft, "Previous month") { viewModel.changeMonth(-1) }
             Text(
                 ui.month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.US)),
                 color = colors.text,
@@ -110,7 +107,7 @@ fun OverviewCalendarTab(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
                     .clickable { viewModel.currentMonth() }
                     .padding(horizontal = 14.dp, vertical = 6.dp),
             )
-            MonthNavButton(Icons.Outlined.ChevronRight, "Next month") { viewModel.changeMonth(1) }
+            MonthNavButton(HeroIcons.ChevronRight, "Next month") { viewModel.changeMonth(1) }
         }
         Spacer(Modifier.height(12.dp))
         Legend(minMinutes / 60)

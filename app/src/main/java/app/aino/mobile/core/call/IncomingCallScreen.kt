@@ -10,11 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Call
-import androidx.compose.material.icons.outlined.CallEnd
-import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material.icons.outlined.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.component.UserAvatar
 import kotlinx.coroutines.delay
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Signal-style incoming call: blurred avatar backdrop, the caller's name and
@@ -69,14 +65,14 @@ fun IncomingCallScreen(viewModel: IncomingCallViewModel, onClose: () -> Unit) {
                 CircularProgressIndicator(Modifier.padding(bottom = 64.dp), color = Color.White)
             } else {
                 if (video) {
-                    LabeledCallButton(Icons.Outlined.VideocamOff, "Answer without video", Color.White.copy(alpha = .2f), size = 56.dp, onClick = {
+                    LabeledCallButton(HeroIcons.VideoCameraSlash, "Answer without video", Color.White.copy(alpha = .2f), size = 56.dp, onClick = {
                         withCallPermissions(false) { viewModel.answer(withoutVideo = true) }
                     })
                     Spacer(Modifier.padding(top = 24.dp))
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 40.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    LabeledCallButton(Icons.Outlined.CallEnd, "Decline", CallRed, onClick = viewModel::decline)
-                    LabeledCallButton(if (video) Icons.Outlined.Videocam else Icons.Outlined.Call, "Accept", CallGreen, onClick = {
+                    LabeledCallButton(HeroIcons.PhoneXMark, "Decline", CallRed, onClick = viewModel::decline)
+                    LabeledCallButton(if (video) HeroIcons.VideoCamera else HeroIcons.Phone, "Accept", CallGreen, onClick = {
                         withCallPermissions(video) { viewModel.answer() }
                     })
                 }

@@ -21,11 +21,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -55,6 +50,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlinx.coroutines.delay
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val HOUR_HEIGHT = 60.dp
 private val GUTTER = 40.dp // ≤768px `.timeGridInner { grid-template-columns: 40px … }`
@@ -83,7 +79,7 @@ fun CalendarScreen(
     PullToRefreshBox(isRefreshing = ui.loading && ui.events.isEmpty(), onRefresh = viewModel::refresh, modifier = modifier.fillMaxSize().background(colors.bg)) {
         Column(Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, top = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(22.dp), tint = colors.text)
+                Icon(HeroIcons.CalendarDays, null, Modifier.size(22.dp), tint = colors.text)
                 Text("Calendar", color = colors.text, fontSize = 1.3.rem, fontWeight = FontWeight.Bold)
             }
             Text("Schedule events and manage your time", color = colors.textMuted, fontSize = 0.82.rem, modifier = Modifier.padding(top = 2.dp, bottom = 8.dp))
@@ -112,14 +108,14 @@ private fun Toolbar(view: CalendarView, base: LocalDate, viewModel: CalendarView
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(32.dp).clip(shape).border(1.dp, colors.border, shape).clickable { viewModel.navigate(-1) }, contentAlignment = Alignment.Center) {
-                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "Previous", tint = colors.text)
+                Icon(HeroIcons.ChevronLeft, "Previous", tint = colors.text)
             }
             Text(
                 "Today", color = colors.text, fontSize = 0.8.rem, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(shape).border(1.dp, colors.border, shape).clickable(onClick = viewModel::goToday).padding(horizontal = 12.dp, vertical = 6.dp),
             )
             Box(Modifier.size(32.dp).clip(shape).border(1.dp, colors.border, shape).clickable { viewModel.navigate(1) }, contentAlignment = Alignment.Center) {
-                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "Next", tint = colors.text)
+                Icon(HeroIcons.ChevronRight, "Next", tint = colors.text)
             }
             Text(calendarTitle(view, base), color = colors.text, fontSize = 0.9.rem, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
@@ -260,7 +256,7 @@ private fun DayColumn(
                     .padding(horizontal = 4.dp, vertical = 2.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (item.event.meetingCode != null) Icon(Icons.Outlined.Videocam, "Meeting", Modifier.size(11.dp).padding(end = 2.dp), tint = Color.White)
+                    if (item.event.meetingCode != null) Icon(HeroIcons.VideoCamera, "Meeting", Modifier.size(11.dp).padding(end = 2.dp), tint = Color.White)
                     Text(item.event.title, color = Color.White, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (height >= 40.dp) Text("${hhmm(start)} – ${hhmm(end)}", color = Color.White.copy(alpha = .8f), fontSize = 0.62.rem, maxLines = 1)
@@ -281,7 +277,7 @@ private fun EventChip(event: CalendarEvent, fontRem: Double, modifier: Modifier 
             .clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (event.meetingCode != null) Icon(Icons.Outlined.Videocam, "Meeting", Modifier.size(9.dp).padding(end = 2.dp), tint = Color.White)
+        if (event.meetingCode != null) Icon(HeroIcons.VideoCamera, "Meeting", Modifier.size(9.dp).padding(end = 2.dp), tint = Color.White)
         Text(event.title, color = Color.White, fontSize = fontRem.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

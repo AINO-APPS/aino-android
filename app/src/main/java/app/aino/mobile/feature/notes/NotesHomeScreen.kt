@@ -24,34 +24,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowForward
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.Bolt
-import androidx.compose.material.icons.outlined.Bookmarks
-import androidx.compose.material.icons.outlined.CalendarViewWeek
-import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.CreateNewFolder
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.Favorite
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Handshake
-import androidx.compose.material.icons.outlined.Inbox
-import androidx.compose.material.icons.automirrored.outlined.NoteAdd
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Repeat
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Sell
-import androidx.compose.material.icons.automirrored.outlined.StickyNote2
-import androidx.compose.material.icons.outlined.TaskAlt
-import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -88,6 +60,7 @@ import java.time.LocalTime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val MANAGER_ROLES = setOf("team_lead", "manager", "hr_admin", "super_admin", "platform_admin")
 
@@ -111,13 +84,13 @@ internal fun searchPages(pages: List<NotePage>, query: String, limit: Int = 5): 
 }
 
 private fun templateIcon(id: String): ImageVector = when (id) {
-    "blank" -> Icons.AutoMirrored.Outlined.NoteAdd
-    "journal" -> Icons.Outlined.Bookmarks
-    "meeting" -> Icons.Outlined.Handshake
-    "decision" -> Icons.Outlined.TaskAlt
-    "weekly" -> Icons.Outlined.CalendarViewWeek
-    "oneonone" -> Icons.Outlined.Groups
-    else -> Icons.Outlined.Repeat
+    "blank" -> HeroIcons.DocumentPlus
+    "journal" -> HeroIcons.Bookmark
+    "meeting" -> HeroIcons.HandRaised
+    "decision" -> HeroIcons.CheckCircle
+    "weekly" -> HeroIcons.CalendarDateRange
+    "oneonone" -> HeroIcons.UserGroup
+    else -> HeroIcons.ArrowPathRoundedSquare
 }
 
 private sealed interface HomeDialog {
@@ -196,13 +169,13 @@ fun NotesHomeScreen(
                         color = colors.textMuted, fontSize = 0.82.rem,
                     )
                 }
-                IconButton(onClick = { dialog = HomeDialog.QuickCapture }) { Icon(Icons.Outlined.Bolt, "Quick capture", tint = colors.textSecondary) }
+                IconButton(onClick = { dialog = HomeDialog.QuickCapture }) { Icon(HeroIcons.Bolt, "Quick capture", tint = colors.textSecondary) }
                 Button(
                     onClick = { onOpenPage(viewModel.createPage()) },
                     colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                     shape = RoundedCornerShape(10.dp),
                 ) {
-                    Icon(Icons.Outlined.Add, null, modifier = Modifier.size(18.dp))
+                    Icon(HeroIcons.Plus, null, modifier = Modifier.size(18.dp))
                     Text("New note", modifier = Modifier.padding(start = 4.dp))
                 }
             }
@@ -216,13 +189,13 @@ fun NotesHomeScreen(
                 val matches = remember(search, ui.pages) { searchPages(ui.pages, search) }
                 Card(Modifier.padding(top = 6.dp)) {
                     if (matches.isEmpty()) {
-                        ResultRow(Icons.Outlined.Add, "Create note \"${search.trim()}\"", null) {
+                        ResultRow(HeroIcons.Plus, "Create note \"${search.trim()}\"", null) {
                             val title = search.trim().removePrefix("#")
                             search = ""
                             onOpenPage(viewModel.createPage(title))
                         }
                     } else matches.forEach { p ->
-                        ResultRow(if (p.pinned) Icons.Outlined.PushPin else Icons.Outlined.Description, p.title, relativeFromNow(p.updatedAt)) {
+                        ResultRow(if (p.pinned) HeroIcons.PushPin else HeroIcons.DocumentText, p.title, relativeFromNow(p.updatedAt)) {
                             search = ""
                             onOpenPage(p.id)
                         }
@@ -243,11 +216,11 @@ fun NotesHomeScreen(
 
             if (active.isEmpty()) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.AutoMirrored.Outlined.StickyNote2, null, tint = colors.textMuted, modifier = Modifier.size(44.dp))
+                    Icon(HeroIcons.Clipboard, null, tint = colors.textMuted, modifier = Modifier.size(44.dp))
                     Text("No notes yet", color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 1.05.rem, modifier = Modifier.padding(top = 10.dp))
                     Text("Create your first note, or start from a template below.", color = colors.textMuted, fontSize = 0.85.rem)
                     Button(onClick = { onOpenPage(viewModel.createPage()) }, colors = ButtonDefaults.buttonColors(containerColor = colors.primary), modifier = Modifier.padding(top = 12.dp)) {
-                        Icon(Icons.Outlined.Add, null, modifier = Modifier.size(15.dp))
+                        Icon(HeroIcons.Plus, null, modifier = Modifier.size(15.dp))
                         Text("New note", modifier = Modifier.padding(start = 4.dp))
                     }
                 }
@@ -255,7 +228,7 @@ fun NotesHomeScreen(
                 val recent = remember(active) { active.sortedByDescending { it.updatedMillis }.take(9) }
                 val last = recent.firstOrNull()
                 last?.let { p ->
-                    SectionTitle(Icons.Outlined.Schedule, "Jump back in")
+                    SectionTitle(HeroIcons.Clock, "Jump back in")
                     Row(
                         Modifier.fillMaxWidth().background(colors.bgElevated, RoundedCornerShape(12.dp)).border(1.dp, colors.border, RoundedCornerShape(12.dp))
                             .clickable { onOpenPage(p.id) }.padding(14.dp),
@@ -267,12 +240,12 @@ fun NotesHomeScreen(
                             val folder = p.folderId?.let { id -> ui.folders.firstOrNull { it.id == id }?.name }
                             Text("Edited ${relativeFromNow(p.updatedAt)}" + (folder?.let { " • in $it" } ?: ""), color = colors.textMuted, fontSize = 0.78.rem)
                         }
-                        Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, tint = colors.primary)
+                        Icon(HeroIcons.ArrowRight, null, tint = colors.primary)
                     }
                 }
                 val others = recent.drop(1).take(6)
                 if (others.isNotEmpty()) {
-                    SectionTitle(Icons.Outlined.Description, "Recent notes")
+                    SectionTitle(HeroIcons.DocumentText, "Recent notes")
                     Card {
                         others.forEach { p ->
                             PageListRow(p, snippetOf(p.content, 64), relativeFromNow(p.updatedAt), viewModel, onOpenPage) { dialog = it }
@@ -281,7 +254,7 @@ fun NotesHomeScreen(
                 }
                 val pinned = remember(active) { active.filter { it.pinned }.take(6) }
                 if (pinned.isNotEmpty()) {
-                    SectionTitle(Icons.Outlined.PushPin, "Pinned")
+                    SectionTitle(HeroIcons.PushPin, "Pinned")
                     Card {
                         pinned.forEach { p ->
                             PageListRow(p, null, relativeFromNow(p.updatedAt), viewModel, onOpenPage, accent = p.tags.firstOrNull()?.let { Color(tagColorArgb(it)) } ?: colors.primary) { dialog = it }
@@ -292,13 +265,13 @@ fun NotesHomeScreen(
                     active.filter { p -> p.reactions.values.any { uid in it } }.sortedByDescending { it.updatedMillis }.take(8)
                 }
                 if (liked.isNotEmpty()) {
-                    SectionTitle(Icons.Outlined.Favorite, "Liked")
+                    SectionTitle(HeroIcons.Heart, "Liked")
                     Card { liked.forEach { p -> PageListRow(p, null, relativeFromNow(p.updatedAt), viewModel, onOpenPage) { dialog = it } } }
                 }
             }
 
             // ── Templates ─────────────────────────────────────────────
-            SectionTitle(Icons.Outlined.Add, "Start from a template")
+            SectionTitle(HeroIcons.Plus, "Start from a template")
             val tiles = NOTE_TEMPLATES.map { Triple(it.id, it.name, it.description) } +
                 if (canOneOnOne) listOf(Triple("oneonone-prefill", "1-on-1 with prefill", "Auto-prefilled 1-on-1 for a direct report")) else emptyList()
             tiles.chunked(2).forEach { row ->
@@ -330,7 +303,7 @@ fun NotesHomeScreen(
                 active.flatMap { it.tags }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(14)
             }
             if (tagCounts.isNotEmpty()) {
-                SectionTitle(Icons.Outlined.Sell, "Tags")
+                SectionTitle(HeroIcons.Tag, "Tags")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     tagCounts.forEach { (tag, count) ->
                         val tint = Color(tagColorArgb(tag))
@@ -449,7 +422,7 @@ private fun PageListRow(
                 Text(page.title, color = colors.text, fontSize = 0.9.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (!subtitle.isNullOrBlank()) Text(subtitle, color = colors.textMuted, fontSize = 0.75.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            if (page.pinned && accent == null) Icon(Icons.Outlined.PushPin, null, tint = colors.textMuted, modifier = Modifier.size(12.dp).padding(end = 2.dp))
+            if (page.pinned && accent == null) Icon(HeroIcons.PushPin, null, tint = colors.textMuted, modifier = Modifier.size(12.dp).padding(end = 2.dp))
             Text(meta, color = colors.textMuted, fontSize = 0.72.rem)
         }
         PageMenu(menu, page, viewModel, onOpenPage, { menu = false }, onDialog)
@@ -466,19 +439,19 @@ private fun PageMenu(expanded: Boolean, page: NotePage, viewModel: NotesViewMode
             leadingIcon = { Icon(icon, null, tint = if (danger) colors.danger else colors.textSecondary) },
             onClick = { onDismiss(); action() },
         )
-        item(if (page.pinned) "Unpin" else "Pin to top", Icons.Outlined.PushPin) { viewModel.togglePin(page.id) }
-        item("Duplicate", Icons.Outlined.ContentCopy) { viewModel.duplicate(page.id)?.let(onOpenPage) }
-        item("Move to folder", Icons.Outlined.Folder) { onDialog(HomeDialog.Move(page)) }
-        item(if (page.archived) "Unarchive" else "Archive", if (page.archived) Icons.Outlined.Unarchive else Icons.Outlined.Archive) { viewModel.toggleArchive(page.id) }
+        item(if (page.pinned) "Unpin" else "Pin to top", HeroIcons.PushPin) { viewModel.togglePin(page.id) }
+        item("Duplicate", HeroIcons.DocumentDuplicate) { viewModel.duplicate(page.id)?.let(onOpenPage) }
+        item("Move to folder", HeroIcons.Folder) { onDialog(HomeDialog.Move(page)) }
+        item(if (page.archived) "Unarchive" else "Archive", if (page.archived) HeroIcons.ArchiveBoxArrowDown else HeroIcons.ArchiveBox) { viewModel.toggleArchive(page.id) }
         HorizontalDivider(color = colors.border)
-        item("Delete", Icons.Outlined.Delete, danger = true) { onDialog(HomeDialog.DeletePage(page)) }
+        item("Delete", HeroIcons.Trash, danger = true) { onDialog(HomeDialog.DeletePage(page)) }
     }
 }
 
 @Composable
 private fun ArchiveList(archived: List<NotePage>, viewModel: NotesViewModel, onOpenPage: (String) -> Unit, onDelete: (NotePage) -> Unit) {
     val colors = LocalWebColors.current
-    SectionTitle(Icons.Outlined.Archive, "Archive")
+    SectionTitle(HeroIcons.ArchiveBox, "Archive")
     if (archived.isEmpty()) {
         Text("No archived notes", color = colors.textMuted, fontSize = 0.85.rem)
         return
@@ -491,8 +464,8 @@ private fun ArchiveList(archived: List<NotePage>, viewModel: NotesViewModel, onO
                     Text(p.title, color = colors.text, fontSize = 0.9.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(relativeFromNow(p.updatedAt), color = colors.textMuted, fontSize = 0.72.rem)
                 }
-                IconButton(onClick = { viewModel.toggleArchive(p.id) }) { Icon(Icons.Outlined.Unarchive, "Unarchive", tint = colors.textSecondary) }
-                IconButton(onClick = { onDelete(p) }) { Icon(Icons.Outlined.Delete, "Delete", tint = colors.danger) }
+                IconButton(onClick = { viewModel.toggleArchive(p.id) }) { Icon(HeroIcons.ArchiveBoxArrowDown, "Unarchive", tint = colors.textSecondary) }
+                IconButton(onClick = { onDelete(p) }) { Icon(HeroIcons.Trash, "Delete", tint = colors.danger) }
             }
         }
     }
@@ -519,7 +492,7 @@ private fun FolderTreeSection(
     Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("Folders & notes", color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 0.95.rem, modifier = Modifier.weight(1f))
         Row(Modifier.clickable { onDialog(HomeDialog.NewFolder) }.padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.CreateNewFolder, null, tint = colors.primary, modifier = Modifier.size(14.dp))
+            Icon(HeroIcons.FolderPlus, null, tint = colors.primary, modifier = Modifier.size(14.dp))
             Text("New folder", color = colors.primary, fontSize = 0.8.rem, modifier = Modifier.padding(start = 4.dp))
         }
     }
@@ -540,20 +513,20 @@ private fun FolderTreeSection(
                         .padding(start = (8 + depth * 16).dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(if (open) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null, tint = colors.textMuted, modifier = Modifier.size(16.dp))
-                    Icon(Icons.Outlined.Folder, null, tint = colors.textSecondary, modifier = Modifier.size(16.dp).padding(start = 2.dp))
+                    Icon(if (open) HeroIcons.ChevronDown else HeroIcons.ChevronRight, null, tint = colors.textMuted, modifier = Modifier.size(16.dp))
+                    Icon(HeroIcons.Folder, null, tint = colors.textSecondary, modifier = Modifier.size(16.dp).padding(start = 2.dp))
                     Text(folder.name, color = colors.text, fontSize = 0.9.rem, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(start = 8.dp))
                     if (folderPages.isNotEmpty()) Text("${folderPages.size}", color = colors.textMuted, fontSize = 0.72.rem)
                     IconButton(onClick = { onDialog(HomeDialog.NewNoteIn(folder.id)) }, modifier = Modifier.size(32.dp)) {
-                        Icon(Icons.Outlined.Add, "New note in this folder", tint = colors.textMuted, modifier = Modifier.size(16.dp))
+                        Icon(HeroIcons.Plus, "New note in this folder", tint = colors.textMuted, modifier = Modifier.size(16.dp))
                     }
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = colors.bgElevated) {
-                    DropdownMenuItem(text = { Text("New subfolder", color = colors.text) }, leadingIcon = { Icon(Icons.Outlined.CreateNewFolder, null) },
+                    DropdownMenuItem(text = { Text("New subfolder", color = colors.text) }, leadingIcon = { Icon(HeroIcons.FolderPlus, null) },
                         onClick = { menu = false; onDialog(HomeDialog.SubFolder(folder.id)) })
-                    DropdownMenuItem(text = { Text("Rename", color = colors.text) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                    DropdownMenuItem(text = { Text("Rename", color = colors.text) }, leadingIcon = { Icon(HeroIcons.PencilSquare, null) },
                         onClick = { menu = false; onDialog(HomeDialog.RenameFolder(folder)) })
-                    DropdownMenuItem(text = { Text("Delete folder", color = colors.danger) }, leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = colors.danger) },
+                    DropdownMenuItem(text = { Text("Delete folder", color = colors.danger) }, leadingIcon = { Icon(HeroIcons.Trash, null, tint = colors.danger) },
                         onClick = { menu = false; onDialog(HomeDialog.DeleteFolder(folder)) })
                 }
             }
@@ -573,8 +546,8 @@ private fun FolderTreeSection(
             Modifier.fillMaxWidth().clickable { expanded["__none__"] = !open }.padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(if (open) Icons.Outlined.ExpandMore else Icons.Outlined.ChevronRight, null, tint = colors.textMuted, modifier = Modifier.size(16.dp))
-            Icon(Icons.Outlined.Inbox, null, tint = colors.textSecondary, modifier = Modifier.size(16.dp).padding(start = 2.dp))
+            Icon(if (open) HeroIcons.ChevronDown else HeroIcons.ChevronRight, null, tint = colors.textMuted, modifier = Modifier.size(16.dp))
+            Icon(HeroIcons.Inbox, null, tint = colors.textSecondary, modifier = Modifier.size(16.dp).padding(start = 2.dp))
             Text("Uncategorized", color = colors.text, fontSize = 0.9.rem, modifier = Modifier.weight(1f).padding(start = 8.dp))
             if (uncategorized.isNotEmpty()) Text("${uncategorized.size}", color = colors.textMuted, fontSize = 0.72.rem)
         }
@@ -606,7 +579,7 @@ private fun QuickCaptureDialog(onSave: (String) -> Unit, onDismiss: () -> Unit) 
         confirmButton = { TextButton(onClick = { onSave(text) }, enabled = text.isNotBlank()) { Text("Save to Inbox", color = colors.primary) } },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Icon(Icons.Outlined.Close, null, tint = colors.textSecondary, modifier = Modifier.size(14.dp))
+                Icon(HeroIcons.XMark, null, tint = colors.textSecondary, modifier = Modifier.size(14.dp))
                 Text("Cancel", color = colors.textSecondary)
             }
         },

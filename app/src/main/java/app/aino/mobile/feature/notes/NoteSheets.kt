@@ -26,20 +26,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.CheckBox
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Inbox
-import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -76,6 +62,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 import app.aino.mobile.core.network.NetworkConfig
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 @Composable
 internal fun NotesSearchField(value: String, onChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier, autoFocus: Boolean = false) {
@@ -86,7 +73,7 @@ internal fun NotesSearchField(value: String, onChange: (String) -> Unit, placeho
         onValueChange = onChange,
         singleLine = true,
         placeholder = { Text(placeholder, color = colors.textMuted) },
-        leadingIcon = { Icon(Icons.Outlined.Search, null, tint = colors.textMuted) },
+        leadingIcon = { Icon(HeroIcons.MagnifyingGlass, null, tint = colors.textMuted) },
         shape = RoundedCornerShape(10.dp),
         colors = notesFieldColors(),
         modifier = modifier.fillMaxWidth().focusRequester(focus),
@@ -148,7 +135,7 @@ private fun SheetRow(icon: @Composable () -> Unit, title: String, subtitle: Stri
 internal fun PageIcon(page: NotePage, size: Int = 18) {
     val colors = LocalWebColors.current
     if (page.icon.isNotEmpty()) Text(page.icon, fontSize = (size * 0.9f / 16f).rem)
-    else Icon(Icons.Outlined.Description, null, tint = colors.textMuted, modifier = Modifier.size(size.dp))
+    else Icon(HeroIcons.DocumentText, null, tint = colors.textMuted, modifier = Modifier.size(size.dp))
 }
 
 // ── Page link picker (slash → "Link to page") ─────────────────────────────
@@ -163,14 +150,14 @@ internal fun PageLinkPickerSheet(pages: List<NotePage>, onPick: (NotePage) -> Un
     }
     val showCreate = q.isNotEmpty() && filtered.none { it.title.equals(q, ignoreCase = true) }
     NotesSheet(onDismiss) {
-        SheetTitle("Link to page", icon = Icons.Outlined.Link)
+        SheetTitle("Link to page", icon = HeroIcons.Link)
         NotesSearchField(query, { query = it }, "Search or create page…", autoFocus = true)
         Spacer(Modifier.padding(4.dp))
         LazyColumn(Modifier.heightIn(max = 380.dp)) {
             if (filtered.isEmpty() && !showCreate) item { EmptyRow("No pages found") }
             items(filtered, key = { it.id }) { p -> SheetRow({ PageIcon(p) }, p.title, onClick = { onPick(p) }) }
             if (showCreate) item {
-                SheetRow({ Icon(Icons.Outlined.Add, null, tint = LocalWebColors.current.primary) }, "Create “$q”", onClick = { onCreate(q) })
+                SheetRow({ Icon(HeroIcons.Plus, null, tint = LocalWebColors.current.primary) }, "Create “$q”", onClick = { onCreate(q) })
             }
         }
     }
@@ -196,7 +183,7 @@ internal fun ReportPickerSheet(viewModel: NotesViewModel, onSelect: (Long) -> Un
         (it.fullName ?: "").contains(filter, true) || (it.username ?: "").contains(filter, true)
     }
     NotesSheet(onDismiss) {
-        SheetTitle("Select a direct report for 1-on-1", icon = Icons.Outlined.Inbox)
+        SheetTitle("Select a direct report for 1-on-1", icon = HeroIcons.Inbox)
         NotesSearchField(filter, { filter = it }, "Search reports…")
         LazyColumn(Modifier.heightIn(max = 420.dp).padding(top = 6.dp)) {
             when {
@@ -243,7 +230,7 @@ internal fun ShareNoteSheet(viewModel: NotesViewModel, page: NotePage, onDismiss
     LaunchedEffect(copied) { if (copied) { delay(1500); copied = false } }
     val url = shareUrl(state)
     NotesSheet(onDismiss) {
-        SheetTitle("Share page", "Anyone with the link can read this page.", Icons.Outlined.Public)
+        SheetTitle("Share page", "Anyone with the link can read this page.", HeroIcons.GlobeAlt)
         Row(Modifier.padding(bottom = 10.dp)) {
             Text("Page:", color = colors.textMuted, fontSize = 0.85.rem)
             Text(page.title, color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 6.dp))
@@ -257,10 +244,10 @@ internal fun ShareNoteSheet(viewModel: NotesViewModel, page: NotePage, onDismiss
                         .padding(start = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Outlined.Link, null, tint = colors.textMuted, modifier = Modifier.size(16.dp))
+                    Icon(HeroIcons.Link, null, tint = colors.textMuted, modifier = Modifier.size(16.dp))
                     Text(url, color = colors.text, fontSize = 0.82.rem, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).padding(horizontal = 8.dp))
                     IconButton(onClick = { copyToClipboard(context, url); copied = true }) {
-                        Icon(if (copied) Icons.Outlined.CheckBox else Icons.Outlined.ContentCopy, "Copy link", tint = colors.primary)
+                        Icon(if (copied) HeroIcons.SquareCheck else HeroIcons.DocumentDuplicate, "Copy link", tint = colors.primary)
                     }
                 }
                 Text(
@@ -279,11 +266,11 @@ internal fun ShareNoteSheet(viewModel: NotesViewModel, page: NotePage, onDismiss
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                     ) {
-                        Icon(Icons.Outlined.Share, null, modifier = Modifier.size(16.dp))
+                        Icon(HeroIcons.Share, null, modifier = Modifier.size(16.dp))
                         Text("Share link", modifier = Modifier.padding(start = 6.dp))
                     }
                     OutlinedButton(onClick = { confirmRevoke = true }, enabled = !busy) {
-                        Icon(Icons.Outlined.Delete, null, modifier = Modifier.size(16.dp), tint = colors.danger)
+                        Icon(HeroIcons.Trash, null, modifier = Modifier.size(16.dp), tint = colors.danger)
                         Text(if (busy) "Revoking…" else "Revoke link", color = colors.danger, modifier = Modifier.padding(start = 6.dp))
                     }
                 }
@@ -307,7 +294,7 @@ internal fun ShareNoteSheet(viewModel: NotesViewModel, page: NotePage, onDismiss
                     enabled = !busy,
                     colors = ButtonDefaults.buttonColors(containerColor = colors.primary),
                 ) {
-                    Icon(Icons.Outlined.Link, null, modifier = Modifier.size(16.dp))
+                    Icon(HeroIcons.Link, null, modifier = Modifier.size(16.dp))
                     Text(if (busy) "Creating…" else "Create share link", modifier = Modifier.padding(start = 6.dp))
                 }
             }
@@ -337,9 +324,9 @@ internal fun ShareNoteSheet(viewModel: NotesViewModel, page: NotePage, onDismiss
 // ── Link a task / event / meeting (LinkedEntitiesPanel "add") ─────────────
 
 internal fun entityIcon(type: String) = when (type) {
-    "task" -> Icons.Outlined.CheckBox
-    "meeting" -> Icons.Outlined.Videocam
-    else -> Icons.Outlined.CalendarMonth
+    "task" -> HeroIcons.SquareCheck
+    "meeting" -> HeroIcons.VideoCamera
+    else -> HeroIcons.CalendarDays
 }
 
 internal fun entityWhen(raw: JsonObjectLike): String {
@@ -464,14 +451,14 @@ internal fun folderTreeList(folders: List<NoteFolder>, parentId: String? = null,
 internal fun MoveToFolderSheet(folders: List<NoteFolder>, current: String?, onSelect: (String?) -> Unit, onDismiss: () -> Unit) {
     val colors = LocalWebColors.current
     NotesSheet(onDismiss) {
-        SheetTitle("Move to folder", icon = Icons.Outlined.Folder)
+        SheetTitle("Move to folder", icon = HeroIcons.Folder)
         LazyColumn(Modifier.heightIn(max = 440.dp)) {
             item {
-                SheetRow({ Icon(Icons.Outlined.Inbox, null, tint = colors.textSecondary) }, "No folder", trailing = if (current == null) "✓" else null) { onSelect(null) }
+                SheetRow({ Icon(HeroIcons.Inbox, null, tint = colors.textSecondary) }, "No folder", trailing = if (current == null) "✓" else null) { onSelect(null) }
             }
             items(folderTreeList(folders), key = { it.first.id }) { (f, depth) ->
                 Row(Modifier.padding(start = (depth * 16).dp)) {
-                    SheetRow({ Icon(Icons.Outlined.Folder, null, tint = colors.textSecondary) }, f.name, trailing = if (current == f.id) "✓" else null) { onSelect(f.id) }
+                    SheetRow({ Icon(HeroIcons.Folder, null, tint = colors.textSecondary) }, f.name, trailing = if (current == f.id) "✓" else null) { onSelect(f.id) }
                 }
             }
         }

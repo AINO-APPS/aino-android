@@ -20,12 +20,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -62,6 +56,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Request
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 fun ChatMessage.isImageAttachment() = fileUrl != null && fileType?.startsWith("image/") == true
 fun ChatMessage.isVideoAttachment() = fileUrl != null && fileType?.startsWith("video/") == true
@@ -101,21 +96,21 @@ fun ChatMediaViewer(media: List<ChatMessage>, startMessageId: Long, secure: Bool
                 Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Close, "Close", Modifier.size(40.dp).clickable(onClick = onClose).padding(8.dp), tint = Color.White)
+                Icon(HeroIcons.XMark, "Close", Modifier.size(40.dp).clickable(onClick = onClose).padding(8.dp), tint = Color.White)
                 Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
                     Text(current.senderName ?: current.senderUsername.orEmpty(), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1)
                     if (media.size > 1) Text("${pager.currentPage + 1} of ${media.size}", color = Color.White.copy(alpha = .7f), fontSize = 12.sp)
                 }
                 // Signal media viewer: Save to device (never for view-once media).
                 if (!secure) Icon(
-                    Icons.Outlined.Download, "Save",
+                    HeroIcons.ArrowDownTray, "Save",
                     Modifier.size(40.dp).clickable {
                         save(resolveChatMediaUrl(current.fileUrl.orEmpty()), current.fileName, current.fileType)
                     }.padding(8.dp),
                     tint = Color.White,
                 )
                 if (!secure) Icon(
-                    Icons.Outlined.Share, "Share",
+                    HeroIcons.Share, "Share",
                     Modifier.size(40.dp).clickable {
                         scope.launch { openChatFile(context, resolveChatMediaUrl(current.fileUrl.orEmpty()), current.fileName, current.fileType, share = true) }
                     }.padding(8.dp),
@@ -248,7 +243,7 @@ fun LinkPreviewCard(preview: LinkPreview, modifier: Modifier = Modifier, onRemov
             if (preview.siteName.isNotBlank()) Text(preview.siteName, color = colors.text.copy(alpha = .55f), fontSize = 11.sp, maxLines = 1)
         }
         onRemove?.let {
-            Icon(Icons.Outlined.Close, "Remove preview", Modifier.padding(end = 8.dp).size(18.dp).clickable(onClick = it), tint = colors.textSecondary)
+            Icon(HeroIcons.XMark, "Remove preview", Modifier.padding(end = 8.dp).size(18.dp).clickable(onClick = it), tint = colors.textSecondary)
         }
     }
 }
@@ -262,7 +257,7 @@ fun AttachmentPreviewDialog(pending: PendingAttachment, initialCaption: String, 
     Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Column(Modifier.fillMaxSize().background(Color.Black)) {
             Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.Close, "Cancel", Modifier.size(40.dp).clickable(onClick = onCancel).padding(8.dp), tint = Color.White)
+                Icon(HeroIcons.XMark, "Cancel", Modifier.size(40.dp).clickable(onClick = onCancel).padding(8.dp), tint = Color.White)
                 Text(pending.fileName, Modifier.weight(1f), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -272,7 +267,7 @@ fun AttachmentPreviewDialog(pending: PendingAttachment, initialCaption: String, 
                         contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(),
                     )
                     else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Outlined.Description, null, Modifier.size(64.dp), tint = Color.White)
+                        Icon(HeroIcons.DocumentText, null, Modifier.size(64.dp), tint = Color.White)
                         Text(pending.fileName, color = Color.White, modifier = Modifier.padding(top = 8.dp))
                     }
                 }
@@ -289,7 +284,7 @@ fun AttachmentPreviewDialog(pending: PendingAttachment, initialCaption: String, 
                     decorationBox = { inner -> if (caption.isEmpty()) Text("Add a caption...", color = Color.White.copy(alpha = .5f), fontSize = 16.sp); inner() },
                 )
                 Box(Modifier.size(48.dp).background(colors.primary, CircleShape).clickable { onSend(caption) }, contentAlignment = Alignment.Center) {
-                    Icon(Icons.AutoMirrored.Outlined.Send, "Send", tint = colors.onAccent)
+                    Icon(HeroIcons.PaperAirplane, "Send", tint = colors.onAccent)
                 }
             }
         }
@@ -311,13 +306,13 @@ fun PollCreatorDialog(onSubmit: (String, List<String>, Boolean) -> Unit, onClose
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Create Poll", Modifier.weight(1f), color = colors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Icon(Icons.Outlined.Close, "Close", Modifier.size(20.dp).clickable(onClick = onClose), tint = colors.textSecondary)
+                Icon(HeroIcons.XMark, "Close", Modifier.size(20.dp).clickable(onClick = onClose), tint = colors.textSecondary)
             }
             PollField(question, "Ask a question...", 500) { question = it }
             options.forEachIndexed { index, value ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { PollField(value, "Option", 200) { options[index] = it } }
-                    if (options.size > 2) Icon(Icons.Outlined.Close, "Remove option", Modifier.padding(start = 6.dp).size(18.dp).clickable { options.removeAt(index) }, tint = colors.textSecondary)
+                    if (options.size > 2) Icon(HeroIcons.XMark, "Remove option", Modifier.padding(start = 6.dp).size(18.dp).clickable { options.removeAt(index) }, tint = colors.textSecondary)
                 }
             }
             if (options.size < 10) Text("+ Add option", Modifier.clickable { options.add("") }, color = colors.primary, fontSize = 13.sp)

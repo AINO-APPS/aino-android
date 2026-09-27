@@ -6,8 +6,8 @@
   },
   "totals": {
     "platform": 464,
-    "covered": 336,
-    "waived": 44,
+    "covered": 335,
+    "waived": 45,
     "missing": 84,
     "unmatched": 0
   },
@@ -296,11 +296,6 @@
       "method": "PUT",
       "path": "/api/agile/workflow-states/reorder",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/AgileSettingsRepository.kt"
-    },
-    {
-      "method": "POST",
-      "path": "/api/auth/activity",
-      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
     },
     {
       "method": "GET",

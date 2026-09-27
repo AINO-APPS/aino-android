@@ -24,13 +24,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material.icons.outlined.Layers
-import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -76,6 +69,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * `pages/SprintInsights.tsx`: summary, sprint tickets, burndown, velocity,
@@ -131,7 +125,7 @@ fun SprintInsightsScreen(viewModel: TaskViewModel, onBack: () -> Unit, requested
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column {
                     Row(Modifier.clickable(onClick = onBack).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, Modifier.size(14.dp), tint = colors.textMuted)
+                        Icon(HeroIcons.ArrowLeft, null, Modifier.size(14.dp), tint = colors.textMuted)
                         Spacer(Modifier.width(4.dp))
                         Text("Back to Tasks", color = colors.textMuted, fontSize = 0.82.rem)
                     }
@@ -150,12 +144,12 @@ fun SprintInsightsScreen(viewModel: TaskViewModel, onBack: () -> Unit, requested
             }
             val d = data
             d?.stats?.let { stats -> SummaryCard(stats, selected, ui.agile.unitLabel) }
-            InsightCard(Icons.Outlined.Checklist, "Sprint Tickets") { SprintTicketsTable(d?.tasks.orEmpty(), onOpenTask) }
-            InsightCard(Icons.Outlined.ShowChart, "Burndown") { BurndownChart(selectedId!!, reloadKey, viewModel, ui.agile.unitLabel) }
-            InsightCard(Icons.Outlined.BarChart, "Velocity") { VelocityChart(reloadKey, viewModel, ui.agile.unitLabel) }
-            InsightCard(Icons.Outlined.Layers, "Cumulative Flow") { CumulativeFlowChart(d?.cfd, loaded = d != null) }
-            InsightCard(Icons.Outlined.ShowChart, "Cycle & Lead Time") { CycleTimePanel(d?.cycle, loaded = d != null, onOpenTask) }
-            InsightCard(Icons.Outlined.ChatBubbleOutline, "Retrospective") {
+            InsightCard(HeroIcons.ClipboardDocumentCheck, "Sprint Tickets") { SprintTicketsTable(d?.tasks.orEmpty(), onOpenTask) }
+            InsightCard(HeroIcons.ArrowTrendingUp, "Burndown") { BurndownChart(selectedId!!, reloadKey, viewModel, ui.agile.unitLabel) }
+            InsightCard(HeroIcons.ChartBar, "Velocity") { VelocityChart(reloadKey, viewModel, ui.agile.unitLabel) }
+            InsightCard(HeroIcons.Square3Stack3d, "Cumulative Flow") { CumulativeFlowChart(d?.cfd, loaded = d != null) }
+            InsightCard(HeroIcons.ArrowTrendingUp, "Cycle & Lead Time") { CycleTimePanel(d?.cycle, loaded = d != null, onOpenTask) }
+            InsightCard(HeroIcons.ChatBubbleOvalLeft, "Retrospective") {
                 RetrospectivePanel(selectedId!!, d?.retro, viewModel) { reloadKey++ }
             }
             if (loading) Text("Loading…", color = colors.textMuted, fontSize = 0.85.rem)
@@ -524,7 +518,7 @@ private fun RetrospectivePanel(sprintId: Long, initial: Retrospective?, viewMode
         RetroColumn("What went well", wentWell, { wentWell = it }, "• Wins, smooth processes, kudos…", Color(0xFF10B981))
         RetroColumn("What to improve", toImprove, { toImprove = it }, "• Pain points, blockers, things to change…", Color(0xFFF59E0B))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Checklist, null, Modifier.size(14.dp), tint = colors.text)
+            Icon(HeroIcons.ClipboardDocumentCheck, null, Modifier.size(14.dp), tint = colors.text)
             Spacer(Modifier.width(4.dp))
             Text("Action items", color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold)
         }

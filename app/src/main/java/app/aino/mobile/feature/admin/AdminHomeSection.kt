@@ -9,10 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowForward
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 @Composable
 private fun StatTile(label: String, value: Int, modifier: Modifier) {
@@ -86,11 +83,11 @@ internal fun AdminHomeSection(state: AdminUiState, onOpenSection: (String) -> Un
             AdminRowCard(onClick = { onOpenSection(target) }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        if (isDone) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked, null,
+                        if (isDone) HeroIcons.CheckCircle else HeroIcons.Circle, null,
                         Modifier.size(18.dp), tint = if (isDone) colors.success else colors.textMuted,
                     )
                     Text(label, color = colors.text, fontSize = 0.88.rem, modifier = Modifier.weight(1f).padding(start = 10.dp))
-                    if (!isDone) Icon(Icons.AutoMirrored.Outlined.ArrowForward, null, Modifier.size(14.dp), tint = colors.textSecondary)
+                    if (!isDone) Icon(HeroIcons.ArrowRight, null, Modifier.size(14.dp), tint = colors.textSecondary)
                 }
             }
         }

@@ -18,10 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowDropDown
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -51,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import java.time.LocalDate
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** `.success` / `.error` banners. */
 @Composable
@@ -186,7 +183,7 @@ internal fun <K> OrgPicker(
             textStyle = fieldText,
             colors = orgFieldColors(),
             shape = RoundedCornerShape(8.dp),
-            trailingIcon = { Icon(Icons.Outlined.ArrowDropDown, null) },
+            trailingIcon = { Icon(HeroIcons.ChevronDown, null) },
             modifier = Modifier.fillMaxWidth(),
         )
         // The read-only field swallows taps; this overlay opens the menu instead.
@@ -230,7 +227,7 @@ internal fun OrgDateField(value: String, onChange: (String) -> Unit, modifier: M
             colors = orgFieldColors(),
             shape = RoundedCornerShape(8.dp),
             placeholder = { Text("yyyy-mm-dd", fontSize = 0.9.rem) },
-            trailingIcon = { Icon(Icons.Outlined.CalendarMonth, null) },
+            trailingIcon = { Icon(HeroIcons.CalendarDays, null) },
             modifier = Modifier.fillMaxWidth(),
         )
         Box(
@@ -247,7 +244,7 @@ internal fun OrgDateField(value: String, onChange: (String) -> Unit, modifier: M
         )
         if (value.isNotEmpty()) {
             IconButton(onClick = { onChange("") }, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 36.dp)) {
-                Icon(Icons.Outlined.Close, "Clear", Modifier.size(16.dp), tint = LocalWebColors.current.textMuted)
+                Icon(HeroIcons.XMark, "Clear", Modifier.size(16.dp), tint = LocalWebColors.current.textMuted)
             }
         }
     }

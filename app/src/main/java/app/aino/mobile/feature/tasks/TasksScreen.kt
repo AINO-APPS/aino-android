@@ -27,7 +27,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.rememberScrollState
@@ -35,27 +34,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.sp
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.ArrowCircleDown
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ChevronLeft
-import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.FastForward
-import androidx.compose.material.icons.outlined.FastRewind
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Inventory2
-import androidx.compose.material.icons.outlined.ListAlt
-import androidx.compose.material.icons.outlined.Person
-import androidx.compose.material.icons.outlined.PlayCircle
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -88,6 +66,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * `pages/Tasks.tsx` at ≤480px: page header, tab switcher (Sprint · Backlog ·
@@ -139,10 +118,10 @@ fun TasksScreen(
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(16.dp), tint = colors.text)
+                    Icon(HeroIcons.ChatBubbleOvalLeft, null, Modifier.size(16.dp), tint = colors.text)
                     Spacer(Modifier.width(6.dp))
                     Text("Comments — ${task?.title.orEmpty()}", color = colors.text, fontWeight = FontWeight.Bold, fontSize = 1.rem, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    Icon(Icons.Outlined.Close, "Close", Modifier.size(20.dp).clickable(onClick = viewModel::closeComments), tint = colors.textMuted)
+                    Icon(HeroIcons.XMark, "Close", Modifier.size(20.dp).clickable(onClick = viewModel::closeComments), tint = colors.textMuted)
                 }
                 Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
                     CommentSection(
@@ -185,7 +164,7 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
             } else {
                 val desk = ui.tab == TaskTab.ServiceDesk
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(if (desk) Icons.Outlined.SupportAgent else Icons.Outlined.Inventory2, null, Modifier.size(18.dp), tint = colors.text)
+                    Icon(if (desk) HeroIcons.Lifebuoy else HeroIcons.ArchiveBox, null, Modifier.size(18.dp), tint = colors.text)
                     Spacer(Modifier.width(6.dp))
                     Text(if (desk) "Service Desk" else "Backlog", color = colors.text, fontSize = 1.25.rem, fontWeight = FontWeight.ExtraBold, letterSpacing = (-0.03).rem)
                 }
@@ -204,12 +183,12 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
                 .border(1.dp, colors.glassBorder, RoundedCornerShape(6.dp)),
         ) {
             if (ui.sprintTabVisible) TabButton("Sprint", null, ui.tab == TaskTab.Sprint, null) { viewModel.selectTab(TaskTab.Sprint) }
-            TabButton("Backlog", Icons.Outlined.Inventory2, ui.tab == TaskTab.Backlog, ui.backlog.size.takeIf { it > 0 }) { viewModel.selectTab(TaskTab.Backlog) }
-            TabButton("Service Desk", Icons.Outlined.SupportAgent, ui.tab == TaskTab.ServiceDesk, null) { viewModel.selectTab(TaskTab.ServiceDesk) }
+            TabButton("Backlog", HeroIcons.ArchiveBox, ui.tab == TaskTab.Backlog, ui.backlog.size.takeIf { it > 0 }) { viewModel.selectTab(TaskTab.Backlog) }
+            TabButton("Service Desk", HeroIcons.Lifebuoy, ui.tab == TaskTab.ServiceDesk, null) { viewModel.selectTab(TaskTab.ServiceDesk) }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 2) {
             val half = Modifier.weight(1f)
-            if (ui.agileEnabled) WebButton("Insights", onOpenInsights, half, small = true, icon = Icons.Outlined.BarChart)
+            if (ui.agileEnabled) WebButton("Insights", onOpenInsights, half, small = true, icon = HeroIcons.ChartBar)
             if (ui.agileEnabled && ui.tab == TaskTab.Sprint && ui.sprints.size > 1) {
                 WebSelect(
                     ui.sprints.map { it.id to (it.name + if (it.status == "active") " (Active)" else "") },
@@ -220,11 +199,11 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
             }
             if (ui.tab != TaskTab.ServiceDesk) {
                 val count = ui.filterCount
-                WebButton(if (count > 0) "Filters ($count)" else "Filters", viewModel::toggleFilters, half, small = true, icon = Icons.Outlined.Search, active = count > 0)
+                WebButton(if (count > 0) "Filters ($count)" else "Filters", viewModel::toggleFilters, half, small = true, icon = HeroIcons.MagnifyingGlass, active = count > 0)
             }
             if (ui.tab == TaskTab.Backlog) WebButton("➕ New Ticket", viewModel::toggleBacklogForm, half, small = true)
             if (ui.agileEnabled && ui.tab == TaskTab.Sprint && ui.selectedSprintId != null) {
-                WebButton("Import from Backlog", viewModel::toggleImport, half, small = true, icon = Icons.Outlined.Inventory2)
+                WebButton("Import from Backlog", viewModel::toggleImport, half, small = true, icon = HeroIcons.ArchiveBox)
             }
         }
     }
@@ -292,7 +271,7 @@ private fun GlobalSearch(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                 .padding(horizontal = 13.6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.Search, null, Modifier.size(15.dp), tint = colors.text.copy(alpha = 0.6f))
+            Icon(HeroIcons.MagnifyingGlass, null, Modifier.size(15.dp), tint = colors.text.copy(alpha = 0.6f))
             Spacer(Modifier.width(8.dp))
             BasicTextField(
                 value = ui.searchQuery,
@@ -351,7 +330,7 @@ private fun GlobalSearch(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                 StatusBadge(task.status)
                                 PriorityBadge(task.priority)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(if (task.date != null) Icons.Outlined.CalendarMonth else Icons.Outlined.Inventory2, null, Modifier.size(11.dp), tint = colors.textMuted)
+                                    Icon(if (task.date != null) HeroIcons.CalendarDays else HeroIcons.ArchiveBox, null, Modifier.size(11.dp), tint = colors.textMuted)
                                     Spacer(Modifier.width(3.dp))
                                     Text(task.date?.take(10) ?: "Backlog", color = colors.textMuted, fontSize = 0.68.rem)
                                 }
@@ -432,7 +411,7 @@ private fun LazyListScope.sprintTab(ui: TaskUiState, viewModel: TaskViewModel, o
     ui.agile.workflowStates.forEach { state ->
         item(key = "col-${state.id}-${state.key}") { KanbanColumn(ui, state, viewModel, onOpen) }
     }
-    if (ui.tasks.isEmpty()) item { EmptyState(Icons.Outlined.ListAlt, "No items in this sprint", "Assign tickets from the Backlog to this sprint.") }
+    if (ui.tasks.isEmpty()) item { EmptyState(HeroIcons.QueueList, "No items in this sprint", "Assign tickets from the Backlog to this sprint.") }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -486,9 +465,9 @@ private fun SprintLifecycleControls(ui: TaskUiState, sprint: AvailableSprint, vi
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when {
             sprint.status == "planned" ->
-                WebButton("Start Sprint", viewModel::startSprint, style = BtnStyle.Primary, small = true, enabled = canEdit && !ui.lifecycleBusy, icon = Icons.Outlined.PlayCircle)
+                WebButton("Start Sprint", viewModel::startSprint, style = BtnStyle.Primary, small = true, enabled = canEdit && !ui.lifecycleBusy, icon = HeroIcons.PlayCircle)
             sprint.status == "active" && !ui.completing ->
-                WebButton("Complete Sprint", viewModel::beginComplete, style = BtnStyle.Primary, small = true, enabled = canEdit && !ui.lifecycleBusy, icon = Icons.Outlined.CheckCircle)
+                WebButton("Complete Sprint", viewModel::beginComplete, style = BtnStyle.Primary, small = true, enabled = canEdit && !ui.lifecycleBusy, icon = HeroIcons.CheckCircle)
             sprint.status == "active" -> {
                 Text("Roll over incomplete tickets to:", color = colors.textSecondary, fontSize = 0.78.rem)
                 WebSelect(
@@ -499,7 +478,7 @@ private fun SprintLifecycleControls(ui: TaskUiState, sprint: AvailableSprint, vi
                 WebButton("Cancel", viewModel::cancelComplete, small = true, enabled = !ui.lifecycleBusy)
             }
             sprint.status == "completed" -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.CheckCircle, null, Modifier.size(13.dp), tint = colors.success)
+                Icon(HeroIcons.CheckCircle, null, Modifier.size(13.dp), tint = colors.success)
                 Spacer(Modifier.width(4.dp))
                 Text("Completed", color = colors.success, fontSize = 0.8.rem, fontWeight = FontWeight.SemiBold)
                 sprint.velocityPoints?.let {
@@ -524,7 +503,7 @@ private fun CarryBanner(count: Int) {
             .padding(horizontal = 16.dp, vertical = 9.6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.ArrowCircleDown, null, Modifier.size(14.dp), tint = colors.text)
+        Icon(HeroIcons.ArrowDownCircle, null, Modifier.size(14.dp), tint = colors.text)
         Spacer(Modifier.width(5.dp))
         Text("$count incomplete item${if (count > 1) "s" else ""} from yesterday carried forward automatically.", color = colors.text, fontSize = 0.85.rem)
     }
@@ -537,10 +516,10 @@ private fun SprintImportPanel(ui: TaskUiState, viewModel: TaskViewModel) {
     val colors = LocalWebColors.current
     GlassPanel(Modifier.padding(bottom = 16.dp), padding = 12.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Inventory2, null, Modifier.size(14.dp), tint = colors.text)
+            Icon(HeroIcons.ArchiveBox, null, Modifier.size(14.dp), tint = colors.text)
             Spacer(Modifier.width(4.dp))
             Text("Import tickets from Backlog into this sprint", color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-            Icon(Icons.Outlined.Close, "Close", Modifier.size(16.dp).clickable(onClick = viewModel::closeImport), tint = colors.textMuted)
+            Icon(HeroIcons.XMark, "Close", Modifier.size(16.dp).clickable(onClick = viewModel::closeImport), tint = colors.textMuted)
         }
         Spacer(Modifier.height(10.dp))
         when {
@@ -564,12 +543,12 @@ private fun SprintImportPanel(ui: TaskUiState, viewModel: TaskViewModel) {
                             if (!configuring) WebButton("Import", { viewModel.configureImport(task) }, style = BtnStyle.Primary, small = true)
                         }
                         if (configuring) {
-                            FieldLabel("Assign to", Icons.Outlined.Person)
+                            FieldLabel("Assign to", HeroIcons.User)
                             WebSelect(assigneeOptions(ui.assignableUsers), ui.importAssignedTo, viewModel::setImportAssignee, Modifier.fillMaxWidth())
-                            FieldLabel("Due date", Icons.Outlined.CalendarMonth)
+                            FieldLabel("Due date", HeroIcons.CalendarDays)
                             WebDateField(ui.importDueDate, viewModel::setImportDueDate, Modifier.fillMaxWidth())
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                WebButton("Confirm Import", viewModel::confirmImport, style = BtnStyle.Primary, small = true, icon = Icons.Outlined.Check)
+                                WebButton("Confirm Import", viewModel::confirmImport, style = BtnStyle.Primary, small = true, icon = HeroIcons.Check)
                                 WebButton("Cancel", viewModel::cancelImportConfig, small = true)
                             }
                         }
@@ -684,7 +663,7 @@ private fun TaskCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel, onOp
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         val tint = projectColor ?: colors.textMuted
-                        Icon(if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy, "Click to copy ${task.displayKey}", Modifier.size(11.dp), tint = tint)
+                        Icon(if (copied) HeroIcons.Check else HeroIcons.DocumentDuplicate, "Click to copy ${task.displayKey}", Modifier.size(11.dp), tint = tint)
                         Spacer(Modifier.width(4.dp))
                         Text(task.displayKey, color = tint, fontSize = 0.66.rem, fontWeight = FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -720,11 +699,11 @@ private fun TaskCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel, onOp
             Spacer(Modifier.weight(1f, fill = false).heightIn(min = 8.dp))
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.Bottom) {
                 FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    task.assignee?.let { MetaChip(Icons.Outlined.Person, it.display(), colors.textMuted) }
+                    task.assignee?.let { MetaChip(HeroIcons.User, it.display(), colors.textMuted) }
                     if (task.creator != null && task.assignedTo != null && task.userId != task.assignedTo) {
-                        MetaChip(Icons.Outlined.Edit, task.creator.display(), colors.textMuted.copy(alpha = 0.7f), italic = true)
+                        MetaChip(HeroIcons.PencilSquare, task.creator.display(), colors.textMuted.copy(alpha = 0.7f), italic = true)
                     }
-                    due?.let { MetaChip(Icons.Outlined.CalendarMonth, it, if (overdue) colors.danger else colors.textMuted, bold = overdue) }
+                    due?.let { MetaChip(HeroIcons.CalendarDays, it, if (overdue) colors.danger else colors.textMuted, bold = overdue) }
                 }
                 Text("⠿ hold to move", color = colors.textMuted.copy(alpha = 0.5f), fontSize = 0.65.rem, letterSpacing = 0.02.rem)
             }
@@ -785,7 +764,7 @@ private fun LazyListScope.backlogTab(ui: TaskUiState, viewModel: TaskViewModel, 
         return
     }
     if (ui.backlog.isEmpty()) {
-        item { EmptyState(Icons.Outlined.Inventory2, "Backlog is empty", "Create a ticket to organize work that doesn't have a scheduled date yet.") }
+        item { EmptyState(HeroIcons.ArchiveBox, "Backlog is empty", "Create a ticket to organize work that doesn't have a scheduled date yet.") }
         return
     }
     item { PaginationBar(ui, viewModel) }
@@ -859,11 +838,11 @@ private fun PaginationBar(ui: TaskUiState, viewModel: TaskViewModel) {
             Spacer(Modifier.width(2.dp))
             WebSelect(listOf(10, 25, 50, 100).map { it to "$it" }, limit, viewModel::setPageSize, Modifier.width(72.dp), fontSize = 0.75.rem)
             Spacer(Modifier.width(8.dp))
-            PagerButton(Icons.Outlined.FastRewind, "First page", page > 1) { go(1) }
-            PagerButton(Icons.Outlined.ChevronLeft, "Previous page", page > 1) { go(page - 1) }
+            PagerButton(HeroIcons.Backward, "First page", page > 1) { go(1) }
+            PagerButton(HeroIcons.ChevronLeft, "Previous page", page > 1) { go(page - 1) }
             Text("Page $page of $pages", color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
-            PagerButton(Icons.Outlined.ChevronRight, "Next page", page < pages) { go(page + 1) }
-            PagerButton(Icons.Outlined.FastForward, "Last page", page < pages) { go(pages) }
+            PagerButton(HeroIcons.ChevronRight, "Next page", page < pages) { go(page + 1) }
+            PagerButton(HeroIcons.Forward, "Last page", page < pages) { go(pages) }
         }
     }
 }
@@ -889,10 +868,10 @@ private fun BacklogForm(ui: TaskUiState, viewModel: TaskViewModel) {
     val d = ui.draft
     GlassPanel(Modifier.padding(bottom = 24.dp), padding = 24.dp) {
         Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Add, null, Modifier.size(16.dp), tint = colors.text)
+            Icon(HeroIcons.Plus, null, Modifier.size(16.dp), tint = colors.text)
             Spacer(Modifier.width(5.dp))
             Text("New Backlog Ticket", color = colors.text, fontSize = 1.rem, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Icon(Icons.Outlined.Close, "Close", Modifier.size(14.dp).clickable(onClick = viewModel::closeBacklogForm), tint = colors.textMuted)
+            Icon(HeroIcons.XMark, "Close", Modifier.size(14.dp).clickable(onClick = viewModel::closeBacklogForm), tint = colors.textMuted)
         }
         WebTextField(d.title, { v -> viewModel.updateDraft { it.copy(title = v) } }, "Ticket title...", maxLength = 200)
         Spacer(Modifier.height(20.dp))
@@ -900,11 +879,11 @@ private fun BacklogForm(ui: TaskUiState, viewModel: TaskViewModel) {
         Spacer(Modifier.height(16.dp))
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column {
-                FieldLabel("Assign to", Icons.Outlined.Person)
+                FieldLabel("Assign to", HeroIcons.User)
                 WebSelect(assigneeOptions(ui.assignableUsers), d.assignedTo, { v -> viewModel.updateDraft { it.copy(assignedTo = v) } }, Modifier.fillMaxWidth())
             }
             Column {
-                FieldLabel("Due date", Icons.Outlined.CalendarMonth)
+                FieldLabel("Due date", HeroIcons.CalendarDays)
                 WebDateField(d.dueDate, { v -> viewModel.updateDraft { it.copy(dueDate = v) } }, Modifier.fillMaxWidth())
             }
             if (ui.sprints.isNotEmpty()) {
@@ -922,7 +901,7 @@ private fun BacklogForm(ui: TaskUiState, viewModel: TaskViewModel) {
             }
             if (ui.projects.isNotEmpty()) {
                 Column {
-                    FieldLabel("Project", Icons.Outlined.Folder)
+                    FieldLabel("Project", HeroIcons.Folder)
                     WebSelect(projectOptions(ui.projects), d.projectId, { v -> viewModel.updateDraft { it.copy(projectId = v) } }, Modifier.fillMaxWidth())
                 }
             }
@@ -996,8 +975,8 @@ private fun BacklogCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel, o
                         Text(a.display(), color = colors.textMuted, fontSize = 0.72.rem, maxLines = 1)
                     }
                 }
-                due?.let { MetaChip(Icons.Outlined.CalendarMonth, it, if (overdue) colors.danger else colors.textMuted, bold = overdue) }
-                if (task.commentCount > 0) MetaChip(Icons.Outlined.ChatBubbleOutline, "${task.commentCount}", colors.textMuted)
+                due?.let { MetaChip(HeroIcons.CalendarDays, it, if (overdue) colors.danger else colors.textMuted, bold = overdue) }
+                if (task.commentCount > 0) MetaChip(HeroIcons.ChatBubbleOvalLeft, "${task.commentCount}", colors.textMuted)
                 Text(formatRelativeTime(task.createdAt), color = colors.textMuted.copy(alpha = 0.7f), fontSize = 0.68.rem)
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(colors.glassBorder))
@@ -1010,9 +989,9 @@ private fun BacklogCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel, o
                     Box(
                         Modifier.clip(RoundedCornerShape(6.dp)).background(colors.surface).border(1.dp, colors.border, RoundedCornerShape(6.dp))
                             .clickable(onClick = viewModel::cancelSchedule).padding(6.dp),
-                    ) { Icon(Icons.Outlined.Close, "Cancel", Modifier.size(14.dp), tint = colors.text) }
+                    ) { Icon(HeroIcons.XMark, "Cancel", Modifier.size(14.dp), tint = colors.text) }
                 } else {
-                    WebButton("Schedule", { viewModel.startSchedule(task.id) }, small = true, icon = Icons.Outlined.CalendarMonth)
+                    WebButton("Schedule", { viewModel.startSchedule(task.id) }, small = true, icon = HeroIcons.CalendarDays)
                 }
             }
         }

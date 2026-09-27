@@ -17,9 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowDropDown
-import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -52,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import java.time.LocalDate
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /*
  * Admin form/list primitives. They mirror `OrganizationComponents.kt`
@@ -219,7 +217,7 @@ internal fun <K> AdminPicker(
                 textStyle = fieldText,
                 colors = adminFieldColors(),
                 shape = RoundedCornerShape(8.dp),
-                trailingIcon = { Icon(Icons.Outlined.ArrowDropDown, null) },
+                trailingIcon = { Icon(HeroIcons.ChevronDown, null) },
                 modifier = Modifier.fillMaxWidth(),
             )
             Box(Modifier.matchParentSize().clip(RoundedCornerShape(8.dp)).clickable(enabled = enabled) { open = true })
@@ -251,7 +249,7 @@ internal fun AdminDateField(label: String, value: String, onChange: (String) -> 
                 colors = adminFieldColors(),
                 shape = RoundedCornerShape(8.dp),
                 placeholder = { Text("yyyy-mm-dd", fontSize = 0.9.rem) },
-                trailingIcon = { Icon(Icons.Outlined.CalendarMonth, null) },
+                trailingIcon = { Icon(HeroIcons.CalendarDays, null) },
                 modifier = Modifier.fillMaxWidth(),
             )
             Box(

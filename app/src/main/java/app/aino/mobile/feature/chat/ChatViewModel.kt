@@ -55,6 +55,7 @@ data class PendingMedia(
 ) {
     val isImage get() = mimeType.startsWith("image/")
     val isVideo get() = mimeType.startsWith("video/")
+    val isAudio get() = mimeType.startsWith("audio/")
 }
 
 enum class PendingMediaState { Uploading, Failed }
@@ -116,8 +117,6 @@ data class ChatUiState(
     val forwardTargets: Set<Long> = emptySet(),
     val forwarding: Boolean = false,
     val uploading: Boolean = false,
-    /** 0..1 bytes-sent fraction of the in-flight upload (web `_mediaProgress`). */
-    val uploadProgress: Float? = null,
     /** Picked/captured media awaiting the pre-send preview (web `MediaEditor`/`VideoPreview`). */
     val pendingAttachment: PendingAttachment? = null,
     /** Unread count captured when the thread opened; drives the unread divider. */

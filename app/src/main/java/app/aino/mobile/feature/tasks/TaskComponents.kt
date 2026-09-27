@@ -23,10 +23,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowDropDown
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -61,6 +57,7 @@ import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.WebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import java.time.LocalDate
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** `#rrggbb` → Color; the web falls back to its CSS default when a colour is malformed. */
 internal fun hexColor(hex: String?, fallback: Color = Color(0xFF6366F1)): Color {
@@ -252,7 +249,7 @@ internal fun <K> WebSelect(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(label, color = colors.text, fontSize = fontSize, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Icon(Icons.Outlined.ArrowDropDown, null, Modifier.size(18.dp), tint = colors.textSecondary)
+            Icon(HeroIcons.ChevronDown, null, Modifier.size(18.dp), tint = colors.textSecondary)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.background(colors.bgElevated)) {
             options.forEach { (key, text) ->
@@ -298,10 +295,10 @@ internal fun WebDateField(value: String, onChange: (String) -> Unit, modifier: M
     ) {
         Text(value.ifEmpty { "mm/dd/yyyy" }, color = if (value.isEmpty()) colors.textMuted else colors.text, fontSize = 0.85.rem, modifier = Modifier.weight(1f))
         if (clearable && value.isNotEmpty()) {
-            Icon(Icons.Outlined.Close, "Clear", Modifier.size(16.dp).clickable { onChange("") }, tint = colors.textMuted)
+            Icon(HeroIcons.XMark, "Clear", Modifier.size(16.dp).clickable { onChange("") }, tint = colors.textMuted)
             Spacer(Modifier.width(4.dp))
         }
-        Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(16.dp), tint = colors.textSecondary)
+        Icon(HeroIcons.CalendarDays, null, Modifier.size(16.dp), tint = colors.textSecondary)
     }
 }
 

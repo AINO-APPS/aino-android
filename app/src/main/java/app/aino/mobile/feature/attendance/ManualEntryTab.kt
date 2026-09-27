@@ -13,16 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Apartment
-import androidx.compose.material.icons.outlined.ArrowForward
-import androidx.compose.material.icons.outlined.Assignment
-import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,6 +25,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Manual Entry tab (P3.4) — port of `pages/ManualEntry.tsx`: date check
@@ -83,7 +74,7 @@ fun ManualEntryTab(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
         }
 
         AttendanceCard {
-            CardTitle(Icons.Outlined.Assignment, "Your Requests")
+            CardTitle(HeroIcons.ClipboardDocumentList, "Your Requests")
             Column(Modifier.padding(top = 12.dp)) {
                 PendingRequestsList(
                     requests = ui.manualRequests.map {
@@ -118,7 +109,7 @@ private fun ManualDateBanners(ui: AttendanceUiState) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.Outlined.Block, null, Modifier.size(16.dp), tint = Color(0xFFEF4444))
+            Icon(HeroIcons.NoSymbol, null, Modifier.size(16.dp), tint = Color(0xFFEF4444))
             Text(
                 "A ${leave.leaveType} leave exists on this date. Withdraw it before adding a manual entry.",
                 color = Color(0xFFEF4444),
@@ -135,7 +126,7 @@ private fun ManualDateBanners(ui: AttendanceUiState) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.Outlined.ErrorOutline, null, Modifier.size(16.dp), tint = colors.warning)
+            Icon(HeroIcons.ExclamationCircle, null, Modifier.size(16.dp), tint = colors.warning)
             Text(
                 "You are clocked in right now. Clock out before editing today's entries.",
                 color = colors.warning,
@@ -152,7 +143,7 @@ private fun ManualDateBanners(ui: AttendanceUiState) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.Outlined.Info, null, Modifier.size(16.dp), tint = colors.primary)
+            Icon(HeroIcons.InformationCircle, null, Modifier.size(16.dp), tint = colors.primary)
             Text(
                 "Existing entries found — you are editing this day.",
                 color = colors.primary,
@@ -183,7 +174,7 @@ private fun ManualFormFields(ui: AttendanceUiState, viewModel: AttendanceViewMod
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        if (mode == WorkMode.Remote) Icons.Outlined.Home else Icons.Outlined.Apartment,
+                        if (mode == WorkMode.Remote) HeroIcons.Home else HeroIcons.BuildingOffice2,
                         null,
                         Modifier.size(14.dp),
                         tint = if (active) colors.primary else colors.textSecondary,
@@ -253,10 +244,10 @@ private fun ManualFormFields(ui: AttendanceUiState, viewModel: AttendanceViewMod
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 WebTimeField(item.start, { viewModel.updateManualBreak(index, start = it) }, Modifier.weight(1f), "Start")
-                Icon(Icons.Outlined.ArrowForward, null, Modifier.size(12.dp), tint = colors.textMuted)
+                Icon(HeroIcons.ArrowRight, null, Modifier.size(12.dp), tint = colors.textMuted)
                 WebTimeField(item.end, { viewModel.updateManualBreak(index, end = it) }, Modifier.weight(1f), "End")
                 Icon(
-                    Icons.Outlined.Close,
+                    HeroIcons.XMark,
                     "Remove break",
                     Modifier.size(16.dp).clickable { viewModel.removeManualBreak(index) },
                     tint = colors.textMuted,
@@ -339,7 +330,7 @@ private fun OvertimeSection(ui: AttendanceUiState, viewModel: AttendanceViewMode
     val colors = LocalWebColors.current
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(Icons.Outlined.Timer, null, Modifier.size(22.dp), tint = colors.text)
+            Icon(HeroIcons.Clock, null, Modifier.size(22.dp), tint = colors.text)
             Text("Overtime Request", color = colors.text, fontWeight = FontWeight.ExtraBold, fontSize = 1.1.rem)
         }
 
@@ -380,7 +371,7 @@ private fun OvertimeSection(ui: AttendanceUiState, viewModel: AttendanceViewMode
         }
 
         AttendanceCard {
-            CardTitle(Icons.Outlined.Assignment, "Overtime Requests")
+            CardTitle(HeroIcons.ClipboardDocumentList, "Overtime Requests")
             Column(Modifier.padding(top = 12.dp)) {
                 PendingRequestsList(
                     requests = ui.overtimeRequests.map {

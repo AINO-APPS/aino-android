@@ -10,12 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Face
-import androidx.compose.material.icons.outlined.Fingerprint
-import androidx.compose.material.icons.outlined.LocationOn
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +27,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 import app.aino.mobile.feature.attendance.VerifyErrorKind
 import app.aino.mobile.feature.attendance.VerifySubmitError
 import kotlinx.coroutines.delay
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** Face-attempt lockout window enforced by the server ("Please wait 15 minutes"). */
 private const val LOCKOUT_SECONDS = 15 * 60
@@ -65,11 +60,11 @@ fun VerifyErrorBlock(
     }
     val locked = isLocked && remaining > 0
     val icon = when {
-        isLocked -> Icons.Outlined.Schedule
-        error.kind == VerifyErrorKind.Location -> Icons.Outlined.LocationOn
-        error.kind == VerifyErrorKind.Face -> Icons.Outlined.Face
-        error.kind == VerifyErrorKind.Identity -> Icons.Outlined.Fingerprint
-        else -> Icons.Outlined.ErrorOutline
+        isLocked -> HeroIcons.Clock
+        error.kind == VerifyErrorKind.Location -> HeroIcons.MapPin
+        error.kind == VerifyErrorKind.Face -> HeroIcons.FaceSmile
+        error.kind == VerifyErrorKind.Identity -> HeroIcons.FingerPrint
+        else -> HeroIcons.ExclamationCircle
     }
 
     Row(

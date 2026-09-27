@@ -20,10 +20,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -71,6 +67,7 @@ import java.time.LocalTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val WEEKDAY_OPTIONS = DAY_NAMES.mapIndexed { index, label -> index to label }
 private val DATE_LABEL = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US)
@@ -193,7 +190,7 @@ fun EventFormScreen(
                                 .background(colors.bg).padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Outlined.Videocam, null, Modifier.size(16.dp), tint = colors.text)
+                            Icon(HeroIcons.VideoCamera, null, Modifier.size(16.dp), tint = colors.text)
                             Text("Add online meeting", color = colors.text, fontSize = 0.84.rem, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 6.dp).weight(1f))
                             Switch(editor.addMeeting, { viewModel.toggleMeeting() }, colors = SwitchDefaults.colors(checkedTrackColor = colors.primary))
                         }
@@ -373,7 +370,7 @@ private fun MeetingBanner(editor: EventEditor, onJoinMeeting: (String) -> Unit) 
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Videocam, null, Modifier.size(16.dp), tint = colors.primary)
+            Icon(HeroIcons.VideoCamera, null, Modifier.size(16.dp), tint = colors.primary)
             Text("Online meeting", color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 0.84.rem, modifier = Modifier.padding(start = 6.dp).weight(1f))
             Button(
                 onClick = { onJoinMeeting(code) },
@@ -429,7 +426,7 @@ private fun MeetingOptions(editor: EventEditor, viewModel: CalendarViewModel) {
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(colors.warning.copy(alpha = .12f)).padding(10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Icon(Icons.Outlined.WarningAmber, null, Modifier.size(16.dp), tint = colors.warning)
+                Icon(HeroIcons.ExclamationTriangle, null, Modifier.size(16.dp), tint = colors.warning)
                 Column {
                     editor.conflicts.values.forEach { c ->
                         Text("${c.name} has a scheduling conflict: \"${c.events.firstOrNull()?.title.orEmpty()}\"", color = colors.text, fontSize = 0.78.rem)
@@ -457,10 +454,10 @@ private fun ParticipantPicker(kind: PickerKind, participants: List<ParticipantUs
                         .padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (conflict != null) Icon(Icons.Outlined.WarningAmber, "conflict", Modifier.size(12.dp), tint = colors.warning)
+                    if (conflict != null) Icon(HeroIcons.ExclamationTriangle, "conflict", Modifier.size(12.dp), tint = colors.warning)
                     Text(p.display(), color = colors.text, fontSize = 0.78.rem, modifier = Modifier.padding(horizontal = 4.dp))
                     Icon(
-                        Icons.Outlined.Close, "Remove",
+                        HeroIcons.XMark, "Remove",
                         Modifier.size(20.dp).clip(RoundedCornerShape(999.dp)).clickable { viewModel.removeParticipant(kind, p.id) }.padding(4.dp),
                         tint = colors.textSecondary,
                     )

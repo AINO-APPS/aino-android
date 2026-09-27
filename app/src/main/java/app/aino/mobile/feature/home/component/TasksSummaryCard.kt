@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +28,7 @@ import app.aino.mobile.core.designsystem.component.WebCard
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.feature.home.TaskSummary
 import kotlinx.coroutines.delay
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** `TasksSummary` port (P2.5): stat row, progress bar, rotating active task. */
 @Composable
@@ -46,7 +45,7 @@ fun TasksSummaryCard(summary: TaskSummary?, onTasks: () -> Unit) {
 
     WebCard(Modifier.clickable(onClick = onTasks)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Checklist, null, Modifier.size(18.dp).padding(0.dp), tint = colors.primary)
+            Icon(HeroIcons.ClipboardDocumentCheck, null, Modifier.size(18.dp).padding(0.dp), tint = colors.primary)
             Text(" Today''s Planner", color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             Box(Modifier.weight(1f))
             Text("›", color = colors.textMuted, fontSize = 18.sp)

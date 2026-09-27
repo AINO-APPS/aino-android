@@ -1,22 +1,7 @@
 package app.aino.mobile.core.navigation
 
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AdminPanelSettings
-import androidx.compose.material.icons.outlined.Apartment
-import androidx.compose.material.icons.outlined.BeachAccess
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.NoteAlt
-import androidx.compose.material.icons.outlined.NotificationsNone
-import androidx.compose.material.icons.outlined.PersonOutline
-import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.ui.graphics.vector.ImageVector
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 enum class AinoDestination(
     val route: String,
@@ -25,24 +10,24 @@ enum class AinoDestination(
     val inBottomBar: Boolean = false,
 ) {
     // Bottom bar (§2): Home · Calendar · Tasks · Chat · More.
-    Dashboard("dashboard", "Home", Icons.Outlined.Home, true),
-    Calendar("calendar", "Calendar", Icons.Outlined.CalendarMonth, true),
-    Tasks("tasks", "Tasks", Icons.Outlined.Checklist, true),
-    Chat("chat", "Chat", Icons.Outlined.ChatBubbleOutline, true),
-    ChatThread("chat/{conversationId}", "Chat", Icons.Outlined.ChatBubbleOutline),
-    More("more", "More", Icons.Outlined.MoreHoriz, true),
+    Dashboard("dashboard", "Home", HeroIcons.Home, true),
+    Calendar("calendar", "Calendar", HeroIcons.CalendarDays, true),
+    Tasks("tasks", "Tasks", HeroIcons.ClipboardDocumentCheck, true),
+    Chat("chat", "Chat", HeroIcons.ChatBubbleOvalLeft, true),
+    ChatThread("chat/{conversationId}", "Chat", HeroIcons.ChatBubbleOvalLeft),
+    More("more", "More", HeroIcons.EllipsisHorizontal, true),
 
     // Demoted out of the bottom bar (§2): reachable from the More sheet.
-    Attendance("attendance", "Attendance", Icons.Outlined.Schedule),
-    Leaves("leaves", "Leaves", Icons.Outlined.BeachAccess),
-    Notes("notes", "Notes", Icons.Outlined.NoteAlt),
-    Organization("organization", "Organization", Icons.Outlined.Apartment),
-    Manager("manager", "My Team", Icons.Outlined.Groups),
-    Admin("admin", "Admin", Icons.Outlined.AdminPanelSettings),
-    Tenants("tenants", "Tenants", Icons.Outlined.Storage),
-    Profile("profile", "Profile", Icons.Outlined.PersonOutline),
-    Notifications("notifications", "Notifications", Icons.Outlined.NotificationsNone),
-    ApiProbe("api-probe", "API Probe", Icons.Outlined.BugReport),
+    Attendance("attendance", "Attendance", HeroIcons.Clock),
+    Leaves("leaves", "Leaves", HeroIcons.Sun),
+    Notes("notes", "Notes", HeroIcons.ClipboardDocument),
+    Organization("organization", "Organization", HeroIcons.BuildingOffice2),
+    Manager("manager", "My Team", HeroIcons.UserGroup),
+    Admin("admin", "Admin", HeroIcons.ShieldCheck),
+    Tenants("tenants", "Tenants", HeroIcons.CircleStack),
+    Profile("profile", "Profile", HeroIcons.User),
+    Notifications("notifications", "Notifications", HeroIcons.Bell),
+    ApiProbe("api-probe", "API Probe", HeroIcons.BugAnt),
 }
 
 val bottomDestinations: List<AinoDestination> = AinoDestination.entries.filter { it.inBottomBar }

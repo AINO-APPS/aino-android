@@ -18,13 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Assignment
-import androidx.compose.material.icons.outlined.BarChart
-import androidx.compose.material.icons.outlined.ChevronLeft
-import androidx.compose.material.icons.outlined.ChevronRight
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -40,12 +33,13 @@ import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import java.time.format.DateTimeFormatter
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private fun subTabIcon(tab: LeavesSubTab): ImageVector = when (tab) {
-    LeavesSubTab.MyLeaves -> Icons.Outlined.Send
-    LeavesSubTab.MyBalances -> Icons.Outlined.BarChart
-    LeavesSubTab.Policies -> Icons.Outlined.Assignment
-    LeavesSubTab.AllBalances -> Icons.Outlined.Groups
+    LeavesSubTab.MyLeaves -> HeroIcons.PaperAirplane
+    LeavesSubTab.MyBalances -> HeroIcons.ChartBar
+    LeavesSubTab.Policies -> HeroIcons.ClipboardDocumentList
+    LeavesSubTab.AllBalances -> HeroIcons.UserGroup
 }
 
 /**
@@ -147,9 +141,9 @@ private fun WithdrawDialog(ui: AttendanceUiState, viewModel: AttendanceViewModel
 private fun MonthPicker(label: String, onPrev: () -> Unit, onNext: () -> Unit) {
     val colors = LocalWebColors.current
     Row(verticalAlignment = Alignment.CenterVertically) {
-        PickerArrow(Icons.Outlined.ChevronLeft, onPrev)
+        PickerArrow(HeroIcons.ChevronLeft, onPrev)
         Text(label, color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 0.85.rem, modifier = Modifier.padding(horizontal = 6.dp))
-        PickerArrow(Icons.Outlined.ChevronRight, onNext)
+        PickerArrow(HeroIcons.ChevronRight, onNext)
     }
 }
 
@@ -539,7 +533,7 @@ private fun MyBalancesPanel(ui: AttendanceUiState, viewModel: AttendanceViewMode
             ui.myBalancesLoading -> Text("Loading…", color = colors.textMuted, fontSize = 0.85.rem)
             ui.myBalances.isEmpty() -> AttendanceCard {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.BarChart, null, Modifier.size(32.dp), tint = colors.textMuted)
+                    Icon(HeroIcons.ChartBar, null, Modifier.size(32.dp), tint = colors.textMuted)
                     Text("No balances found", color = colors.text, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
                     Text(
                         "Contact HR to set up leave policies for your account",

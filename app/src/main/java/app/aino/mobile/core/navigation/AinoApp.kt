@@ -28,15 +28,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
-import androidx.compose.material.icons.outlined.CloudDone
-import androidx.compose.material.icons.outlined.CloudOff
-import androidx.compose.material.icons.outlined.Fingerprint
-import androidx.compose.material.icons.outlined.Security
-import androidx.compose.material.icons.outlined.SystemUpdate
-import androidx.compose.material.icons.outlined.NotificationsNone
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -116,6 +107,7 @@ import app.aino.mobile.core.call.toRoute
 import app.aino.mobile.core.call.IncomingCallScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 @Composable
 fun AinoApp(
@@ -144,6 +136,16 @@ fun AinoApp(
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
     val tenantAuthenticated = (ui.state as? AuthState.Authenticated)?.user?.tenantId != null
     LaunchedEffect(tenantAuthenticated) { realtime.setAuthenticatedTenant(tenantAuthenticated) }
+    // A terminal socket close is the server ending this session (e.g. a newer sign-in elsewhere).
+    LaunchedEffect(realtimeState) {
+        val stopped = realtimeState as? RealtimeState.Stopped ?: return@LaunchedEffect
+        if (!tenantAuthenticated) return@LaunchedEffect
+        // 4001 with a live session = the socket's token aged out; the API check refreshed it.
+        if (auth.verifySessionStillActive() && stopped.code == 4001) {
+            kotlinx.coroutines.delay(5_000)
+            realtime.setAuthenticatedTenant(true)
+        }
+    }
     val authenticatedUser = (ui.state as? AuthState.Authenticated)?.user
     val appContext = LocalContext.current.applicationContext
     val callSession = CallSessionRuntime.get(appContext)
@@ -1201,12 +1203,12 @@ private fun AinoShellTopBar(
             Box(
                 Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onSearch),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Outlined.Search, "Search", Modifier.size(22.dp), tint = colors.textSecondary) }
+            ) { Icon(HeroIcons.MagnifyingGlass, "Search", Modifier.size(22.dp), tint = colors.textSecondary) }
             Box(
                 Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onNotifications),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Outlined.NotificationsNone, "Notifications", Modifier.size(22.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.Bell, "Notifications", Modifier.size(22.dp), tint = colors.textSecondary)
                 app.aino.mobile.feature.notifications.unreadBadgeLabel(unreadNotifications)?.let { label ->
                     // `.chatBadge`-style count: danger fill, white text, ringed with the bar colour.
                     Box(

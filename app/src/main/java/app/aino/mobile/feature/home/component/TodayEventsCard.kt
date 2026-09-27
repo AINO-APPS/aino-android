@@ -10,9 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,6 +25,7 @@ import app.aino.mobile.feature.home.DashboardEvent
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private fun eventTime(iso: String?): String = runCatching {
     Instant.parse(iso).atZone(ZoneId.systemDefault()).toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))
@@ -55,7 +53,7 @@ fun TodayEventsCard(today: List<DashboardEvent>, tomorrow: List<DashboardEvent>,
 
     WebCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(18.dp), tint = colors.primary)
+            Icon(HeroIcons.CalendarDays, null, Modifier.size(18.dp), tint = colors.primary)
             Text(" Today's Events", color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             if (todaySorted.isNotEmpty()) {
                 Text(" ${todaySorted.size}", color = colors.textMuted, fontSize = 13.sp)
@@ -100,7 +98,7 @@ private fun EventRow(ev: DashboardEvent, accent: Color, colors: app.aino.mobile.
 @Composable
 private fun MeetingRow(ev: DashboardEvent, accent: Color, colors: app.aino.mobile.core.designsystem.tokens.WebColors) {
     Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Icon(Icons.Outlined.Videocam, null, Modifier.size(16.dp), tint = accent)
+        Icon(HeroIcons.VideoCamera, null, Modifier.size(16.dp), tint = accent)
         Column(Modifier.weight(1f)) {
             Text(ev.title, color = colors.text, fontSize = 14.sp)
             Text("${eventTime(ev.startTime)} – ${eventTime(ev.endTime)}", color = colors.textMuted, fontSize = 12.sp)

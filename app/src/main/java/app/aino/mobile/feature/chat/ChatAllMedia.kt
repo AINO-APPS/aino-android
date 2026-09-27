@@ -25,13 +25,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Tab
@@ -58,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private enum class MediaTab(val label: String) { Media("Media"), Files("Files"), Audio("Audio"), Links("Links") }
 
@@ -95,7 +89,7 @@ internal fun AllMediaScreen(ui: ChatUiState, conversation: ChatConversation, vie
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    Icons.AutoMirrored.Outlined.ArrowBack, "Back",
+                    HeroIcons.ArrowLeft, "Back",
                     Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClose).padding(12.dp), tint = signal.text,
                 )
                 Text(
@@ -123,7 +117,7 @@ internal fun AllMediaScreen(ui: ChatUiState, conversation: ChatConversation, vie
                     ui.infoLoading && files.isEmpty() && tab != MediaTab.Links ->
                         CircularProgressIndicator(Modifier.align(Alignment.Center), color = signal.primary)
                     tab == MediaTab.Media -> MediaGrid(visual) { viewing = it.id }
-                    tab == MediaTab.Files -> FileList(documents, Icons.Outlined.Description, "No files")
+                    tab == MediaTab.Files -> FileList(documents, HeroIcons.DocumentText, "No files")
                     tab == MediaTab.Audio -> AudioList(audio)
                     else -> LinkList(links) { viewModel.closeInfo(); onClose(); viewModel.jumpToMessage(it) }
                 }
@@ -146,7 +140,7 @@ private fun EmptyTab(icon: ImageVector, text: String) {
 /** Signal 3-column square thumbnail grid (2dp gutters, video play badge). */
 @Composable
 private fun MediaGrid(items: List<SharedChatFile>, onOpen: (SharedChatFile) -> Unit) {
-    if (items.isEmpty()) { EmptyTab(Icons.Outlined.PhotoLibrary, "No media"); return }
+    if (items.isEmpty()) { EmptyTab(HeroIcons.Photo, "No media"); return }
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
         contentPadding = PaddingValues(2.dp),
@@ -162,7 +156,7 @@ private fun MediaGrid(items: List<SharedChatFile>, onOpen: (SharedChatFile) -> U
                     shape = RoundedCornerShape(0.dp), modifier = Modifier.fillMaxSize(),
                 ) { onOpen(file) }
                 if (video) Icon(
-                    Icons.Outlined.PlayArrow, "Video",
+                    HeroIcons.Play, "Video",
                     Modifier.align(Alignment.BottomStart).padding(4.dp).size(20.dp)
                         .background(Color.Black.copy(alpha = .5f), CircleShape).padding(2.dp),
                     tint = Color.White,
@@ -201,7 +195,7 @@ private fun FileList(items: List<SharedChatFile>, icon: ImageVector, empty: Stri
                     )
                 }
                 Icon(
-                    Icons.Outlined.Download, "Save to device",
+                    HeroIcons.ArrowDownTray, "Save to device",
                     Modifier.size(40.dp).clip(RoundedCornerShape(20.dp))
                         .clickable { save(resolveChatMediaUrl(file.fileUrl), file.fileName, file.fileType) }
                         .padding(8.dp),
@@ -215,7 +209,7 @@ private fun FileList(items: List<SharedChatFile>, icon: ImageVector, empty: Stri
 @Composable
 private fun AudioList(items: List<SharedChatFile>) {
     val signal = signalColors
-    if (items.isEmpty()) { EmptyTab(Icons.Outlined.Description, "No audio"); return }
+    if (items.isEmpty()) { EmptyTab(HeroIcons.DocumentText, "No audio"); return }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(items, key = { "audio-${it.id}" }) { file ->
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(signal.incoming).padding(12.dp)) {
@@ -228,7 +222,7 @@ private fun AudioList(items: List<SharedChatFile>) {
 
 @Composable
 private fun LinkList(items: List<ChatMessage>, onOpen: (ChatMessage) -> Unit) {
-    if (items.isEmpty()) { EmptyTab(Icons.Outlined.Link, "No links"); return }
+    if (items.isEmpty()) { EmptyTab(HeroIcons.Link, "No links"); return }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         items(items, key = { "link-${it.id}" }) { message ->
             val preview = message.linkPreview ?: return@items

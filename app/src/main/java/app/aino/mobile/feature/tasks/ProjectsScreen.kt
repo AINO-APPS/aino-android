@@ -24,14 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Unarchive
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -61,6 +53,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.component.AinoFullPage
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Admin → Projects (`pages/Projects.tsx`). At 430px the web grid is a single
@@ -158,7 +151,7 @@ private fun ProjectsHeader(ui: ProjectsUiState, viewModel: ProjectsViewModel) {
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             AdminCheckbox(ui.includeArchived, viewModel::setIncludeArchived, "Show archived", fontSize = 13.sp)
-            if (ui.canEdit) PrimaryButton("New project", Icons.Outlined.Add, onClick = viewModel::openCreate)
+            if (ui.canEdit) PrimaryButton("New project", HeroIcons.Plus, onClick = viewModel::openCreate)
         }
     }
 }
@@ -218,7 +211,7 @@ private fun EmptyProjects(canEdit: Boolean, onCreate: () -> Unit) {
             .padding(horizontal = 24.dp, vertical = 64.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(Icons.Outlined.Folder, null, Modifier.size(48.dp), tint = muted)
+        Icon(HeroIcons.Folder, null, Modifier.size(48.dp), tint = muted)
         Spacer(Modifier.height(12.dp))
         Text("No projects yet", color = colors.text, fontSize = 1.5.em(), fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
@@ -229,7 +222,7 @@ private fun EmptyProjects(canEdit: Boolean, onCreate: () -> Unit) {
             codeSize = 12.sp,
             modifier = Modifier.padding(bottom = 16.dp),
         )
-        if (canEdit) PrimaryButton("Create your first project", Icons.Outlined.Add, onClick = onCreate)
+        if (canEdit) PrimaryButton("Create your first project", HeroIcons.Plus, onClick = onCreate)
     }
 }
 
@@ -268,7 +261,7 @@ private fun ProjectCard(
                 Modifier.background(accent.copy(alpha = 0x22 / 255f), RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Outlined.Folder, null, Modifier.size(14.dp), tint = accent)
+                Icon(HeroIcons.Folder, null, Modifier.size(14.dp), tint = accent)
                 Spacer(Modifier.width(4.dp))
                 Text(project.key, color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, letterSpacing = 0.5.sp, maxLines = 1)
             }
@@ -296,13 +289,13 @@ private fun ProjectCard(
                 Modifier.fillMaxHeight().padding(horizontal = 4.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.Center,
             ) {
-                IconAction(Icons.Outlined.Edit, "Edit", onClick = onEdit)
+                IconAction(HeroIcons.PencilSquare, "Edit", onClick = onEdit)
                 IconAction(
-                    if (project.isArchived) Icons.Outlined.Unarchive else Icons.Outlined.Archive,
+                    if (project.isArchived) HeroIcons.ArchiveBoxArrowDown else HeroIcons.ArchiveBox,
                     if (project.isArchived) "Unarchive" else "Archive",
                     onClick = onArchive,
                 )
-                if (canDelete) IconAction(Icons.Outlined.Delete, "Delete", Color(0xFFEF4444), onClick = onDelete)
+                if (canDelete) IconAction(HeroIcons.Trash, "Delete", Color(0xFFEF4444), onClick = onDelete)
             }
         }
     }
@@ -320,7 +313,7 @@ private fun ProjectTasksPanel(panel: ProjectTasksState, viewModel: ProjectsViewM
     ) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Tasks in this project", color = colors.text, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconAction(Icons.Outlined.Close, "Close", onClick = viewModel::closePanel)
+            IconAction(HeroIcons.XMark, "Close", onClick = viewModel::closePanel)
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
         panel.error?.let { ErrorMsg(it, Modifier.padding(16.dp)) }
@@ -404,7 +397,7 @@ private fun ProjectFormDialog(form: ProjectFormState, users: List<AssignableUser
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
-                IconAction(Icons.Outlined.Close, "Close", onClick = viewModel::closeForm)
+                IconAction(HeroIcons.XMark, "Close", onClick = viewModel::closeForm)
             }
             Box(Modifier.fillMaxWidth().height(1.dp).background(colors.border))
             Column(

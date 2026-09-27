@@ -15,18 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Logout
-import androidx.compose.material.icons.outlined.Apartment
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Face
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.outlined.NotificationsNone
-import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -49,6 +37,7 @@ import app.aino.mobile.core.designsystem.component.StatusVisual
 import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.component.profileStatusVisual
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** StatusPicker `PICKABLE_STATUSES` (`client/src/status/constants.ts` STATUS_META). */
 private val PICKABLE = listOf(
@@ -113,7 +102,7 @@ fun ProfileScreen(
                             picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                         },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.Outlined.PhotoCamera, "Change photo", Modifier.size(16.dp), tint = Color.White) }
+                ) { Icon(HeroIcons.Camera, "Change photo", Modifier.size(16.dp), tint = Color.White) }
             }
             Text(fullName.orEmpty(), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp))
             Text("@$username", color = colors.textSecondary, fontSize = 13.sp, modifier = Modifier.padding(top = 2.dp))
@@ -131,20 +120,20 @@ fun ProfileScreen(
 
         // ── Menu ──
         ProfileSection {
-            ProfileRow(Icons.Outlined.Edit, "Edit Profile", onEditProfile)
+            ProfileRow(HeroIcons.PencilSquare, "Edit Profile", onEditProfile)
             if (!avatar.isNullOrBlank()) {
                 RowDivider()
-                ProfileRow(Icons.Outlined.Delete, "Remove Photo", { viewModel.askRemoveAvatar(true) })
+                ProfileRow(HeroIcons.Trash, "Remove Photo", { viewModel.askRemoveAvatar(true) })
             }
             RowDivider()
-            ProfileRow(Icons.Outlined.NotificationsNone, "Notification Sounds", onNotificationSounds)
+            ProfileRow(HeroIcons.Bell, "Notification Sounds", onNotificationSounds)
             RowDivider()
-            ProfileRow(Icons.Outlined.Face, "Face Enrollment", onFaceEnrollment)
+            ProfileRow(HeroIcons.FaceSmile, "Face Enrollment", onFaceEnrollment)
             RowDivider()
-            ProfileRow(if (isDark) Icons.Outlined.LightMode else Icons.Outlined.DarkMode, if (isDark) "Light Mode" else "Dark Mode", onToggleTheme)
+            ProfileRow(if (isDark) HeroIcons.Sun else HeroIcons.Moon, if (isDark) "Light Mode" else "Dark Mode", onToggleTheme)
         }
         ProfileSection {
-            ProfileRow(Icons.AutoMirrored.Outlined.Logout, "Sign Out", { viewModel.askSignOut(true) }, tint = colors.danger)
+            ProfileRow(HeroIcons.ArrowRightStartOnRectangle, "Sign Out", { viewModel.askSignOut(true) }, tint = colors.danger)
         }
     }
 
@@ -193,7 +182,7 @@ private fun ModeBadge(office: Boolean) {
     val fg = if (office) Color(0xFF38BDF8) else Color(0xFFFBBF24)
     val bg = if (office) Color(0xFF0EA5E9) else Color(0xFFF59E0B)
     Badge(if (office) "Office" else "Remote", fg, bg) {
-        Icon(if (office) Icons.Outlined.Apartment else Icons.Outlined.Home, null, Modifier.size(12.dp), tint = fg)
+        Icon(if (office) HeroIcons.BuildingOffice2 else HeroIcons.Home, null, Modifier.size(12.dp), tint = fg)
     }
 }
 
@@ -232,7 +221,7 @@ private fun StatusPickerSection(
                 enabled = !busy,
                 leading = { PickerDot(visual) },
                 trailing = if (effective == key && !invisible) {
-                    { Icon(Icons.Outlined.Check, "Selected", Modifier.size(18.dp), tint = colors.primary) }
+                    { Icon(HeroIcons.Check, "Selected", Modifier.size(18.dp), tint = colors.primary) }
                 } else null,
             )
         }
@@ -244,7 +233,7 @@ private fun StatusPickerSection(
             enabled = !busy,
             leading = { PickerDot(StatusVisual("Offline", Color(0xFF64748B), StatusGlyph.Ring, ring = true)) },
             trailing = if (invisible) {
-                { Icon(Icons.Outlined.Check, "Selected", Modifier.size(18.dp), tint = colors.primary) }
+                { Icon(HeroIcons.Check, "Selected", Modifier.size(18.dp), tint = colors.primary) }
             } else null,
         )
         AUTO_LABELS[effective]?.let { label ->

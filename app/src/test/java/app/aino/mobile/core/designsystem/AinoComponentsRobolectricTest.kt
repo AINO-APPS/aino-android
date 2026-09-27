@@ -4,15 +4,13 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.assertIsSelected
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import app.aino.mobile.ComposeTestHostActivity
 import app.aino.mobile.core.designsystem.theme.AinoTheme
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 @RunWith(RobolectricTestRunner::class)
 class AinoComponentsRobolectricTest {
@@ -65,11 +63,11 @@ class AinoComponentsRobolectricTest {
         compose.setContent {
             AinoTheme(dynamicColor = false) {
                 androidx.compose.foundation.layout.Column {
-                    AinoEmptyState(Icons.Outlined.ChatBubbleOutline, "No messages yet")
+                    AinoEmptyState(HeroIcons.ChatBubbleOvalLeft, "No messages yet")
                     AinoNavigationBar(
                         items = listOf(
-                            AinoNavigationItem("home", "Home", Icons.Outlined.Home),
-                            AinoNavigationItem("chat", "Chat", Icons.Outlined.ChatBubbleOutline, badgeCount = 3),
+                            AinoNavigationItem("home", "Home", HeroIcons.Home),
+                            AinoNavigationItem("chat", "Chat", HeroIcons.ChatBubbleOvalLeft, badgeCount = 3),
                         ),
                         selectedKey = "home",
                         onSelect = {},

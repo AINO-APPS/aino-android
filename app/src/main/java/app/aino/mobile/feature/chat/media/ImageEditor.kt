@@ -37,23 +37,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Undo
-import androidx.compose.material.icons.outlined.AspectRatio
-import androidx.compose.material.icons.outlined.BlurOn
-import androidx.compose.material.icons.outlined.BorderColor
-import androidx.compose.material.icons.outlined.Brush
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Create
-import androidx.compose.material.icons.outlined.Crop
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.EmojiEmotions
-import androidx.compose.material.icons.outlined.Flip
-import androidx.compose.material.icons.outlined.FontDownload
-import androidx.compose.material.icons.outlined.RestartAlt
-import androidx.compose.material.icons.outlined.RotateRight
-import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -106,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val SliderStops = listOf(
     Color.White, Color(0xFFFF0000), Color(0xFFFFFF00), Color(0xFF00FF00),
@@ -144,7 +128,7 @@ internal fun ImageEditor(source: Uri, initialTool: EditorTool, onDone: (MediaSen
             EditorContent(src, initialTool, onDone, onCancel)
         } else {
             IconButton(onClick = onCancel, modifier = Modifier.statusBarsPadding().padding(8.dp)) {
-                Icon(Icons.Outlined.Close, contentDescription = "Cancel editing", tint = Color.White)
+                Icon(HeroIcons.XMark, contentDescription = "Cancel editing", tint = Color.White)
             }
             if (failed) {
                 Text("Couldn't open image", color = Color.White, modifier = Modifier.align(Alignment.Center))
@@ -243,11 +227,11 @@ private fun EditorContent(src: Bitmap, initialTool: EditorTool, onDone: (MediaSe
             Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onCancel) { Icon(Icons.Outlined.Close, contentDescription = "Cancel editing", tint = Color.White) }
+            IconButton(onClick = onCancel) { Icon(HeroIcons.XMark, contentDescription = "Cancel editing", tint = Color.White) }
             Spacer(Modifier.weight(1f))
             IconButton(onClick = ::undo, enabled = history.canUndo) {
                 Icon(
-                    Icons.AutoMirrored.Outlined.Undo, contentDescription = "Undo",
+                    HeroIcons.ArrowUturnLeft, contentDescription = "Undo",
                     tint = if (history.canUndo) Color.White else Color.White.copy(alpha = 0.3f),
                 )
             }
@@ -264,7 +248,7 @@ private fun EditorContent(src: Bitmap, initialTool: EditorTool, onDone: (MediaSe
                 },
             ) {
                 if (saving) CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-                else Icon(Icons.Outlined.Check, contentDescription = "Done", tint = Color.White)
+                else Icon(HeroIcons.Check, contentDescription = "Done", tint = Color.White)
             }
         }
 
@@ -408,12 +392,12 @@ private fun EditorContent(src: Bitmap, initialTool: EditorTool, onDone: (MediaSe
                         state = state.copy(turns = t, flipH = f, crop = c)
                         applyAspect()
                         commit()
-                    }) { Icon(Icons.Outlined.RotateRight, contentDescription = "Rotate", tint = Color.White) }
+                    }) { Icon(HeroIcons.ArrowPath, contentDescription = "Rotate", tint = Color.White) }
                     IconButton(onClick = {
                         val (t, f, c) = flipDisplayedH(state.turns, state.flipH, state.crop)
                         state = state.copy(turns = t, flipH = f, crop = c)
                         commit()
-                    }) { Icon(Icons.Outlined.Flip, contentDescription = "Flip horizontally", tint = Color.White) }
+                    }) { Icon(HeroIcons.ArrowsRightLeft, contentDescription = "Flip horizontally", tint = Color.White) }
                     Row(
                         Modifier.clip(RoundedCornerShape(50)).clickable {
                             aspectIndex = (aspectIndex + 1) % Aspects.size
@@ -422,7 +406,7 @@ private fun EditorContent(src: Bitmap, initialTool: EditorTool, onDone: (MediaSe
                         }.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.AspectRatio, contentDescription = "Aspect ratio", tint = Color.White)
+                        Icon(HeroIcons.ArrowsPointingOut, contentDescription = "Aspect ratio", tint = Color.White)
                         Spacer(Modifier.width(6.dp))
                         Text(Aspects[aspectIndex].second, color = Color.White, fontSize = 14.sp)
                     }
@@ -430,16 +414,16 @@ private fun EditorContent(src: Bitmap, initialTool: EditorTool, onDone: (MediaSe
                         aspectIndex = 0
                         state = state.copy(turns = 0, flipH = false, crop = NRect.Full)
                         commit()
-                    }) { Icon(Icons.Outlined.RestartAlt, contentDescription = "Reset crop", tint = Color.White) }
+                    }) { Icon(HeroIcons.ArrowPath, contentDescription = "Reset crop", tint = Color.White) }
                 }
 
                 EditorTool.Draw -> Column {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         BrushType.entries.forEach { b ->
                             val icon = when (b) {
-                                BrushType.Pen -> Icons.Outlined.Create
-                                BrushType.Marker -> Icons.Outlined.Brush
-                                BrushType.Highlighter -> Icons.Outlined.BorderColor
+                                BrushType.Pen -> HeroIcons.Pencil
+                                BrushType.Marker -> HeroIcons.PaintBrush
+                                BrushType.Highlighter -> HeroIcons.Pencil
                             }
                             ToolButton(icon, b.name, selected = brush == b) { brush = b }
                         }
@@ -461,20 +445,20 @@ private fun EditorContent(src: Bitmap, initialTool: EditorTool, onDone: (MediaSe
                     if (tool == EditorTool.Text) {
                         Text("Tap to add text", color = Color.White.copy(alpha = 0.7f), modifier = Modifier.align(Alignment.CenterVertically))
                         if (selected != null && !selected.sticker) {
-                            ToolButton(Icons.Outlined.FontDownload, "Text style", selected = selected.highlighted) {
+                            ToolButton(HeroIcons.Swatch, "Text style", selected = selected.highlighted) {
                                 updateText(selected.id) { it.copy(highlighted = !it.highlighted) }
                                 commit()
                             }
                         }
                     } else {
-                        ToolButton(Icons.Outlined.EmojiEmotions, "Add sticker", selected = false) { showStickers = true }
+                        ToolButton(HeroIcons.FaceSmile, "Add sticker", selected = false) { showStickers = true }
                     }
                     if (selected != null) {
                         IconButton(onClick = {
                             state = state.copy(texts = state.texts.filter { it.id != selected.id })
                             selectedId = null
                             commit()
-                        }) { Icon(Icons.Outlined.Delete, contentDescription = "Delete", tint = Color.White) }
+                        }) { Icon(HeroIcons.Trash, contentDescription = "Delete", tint = Color.White) }
                     }
                 }
 
@@ -482,11 +466,11 @@ private fun EditorContent(src: Bitmap, initialTool: EditorTool, onDone: (MediaSe
             }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                 listOf(
-                    EditorTool.Crop to (Icons.Outlined.Crop to "Crop and rotate"),
-                    EditorTool.Draw to (Icons.Outlined.Brush to "Draw"),
-                    EditorTool.Text to (Icons.Outlined.TextFields to "Add text"),
-                    EditorTool.Sticker to (Icons.Outlined.EmojiEmotions to "Stickers"),
-                    EditorTool.Blur to (Icons.Outlined.BlurOn to "Blur"),
+                    EditorTool.Crop to (HeroIcons.Scissors to "Crop and rotate"),
+                    EditorTool.Draw to (HeroIcons.PaintBrush to "Draw"),
+                    EditorTool.Text to (HeroIcons.Text to "Add text"),
+                    EditorTool.Sticker to (HeroIcons.FaceSmile to "Stickers"),
+                    EditorTool.Blur to (HeroIcons.EyeSlash to "Blur"),
                 ).forEach { (t, v) ->
                     ToolButton(v.first, v.second, selected = tool == t) {
                         tool = if (tool == t) EditorTool.None else t
@@ -598,9 +582,9 @@ private fun TextEditOverlay(item: EditText, onToggleStyle: () -> Unit, onDone: (
     val textColor = if (item.highlighted) (if (color.isDarkish()) Color.White else Color.Black) else color
     Box(Modifier.fillMaxSize().background(Color(0x99000000)).clickable(onClick = { onDone(value.text) }, indication = null, interactionSource = null)) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ToolButton(Icons.Outlined.FontDownload, "Text style", selected = item.highlighted, onClick = onToggleStyle)
+            ToolButton(HeroIcons.Swatch, "Text style", selected = item.highlighted, onClick = onToggleStyle)
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = { onDone(value.text) }) { Icon(Icons.Outlined.Check, contentDescription = "Done", tint = Color.White) }
+            IconButton(onClick = { onDone(value.text) }) { Icon(HeroIcons.Check, contentDescription = "Done", tint = Color.White) }
         }
         BasicTextField(
             value = value,

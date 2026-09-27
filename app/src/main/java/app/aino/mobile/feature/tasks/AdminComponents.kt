@@ -19,11 +19,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.FirstPage
-import androidx.compose.material.icons.outlined.LastPage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -57,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** A bordered `<input>` / `<textarea>` with `disabled` (opacity 0.7) and an optional blur callback. */
 @Composable
@@ -242,8 +238,8 @@ internal fun PaginationBar(
                 WebSelect(pageSizes.map { it to it.toString() }, safeLimit, onLimitChange, Modifier.width(76.dp), fontSize = 12.sp)
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                PagerButton(Icons.Outlined.FirstPage, "First page", page > 1) { goto(1) }
-                PagerButton(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, "Previous page", page > 1) { goto(page - 1) }
+                PagerButton(HeroIcons.ChevronDoubleLeft, "First page", page > 1) { goto(1) }
+                PagerButton(HeroIcons.ChevronLeft, "Previous page", page > 1) { goto(page - 1) }
                 Text(
                     buildAnnotatedString {
                         append("Page ")
@@ -254,8 +250,8 @@ internal fun PaginationBar(
                     fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 8.dp),
                 )
-                PagerButton(Icons.AutoMirrored.Outlined.KeyboardArrowRight, "Next page", page < pages) { goto(page + 1) }
-                PagerButton(Icons.Outlined.LastPage, "Last page", page < pages) { goto(pages) }
+                PagerButton(HeroIcons.ChevronRight, "Next page", page < pages) { goto(page + 1) }
+                PagerButton(HeroIcons.ChevronDoubleRight, "Last page", page < pages) { goto(pages) }
             }
         }
     }

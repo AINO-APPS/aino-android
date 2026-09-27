@@ -7,8 +7,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -34,6 +32,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 const val SwipeReplyTriggerDp = 56f
 const val SwipeReplyMaximumDp = 76f
@@ -114,7 +113,7 @@ fun MessageGestureBox(
     var progress by remember { mutableStateOf(0f) }
     Box(modifier) {
         Icon(
-            Icons.AutoMirrored.Outlined.Reply,
+            HeroIcons.ArrowUturnLeft,
             contentDescription = null,
             tint = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.primary,
             modifier = Modifier.align(Alignment.CenterStart).alpha(progress)

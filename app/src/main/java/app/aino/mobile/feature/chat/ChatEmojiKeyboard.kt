@@ -24,20 +24,6 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Backspace
-import androidx.compose.material.icons.outlined.AccessTime
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.DirectionsCar
-import androidx.compose.material.icons.outlined.EmojiEmotions
-import androidx.compose.material.icons.outlined.EmojiSymbols
-import androidx.compose.material.icons.outlined.Fastfood
-import androidx.compose.material.icons.outlined.Flag
-import androidx.compose.material.icons.outlined.Lightbulb
-import androidx.compose.material.icons.outlined.Pets
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.SportsSoccer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -70,6 +56,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /*
  * Clean-room Compose emoji keyboard modelled on the behaviour of Signal-Android's
@@ -237,8 +224,8 @@ private fun saveRecents(ctx: Context, recents: List<String>) {
 }
 
 private val categoryIcons: List<ImageVector> = listOf(
-    Icons.Outlined.EmojiEmotions, Icons.Outlined.Pets, Icons.Outlined.Fastfood, Icons.Outlined.SportsSoccer,
-    Icons.Outlined.DirectionsCar, Icons.Outlined.Lightbulb, Icons.Outlined.EmojiSymbols, Icons.Outlined.Flag,
+    HeroIcons.FaceSmile, HeroIcons.BugAnt, HeroIcons.Cake, HeroIcons.Trophy,
+    HeroIcons.Truck, HeroIcons.LightBulb, HeroIcons.Hashtag, HeroIcons.Flag,
 )
 
 private sealed interface GridEntry {
@@ -265,7 +252,7 @@ fun SignalEmojiKeyboard(
     // Sections: (title, icon, emojis). Recents only when non-empty.
     val sections = remember(recents) {
         buildList {
-            if (recents.isNotEmpty()) add(Triple("Recents", Icons.Outlined.AccessTime, recents))
+            if (recents.isNotEmpty()) add(Triple("Recents", HeroIcons.Clock, recents))
             SignalEmojiCategories.forEachIndexed { i, c -> add(Triple(c.name, categoryIcons[i], c.emojis)) }
         }
     }
@@ -302,7 +289,7 @@ fun SignalEmojiKeyboard(
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Outlined.Search, null, Modifier.size(20.dp), tint = colors.textSecondary)
+            Icon(HeroIcons.MagnifyingGlass, null, Modifier.size(20.dp), tint = colors.textSecondary)
             Spacer(Modifier.width(8.dp))
             Text("Search emoji", color = colors.textSecondary, fontSize = 15.sp)
         }
@@ -402,7 +389,7 @@ private fun BackspaceButton(onBackspace: () -> Unit, tint: androidx.compose.ui.g
             repeat.cancel()
         })
     }) {
-        Icon(Icons.AutoMirrored.Outlined.Backspace, "Backspace", tint = tint)
+        Icon(HeroIcons.Backspace, "Backspace", tint = tint)
     }
 }
 
@@ -476,7 +463,7 @@ fun EmojiSearchBar(onEmoji: (String) -> Unit, onClose: () -> Unit, modifier: Mod
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Close emoji search", Modifier.size(20.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.ArrowLeft, "Close emoji search", Modifier.size(20.dp), tint = colors.textSecondary)
             }
             Box(Modifier.weight(1f)) {
                 if (query.isEmpty()) Text("Search emoji", color = colors.textSecondary, fontSize = 15.sp)
@@ -490,7 +477,7 @@ fun EmojiSearchBar(onEmoji: (String) -> Unit, onClose: () -> Unit, modifier: Mod
                 )
             }
             if (query.isNotEmpty()) Icon(
-                Icons.Outlined.Close, "Clear search",
+                HeroIcons.XMark, "Clear search",
                 Modifier.size(20.dp).clip(CircleShape).combinedClickable(onClick = { query = "" }),
                 tint = colors.textSecondary,
             )

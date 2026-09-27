@@ -34,17 +34,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.AllInclusive
-import androidx.compose.material.icons.outlined.BlurOn
-import androidx.compose.material.icons.outlined.Brush
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Crop
-import androidx.compose.material.icons.outlined.EmojiEmotions
-import androidx.compose.material.icons.outlined.PlayArrow
-import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -79,6 +68,7 @@ import androidx.media3.ui.PlayerView
 import app.aino.mobile.feature.chat.SignalDimens
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val SendBlue = Color(0xFF2C6BED)
 private val PillGray = Color(0xFF303133)
@@ -130,15 +120,15 @@ fun MediaSendScreen(
             Modifier.fillMaxWidth().background(Color(0x66000000)).statusBarsPadding().padding(horizontal = 4.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onClose) { Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color.White) }
+            IconButton(onClick = onClose) { Icon(HeroIcons.XMark, contentDescription = "Close", tint = Color.White) }
             Spacer(Modifier.weight(1f))
             if (current != null && !current.isVideo) {
                 listOf(
-                    EditorTool.Crop to (Icons.Outlined.Crop to "Crop and rotate"),
-                    EditorTool.Draw to (Icons.Outlined.Brush to "Draw"),
-                    EditorTool.Text to (Icons.Outlined.TextFields to "Add text"),
-                    EditorTool.Sticker to (Icons.Outlined.EmojiEmotions to "Add sticker"),
-                    EditorTool.Blur to (Icons.Outlined.BlurOn to "Blur"),
+                    EditorTool.Crop to (HeroIcons.Scissors to "Crop and rotate"),
+                    EditorTool.Draw to (HeroIcons.PaintBrush to "Draw"),
+                    EditorTool.Text to (HeroIcons.Text to "Add text"),
+                    EditorTool.Sticker to (HeroIcons.FaceSmile to "Add sticker"),
+                    EditorTool.Blur to (HeroIcons.EyeSlash to "Blur"),
                 ).forEach { (tool, v) -> TopTool(v.first, v.second) { editing = pager.currentPage to tool } }
             }
         }
@@ -165,7 +155,7 @@ fun MediaSendScreen(
                     Box(
                         Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(PillGray).clickable(onClick = onAddMore),
                         contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Outlined.Add, contentDescription = "Add more media", tint = Color.White) }
+                    ) { Icon(HeroIcons.Plus, contentDescription = "Add more media", tint = Color.White) }
                 }
             }
             Row(
@@ -222,7 +212,7 @@ fun MediaSendScreen(
                         onSend(items.toList(), if (viewOnce) "" else caption.trim(), viewOnce, highQuality)
                     },
                     contentAlignment = Alignment.Center,
-                ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = Color.White) }
+                ) { Icon(HeroIcons.PaperAirplane, contentDescription = "Send", tint = Color.White) }
             }
         }
 
@@ -264,7 +254,7 @@ private fun ViewOnceToggle(on: Boolean, onToggle: () -> Unit) {
                 Text("1", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         } else {
-            Icon(Icons.Outlined.AllInclusive, contentDescription = null, tint = Color.White)
+            Icon(HeroIcons.Infinity, contentDescription = null, tint = Color.White)
         }
         // Single description for both states so TalkBack announces the toggle.
         Box(Modifier.size(1.dp).then(Modifier)) {}
@@ -280,12 +270,12 @@ private fun RailThumb(item: MediaSendItem, selected: Boolean, onClick: () -> Uni
             .combinedClickable(onClick = onClick, onLongClick = onRemove, onClickLabel = "Select", onLongClickLabel = "Remove"),
     ) {
         AsyncImage(model = item.uri, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().padding(if (selected) 2.dp else 0.dp).clip(RoundedCornerShape(6.dp)))
-        if (item.isVideo) Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(20.dp))
+        if (item.isVideo) Icon(HeroIcons.Play, contentDescription = null, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(20.dp))
         if (selected) {
             Box(
                 Modifier.align(Alignment.TopEnd).padding(2.dp).size(18.dp).clip(CircleShape).background(Color(0xCC000000)).clickable(onClick = onRemove),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Outlined.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(12.dp)) }
+            ) { Icon(HeroIcons.XMark, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(12.dp)) }
         }
     }
 }
@@ -296,7 +286,7 @@ private fun VideoPage(uri: Uri, active: Boolean) {
     if (!active) {
         Box(Modifier.fillMaxSize()) {
             AsyncImage(model = uri, contentDescription = "Video", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-            Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(56.dp))
+            Icon(HeroIcons.Play, contentDescription = null, tint = Color.White, modifier = Modifier.align(Alignment.Center).size(56.dp))
         }
         return
     }

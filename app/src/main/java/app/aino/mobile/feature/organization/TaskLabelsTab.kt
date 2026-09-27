@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private const val LABEL_MAX = 30
 
@@ -49,7 +48,7 @@ internal fun TaskLabelsTab(ui: OrganizationUiState, viewModel: OrganizationViewM
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.LocalOffer, null, Modifier.size(15.dp), tint = colors.text)
+            Icon(HeroIcons.Tag, null, Modifier.size(15.dp), tint = colors.text)
             Spacer(Modifier.width(6.dp))
             Text("Task Labels", color = colors.text, fontWeight = FontWeight.Bold, fontSize = 1.05.rem)
         }

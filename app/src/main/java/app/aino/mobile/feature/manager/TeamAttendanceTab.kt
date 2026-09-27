@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccessTime
-import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +26,7 @@ import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import app.aino.mobile.core.common.roleLabel
 import java.time.LocalDate
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private data class AttendanceGroup(val status: String, val label: String)
 
@@ -105,7 +103,7 @@ private fun AttendanceMemberCard(member: TeamAttendanceMember, onSelect: (Long) 
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             member.hoursToday?.let {
-                Icon(Icons.Outlined.AccessTime, null, Modifier.width(13.dp).height(13.dp), tint = colors.textSecondary)
+                Icon(HeroIcons.Clock, null, Modifier.width(13.dp).height(13.dp), tint = colors.textSecondary)
                 Text(" ${it}h", color = colors.textSecondary, fontSize = 0.78.rem)
                 Spacer(Modifier.width(10.dp))
             }
@@ -144,7 +142,7 @@ private fun AttendanceDateField(value: String, onChange: (String) -> Unit) {
             .fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.CalendarMonth, null, Modifier.width(16.dp).height(16.dp), tint = colors.textSecondary)
+        Icon(HeroIcons.CalendarDays, null, Modifier.width(16.dp).height(16.dp), tint = colors.textSecondary)
         Spacer(Modifier.width(8.dp))
         Text(value, color = colors.text, fontSize = 0.88.rem)
     }

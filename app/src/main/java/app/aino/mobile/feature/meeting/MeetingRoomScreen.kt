@@ -37,27 +37,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.CallEnd
-import androidx.compose.material.icons.outlined.Cameraswitch
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CloseFullscreen
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.DesktopWindows
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MicOff
-import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.PanTool
-import androidx.compose.material.icons.outlined.People
-import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material.icons.outlined.VideocamOff
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -106,6 +85,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.webrtc.VideoTrack
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 // MeetingRoom.css theme variables.
 internal val MrBg = Color(0xFF1F2937)
@@ -286,14 +266,14 @@ private fun RoomHeader(state: MeetingState, onMinimize: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Text(state.code, color = MrMuted, fontSize = 12.sp)
-                Icon(if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy, null, Modifier.size(12.dp), tint = MrMuted)
+                Icon(if (copied) HeroIcons.Check else HeroIcons.DocumentDuplicate, null, Modifier.size(12.dp), tint = MrMuted)
             }
         }
         Text(meetingTimer((now - state.joinedAt) / 1000), Modifier.padding(horizontal = 8.dp), color = MrMuted, fontSize = 13.sp)
         Box(
             Modifier.size(28.dp).clip(RoundedCornerShape(6.dp)).background(MrTile).clickable(onClickLabel = "Minimize meeting", onClick = onMinimize),
             contentAlignment = Alignment.Center,
-        ) { Icon(Icons.Outlined.CloseFullscreen, "Minimize meeting", Modifier.size(15.dp), tint = MrText) }
+        ) { Icon(HeroIcons.ArrowsPointingIn, "Minimize meeting", Modifier.size(15.dp), tint = MrText) }
     }
     Box(Modifier.fillMaxWidth().height(1.dp).background(MrBorder))
 }
@@ -373,7 +353,7 @@ private fun PresenterLayout(state: MeetingState, presenter: MeetingPeer, session
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Icon(Icons.Outlined.DesktopWindows, null, Modifier.size(14.dp), tint = MrText)
+                Icon(HeroIcons.ComputerDesktop, null, Modifier.size(14.dp), tint = MrText)
                 Text("${presenter.name} is presenting", color = MrText, fontSize = 12.sp)
             }
         }
@@ -406,7 +386,7 @@ private fun ParticipantTile(tile: TileSpec, modifier: Modifier, mini: Boolean = 
         }
         if (tile.handRaised) {
             Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(28.dp).clip(CircleShape).background(Warn), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.PanTool, "Hand raised", Modifier.size(15.dp), tint = Color.White)
+                Icon(HeroIcons.HandRaised, "Hand raised", Modifier.size(15.dp), tint = Color.White)
             }
         }
         Row(
@@ -417,7 +397,7 @@ private fun ParticipantTile(tile: TileSpec, modifier: Modifier, mini: Boolean = 
         ) {
             Text(tile.name, Modifier.weight(1f), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (tile.muted) Box(Modifier.size(18.dp).clip(CircleShape).background(MrDanger), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.MicOff, "Muted", Modifier.size(12.dp), tint = Color.White)
+                Icon(HeroIcons.MicrophoneSlash, "Muted", Modifier.size(12.dp), tint = Color.White)
             }
         }
     }
@@ -438,7 +418,7 @@ private fun StatusPill(link: PeerLink, onRetry: () -> Unit) {
     ) {
         when (link) {
             PeerLink.Connecting -> CircularProgressIndicator(Modifier.size(10.dp), color = MrText, strokeWidth = 1.5.dp)
-            PeerLink.Reconnecting -> Icon(Icons.Outlined.WifiOff, null, Modifier.size(12.dp), tint = color)
+            PeerLink.Reconnecting -> Icon(HeroIcons.WifiSlash, null, Modifier.size(12.dp), tint = color)
             else -> Unit
         }
         Text(text, color = color, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -476,30 +456,30 @@ private fun BottomBar(state: MeetingState, session: MeetingSession, chatOpen: Bo
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                BarButton(if (state.muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, if (state.muted) "Unmute (Alt+A)" else "Mute (Alt+A)", if (state.muted) MrDanger else MrTile) {
+                BarButton(if (state.muted) HeroIcons.MicrophoneSlash else HeroIcons.Microphone, if (state.muted) "Unmute (Alt+A)" else "Mute (Alt+A)", if (state.muted) MrDanger else MrTile) {
                     withPermissions(false) { session.toggleMute() }
                 }
-                BarButton(if (state.videoOff) Icons.Outlined.VideocamOff else Icons.Outlined.Videocam, if (state.videoOff) "Start Video (Alt+V)" else "Stop Video (Alt+V)", if (state.videoOff) MrDanger else MrTile) {
+                BarButton(if (state.videoOff) HeroIcons.VideoCameraSlash else HeroIcons.VideoCamera, if (state.videoOff) "Start Video (Alt+V)" else "Stop Video (Alt+V)", if (state.videoOff) MrDanger else MrTile) {
                     withPermissions(true) { session.toggleVideo() }
                 }
-                BarButton(Icons.Outlined.PanTool, if (state.handRaised) "Lower Hand" else "Raise Hand", if (state.handRaised) MrAccent else MrTile, badge = hands.takeIf { it > 0 }, badgeColor = Warn, onClick = session::toggleHand)
-                BarButton(Icons.Outlined.ChatBubbleOutline, "Chat", if (chatOpen) MrAccent else MrTile, badge = state.unread.takeIf { it > 0 && !chatOpen }, onClick = onChat)
+                BarButton(HeroIcons.HandRaised, if (state.handRaised) "Lower Hand" else "Raise Hand", if (state.handRaised) MrAccent else MrTile, badge = hands.takeIf { it > 0 }, badgeColor = Warn, onClick = session::toggleHand)
+                BarButton(HeroIcons.ChatBubbleOvalLeft, "Chat", if (chatOpen) MrAccent else MrTile, badge = state.unread.takeIf { it > 0 && !chatOpen }, onClick = onChat)
                 Box {
-                    BarButton(Icons.Outlined.MoreHoriz, "More actions", if (moreOpen) MrAccent else MrTile) { moreOpen = true }
+                    BarButton(HeroIcons.EllipsisHorizontal, "More actions", if (moreOpen) MrAccent else MrTile) { moreOpen = true }
                     DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }, containerColor = MrBg) {
-                        MoreItem(Icons.Outlined.People, "Participants (${state.peers.size + 1})") {
+                        MoreItem(HeroIcons.Users, "Participants (${state.peers.size + 1})") {
                             moreOpen = false
                             onParticipants()
                         }
-                        if (state.isHost) MoreItem(Icons.Outlined.MicOff, "Mute All") {
+                        if (state.isHost) MoreItem(HeroIcons.MicrophoneSlash, "Mute All") {
                             moreOpen = false
                             session.muteAll()
                         }
-                        if (!state.videoOff) MoreItem(Icons.Outlined.Cameraswitch, "Switch camera") {
+                        if (!state.videoOff) MoreItem(HeroIcons.ArrowPathRoundedSquare, "Switch camera") {
                             moreOpen = false
                             session.switchCamera()
                         }
-                        MoreItem(Icons.AutoMirrored.Outlined.VolumeUp, if (state.speakerOn) "Speaker off" else "Speaker on") {
+                        MoreItem(HeroIcons.SpeakerWave, if (state.speakerOn) "Speaker off" else "Speaker on") {
                             moreOpen = false
                             session.toggleSpeaker()
                         }
@@ -509,7 +489,7 @@ private fun BottomBar(state: MeetingState, session: MeetingSession, chatOpen: Bo
             Box(
                 Modifier.height(36.dp).clip(RoundedCornerShape(8.dp)).background(MrDanger).clickable(onClickLabel = "Leave meeting", onClick = session::leave).padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Outlined.CallEnd, "Leave meeting", Modifier.size(18.dp), tint = Color.White) }
+            ) { Icon(HeroIcons.PhoneXMark, "Leave meeting", Modifier.size(18.dp), tint = Color.White) }
             if (state.isHost) {
                 Box(
                     Modifier.height(32.dp).clip(RoundedCornerShape(8.dp)).background(MrDanger).clickable(onClickLabel = "End meeting for all", onClick = session::endForAll).padding(horizontal = 8.dp),
@@ -618,7 +598,7 @@ private fun ChatPanel(state: MeetingState, session: MeetingSession) {
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Icon(Icons.Outlined.Description, null, Modifier.size(16.dp), tint = MrMuted)
+                                Icon(HeroIcons.DocumentText, null, Modifier.size(16.dp), tint = MrMuted)
                                 Column {
                                     Text(m.fileName ?: "File", color = MrAccent, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     meetingFileSize(m.fileSize).takeIf(String::isNotEmpty)?.let { Text(it, color = MrMuted, fontSize = 10.sp) }
@@ -637,7 +617,7 @@ private fun ChatPanel(state: MeetingState, session: MeetingSession) {
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(3.dp),
                                 ) {
-                                    Icon(Icons.Outlined.ErrorOutline, null, Modifier.size(10.dp), tint = Color.White)
+                                    Icon(HeroIcons.ExclamationCircle, null, Modifier.size(10.dp), tint = Color.White)
                                     Text("Failed", color = Color.White, fontSize = 10.sp)
                                 }
                                 ChatDelivery.Sent -> Unit
@@ -649,7 +629,7 @@ private fun ChatPanel(state: MeetingState, session: MeetingSession) {
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(MrBorder))
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(Icons.Outlined.AttachFile, "Attach file", Modifier.size(28.dp).clip(CircleShape).clickable { picker.launch("*/*") }.padding(5.dp), tint = MrMuted)
+            Icon(HeroIcons.PaperClip, "Attach file", Modifier.size(28.dp).clip(CircleShape).clickable { picker.launch("*/*") }.padding(5.dp), tint = MrMuted)
             BasicTextField(
                 draft,
                 { draft = it },
@@ -669,7 +649,7 @@ private fun ChatPanel(state: MeetingState, session: MeetingSession) {
                         session.sendChat(draft)
                         draft = ""
                     }.padding(horizontal = 12.dp, vertical = 8.dp),
-            ) { Icon(Icons.AutoMirrored.Outlined.Send, "Send", Modifier.size(16.dp), tint = Color.White) }
+            ) { Icon(HeroIcons.PaperAirplane, "Send", Modifier.size(16.dp), tint = Color.White) }
         }
     }
 }
@@ -703,7 +683,7 @@ private fun ParticipantsPanel(state: MeetingState, session: MeetingSession) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Icon(Icons.Outlined.MicOff, null, Modifier.size(14.dp), tint = MrText)
+                    Icon(HeroIcons.MicrophoneSlash, null, Modifier.size(14.dp), tint = MrText)
                     Text("Mute All", color = MrText, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                 }
                 Text("＋ Add", Modifier.clickable { adding = !adding }.padding(4.dp), color = MrAccent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -759,11 +739,11 @@ private fun ParticipantRow(name: String, avatar: String?, isSelf: Boolean, handR
     ) {
         UserAvatar(name, avatar, 32.dp, background = MrAccent)
         Text(name + if (isSelf) " (you)" else "", Modifier.weight(1f), color = MrText, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (handRaised) Icon(Icons.Outlined.PanTool, "Hand raised", Modifier.size(15.dp), tint = Color(0xFFFACC15))
-        if (muted) Icon(Icons.Outlined.MicOff, "Muted", Modifier.size(15.dp), tint = MrDanger)
+        if (handRaised) Icon(HeroIcons.HandRaised, "Hand raised", Modifier.size(15.dp), tint = Color(0xFFFACC15))
+        if (muted) Icon(HeroIcons.MicrophoneSlash, "Muted", Modifier.size(15.dp), tint = MrDanger)
         if (canMute) {
             Icon(
-                if (muted) Icons.Outlined.Mic else Icons.Outlined.MicOff,
+                if (muted) HeroIcons.Microphone else HeroIcons.MicrophoneSlash,
                 if (muted) "Unmute participant" else "Mute participant",
                 Modifier.size(26.dp).clip(CircleShape).clickable(onClick = onToggleMute).padding(5.dp),
                 tint = MrMuted,

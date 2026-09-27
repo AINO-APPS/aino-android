@@ -20,14 +20,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Cameraswitch
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.MicOff
-import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material.icons.outlined.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -63,6 +55,7 @@ import app.aino.mobile.core.network.ApiRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val JoinBg = Color(0xFF0F0F13)
 private val JoinCard = Color(0xFF1A1A22)
@@ -175,9 +168,9 @@ private fun PreviewArea(
         }
         NetworkBadge(Modifier.align(Alignment.TopEnd).padding(8.dp))
         Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LobbyButton(if (muted) Icons.Outlined.MicOff else Icons.Outlined.Mic, if (muted) "Unmute" else "Mute", muted, onToggleMic)
-            LobbyButton(if (videoOff) Icons.Outlined.VideocamOff else Icons.Outlined.Videocam, if (videoOff) "Start video" else "Stop video", videoOff, onToggleVideo)
-            if (!videoOff) LobbyButton(Icons.Outlined.Cameraswitch, "Switch camera", false, onFlip)
+            LobbyButton(if (muted) HeroIcons.MicrophoneSlash else HeroIcons.Microphone, if (muted) "Unmute" else "Mute", muted, onToggleMic)
+            LobbyButton(if (videoOff) HeroIcons.VideoCameraSlash else HeroIcons.VideoCamera, if (videoOff) "Start video" else "Stop video", videoOff, onToggleVideo)
+            if (!videoOff) LobbyButton(HeroIcons.ArrowPathRoundedSquare, "Switch camera", false, onFlip)
         }
     }
 }
@@ -246,7 +239,7 @@ private fun MeetingInfo(meeting: Meeting, code: String, onJoin: () -> Unit) {
             Text("Code: $code", color = Color(0xFF888888), fontSize = 12.8.sp, fontFamily = FontFamily.Monospace)
             Spacer(Modifier.width(6.dp))
             Icon(
-                if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
+                if (copied) HeroIcons.Check else HeroIcons.DocumentDuplicate,
                 "Copy code",
                 Modifier.size(22.dp).clip(RoundedCornerShape(4.dp)).clickable {
                     clipboard.setText(AnnotatedString(code))

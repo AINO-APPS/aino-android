@@ -19,27 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
-import androidx.compose.material.icons.outlined.AccountBalanceWallet
-import androidx.compose.material.icons.outlined.AccountTree
-import androidx.compose.material.icons.outlined.Apartment
-import androidx.compose.material.icons.outlined.Business
-import androidx.compose.material.icons.outlined.Campaign
-import androidx.compose.material.icons.outlined.CreditCard
-import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Label
-import androidx.compose.material.icons.outlined.Payments
-import androidx.compose.material.icons.outlined.People
-import androidx.compose.material.icons.outlined.PersonAdd
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.ViewKanban
-import androidx.compose.material.icons.outlined.VpnKey
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * An Admin panel section (`pages/admin/index.tsx` `SECTIONS`) that exists on Android.
@@ -79,25 +59,25 @@ data class AdminSection(
  * Task Labels, Registration & Invites, Announcements).
  */
 private val ANDROID_ADMIN_SECTIONS = listOf(
-    AdminSection("home", "Home", "Overview", Icons.Outlined.Home),
-    AdminSection("users", "Users", "People", Icons.Outlined.People),
-    AdminSection("add", "Add People", "People", Icons.Outlined.PersonAdd),
-    AdminSection("role-requests", "Role Requests", "People", Icons.Outlined.Refresh),
-    AdminSection("departments", "Departments", "Structure", Icons.Outlined.Business, requires = "orgId"),
-    AdminSection("teams", "Teams", "Structure", Icons.Outlined.Groups, requires = "orgId"),
-    AdminSection("org-chart", "Org Chart", "Structure", Icons.Outlined.AccountTree, requires = "orgId"),
-    AdminSection("agile", "Agile Config", "Structure", Icons.Outlined.ViewKanban, requires = "orgId", feature = "agile"),
-    AdminSection("projects", "Projects", "Structure", Icons.Outlined.Folder, requires = "orgId", feature = "agile"),
-    AdminSection("organizations", "Organizations", "Structure", Icons.Outlined.Apartment, requires = "platform"),
-    AdminSection("task-labels", "Task Labels", "Structure", Icons.Outlined.Label),
-    AdminSection("payroll", "Payroll Periods", "Operations", Icons.Outlined.Payments, feature = "payroll"),
-    AdminSection("compensation", "Compensation", "Operations", Icons.Outlined.AccountBalanceWallet, requires = "orgId", feature = "payroll"),
-    AdminSection("salary-slips", "Salary Slips", "Operations", Icons.AutoMirrored.Outlined.ReceiptLong, requires = "orgId", feature = "payroll"),
-    AdminSection("payment-config", "Payment Settings", "Operations", Icons.Outlined.CreditCard, requires = "orgId", feature = "payroll"),
-    AdminSection("audit", "Audit Logs", "Compliance", Icons.Outlined.History),
-    AdminSection("org-settings", "Org Settings", "Settings", Icons.Outlined.Settings, requires = "orgId"),
-    AdminSection("registration", "Registration & Invites", "Settings", Icons.Outlined.VpnKey),
-    AdminSection("announcements", "Announcements", "Settings", Icons.Outlined.Campaign, requires = "super"),
+    AdminSection("home", "Home", "Overview", HeroIcons.Home),
+    AdminSection("users", "Users", "People", HeroIcons.Users),
+    AdminSection("add", "Add People", "People", HeroIcons.UserPlus),
+    AdminSection("role-requests", "Role Requests", "People", HeroIcons.ArrowPath),
+    AdminSection("departments", "Departments", "Structure", HeroIcons.BuildingOffice, requires = "orgId"),
+    AdminSection("teams", "Teams", "Structure", HeroIcons.UserGroup, requires = "orgId"),
+    AdminSection("org-chart", "Org Chart", "Structure", HeroIcons.RectangleGroup, requires = "orgId"),
+    AdminSection("agile", "Agile Config", "Structure", HeroIcons.ViewColumns, requires = "orgId", feature = "agile"),
+    AdminSection("projects", "Projects", "Structure", HeroIcons.Folder, requires = "orgId", feature = "agile"),
+    AdminSection("organizations", "Organizations", "Structure", HeroIcons.BuildingOffice2, requires = "platform"),
+    AdminSection("task-labels", "Task Labels", "Structure", HeroIcons.Tag),
+    AdminSection("payroll", "Payroll Periods", "Operations", HeroIcons.Banknotes, feature = "payroll"),
+    AdminSection("compensation", "Compensation", "Operations", HeroIcons.Wallet, requires = "orgId", feature = "payroll"),
+    AdminSection("salary-slips", "Salary Slips", "Operations", HeroIcons.ReceiptPercent, requires = "orgId", feature = "payroll"),
+    AdminSection("payment-config", "Payment Settings", "Operations", HeroIcons.CreditCard, requires = "orgId", feature = "payroll"),
+    AdminSection("audit", "Audit Logs", "Compliance", HeroIcons.Clock),
+    AdminSection("org-settings", "Org Settings", "Settings", HeroIcons.Cog6Tooth, requires = "orgId"),
+    AdminSection("registration", "Registration & Invites", "Settings", HeroIcons.Key),
+    AdminSection("announcements", "Announcements", "Settings", HeroIcons.Megaphone, requires = "super"),
 )
 
 private val ADMIN_GROUP_ORDER = listOf("Overview", "People", "Structure", "Operations", "Compliance", "Settings")
@@ -159,7 +139,7 @@ fun AdminScreen(role: String, sections: List<AdminSection>, onOpen: (AdminSectio
             return@Column
         }
         Row(Modifier.fillMaxWidth().padding(start = 9.6.dp, end = 9.6.dp, top = 5.6.dp, bottom = 13.6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Settings, null, Modifier.size(18.dp), tint = colors.textPrimary)
+            Icon(HeroIcons.Cog6Tooth, null, Modifier.size(18.dp), tint = colors.textPrimary)
             Spacer(Modifier.width(8.8.dp))
             Column {
                 Text("Admin Panel", color = colors.textPrimary, fontSize = 0.95.rem, fontWeight = FontWeight.Bold, letterSpacing = 0.01.em)
@@ -187,7 +167,7 @@ fun AdminScreen(role: String, sections: List<AdminSection>, onOpen: (AdminSectio
                 ) {
                     Text(group.uppercase(), color = colors.textSecondary, fontSize = 0.68.rem, fontWeight = FontWeight.Bold, letterSpacing = 0.09.em)
                     Spacer(Modifier.width(5.6.dp))
-                    Icon(Icons.Outlined.ExpandMore, null, Modifier.size(12.dp).rotate(if (collapsed) -90f else 0f), tint = colors.textSecondary)
+                    Icon(HeroIcons.ChevronDown, null, Modifier.size(12.dp).rotate(if (collapsed) -90f else 0f), tint = colors.textSecondary)
                 }
                 if (!collapsed) {
                     Column(Modifier.padding(top = 2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {

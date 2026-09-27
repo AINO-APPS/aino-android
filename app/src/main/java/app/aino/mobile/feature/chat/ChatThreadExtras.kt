@@ -2,6 +2,7 @@ package app.aino.mobile.feature.chat
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,14 +18,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.FormatListBulleted
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -54,6 +47,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** Signal's rounded (18dp) popup menu on a solid surface. */
 @Composable
@@ -130,7 +124,7 @@ internal fun PendingMediaBubble(media: PendingMedia, onCancel: () -> Unit, onRet
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(if (failed) "Not sent" else shortTime(media.createdAtEpochMs), color = tint, fontSize = SignalDimens.footerText)
-            if (failed) Icon(Icons.Outlined.ErrorOutline, "Failed", Modifier.size(14.dp), tint = if (onMedia) Color.White else signal.danger)
+            if (failed) Icon(HeroIcons.ExclamationCircle, "Failed", Modifier.size(14.dp), tint = if (onMedia) Color.White else signal.danger)
             else SignalReceiptIcon(DeliveryTick.Sending, tint)
         }
     }
@@ -152,6 +146,30 @@ internal fun PendingMediaBubble(media: PendingMedia, onCancel: () -> Unit, onRet
                         Box(Modifier.padding(horizontal = SignalDimens.bubbleHPad, vertical = SignalDimens.bubbleTopPad)) {
                             BubbleTextWithFooter(AnnotatedString(caption), signal.onOutgoing, { footer(false) })
                         }
+                    }
+                }
+            } else if (media.isAudio) {
+                // Signal: the real voice-note bubble appears at once; only a ring on
+                // the play button and the footer clock show it is still sending.
+                Column(
+                    Modifier.widthIn(max = bubbleMax).clip(shape).background(signal.outgoing)
+                        .border(1.dp, signal.outgoingBorder, shape)
+                        .padding(
+                            start = SignalDimens.bubbleHPad, end = SignalDimens.bubbleHPad,
+                            top = SignalDimens.bubbleTopPad, bottom = SignalDimens.bubbleFooterBottomPad,
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    ChatVoicePlayer(
+                        media.uri.toString(), Modifier.fillMaxWidth(), outgoing = true,
+                        waveSeed = media.fileName, uploading = !failed, uploadProgress = media.progress,
+                    )
+                    Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (failed) {
+                            Text("Retry", Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onRetry).padding(horizontal = 4.dp), color = signal.primary, fontSize = SignalDimens.footerText, fontWeight = FontWeight.Medium)
+                            Text("Delete", Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onCancel).padding(horizontal = 4.dp), color = signal.danger, fontSize = SignalDimens.footerText, fontWeight = FontWeight.Medium)
+                        }
+                        footer(false)
                     }
                 }
             } else {
@@ -180,12 +198,12 @@ private fun PendingFileRow(
     ) {
         Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
             if (failed) {
-                Icon(Icons.Outlined.Refresh, "Retry", Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onRetry).padding(10.dp), tint = signal.onOutgoing)
+                Icon(HeroIcons.ArrowPath, "Retry", Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onRetry).padding(10.dp), tint = signal.onOutgoing)
             } else {
                 val progress = media.progress
                 if (progress == null) CircularProgressIndicator(Modifier.size(40.dp), color = signal.onOutgoing, strokeWidth = 2.5.dp)
                 else CircularProgressIndicator(progress = { progress }, modifier = Modifier.size(40.dp), color = signal.onOutgoing, strokeWidth = 2.5.dp, trackColor = signal.onOutgoing.copy(alpha = .25f))
-                Icon(Icons.Outlined.Close, "Cancel", Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onCancel).padding(10.dp), tint = signal.onOutgoing)
+                Icon(HeroIcons.XMark, "Cancel", Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onCancel).padding(10.dp), tint = signal.onOutgoing)
             }
         }
         Column(Modifier.weight(1f, fill = false)) {
@@ -224,7 +242,7 @@ internal fun PinnedMessageBar(
                     )
                 }
             }
-            Icon(Icons.Outlined.PushPin, null, Modifier.padding(start = 12.dp).size(18.dp), tint = signal.primary)
+            Icon(HeroIcons.PushPin, null, Modifier.padding(start = 12.dp).size(18.dp), tint = signal.primary)
             if (message.isImageAttachment() || message.isVideoAttachment()) {
                 ChatThumbnail(
                     resolveChatMediaUrl(message.fileUrl.orEmpty()), message.fileName, video = false,
@@ -240,13 +258,13 @@ internal fun PinnedMessageBar(
             }
             Box {
                 Icon(
-                    Icons.Outlined.MoreVert, "Pinned message options",
+                    HeroIcons.EllipsisVertical, "Pinned message options",
                     Modifier.size(40.dp).clip(CircleShape).clickable { menu = true }.padding(10.dp), tint = signal.textSecondary,
                 )
                 SignalDropdownMenu(expanded = menu, onDismiss = { menu = false }) {
-                    SignalMenuItem("Go to message", Icons.Outlined.ChatBubbleOutline) { menu = false; onClick() }
-                    SignalMenuItem("Unpin", Icons.Outlined.PushPin) { menu = false; onUnpin() }
-                    SignalMenuItem("View all pinned", Icons.AutoMirrored.Outlined.FormatListBulleted) { menu = false; onViewAll() }
+                    SignalMenuItem("Go to message", HeroIcons.ChatBubbleOvalLeft) { menu = false; onClick() }
+                    SignalMenuItem("Unpin", HeroIcons.PushPin) { menu = false; onUnpin() }
+                    SignalMenuItem("View all pinned", HeroIcons.ListBullet) { menu = false; onViewAll() }
                 }
             }
         }

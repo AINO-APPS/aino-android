@@ -17,15 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Fingerprint
-import androidx.compose.material.icons.outlined.LocationOn
-import androidx.compose.material.icons.outlined.Shield
-import androidx.compose.material.icons.outlined.Wifi
-import androidx.compose.material.icons.outlined.WifiOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -48,6 +39,7 @@ import app.aino.mobile.feature.attendance.VerifyFix
 import app.aino.mobile.feature.attendance.VerifySession
 import app.aino.mobile.feature.attendance.VerifyStep
 import app.aino.mobile.feature.attendance.WorkMode
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** One-tap remediations the host wires to Android intents / flows. */
 data class VerifyActions(
@@ -95,7 +87,7 @@ fun ClockInVerifySheet(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Outlined.Shield, null, Modifier.size(22.dp), tint = colors.primary)
+                Icon(HeroIcons.ShieldCheck, null, Modifier.size(22.dp), tint = colors.primary)
                 Column {
                     Text(
                         if (isClockOut) "Verify & Clock Out" else "Verify & Clock In",
@@ -200,8 +192,8 @@ private fun StepChip(number: Int, label: String, state: StepState) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(Modifier.size(22.dp).background(tint.copy(alpha = .15f), CircleShape).border(1.dp, tint, CircleShape), contentAlignment = Alignment.Center) {
             when (state) {
-                StepState.Done -> Icon(Icons.Outlined.Check, null, Modifier.size(13.dp), tint = tint)
-                StepState.Failed -> Icon(Icons.Outlined.ErrorOutline, null, Modifier.size(13.dp), tint = tint)
+                StepState.Done -> Icon(HeroIcons.Check, null, Modifier.size(13.dp), tint = tint)
+                StepState.Failed -> Icon(HeroIcons.ExclamationCircle, null, Modifier.size(13.dp), tint = tint)
                 else -> Text("$number", color = tint, fontSize = 0.72.rem, fontWeight = FontWeight.Bold)
             }
         }
@@ -226,22 +218,22 @@ private fun PresencePanel(session: VerifySession) {
             return@Column
         }
         when {
-            session.wifiVerified -> SignalRow(Icons.Outlined.Wifi, colors.success, "Connected to office Wi-Fi")
-            session.wifiConfigured && session.wifiBssid != null -> SignalRow(Icons.Outlined.WifiOff, colors.textSecondary, "Not a registered office Wi-Fi — using location")
-            session.wifiConfigured -> SignalRow(Icons.Outlined.WifiOff, colors.textMuted, "Not on Wi-Fi — using location")
+            session.wifiVerified -> SignalRow(HeroIcons.Wifi, colors.success, "Connected to office Wi-Fi")
+            session.wifiConfigured && session.wifiBssid != null -> SignalRow(HeroIcons.WifiSlash, colors.textSecondary, "Not a registered office Wi-Fi — using location")
+            session.wifiConfigured -> SignalRow(HeroIcons.WifiSlash, colors.textMuted, "Not on Wi-Fi — using location")
         }
         val location = session.location
         if (!session.wifiVerified && location != null) {
             val accuracy = location.accuracyMeters.toInt()
             val distance = session.distanceMeters
             if (session.presenceProven) {
-                SignalRow(Icons.Outlined.CheckCircle, colors.success, "At the office" + (distance?.let { " · $it m away" } ?: "") + " (±$accuracy m)")
+                SignalRow(HeroIcons.CheckCircle, colors.success, "At the office" + (distance?.let { " · $it m away" } ?: "") + " (±$accuracy m)")
             } else {
-                SignalRow(Icons.Outlined.LocationOn, colors.warning, "Outside the office" + (distance?.let { " · $it m away" } ?: "") + " (±$accuracy m)")
+                SignalRow(HeroIcons.MapPin, colors.warning, "Outside the office" + (distance?.let { " · $it m away" } ?: "") + " (±$accuracy m)")
             }
         }
         if (!session.presenceProven && session.presenceOptional && session.step != VerifyStep.Collecting) {
-            SignalRow(Icons.Outlined.LocationOn, colors.textSecondary, "Not verified at the office — this will be recorded as remote")
+            SignalRow(HeroIcons.MapPin, colors.textSecondary, "Not verified at the office — this will be recorded as remote")
         }
     }
 }
@@ -286,7 +278,7 @@ private fun IdentityPanel(session: VerifySession, onUseFingerprint: () -> Unit) 
             if (submitting) {
                 CircularProgressIndicator(Modifier.size(34.dp), color = colors.success, strokeWidth = 3.dp)
             } else {
-                Icon(Icons.Outlined.Fingerprint, null, Modifier.size(40.dp), tint = tint)
+                Icon(HeroIcons.FingerPrint, null, Modifier.size(40.dp), tint = tint)
             }
         }
         Text(

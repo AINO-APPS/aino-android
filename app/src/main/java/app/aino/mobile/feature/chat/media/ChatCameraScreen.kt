@@ -50,14 +50,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Cameraswitch
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.FlashAuto
-import androidx.compose.material.icons.outlined.FlashOff
-import androidx.compose.material.icons.outlined.FlashOn
-import androidx.compose.material.icons.outlined.PhotoLibrary
-import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -95,6 +87,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 import kotlin.coroutines.resume
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private const val HOLD_MS = 400L
 private const val MAX_VIDEO_MS = 60_000L
@@ -272,7 +265,7 @@ fun ChatCameraScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = { stopRecording(); onClose() }) {
-                Icon(Icons.Outlined.Close, contentDescription = "Close camera", tint = Color.White)
+                Icon(HeroIcons.XMark, contentDescription = "Close camera", tint = Color.White)
             }
             if (recording != null) {
                 Row(
@@ -292,9 +285,9 @@ fun ChatCameraScreen(
                 }
             }) {
                 val (icon, label) = when (flashMode) {
-                    ImageCapture.FLASH_MODE_AUTO -> Icons.Outlined.FlashAuto to "Flash auto"
-                    ImageCapture.FLASH_MODE_ON -> Icons.Outlined.FlashOn to "Flash on"
-                    else -> Icons.Outlined.FlashOff to "Flash off"
+                    ImageCapture.FLASH_MODE_AUTO -> HeroIcons.Bolt to "Flash auto"
+                    ImageCapture.FLASH_MODE_ON -> HeroIcons.Bolt to "Flash on"
+                    else -> HeroIcons.BoltSlash to "Flash off"
                 }
                 Icon(icon, contentDescription = label, tint = Color.White)
             }
@@ -321,7 +314,7 @@ fun ChatCameraScreen(
             ) {
                 RoundControl(visible = recording == null) {
                     IconButton(onClick = onOpenGallery) {
-                        Icon(Icons.Outlined.PhotoLibrary, contentDescription = "Open gallery", tint = Color.White)
+                        Icon(HeroIcons.Photo, contentDescription = "Open gallery", tint = Color.White)
                     }
                 }
                 Box(
@@ -362,7 +355,7 @@ fun ChatCameraScreen(
                 }
                 RoundControl(visible = recording == null) {
                     IconButton(onClick = { front = !front }) {
-                        Icon(Icons.Outlined.Cameraswitch, contentDescription = "Switch camera", tint = Color.White)
+                        Icon(HeroIcons.ArrowPathRoundedSquare, contentDescription = "Switch camera", tint = Color.White)
                     }
                 }
             }
@@ -396,7 +389,7 @@ private fun RecentThumb(uri: Uri, onPick: (MediaSendItem) -> Unit) {
     ) {
         AsyncImage(model = uri, contentDescription = "Recent media", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         if (mime.startsWith("video/")) {
-            Icon(Icons.Outlined.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.align(Alignment.Center))
+            Icon(HeroIcons.Play, contentDescription = null, tint = Color.White, modifier = Modifier.align(Alignment.Center))
         }
     }
 }

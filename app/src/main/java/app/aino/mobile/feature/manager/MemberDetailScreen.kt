@@ -16,13 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Assignment
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Checklist
-import androidx.compose.material.icons.outlined.Coffee
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +36,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 import app.aino.mobile.core.common.roleLabel
 import kotlin.math.min
 import kotlin.math.roundToInt
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * `EmployeeDashboard.tsx` — the member-detail sub-screen, navigated to via
@@ -67,7 +61,7 @@ fun MemberDetailScreen(viewModel: ManagerViewModel, userId: Long, onBack: () -> 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = colors.text)
+                    Icon(HeroIcons.ArrowLeft, "Back", tint = colors.text)
                 }
                 Spacer(Modifier.width(4.dp))
                 Text("Back", color = colors.text, fontSize = 0.9.rem)
@@ -149,13 +143,13 @@ private fun MemberOverviewTab(section: Section<MemberOverviewResponse>) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OverviewStat(Icons.Outlined.Schedule, "${data.todayHours}h", "Today's Hours", Modifier.weight(1f))
-                OverviewStat(Icons.Outlined.Coffee, formatMin(data.todayBreakMin), "Today's Break", Modifier.weight(1f))
-                OverviewStat(Icons.AutoMirrored.Outlined.Assignment, "${data.pendingRequests}", "Pending Requests", Modifier.weight(1f), amber = true)
+                OverviewStat(HeroIcons.Clock, "${data.todayHours}h", "Today's Hours", Modifier.weight(1f))
+                OverviewStat(HeroIcons.Cup, formatMin(data.todayBreakMin), "Today's Break", Modifier.weight(1f))
+                OverviewStat(HeroIcons.ClipboardDocumentList, "${data.pendingRequests}", "Pending Requests", Modifier.weight(1f), amber = true)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OverviewStat(Icons.Outlined.CalendarMonth, "${data.monthLeaves}", "Leaves This Month", Modifier.weight(1f))
-                OverviewStat(Icons.Outlined.Checklist, "${data.todayTasks.size}", "Today's Planner", Modifier.weight(1f))
+                OverviewStat(HeroIcons.CalendarDays, "${data.monthLeaves}", "Leaves This Month", Modifier.weight(1f))
+                OverviewStat(HeroIcons.ClipboardDocumentCheck, "${data.todayTasks.size}", "Today's Planner", Modifier.weight(1f))
             }
         }
 

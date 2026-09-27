@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.DirectionsRun
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -25,6 +23,7 @@ import app.aino.mobile.core.designsystem.component.WebCard
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.feature.home.ActiveSprint
 import app.aino.mobile.feature.home.SprintTask
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private val PRIORITY_ORDER = mapOf("urgent" to 0, "high" to 1, "medium" to 2, "low" to 3)
 
@@ -37,7 +36,7 @@ fun SprintProgressCard(sprint: ActiveSprint?, sprintTasks: List<SprintTask>, bac
 
     WebCard(Modifier.clickable(onClick = onOpen)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.DirectionsRun, null, Modifier.size(18.dp), tint = colors.primary)
+            Icon(HeroIcons.Bolt, null, Modifier.size(18.dp), tint = colors.primary)
             Text(if (sprint != null) " " + sprint.name else " My Backlog", color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
         }
 

@@ -18,9 +18,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.material.icons.outlined.AddToHomeScreen
-import androidx.compose.material.icons.outlined.DeleteSweep
-import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -52,55 +49,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material.icons.outlined.NotificationsOff
-import androidx.compose.material.icons.outlined.Phone
-import androidx.compose.material.icons.outlined.PushPin
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.GroupAdd
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.Block
-import androidx.compose.material.icons.automirrored.outlined.ExitToApp
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Search
 import kotlinx.coroutines.launch
-import androidx.compose.material.icons.outlined.StarOutline
-import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Send
-import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.AudioFile
-import androidx.compose.material.icons.outlined.Movie
-import androidx.compose.material.icons.outlined.Poll
-import androidx.compose.material.icons.outlined.Replay
-import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Archive
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.People
-import androidx.compose.material.icons.outlined.Done
-import androidx.compose.material.icons.outlined.DoneAll
-import androidx.compose.material.icons.outlined.Download
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.MoreHoriz
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.CameraAlt
-import androidx.compose.material.icons.outlined.EmojiEmotions
-import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Star
-import androidx.compose.material.icons.automirrored.outlined.Forward
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.window.Dialog
@@ -121,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -148,6 +100,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private enum class ChatListTab { Chat, Meet, Calls }
 
@@ -301,7 +254,7 @@ fun ChatScreen(
                     ChatListTab.Calls -> {
                         when {
                             ui.callsLoading -> item(key = "calls-loading") { SearchHint("Loading call history…", true) }
-                            ui.calls.isEmpty() -> item(key = "calls-empty") { HonestEmpty(Icons.Outlined.Phone, "No calls yet") }
+                            ui.calls.isEmpty() -> item(key = "calls-empty") { HonestEmpty(HeroIcons.Phone, "No calls yet") }
                             else -> items(ui.calls, key = { "call-${it.id}" }) { call ->
                                 CallRow(
                                     call = call,
@@ -315,7 +268,7 @@ fun ChatScreen(
                     }
                     ChatListTab.Meet -> {
                         if (visibleConversations.isEmpty()) item(key = "meet-empty") {
-                            HonestEmpty(Icons.Outlined.Videocam, "No meeting chats yet")
+                            HonestEmpty(HeroIcons.VideoCamera, "No meeting chats yet")
                         } else items(visibleConversations, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation) }
                     }
                     ChatListTab.Chat -> {
@@ -325,7 +278,7 @@ fun ChatScreen(
                             visibleConversations.filter { !it.isPinned && !it.isFavourite }
                         if (archivedOpen) item(key = "archived-header") { ArchivedHeader { archivedOpen = false } }
                         if (visibleConversations.isEmpty()) item(key = "chat-empty") {
-                            HonestEmpty(Icons.Outlined.ChatBubbleOutline, if (ui.loading) "Loading conversations…" else if (archivedOpen) "No archived chats" else "No conversations yet")
+                            HonestEmpty(HeroIcons.ChatBubbleOvalLeft, if (ui.loading) "Loading conversations…" else if (archivedOpen) "No archived chats" else "No conversations yet")
                         }
                         items(ordered, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation) }
                         val archivedCount = ui.conversations.count { it.isArchived && !it.isMeetingChat }
@@ -343,7 +296,7 @@ fun ChatScreen(
                 shape = RoundedCornerShape(18.dp),
                 containerColor = if (signal.isDark) Color(0xFF2B3A5A) else Color(0xFFD2DFFB),
                 contentColor = signal.text,
-            ) { Icon(Icons.Outlined.Edit, "New chat") }
+            ) { Icon(HeroIcons.PencilSquare, "New chat") }
         }
         // Signal "Chat archived" snackbar with Undo.
         ui.archiveUndo?.let { archived ->
@@ -371,7 +324,7 @@ private fun ChatHeader(
         if (searchOpen) {
             val focus = remember { androidx.compose.ui.focus.FocusRequester() }
             LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Close search", Modifier.size(48.dp).clip(CircleShape).clickable { onSearchOpen(false) }.padding(12.dp), tint = signal.text)
+            Icon(HeroIcons.ArrowLeft, "Close search", Modifier.size(48.dp).clip(CircleShape).clickable { onSearchOpen(false) }.padding(12.dp), tint = signal.text)
             Row(
                 Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(22.dp)).background(signal.searchPill).padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -386,7 +339,7 @@ private fun ChatHeader(
                         inner()
                     } },
                 )
-                if (query.isNotEmpty()) Icon(Icons.Outlined.Close, "Clear search", Modifier.size(24.dp).clip(CircleShape).clickable { onQuery("") }, tint = signal.textSecondary)
+                if (query.isNotEmpty()) Icon(HeroIcons.XMark, "Clear search", Modifier.size(24.dp).clip(CircleShape).clickable { onQuery("") }, tint = signal.textSecondary)
             }
             Spacer(Modifier.width(8.dp))
         } else {
@@ -395,13 +348,13 @@ private fun ChatHeader(
                 Modifier.weight(1f).padding(start = 12.dp),
                 color = signal.text, fontSize = 22.sp, fontWeight = FontWeight.Medium,
             )
-            Icon(Icons.Outlined.Search, "Search", Modifier.size(48.dp).clip(CircleShape).clickable { onSearchOpen(true) }.padding(12.dp), tint = signal.text)
+            Icon(HeroIcons.MagnifyingGlass, "Search", Modifier.size(48.dp).clip(CircleShape).clickable { onSearchOpen(true) }.padding(12.dp), tint = signal.text)
             Box {
-                Icon(Icons.Outlined.MoreVert, "More options", Modifier.size(48.dp).clip(CircleShape).clickable { menuOpen = true }.padding(12.dp), tint = signal.text)
+                Icon(HeroIcons.EllipsisVertical, "More options", Modifier.size(48.dp).clip(CircleShape).clickable { menuOpen = true }.padding(12.dp), tint = signal.text)
                 androidx.compose.material3.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = signal.surface) {
                     androidx.compose.material3.DropdownMenuItem(
                         text = { Text("New group", color = signal.text) },
-                        leadingIcon = { Icon(Icons.Outlined.GroupAdd, null, tint = signal.text) },
+                        leadingIcon = { Icon(HeroIcons.UserPlus, null, tint = signal.text) },
                         onClick = { menuOpen = false; onNewGroup() },
                     )
                 }
@@ -414,9 +367,9 @@ private fun ChatHeader(
 @Composable
 private fun ChatFilterChips(activeTab: ChatListTab, unread: Int, meetingUnread: Int, meetingsEnabled: Boolean, onTab: (ChatListTab) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Segment("Chats", Icons.Outlined.ChatBubbleOutline, activeTab == ChatListTab.Chat, unread) { onTab(ChatListTab.Chat) }
-        if (meetingsEnabled) Segment("Meet", Icons.Outlined.Videocam, activeTab == ChatListTab.Meet, meetingUnread) { onTab(ChatListTab.Meet) }
-        Segment("Calls", Icons.Outlined.Phone, activeTab == ChatListTab.Calls, 0) { onTab(ChatListTab.Calls) }
+        Segment("Chats", HeroIcons.ChatBubbleOvalLeft, activeTab == ChatListTab.Chat, unread) { onTab(ChatListTab.Chat) }
+        if (meetingsEnabled) Segment("Meet", HeroIcons.VideoCamera, activeTab == ChatListTab.Meet, meetingUnread) { onTab(ChatListTab.Meet) }
+        Segment("Calls", HeroIcons.Phone, activeTab == ChatListTab.Calls, 0) { onTab(ChatListTab.Calls) }
     }
 }
 
@@ -449,12 +402,12 @@ private fun SelectionHeader(
         Modifier.fillMaxWidth().height(SignalDimens.selectionHeader).background(signal.surface).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.Close, "Cancel selection", Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onCancel).padding(12.dp), tint = signal.text)
+        Icon(HeroIcons.XMark, "Cancel selection", Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onCancel).padding(12.dp), tint = signal.text)
         Text("$selected", Modifier.weight(1f).padding(start = 8.dp), color = signal.text, fontSize = 20.sp, fontWeight = FontWeight.Medium)
         TextButton(onClick = onSelectAll) { Text(if (allSelected) "Clear all" else "Select all", color = signal.primary) }
         Box(Modifier.size(48.dp).clip(CircleShape).clickable(enabled = !deleting, onClick = onDelete), contentAlignment = Alignment.Center) {
             if (deleting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = signal.danger)
-            else Icon(Icons.Outlined.DeleteOutline, "Delete", tint = signal.danger)
+            else Icon(HeroIcons.Trash, "Delete", tint = signal.danger)
         }
     }
 }
@@ -507,7 +460,7 @@ private fun ConversationRow(
             if (selected) Box(
                 Modifier.align(Alignment.BottomEnd).size(20.dp).background(signal.primary, CircleShape).border(2.dp, signal.background, CircleShape),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Outlined.Done, null, Modifier.size(12.dp), tint = Color.White) }
+            ) { Icon(HeroIcons.Check, null, Modifier.size(12.dp), tint = Color.White) }
         }
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
@@ -517,7 +470,7 @@ private fun ConversationRow(
                     Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                     color = signal.text, fontSize = 17.sp, fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
                 )
-                if (conversation.isMuted) { Icon(Icons.Outlined.NotificationsOff, "Muted", Modifier.padding(start = 4.dp).size(14.dp), tint = signal.textSecondary) }
+                if (conversation.isMuted) { Icon(HeroIcons.BellSlash, "Muted", Modifier.padding(start = 4.dp).size(14.dp), tint = signal.textSecondary) }
                 Text(
                     listTime(conversation.lastMessageAt ?: conversation.updatedAt),
                     Modifier.padding(start = 6.dp),
@@ -533,8 +486,8 @@ private fun ConversationRow(
                     color = if (unread) signal.text else signal.textSecondary, fontSize = 15.sp, lineHeight = 20.sp,
                     fontStyle = if (conversation.lastDeleted != null) androidx.compose.ui.text.font.FontStyle.Italic else null,
                 )
-                if (conversation.isPinned) Icon(Icons.Outlined.PushPin, "Pinned", Modifier.padding(start = 6.dp).size(16.dp), tint = signal.textSecondary)
-                if (conversation.isFavourite) Icon(Icons.Outlined.Star, "Favourite", Modifier.padding(start = 6.dp).size(16.dp), tint = Color(0xFFCB912F))
+                if (conversation.isPinned) Icon(HeroIcons.PushPin, "Pinned", Modifier.padding(start = 6.dp).size(16.dp), tint = signal.textSecondary)
+                if (conversation.isFavourite) Icon(HeroIcons.Star, "Favourite", Modifier.padding(start = 6.dp).size(16.dp), tint = Color(0xFFCB912F))
                 if (unread) {
                     Spacer(Modifier.width(8.dp))
                     Box(Modifier.clip(CircleShape).clickable { viewModel.markRead(conversation) }) { SignalUnreadBadge(conversation.unreadCount, muted = conversation.isMuted) }
@@ -743,7 +696,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 if (threadItems.isEmpty() && !ui.threadLoading) {
-                    item { HonestEmpty(Icons.Outlined.ChatBubbleOutline, "No messages yet") }
+                    item { HonestEmpty(HeroIcons.ChatBubbleOvalLeft, "No messages yet") }
                 }
                 items(newestFirst, key = ThreadItem::key) { item ->
                     // Signal: new bubbles slide up + fade in; removals fade (pending → sent swap).
@@ -839,7 +792,6 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
             } else MessageComposer(
                 value = ui.composer,
                 uploading = ui.uploading,
-                uploadProgress = ui.uploadProgress,
                 editingMessage = ui.editingMessage,
                 replyingTo = ui.replyingTo,
                 isGroup = conversation.isGroup,
@@ -920,19 +872,19 @@ private fun MessageSelectionBar(ui: ChatUiState, viewModel: ChatViewModel, onDel
         Modifier.fillMaxWidth().background(signal.surface).statusBarsPadding().height(SignalDimens.selectionHeader).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.Close, "Cancel message selection", Modifier.size(48.dp).clip(CircleShape).clickable(onClick = viewModel::clearMessageSelection).padding(12.dp), tint = signal.text)
+        Icon(HeroIcons.XMark, "Cancel message selection", Modifier.size(48.dp).clip(CircleShape).clickable(onClick = viewModel::clearMessageSelection).padding(12.dp), tint = signal.text)
         Text("${ui.selectedMessageIds.size}", Modifier.weight(1f).padding(start = 8.dp), color = signal.text, fontSize = 20.sp, fontWeight = FontWeight.Medium)
         @Composable
         fun action(icon: ImageVector, label: String, tint: Color = signal.text, onClick: () -> Unit) =
             Icon(icon, label, Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClick).padding(12.dp), tint = tint)
-        action(Icons.Outlined.ContentCopy, "Copy selected text") {
+        action(HeroIcons.DocumentDuplicate, "Copy selected text") {
             viewModel.selectedText().takeIf(String::isNotEmpty)?.let { clipboard.setText(androidx.compose.ui.text.AnnotatedString(it)) }
             viewModel.clearMessageSelection()
         }
-        if (selected.size == 1) action(Icons.AutoMirrored.Outlined.Forward, "Forward") { viewModel.beginForward(selected.first()); viewModel.clearMessageSelection() }
-        action(Icons.Outlined.PushPin, "Pin or unpin selected", onClick = viewModel::pinSelected)
-        action(Icons.Outlined.StarOutline, "Save or unsave selected", onClick = viewModel::starSelected)
-        action(Icons.Outlined.DeleteOutline, "Delete selected", tint = signal.danger) { onDelete(selected) }
+        if (selected.size == 1) action(HeroIcons.ArrowUturnRight, "Forward") { viewModel.beginForward(selected.first()); viewModel.clearMessageSelection() }
+        action(HeroIcons.PushPin, "Pin or unpin selected", onClick = viewModel::pinSelected)
+        action(HeroIcons.Star, "Save or unsave selected", onClick = viewModel::starSelected)
+        action(HeroIcons.Trash, "Delete selected", tint = signal.danger) { onDelete(selected) }
     }
 }
 @Composable
@@ -1007,7 +959,7 @@ private fun ScrollToBottomButton(unseen: Int, onClick: () -> Unit) {
         androidx.compose.material3.Surface(
             onClick = onClick, shape = CircleShape, color = signal.surface, shadowElevation = 3.dp,
             modifier = Modifier.padding(top = 10.dp).size(44.dp),
-        ) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.KeyboardArrowDown, "Scroll to latest", tint = signal.text) } }
+        ) { Box(contentAlignment = Alignment.Center) { Icon(HeroIcons.ChevronDown, "Scroll to latest", tint = signal.text) } }
         if (unseen > 0) SignalUnreadBadge(unseen, modifier = Modifier.align(Alignment.TopCenter))
     }
 }
@@ -1036,7 +988,7 @@ private fun CallRow(
             Checkbox(checked = true, onCheckedChange = { onToggleSelection() })
         }
         Box(Modifier.size(46.dp).background(app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.surface, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(if (call.callType == "video") Icons.Outlined.Videocam else Icons.Outlined.Phone, null, tint = if (call.status == "missed") app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.danger else app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.primary)
+            Icon(if (call.callType == "video") HeroIcons.VideoCamera else HeroIcons.Phone, null, tint = if (call.status == "missed") app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.danger else app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.primary)
         }
         Column(Modifier.padding(start = 11.dp).weight(1f)) {
             Text(call.title(currentUserId), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -1087,7 +1039,7 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    Icons.AutoMirrored.Outlined.ArrowBack, "Back",
+                    HeroIcons.ArrowLeft, "Back",
                     Modifier.size(38.dp).padding(8.dp).clickable { if (page == InfoPage.Main) viewModel.closeInfo() else page = InfoPage.Main },
                     tint = colors.text,
                 )
@@ -1109,17 +1061,17 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (!conversation.isSelfChat) {
-                                InfoAction(Icons.Outlined.Phone, "Call", Modifier.weight(1f)) { withCallPermissions(false) { viewModel.closeInfo(); viewModel.startCall("voice") } }
-                                InfoAction(Icons.Outlined.Videocam, "Video", Modifier.weight(1f)) { withCallPermissions(true) { viewModel.closeInfo(); viewModel.startCall("video") } }
+                                InfoAction(HeroIcons.Phone, "Call", Modifier.weight(1f)) { withCallPermissions(false) { viewModel.closeInfo(); viewModel.startCall("voice") } }
+                                InfoAction(HeroIcons.VideoCamera, "Video", Modifier.weight(1f)) { withCallPermissions(true) { viewModel.closeInfo(); viewModel.startCall("video") } }
                             }
-                            InfoAction(Icons.Outlined.Search, "Search", Modifier.weight(1f)) { open(InfoPage.Search) }
+                            InfoAction(HeroIcons.MagnifyingGlass, "Search", Modifier.weight(1f)) { open(InfoPage.Search) }
                         }
                     }
-                    if (conversation.isGroup) item { InfoRow(Icons.Outlined.Settings, "Group settings & members") { open(InfoPage.Group) } }
+                    if (conversation.isGroup) item { InfoRow(HeroIcons.Cog6Tooth, "Group settings & members") { open(InfoPage.Group) } }
                     item {
                         val recent = (ui.infoContent as? InfoContent.Files)?.files.orEmpty().filter { it.isVisual() }.take(4)
                         Column {
-                            InfoRow(Icons.Outlined.FolderOpen, "All media, files & links", onClick = onOpenAllMedia)
+                            InfoRow(HeroIcons.FolderOpen, "All media, files & links", onClick = onOpenAllMedia)
                             if (recent.isNotEmpty()) Row(
                                 Modifier.fillMaxWidth().padding(top = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -1136,24 +1088,24 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                             }
                         }
                     }
-                    item { InfoRow(Icons.Outlined.PushPin, "Pinned messages") { open(InfoPage.Pinned) } }
-                    item { InfoRow(Icons.Outlined.StarOutline, "Saved messages") { open(InfoPage.Saved) } }
+                    item { InfoRow(HeroIcons.PushPin, "Pinned messages") { open(InfoPage.Pinned) } }
+                    item { InfoRow(HeroIcons.Star, "Saved messages") { open(InfoPage.Saved) } }
                     // The web exposes these through the conversation row's hover menu;
                     // mobile has no hover, so they live here.
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            InfoAction(Icons.Outlined.PushPin, if (conversation.isPinned) "Unpin" else "Pin chat", Modifier.weight(1f), viewModel::togglePin)
-                            InfoAction(Icons.Outlined.StarOutline, if (conversation.isFavourite) "Unfavourite" else "Favourite", Modifier.weight(1f), viewModel::toggleFavourite)
-                            InfoAction(if (conversation.isMuted) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff, if (conversation.isMuted) "Unmute" else "Mute", Modifier.weight(1f), viewModel::toggleMute)
-                            InfoAction(Icons.Outlined.Archive, if (conversation.isArchived) "Unarchive" else "Archive", Modifier.weight(1f), viewModel::toggleArchive)
+                            InfoAction(HeroIcons.PushPin, if (conversation.isPinned) "Unpin" else "Pin chat", Modifier.weight(1f), viewModel::togglePin)
+                            InfoAction(HeroIcons.Star, if (conversation.isFavourite) "Unfavourite" else "Favourite", Modifier.weight(1f), viewModel::toggleFavourite)
+                            InfoAction(if (conversation.isMuted) HeroIcons.Bell else HeroIcons.BellSlash, if (conversation.isMuted) "Unmute" else "Mute", Modifier.weight(1f), viewModel::toggleMute)
+                            InfoAction(HeroIcons.ArchiveBox, if (conversation.isArchived) "Unarchive" else "Archive", Modifier.weight(1f), viewModel::toggleArchive)
                         }
                     }
                     if (!conversation.isGroup && !conversation.isSelfChat && conversation.otherUserId != null) item {
-                        InfoRow(Icons.Outlined.Block, if (conversation.isBlocked) "Unblock user" else "Block user", danger = !conversation.isBlocked) { confirmBlock = true }
+                        InfoRow(HeroIcons.NoSymbol, if (conversation.isBlocked) "Unblock user" else "Block user", danger = !conversation.isBlocked) { confirmBlock = true }
                     }
-                    item { InfoRow(Icons.Outlined.DeleteOutline, "Clear chat", danger = true) { confirmClear = true } }
+                    item { InfoRow(HeroIcons.Trash, "Clear chat", danger = true) { confirmClear = true } }
                     if (ui.conversationCalls.isNotEmpty()) {
-                        item { SectionHeader("Call history", Icons.Outlined.Phone) }
+                        item { SectionHeader("Call history", HeroIcons.Phone) }
                         items(ui.conversationCalls, key = { "info-call-${it.id}" }) { CallRow(it, ui.currentUserId) }
                     }
                 }
@@ -1162,7 +1114,7 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                         Modifier.fillMaxWidth().padding(12.dp).height(44.dp).background(colors.inputBg, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(Icons.Outlined.Search, null, Modifier.size(16.dp), tint = colors.textMuted)
+                        Icon(HeroIcons.MagnifyingGlass, null, Modifier.size(16.dp), tint = colors.textMuted)
                         BasicTextField(
                             searchTerm, { searchTerm = it }, Modifier.weight(1f).padding(start = 8.dp), singleLine = true,
                             textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
@@ -1181,14 +1133,14 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                     val scope = androidx.compose.runtime.rememberCoroutineScope()
                     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (ui.infoLoading) item { SearchHint("Loading…", true) }
-                        else if (files.isEmpty()) item { HonestEmpty(Icons.Outlined.FolderOpen, "No shared files yet") }
+                        else if (files.isEmpty()) item { HonestEmpty(HeroIcons.FolderOpen, "No shared files yet") }
                         items(files, key = { "file-${it.id}" }) { file ->
                             InfoRow(
                                 when {
-                                    file.fileType?.startsWith("image/") == true -> Icons.Outlined.Image
-                                    file.fileType?.startsWith("video/") == true -> Icons.Outlined.Movie
-                                    file.fileType?.startsWith("audio/") == true -> Icons.Outlined.AudioFile
-                                    else -> Icons.Outlined.Description
+                                    file.fileType?.startsWith("image/") == true -> HeroIcons.Photo
+                                    file.fileType?.startsWith("video/") == true -> HeroIcons.Film
+                                    file.fileType?.startsWith("audio/") == true -> HeroIcons.MusicalNote
+                                    else -> HeroIcons.DocumentText
                                 },
                                 listOfNotNull(file.fileName ?: "File", formatChatFileSize(file.fileSize)).joinToString(" · "),
                             ) { scope.launch { openChatFile(context, resolveChatMediaUrl(file.fileUrl), file.fileName, file.fileType) } }
@@ -1209,14 +1161,14 @@ private fun InfoMessageList(ui: ChatUiState, emptyText: String, onOpen: (ChatMes
     val messages = (ui.infoContent as? InfoContent.Messages)?.messages.orEmpty()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (ui.infoLoading) item { SearchHint("Loading…", true) }
-        else if (messages.isEmpty()) item { HonestEmpty(Icons.Outlined.ChatBubbleOutline, emptyText) }
+        else if (messages.isEmpty()) item { HonestEmpty(HeroIcons.ChatBubbleOvalLeft, emptyText) }
         items(messages, key = { "info-msg-${it.id}" }) { message ->
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(colors.surface).clickable { onOpen(message) }.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(message.senderName ?: message.senderUsername.orEmpty(), Modifier.weight(1f), color = colors.primaryLight, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     message.conversationName?.let { Text("in $it ", color = colors.textMuted, fontSize = 11.sp, maxLines = 1) }
                     Text(timeAgo(message.createdAt), color = colors.textMuted, fontSize = 11.sp)
-                    onUnstar?.let { unstar -> Icon(Icons.Outlined.Star, "Unsave", Modifier.padding(start = 6.dp).size(18.dp).clickable { unstar(message) }, tint = colors.warning) }
+                    onUnstar?.let { unstar -> Icon(HeroIcons.Star, "Unsave", Modifier.padding(start = 6.dp).size(18.dp).clickable { unstar(message) }, tint = colors.warning) }
                 }
                 Text(message.body(), color = colors.text, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
@@ -1244,7 +1196,7 @@ private fun GroupSettings(ui: ChatUiState, viewModel: ChatViewModel) {
                 TextButton(onClick = { viewModel.updateGroup(GroupUpdateRequest(name = name.trim())) }, enabled = name.isNotBlank() && name != conversation.groupName) { Text("Save") }
             }
         }
-        item { SectionHeader("Members", Icons.Outlined.People) }
+        item { SectionHeader("Members", HeroIcons.Users) }
         items(ui.members, key = { "member-${it.id}" }) { member ->
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                 app.aino.mobile.core.designsystem.component.UserAvatar(member.display(), member.avatar, 38.dp)
@@ -1254,13 +1206,13 @@ private fun GroupSettings(ui: ChatUiState, viewModel: ChatViewModel) {
                 }
                 Text(member.role.replaceFirstChar(Char::uppercase), color = colors.textSecondary, fontSize = 11.sp)
                 if (canManage && member.id != ui.currentUserId && member.role != "owner") {
-                    Icon(Icons.Outlined.Close, "Remove ${member.display()}", Modifier.padding(start = 8.dp).size(20.dp).clickable {
+                    Icon(HeroIcons.XMark, "Remove ${member.display()}", Modifier.padding(start = 8.dp).size(20.dp).clickable {
                         viewModel.updateGroup(GroupUpdateRequest(removeUserIds = listOf(member.id)))
                     }, tint = colors.danger)
                 }
             }
         }
-        item { InfoRow(Icons.AutoMirrored.Outlined.ExitToApp, "Leave group", danger = true) { confirmLeave = true } }
+        item { InfoRow(HeroIcons.ArrowRightStartOnRectangle, "Leave group", danger = true) { confirmLeave = true } }
     }
     if (confirmLeave) LeaveGroupDialog(onConfirm = viewModel::leaveGroup) { confirmLeave = false }
 }
@@ -1281,7 +1233,7 @@ private fun InfoRow(icon: ImageVector, label: String, danger: Boolean = false, o
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface).border(1.dp, colors.glassBorder, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(20.dp), tint = tint)
         Text(label, Modifier.padding(start = 12.dp).weight(1f), color = if (danger) colors.danger else colors.text, fontSize = 14.sp)
-        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, Modifier.size(16.dp), tint = colors.textMuted)
+        Icon(HeroIcons.ChevronRight, null, Modifier.size(16.dp), tint = colors.textMuted)
     }
 }
 
@@ -1367,8 +1319,8 @@ private fun MessageBubble(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (message.starred) Icon(Icons.Outlined.Star, "Saved message", Modifier.size(12.dp), tint = tint)
-            if (message.pinnedAt != null) Icon(Icons.Outlined.PushPin, "Pinned message", Modifier.size(12.dp), tint = tint)
+            if (message.starred) Icon(HeroIcons.Star, "Saved message", Modifier.size(12.dp), tint = tint)
+            if (message.pinnedAt != null) Icon(HeroIcons.PushPin, "Pinned message", Modifier.size(12.dp), tint = tint)
             if (message.editedAt != null && !deleted) Text("Edited", color = tint, fontSize = SignalDimens.footerText)
             Text(bubbleTime(message.createdAt), color = tint, fontSize = SignalDimens.footerText)
             if (isMine && !deleted) DeliveryTickIcon(deliveryTick(message, receipts, participantCount), onMedia)
@@ -1428,14 +1380,14 @@ private fun MessageBubble(
                         )
                         if (message.forwardedFromId != null && !deleted) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Icon(Icons.AutoMirrored.Outlined.Forward, null, Modifier.size(14.dp), tint = fgMuted)
+                                Icon(HeroIcons.ArrowUturnRight, null, Modifier.size(14.dp), tint = fgMuted)
                                 Text("Forwarded", color = fgMuted, fontSize = 13.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                             }
                         }
                         if (!deleted && message.hasQuotedReply()) SignalQuote(message, isMine, fg)
                         when {
                             deleted -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(Icons.Outlined.Block, null, Modifier.size(16.dp), tint = signal.textSecondary)
+                                Icon(HeroIcons.NoSymbol, null, Modifier.size(16.dp), tint = signal.textSecondary)
                                 Text(
                                     if (isMine) "You deleted this message." else "This message was deleted.",
                                     color = signal.textSecondary, fontSize = 15.sp,
@@ -1450,7 +1402,7 @@ private fun MessageBubble(
                             message.formatType == "poll" -> {
                                 val options = message.metadata?.jsonObject?.get("options")?.jsonArray
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Outlined.Poll, null, Modifier.size(18.dp), tint = fg)
+                                    Icon(HeroIcons.ChartBar, null, Modifier.size(18.dp), tint = fg)
                                     Text(message.body(), Modifier.padding(start = 7.dp), color = fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                                 }
                                 options?.forEachIndexed { index, element ->
@@ -1489,10 +1441,10 @@ private fun MessageBubble(
                                     Box(Modifier.size(40.dp).background(fg.copy(alpha = .15f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
                                         Icon(
                                             when {
-                                                message.fileType?.startsWith("image/") == true -> Icons.Outlined.Image
-                                                message.fileType?.startsWith("audio/") == true -> Icons.Outlined.AudioFile
-                                                message.fileType?.startsWith("video/") == true -> Icons.Outlined.Movie
-                                                else -> Icons.Outlined.Description
+                                                message.fileType?.startsWith("image/") == true -> HeroIcons.Photo
+                                                message.fileType?.startsWith("audio/") == true -> HeroIcons.MusicalNote
+                                                message.fileType?.startsWith("video/") == true -> HeroIcons.Film
+                                                else -> HeroIcons.DocumentText
                                             },
                                             null, Modifier.size(22.dp), tint = fg,
                                         )
@@ -1503,7 +1455,7 @@ private fun MessageBubble(
                                     }
                                     message.fileUrl?.takeIf { it.isNotBlank() && !selectionActive }?.let { url ->
                                         Icon(
-                                            Icons.Outlined.Download, "Save to device",
+                                            HeroIcons.ArrowDownTray, "Save to device",
                                             Modifier.size(36.dp).clip(CircleShape)
                                                 .clickable { saveMedia(resolveChatMediaUrl(url), message.fileName, message.fileType) }
                                                 .padding(7.dp),
@@ -1515,8 +1467,8 @@ private fun MessageBubble(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(listOfNotNull(message.mediaStage ?: message.mediaState, message.mediaProgress?.let { "$it%" }).joinToString(" · "), color = fgMuted, fontSize = 12.sp)
                                         when (message.mediaState) {
-                                            "failed", "cancelled" -> Icon(Icons.Outlined.Replay, "Retry", Modifier.padding(start = 6.dp).size(18.dp).clickable(onClick = onRetry), tint = fg)
-                                            "queued", "processing" -> Icon(Icons.Outlined.Cancel, "Cancel", Modifier.padding(start = 6.dp).size(18.dp).clickable(onClick = onCancel), tint = fg)
+                                            "failed", "cancelled" -> Icon(HeroIcons.ArrowUturnLeft, "Retry", Modifier.padding(start = 6.dp).size(18.dp).clickable(onClick = onRetry), tint = fg)
+                                            "queued", "processing" -> Icon(HeroIcons.XCircle, "Cancel", Modifier.padding(start = 6.dp).size(18.dp).clickable(onClick = onCancel), tint = fg)
                                         }
                                     }
                                 }
@@ -1685,7 +1637,7 @@ private fun ForwardMessageDialog(ui: ChatUiState, viewModel: ChatViewModel) {
                     style = MaterialTheme.typography.labelMedium,
                 )
                 LazyColumn(Modifier.fillMaxWidth().height(320.dp)) {
-                    if (choices.isEmpty()) item { AinoEmptyState(Icons.Outlined.ChatBubbleOutline, "No matching conversations") }
+                    if (choices.isEmpty()) item { AinoEmptyState(HeroIcons.ChatBubbleOvalLeft, "No matching conversations") }
                     items(choices, key = ChatConversation::id) { conversation ->
                         val selected = conversation.id in ui.forwardTargets
                         Row(
@@ -1864,7 +1816,6 @@ private fun TypingBubble() {
 private fun MessageComposer(
     value: String,
     uploading: Boolean,
-    uploadProgress: Float?,
     editingMessage: ChatMessage?,
     replyingTo: ChatMessage?,
     isGroup: Boolean,
@@ -1969,7 +1920,7 @@ private fun MessageComposer(
                 draftUrl?.let(player::stop)
                 voice.discard()
                 draftUrl = null
-                if (event == VoiceEvent.Release) voiceHint = "Hold to record, release to send"
+                if (event == VoiceEvent.Release) voiceHint = "Tap and hold to record a voice message, release to send"
             }
             VoiceEffect.None -> Unit
         }
@@ -1990,7 +1941,7 @@ private fun MessageComposer(
     }
     LaunchedEffect(voiceHint) { if (voiceHint != null) { kotlinx.coroutines.delay(2_500); voiceHint = null } }
     val recordPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        voiceHint = if (granted) "Hold to record, release to send" else "Microphone permission is required for voice messages"
+        voiceHint = if (granted) "Tap and hold to record a voice message, release to send" else "Microphone permission is required for voice messages"
     }
     DisposableEffect(Unit) { onDispose { draftUrl?.let(player::stop); voice.discard() } }
 
@@ -2009,17 +1960,24 @@ private fun MessageComposer(
                 },
             ),
     ) {
-        // Upload progress now lives on each outgoing bubble (Signal transfer ring),
-        // including voice notes; this legacy bar only shows if `uploading` is set.
-        if (uploading) {
-            if (uploadProgress != null && uploadProgress > 0f) {
-                androidx.compose.material3.LinearProgressIndicator(progress = { uploadProgress }, modifier = Modifier.fillMaxWidth().height(2.dp), color = signal.primary)
-            } else {
-                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp), color = signal.primary)
-            }
-        }
-        voiceHint?.let {
-            Text(it, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), color = signal.textSecondary, fontSize = 13.sp)
+        // Signal tooltip above the mic (short tap / permission result).
+        androidx.compose.animation.AnimatedVisibility(
+            visible = voiceHint != null,
+            modifier = Modifier.align(Alignment.End),
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.scaleIn(initialScale = .9f, transformOrigin = androidx.compose.ui.graphics.TransformOrigin(1f, 1f)),
+            exit = androidx.compose.animation.fadeOut(),
+        ) {
+            var shown by remember { mutableStateOf("") }
+            voiceHint?.let { shown = it }
+            Text(
+                shown,
+                Modifier.padding(start = 48.dp, end = 12.dp, top = 4.dp)
+                    .shadow(3.dp, RoundedCornerShape(12.dp))
+                    .background(signal.surface, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                color = signal.text,
+                fontSize = 14.sp,
+            )
         }
         val suggestions = remember(value, members) {
             activeMentionQuery(value)?.let { mentionSuggestions(members, it, currentUserId) }.orEmpty()
@@ -2067,7 +2025,7 @@ private fun MessageComposer(
                     )
                 }
                 Icon(
-                    Icons.Outlined.Close, if (editingMessage != null) "Cancel edit" else "Cancel reply",
+                    HeroIcons.XMark, if (editingMessage != null) "Cancel edit" else "Cancel reply",
                     Modifier.size(40.dp).clip(CircleShape).clickable(onClick = if (editingMessage != null) onCancelEdit else onCancelReply).padding(10.dp),
                     tint = signal.textSecondary,
                 )
@@ -2091,7 +2049,7 @@ private fun MessageComposer(
                     VoicePhase.Idle -> {
                         Box(Modifier.size(SignalDimens.composeHeight).clickable { toggle(ComposerPanel.Emoji) }, contentAlignment = Alignment.Center) {
                             Icon(
-                                if (panel == ComposerPanel.Emoji) Icons.Outlined.Keyboard else Icons.Outlined.EmojiEmotions,
+                                if (panel == ComposerPanel.Emoji) HeroIcons.Keyboard else HeroIcons.FaceSmile,
                                 if (panel == ComposerPanel.Emoji) "Show keyboard" else "Show emoji",
                                 Modifier.size(24.dp), tint = signal.textSecondary,
                             )
@@ -2115,7 +2073,7 @@ private fun MessageComposer(
                         )
                         if (canRecord) {
                             Box(Modifier.size(width = 40.dp, height = SignalDimens.composeHeight).clickable(enabled = !uploading) { panel = ComposerPanel.None; onOpenCamera() }, contentAlignment = Alignment.Center) {
-                                Icon(Icons.Outlined.CameraAlt, "Open camera", Modifier.size(24.dp), tint = signal.textSecondary)
+                                Icon(HeroIcons.Camera, "Open camera", Modifier.size(24.dp), tint = signal.textSecondary)
                             }
                         }
                     }
@@ -2170,7 +2128,7 @@ private fun MessageComposer(
             ) {
                 androidx.compose.animation.Crossfade(sendMode, label = "sendMode") { send ->
                     Icon(
-                        if (send) Icons.AutoMirrored.Outlined.Send else Icons.Outlined.Add,
+                        if (send) HeroIcons.PaperAirplane else HeroIcons.Plus,
                         if (send) "Send" else "Attachments",
                         Modifier.size(24.dp).graphicsLayer { rotationZ = if (send) 0f else rotation },
                         tint = if (send) Color.White else signal.text,
@@ -2231,10 +2189,10 @@ internal fun ConversationAvatar(conversation: ChatConversation, presence: ChatPr
     Box(Modifier.size(size)) {
         when {
             conversation.isMeetingChat -> Box(Modifier.fillMaxSize().background(signal.primary, CircleShape), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Videocam, null, Modifier.size(size * .46f), tint = Color.White)
+                Icon(HeroIcons.VideoCamera, null, Modifier.size(size * .46f), tint = Color.White)
             }
             conversation.isGroup && conversation.groupAvatar.isNullOrBlank() -> Box(Modifier.fillMaxSize().background(signal.primary.copy(alpha = .2f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(Icons.Outlined.Groups, null, Modifier.size(size * .5f), tint = signal.primary)
+                Icon(HeroIcons.UserGroup, null, Modifier.size(size * .5f), tint = signal.primary)
             }
             else -> app.aino.mobile.core.designsystem.component.UserAvatar(conversation.title(), conversation.avatar(), size)
         }
@@ -2294,7 +2252,7 @@ private fun ArchivedRow(count: Int, onClick: () -> Unit) {
     val signal = signalColors
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(SignalDimens.listAvatar), contentAlignment = Alignment.Center) {
-            Icon(Icons.Outlined.Archive, null, Modifier.size(24.dp), tint = signal.textSecondary)
+            Icon(HeroIcons.ArchiveBox, null, Modifier.size(24.dp), tint = signal.textSecondary)
         }
         Text("Archived chats ($count)", Modifier.padding(start = 16.dp), color = signal.text, fontSize = 17.sp, fontWeight = FontWeight.Medium)
     }
@@ -2305,7 +2263,7 @@ private fun ArchivedHeader(onBack: () -> Unit) {
     val signal = signalColors
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(
-            Icons.AutoMirrored.Outlined.ArrowBack, "Back to chats",
+            HeroIcons.ArrowLeft, "Back to chats",
             Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onBack).padding(12.dp), tint = signal.text,
         )
         Text("Archived chats", Modifier.padding(start = 8.dp), color = signal.text, fontSize = 18.sp, fontWeight = FontWeight.Medium)
@@ -2348,7 +2306,7 @@ private fun ChatMeetingCard(meta: kotlinx.serialization.json.JsonObject, code: S
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Outlined.Videocam, null, Modifier.size(18.dp), tint = Color(0xFF0EA5E9))
+            Icon(HeroIcons.VideoCamera, null, Modifier.size(18.dp), tint = Color(0xFF0EA5E9))
             Column {
                 Text(field("meetingTitle") ?: "Meeting", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 field("hostName")?.let { Text("Hosted by $it", color = Color(0xFFAAAAAA), fontSize = 11.5.sp) }
@@ -2401,7 +2359,7 @@ private fun ThreadHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(48.dp).clip(CircleShape).clickable { viewModel.closeConversation(); onNavigateBack?.invoke() }, contentAlignment = Alignment.Center) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back", tint = signal.text)
+            Icon(HeroIcons.ArrowLeft, "Back", tint = signal.text)
         }
         Row(
             Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable(onClick = viewModel::openInfo).padding(vertical = 4.dp),
@@ -2418,29 +2376,29 @@ private fun ThreadHeader(
                 if (subtitle.isNotBlank()) Text(subtitle, color = signal.textSecondary, fontSize = 13.sp, maxLines = 1)
             }
         }
-        Icon(Icons.Outlined.Videocam, "Video call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(true) { viewModel.startCall("video") } }.padding(12.dp), tint = signal.text)
-        Icon(Icons.Outlined.Phone, "Voice call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(false) { viewModel.startCall("voice") } }.padding(12.dp), tint = signal.text)
+        Icon(HeroIcons.VideoCamera, "Video call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(true) { viewModel.startCall("video") } }.padding(12.dp), tint = signal.text)
+        Icon(HeroIcons.Phone, "Voice call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(false) { viewModel.startCall("voice") } }.padding(12.dp), tint = signal.text)
         Box {
-            Icon(Icons.Outlined.MoreVert, "More options", Modifier.size(48.dp).clip(CircleShape).clickable { menuOpen = true }.padding(12.dp), tint = signal.text)
+            Icon(HeroIcons.EllipsisVertical, "More options", Modifier.size(48.dp).clip(CircleShape).clickable { menuOpen = true }.padding(12.dp), tint = signal.text)
             // Signal ConversationOptionsMenu order, limited to what the server supports.
             SignalDropdownMenu(expanded = menuOpen, onDismiss = { menuOpen = false }) {
-                SignalMenuItem("View all media", Icons.Outlined.PhotoLibrary) { menuOpen = false; viewModel.openInfo(); onOpenAllMedia() }
-                SignalMenuItem("Search", Icons.Outlined.Search) { menuOpen = false; viewModel.openThreadSearch() }
-                if (ui.pinnedMessages.isNotEmpty()) SignalMenuItem("Pinned messages", Icons.Outlined.PushPin) {
+                SignalMenuItem("View all media", HeroIcons.Photo) { menuOpen = false; viewModel.openInfo(); onOpenAllMedia() }
+                SignalMenuItem("Search", HeroIcons.MagnifyingGlass) { menuOpen = false; viewModel.openThreadSearch() }
+                if (ui.pinnedMessages.isNotEmpty()) SignalMenuItem("Pinned messages", HeroIcons.PushPin) {
                     menuOpen = false; viewModel.jumpToMessage(ui.pinnedMessages.first())
                 }
-                if (conversation.isMuted) SignalMenuItem("Unmute notifications", Icons.Outlined.Notifications) { menuOpen = false; viewModel.muteFor(null) }
-                else SignalMenuItem("Mute notifications", Icons.Outlined.NotificationsOff) { menuOpen = false; muteMenuOpen = true }
-                SignalMenuItem(if (conversation.isGroup) "Group settings" else "Chat settings", Icons.Outlined.Info) { menuOpen = false; viewModel.openInfo() }
-                SignalMenuItem("Add to home screen", Icons.Outlined.AddToHomeScreen) { menuOpen = false; pinChatShortcut(context, conversation) }
-                SignalMenuItem(if (conversation.isArchived) "Unarchive" else "Archive", Icons.Outlined.Archive) { menuOpen = false; viewModel.toggleArchive() }
+                if (conversation.isMuted) SignalMenuItem("Unmute notifications", HeroIcons.Bell) { menuOpen = false; viewModel.muteFor(null) }
+                else SignalMenuItem("Mute notifications", HeroIcons.BellSlash) { menuOpen = false; muteMenuOpen = true }
+                SignalMenuItem(if (conversation.isGroup) "Group settings" else "Chat settings", HeroIcons.InformationCircle) { menuOpen = false; viewModel.openInfo() }
+                SignalMenuItem("Add to home screen", HeroIcons.DevicePhoneMobile) { menuOpen = false; pinChatShortcut(context, conversation) }
+                SignalMenuItem(if (conversation.isArchived) "Unarchive" else "Archive", HeroIcons.ArchiveBox) { menuOpen = false; viewModel.toggleArchive() }
                 androidx.compose.material3.HorizontalDivider(color = signal.divider)
-                if (conversation.isGroup) SignalMenuItem("Leave group", Icons.AutoMirrored.Outlined.ExitToApp, danger = true) { menuOpen = false; confirm = "leave" }
+                if (conversation.isGroup) SignalMenuItem("Leave group", HeroIcons.ArrowRightStartOnRectangle, danger = true) { menuOpen = false; confirm = "leave" }
                 else if (!conversation.isSelfChat && conversation.otherUserId != null) SignalMenuItem(
-                    if (conversation.isBlocked) "Unblock" else "Block", Icons.Outlined.Block, danger = !conversation.isBlocked,
+                    if (conversation.isBlocked) "Unblock" else "Block", HeroIcons.NoSymbol, danger = !conversation.isBlocked,
                 ) { menuOpen = false; confirm = "block" }
-                SignalMenuItem("Clear chat", Icons.Outlined.DeleteSweep, danger = true) { menuOpen = false; confirm = "clear" }
-                SignalMenuItem("Delete chat", Icons.Outlined.DeleteOutline, danger = true) { menuOpen = false; confirm = "delete" }
+                SignalMenuItem("Clear chat", HeroIcons.ArchiveBoxXMark, danger = true) { menuOpen = false; confirm = "clear" }
+                SignalMenuItem("Delete chat", HeroIcons.Trash, danger = true) { menuOpen = false; confirm = "delete" }
             }
             MuteDurationMenu(muteMenuOpen, { muteMenuOpen = false }) { viewModel.muteFor(it) }
         }

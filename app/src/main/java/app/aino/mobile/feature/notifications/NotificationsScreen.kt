@@ -17,15 +17,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Assignment
-import androidx.compose.material.icons.outlined.AlternateEmail
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -53,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.component.AinoFullPage
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** NotificationBell's dropdown as a full page (product decision: the bell opens a page). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -135,7 +127,7 @@ private fun DismissibleNotificationRow(item: NotificationItem, onClick: () -> Un
                 Modifier.fillMaxSize().background(colors.danger).padding(horizontal = 20.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                Icon(Icons.Outlined.Delete, contentDescription = null, tint = Color.White)
+                Icon(HeroIcons.Trash, contentDescription = null, tint = Color.White)
             }
         },
     ) {
@@ -186,17 +178,17 @@ private fun NotificationRow(item: NotificationItem, onClick: () -> Unit, onDelet
                 )
             }
             IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Outlined.Close, contentDescription = "Dismiss notification", tint = colors.textMuted, modifier = Modifier.size(16.dp))
+                Icon(HeroIcons.XMark, contentDescription = "Dismiss notification", tint = colors.textMuted, modifier = Modifier.size(16.dp))
             }
         }
     }
 }
 
 private fun notificationIconVector(icon: NotificationIcon): ImageVector = when (icon) {
-    NotificationIcon.Mention -> Icons.Outlined.AlternateEmail
-    NotificationIcon.Leave -> Icons.AutoMirrored.Outlined.Assignment
-    NotificationIcon.Task -> Icons.Outlined.Description
-    NotificationIcon.Approval -> Icons.Outlined.CheckCircle
-    NotificationIcon.MeetingInvite -> Icons.Outlined.Videocam
-    NotificationIcon.Default -> Icons.Outlined.Notifications
+    NotificationIcon.Mention -> HeroIcons.AtSymbol
+    NotificationIcon.Leave -> HeroIcons.ClipboardDocumentList
+    NotificationIcon.Task -> HeroIcons.DocumentText
+    NotificationIcon.Approval -> HeroIcons.CheckCircle
+    NotificationIcon.MeetingInvite -> HeroIcons.VideoCamera
+    NotificationIcon.Default -> HeroIcons.Bell
 }
