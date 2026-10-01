@@ -94,6 +94,8 @@ data class TaskUiState(
     val selectedSprintId: Long? = null,
     val filters: TaskFilters = TaskFilters(),
     val filtersOpen: Boolean = false,
+    /** Backlog tab shows its filters in a bottom sheet instead of the inline panel. */
+    val filterSheetOpen: Boolean = false,
     val refreshing: Boolean = false,
     val error: String? = null,
     val confirm: ConfirmRequest? = null,
@@ -143,6 +145,8 @@ data class TaskUiState(
 ) {
     val currentSprint: AvailableSprint? get() = sprints.firstOrNull { it.id == selectedSprintId }
     val sortedBacklog: List<Task> get() = sortBacklog(backlog, backlogSort)
+    /** Display sections for the backlog list, or `null` for a flat list. */
+    val backlogGroups: List<BacklogGroup>? get() = groupBacklog(sortedBacklog, backlogSort)
     val sprintTabVisible: Boolean get() = agileEnabled && sprints.isNotEmpty()
     val filterCount: Int get() = filterCount(filters, tab)
     val importable: List<Task> get() = backlog.filter { it.sprintId != selectedSprintId && it.status != "done" }
@@ -295,15 +299,19 @@ class TaskViewModel(
 
     fun clearFilters() = setFilters(TaskFilters())
 
-    /** Summary "Total" chip: open filters and clear priority + status. */
+    fun openFilterSheet() = _ui.update { it.copy(filterSheetOpen = true) }
+
+    fun closeFilterSheet() = _ui.update { it.copy(filterSheetOpen = false) }
+
+    /** Summary "Total" chip: clear priority + status (the Sprint tab also opens its inline filters). */
     fun summaryTotal() {
-        _ui.update { it.copy(filtersOpen = true) }
+        if (_ui.value.tab != TaskTab.Backlog) _ui.update { it.copy(filtersOpen = true) }
         setFilters(_ui.value.filters.copy(priority = "", status = ""))
     }
 
     /** Summary priority chip toggles that priority filter. */
     fun summaryPriority(value: String) {
-        _ui.update { it.copy(filtersOpen = true) }
+        if (_ui.value.tab != TaskTab.Backlog) _ui.update { it.copy(filtersOpen = true) }
         val current = _ui.value.filters
         setFilters(current.copy(priority = if (current.priority == value) "" else value))
     }

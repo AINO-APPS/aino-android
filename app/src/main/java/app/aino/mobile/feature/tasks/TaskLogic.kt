@@ -113,6 +113,45 @@ fun sortBacklog(tasks: List<Task>, sort: BacklogSort): List<Task> = when (sort) 
     BacklogSort.Title -> tasks.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
 }
 
+/** A display section of the backlog list (priority band or due-date bucket). */
+data class BacklogGroup(val key: String, val label: String, val tone: Tone?, val tasks: List<Task>)
+
+/**
+ * Splits an already-sorted backlog into display sections. Priority and Due date
+ * sorts are grouped; the other sorts return `null` (render a flat list). Order
+ * inside each group is preserved and empty groups are dropped.
+ */
+fun groupBacklog(tasks: List<Task>, sort: BacklogSort, today: LocalDate = LocalDate.now()): List<BacklogGroup>? = when (sort) {
+    BacklogSort.Priority -> {
+        val byPriority = tasks.groupBy { priorityOf(it.priority).value }
+        PRIORITIES.mapNotNull { p ->
+            byPriority[p.value]?.takeIf { it.isNotEmpty() }?.let { BacklogGroup(p.value, "${p.label} priority", p.tone, it) }
+        }
+    }
+    BacklogSort.DueDate -> {
+        fun bucket(task: Task): String {
+            val due = localDateOf(task.dueDate) ?: return "none"
+            val diff = ChronoUnit.DAYS.between(today, due)
+            return when {
+                diff < 0 -> if (task.status == "done") "past" else "overdue"
+                diff == 0L -> "today"
+                diff <= 7 -> "week"
+                else -> "later"
+            }
+        }
+        val byBucket = tasks.groupBy(::bucket)
+        listOf(
+            Triple("overdue", "Overdue", Tone.Danger),
+            Triple("today", "Due today", Tone.Warning),
+            Triple("week", "Next 7 days", Tone.PrimaryLight),
+            Triple("later", "Later", Tone.Muted),
+            Triple("none", "No due date", Tone.Muted),
+            Triple("past", "Past due · completed", Tone.Success),
+        ).mapNotNull { (key, label, tone) -> byBucket[key]?.let { BacklogGroup(key, label, tone, it) } }
+    }
+    else -> null
+}
+
 /** Accepts `YYYY-MM-DD` or an ISO timestamp; the server's DATE columns are plain dates. */
 fun localDateOf(value: String?): LocalDate? = value?.takeIf { it.length >= 10 }?.let { runCatching { LocalDate.parse(it.take(10)) }.getOrNull() }
 

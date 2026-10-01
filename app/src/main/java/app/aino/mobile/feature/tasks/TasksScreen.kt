@@ -33,7 +33,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.unit.sp
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,7 +63,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import app.aino.mobile.core.designsystem.icons.HeroIcons
@@ -88,6 +87,10 @@ fun TasksScreen(
         viewModel.openDetail(task)
         onOpenDetail()
     }
+    // Collapsed backlog groups (priority bands / due buckets) survive rotation.
+    var collapsedGroups by rememberSaveable { mutableStateOf(listOf<String>()) }
+    val toggleGroup: (String) -> Unit = { key -> collapsedGroups = if (key in collapsedGroups) collapsedGroups - key else collapsedGroups + key }
+    val backlog = ui.tab == TaskTab.Backlog
     PullToRefreshBox(
         isRefreshing = ui.refreshing,
         onRefresh = { viewModel.refresh(pull = true) },
@@ -95,19 +98,37 @@ fun TasksScreen(
     ) {
         LazyColumn(
             Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 64.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = if (backlog) 104.dp else 64.dp),
         ) {
             item { TasksHeader(ui, viewModel, onOpenInsights) }
-            if (ui.tab != TaskTab.ServiceDesk) {
+            // The backlog folds search + filters into its own sticky toolbar.
+            if (ui.tab == TaskTab.Sprint) {
                 item { GlobalSearch(ui, viewModel, open) }
                 if (ui.filtersOpen) item { FilterBar(ui, viewModel) }
             }
             when (ui.tab) {
                 TaskTab.Sprint -> sprintTab(ui, viewModel, open)
-                TaskTab.Backlog -> backlogTab(ui, viewModel, open)
+                TaskTab.Backlog -> backlogTab(ui, viewModel, open, collapsedGroups.toSet(), toggleGroup)
                 TaskTab.ServiceDesk -> item { serviceDesk() }
             }
         }
+        if (backlog && !ui.backlogFormOpen) {
+            NewTicketFab(viewModel::toggleBacklogForm, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 20.dp))
+        }
+    }
+    if (backlog && ui.filterSheetOpen) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::closeFilterSheet,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = colors.bgElevated,
+        ) { BacklogFilterSheet(ui, viewModel) }
+    }
+    if (backlog && ui.backlogFormOpen) {
+        ModalBottomSheet(
+            onDismissRequest = viewModel::closeBacklogForm,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = colors.bgElevated,
+        ) { BacklogFormSheet(ui, viewModel) }
     }
     ui.inlineComments?.let { thread ->
         val task = (ui.tasks + ui.backlog).firstOrNull { it.id == thread.taskId }
@@ -147,9 +168,12 @@ fun TasksScreen(
 private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsights: () -> Unit) {
     val colors = LocalWebColors.current
     val sprint = ui.currentSprint
-    Column(Modifier.fillMaxWidth().padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val backlog = ui.tab == TaskTab.Backlog
+    Column(Modifier.fillMaxWidth().padding(bottom = if (backlog) 12.dp else 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Column {
-            if (ui.tab == TaskTab.Sprint) {
+            if (backlog) {
+                BacklogHeading(ui, onOpenInsights)
+            } else if (ui.tab == TaskTab.Sprint) {
                 FlowRow(verticalArrangement = Arrangement.Center) {
                     Text(
                         "🏃 ${ui.teamName ?: "Team"} — ${sprint?.name ?: "Sprint"}",
@@ -183,10 +207,11 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
                 .border(1.dp, colors.glassBorder, RoundedCornerShape(6.dp)),
         ) {
             if (ui.sprintTabVisible) TabButton("Sprint", null, ui.tab == TaskTab.Sprint, null) { viewModel.selectTab(TaskTab.Sprint) }
-            TabButton("Backlog", HeroIcons.ArchiveBox, ui.tab == TaskTab.Backlog, ui.backlog.size.takeIf { it > 0 }) { viewModel.selectTab(TaskTab.Backlog) }
+            TabButton("Backlog", HeroIcons.ArchiveBox, ui.tab == TaskTab.Backlog, (ui.backlogTotal.takeIf { it > 0 } ?: ui.backlog.size).takeIf { it > 0 }) { viewModel.selectTab(TaskTab.Backlog) }
             TabButton("Service Desk", HeroIcons.Lifebuoy, ui.tab == TaskTab.ServiceDesk, null) { viewModel.selectTab(TaskTab.ServiceDesk) }
         }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 2) {
+        // Backlog actions live in its sticky toolbar + FAB; other tabs keep the button grid.
+        if (!backlog) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 2) {
             val half = Modifier.weight(1f)
             if (ui.agileEnabled) WebButton("Insights", onOpenInsights, half, small = true, icon = HeroIcons.ChartBar)
             if (ui.agileEnabled && ui.tab == TaskTab.Sprint && ui.sprints.size > 1) {
@@ -201,7 +226,6 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
                 val count = ui.filterCount
                 WebButton(if (count > 0) "Filters ($count)" else "Filters", viewModel::toggleFilters, half, small = true, icon = HeroIcons.MagnifyingGlass, active = count > 0)
             }
-            if (ui.tab == TaskTab.Backlog) WebButton("➕ New Ticket", viewModel::toggleBacklogForm, half, small = true)
             if (ui.agileEnabled && ui.tab == TaskTab.Sprint && ui.selectedSprintId != null) {
                 WebButton("Import from Backlog", viewModel::toggleImport, half, small = true, icon = HeroIcons.ArchiveBox)
             }
@@ -260,9 +284,9 @@ private fun androidx.compose.foundation.layout.RowScope.TabButton(text: String, 
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun GlobalSearch(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
+internal fun GlobalSearch(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit, bottomPadding: androidx.compose.ui.unit.Dp = 16.dp) {
     val colors = LocalWebColors.current
-    Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+    Column(Modifier.fillMaxWidth().padding(bottom = bottomPadding)) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -389,7 +413,7 @@ private fun FilterBar(ui: TaskUiState, viewModel: TaskViewModel) {
 }
 
 @Composable
-private fun FilterGroup(label: String, content: @Composable () -> Unit) {
+internal fun FilterGroup(label: String, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         FieldLabel(label, uppercase = true, fontSize = 0.62.rem)
         content()
@@ -726,7 +750,7 @@ private fun TaskCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel, onOp
 }
 
 @Composable
-private fun MetaChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, color: Color, italic: Boolean = false, bold: Boolean = false) {
+internal fun MetaChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, color: Color, italic: Boolean = false, bold: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(12.dp), tint = color)
         Spacer(Modifier.width(3.dp))
@@ -739,261 +763,12 @@ private fun MetaChip(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 }
 
 @Composable
-private fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, body: String) {
+internal fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, body: String) {
     val colors = LocalWebColors.current
     Column(Modifier.fillMaxWidth().padding(vertical = 48.dp, horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(icon, null, Modifier.size(36.dp), tint = colors.textMuted)
         Spacer(Modifier.height(8.dp))
         Text(title, color = colors.textSecondary, fontSize = 1.1.rem, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
         Text(body, color = colors.textMuted, fontSize = 0.85.rem, textAlign = TextAlign.Center)
-    }
-}
-
-// ── Backlog tab (`BacklogTab.tsx`) ───────────────────────────────────────
-
-private fun LazyListScope.backlogTab(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
-    ui.error?.let { item { ErrorMsg(it, Modifier.padding(bottom = 16.dp)) } }
-    val loaded = !ui.backlogLoading && ui.backlog.isNotEmpty()
-    if (loaded) {
-        item { BacklogSummaryBar(ui, viewModel) }
-        item { BacklogToolbar(ui, viewModel) }
-    }
-    if (ui.backlogFormOpen) item { BacklogForm(ui, viewModel) }
-    if (ui.backlogLoading && ui.backlog.isEmpty()) {
-        item { WebSpinner() }
-        return
-    }
-    if (ui.backlog.isEmpty()) {
-        item { EmptyState(HeroIcons.ArchiveBox, "Backlog is empty", "Create a ticket to organize work that doesn't have a scheduled date yet.") }
-        return
-    }
-    item { PaginationBar(ui, viewModel) }
-    items(ui.sortedBacklog, key = { "b-${it.id}" }) { task -> BacklogCard(task, ui, viewModel, onOpen) }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun BacklogSummaryBar(ui: TaskUiState, viewModel: TaskViewModel) {
-    val colors = LocalWebColors.current
-    GlassPanel(Modifier.padding(bottom = 12.dp), padding = 8.dp) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.4.dp), verticalArrangement = Arrangement.spacedBy(6.4.dp)) {
-            SummaryChip(
-                "${ui.backlogSummary.total.takeIf { it > 0 } ?: ui.backlog.size}", "Total", colors.primary,
-                active = ui.filters.priority.isEmpty(), onClick = viewModel::summaryTotal,
-            )
-            PRIORITIES.forEach { p ->
-                SummaryChip(
-                    "${ui.backlogSummary.byPriority[p.value] ?: 0}", "${p.icon} ${p.label}", colors.tone(p.tone),
-                    active = ui.filters.priority == p.value, onClick = { viewModel.summaryPriority(p.value) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SummaryChip(value: String, label: String, accent: Color, active: Boolean, onClick: () -> Unit) {
-    val colors = LocalWebColors.current
-    Row(
-        Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(colors.surface)
-            .border(if (active) 2.dp else 1.dp, if (active) accent else colors.glassBorder, RoundedCornerShape(999.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.8.dp, vertical = 4.8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(value, color = accent, fontSize = 0.86.rem, fontWeight = FontWeight.ExtraBold)
-        Spacer(Modifier.width(5.6.dp))
-        Text(label, color = colors.textMuted, fontSize = 0.66.rem, maxLines = 1)
-    }
-}
-
-@Composable
-private fun BacklogToolbar(ui: TaskUiState, viewModel: TaskViewModel) {
-    val colors = LocalWebColors.current
-    Column(Modifier.fillMaxWidth().padding(bottom = 12.dp, start = 4.dp, end = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Sort by", color = colors.textMuted, fontSize = 0.78.rem, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.width(8.dp))
-            WebSelect(BacklogSort.entries.map { it to it.label }, ui.backlogSort, viewModel::setSort, Modifier.weight(1f), fontSize = 0.78.rem)
-        }
-        Text("${ui.backlog.size} ticket${if (ui.backlog.size != 1) "s" else ""}", color = colors.textMuted, fontSize = 0.78.rem)
-    }
-}
-
-/** `components/common/Pagination` with the backlog's 10/25/50/100 page sizes. */
-@Composable
-private fun PaginationBar(ui: TaskUiState, viewModel: TaskViewModel) {
-    val colors = LocalWebColors.current
-    val total = ui.backlogTotal.takeIf { it > 0 } ?: ui.backlog.size
-    val limit = maxOf(1, ui.backlogLimit)
-    val page = ui.backlogOffset / limit + 1
-    val pages = maxOf(1, (total + limit - 1) / limit)
-    fun go(p: Int) = viewModel.setPage((p.coerceIn(1, pages) - 1) * limit)
-    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(paginationLabel(total, limit, ui.backlogOffset, "ticket"), color = colors.textSecondary, fontSize = 12.sp)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Rows", color = colors.textSecondary, fontSize = 12.sp)
-            Spacer(Modifier.width(2.dp))
-            WebSelect(listOf(10, 25, 50, 100).map { it to "$it" }, limit, viewModel::setPageSize, Modifier.width(72.dp), fontSize = 0.75.rem)
-            Spacer(Modifier.width(8.dp))
-            PagerButton(HeroIcons.Backward, "First page", page > 1) { go(1) }
-            PagerButton(HeroIcons.ChevronLeft, "Previous page", page > 1) { go(page - 1) }
-            Text("Page $page of $pages", color = colors.textSecondary, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 8.dp))
-            PagerButton(HeroIcons.ChevronRight, "Next page", page < pages) { go(page + 1) }
-            PagerButton(HeroIcons.Forward, "Last page", page < pages) { go(pages) }
-        }
-    }
-}
-
-@Composable
-private fun PagerButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
-    val colors = LocalWebColors.current
-    Box(
-        Modifier
-            .size(28.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .border(1.dp, colors.border, RoundedCornerShape(6.dp))
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) { Icon(icon, label, Modifier.size(14.dp), tint = colors.text.copy(alpha = if (enabled) 1f else 0.4f)) }
-}
-
-/** New Backlog Ticket form. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun BacklogForm(ui: TaskUiState, viewModel: TaskViewModel) {
-    val colors = LocalWebColors.current
-    val d = ui.draft
-    GlassPanel(Modifier.padding(bottom = 24.dp), padding = 24.dp) {
-        Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(HeroIcons.Plus, null, Modifier.size(16.dp), tint = colors.text)
-            Spacer(Modifier.width(5.dp))
-            Text("New Backlog Ticket", color = colors.text, fontSize = 1.rem, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Icon(HeroIcons.XMark, "Close", Modifier.size(14.dp).clickable(onClick = viewModel::closeBacklogForm), tint = colors.textMuted)
-        }
-        WebTextField(d.title, { v -> viewModel.updateDraft { it.copy(title = v) } }, "Ticket title...", maxLength = 200)
-        Spacer(Modifier.height(20.dp))
-        WebTextField(d.description, { v -> viewModel.updateDraft { it.copy(description = v) } }, "Description (optional)", singleLine = false, minLines = 3)
-        Spacer(Modifier.height(16.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column {
-                FieldLabel("Assign to", HeroIcons.User)
-                WebSelect(assigneeOptions(ui.assignableUsers), d.assignedTo, { v -> viewModel.updateDraft { it.copy(assignedTo = v) } }, Modifier.fillMaxWidth())
-            }
-            Column {
-                FieldLabel("Due date", HeroIcons.CalendarDays)
-                WebDateField(d.dueDate, { v -> viewModel.updateDraft { it.copy(dueDate = v) } }, Modifier.fillMaxWidth())
-            }
-            if (ui.sprints.isNotEmpty()) {
-                Column {
-                    FieldLabel("🏃 Sprint")
-                    WebSelect(sprintOptions(ui.sprints), d.sprintId, viewModel::setDraftSprint, Modifier.fillMaxWidth())
-                }
-            }
-            LabelSelector(ui.labels, d.labels) { id ->
-                viewModel.updateDraft { it.copy(labels = if (id in it.labels) it.labels - id else it.labels + id) }
-            }
-            Column {
-                FieldLabel("Type")
-                WebSelect(typeOptions(ui.agile), d.workItemTypeId, { v -> viewModel.updateDraft { it.copy(workItemTypeId = v) } }, Modifier.fillMaxWidth())
-            }
-            if (ui.projects.isNotEmpty()) {
-                Column {
-                    FieldLabel("Project", HeroIcons.Folder)
-                    WebSelect(projectOptions(ui.projects), d.projectId, { v -> viewModel.updateDraft { it.copy(projectId = v) } }, Modifier.fillMaxWidth())
-                }
-            }
-            StoryPointPicker(d.storyPoints, { v -> viewModel.updateDraft { it.copy(storyPoints = v) } }, ui.agile)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.4.dp)) {
-                PRIORITIES.forEach { p ->
-                    val active = d.priority == p.value
-                    val tint = colors.tone(p.tone)
-                    Text(
-                        "${p.icon} ${p.label}",
-                        color = if (active) colors.text else colors.textSecondary,
-                        fontSize = 0.8.rem,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (active) tint.copy(alpha = 0.15f) else colors.surface)
-                            .border(1.dp, if (active) tint else colors.border, RoundedCornerShape(8.dp))
-                            .clickable { viewModel.updateDraft { it.copy(priority = p.value) } }
-                            .padding(6.4.dp),
-                    )
-                }
-            }
-            WebButton("Create Ticket", viewModel::submitBacklog, Modifier.fillMaxWidth(), style = BtnStyle.Primary, enabled = d.title.isNotBlank())
-        }
-    }
-}
-
-/** A `.backlog-card` at ≤768px: 3px priority bar on top, body, footer, actions row. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun BacklogCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
-    val colors = LocalWebColors.current
-    val pri = priorityOf(task.priority)
-    val done = task.status == "done"
-    val due = formatDueDate(task.dueDate)
-    val overdue = isDueOverdue(task.dueDate) && !done
-    val preview = stripHtml(task.description)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(bottom = 8.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(colors.glass)
-            .border(1.dp, colors.glassBorder, RoundedCornerShape(6.dp))
-            .clickable { onOpen(task) }
-            .let { if (done) it.alpha(0.55f) else it },
-    ) {
-        Box(Modifier.fillMaxWidth().height(3.dp).background(colors.tone(pri.tone)))
-        Column(Modifier.padding(horizontal = 9.6.dp, vertical = 7.2.dp), verticalArrangement = Arrangement.spacedBy(4.8.dp)) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                TicketId(task.displayKey)
-                StatusBadge(task.status)
-                PriorityBadge(task.priority)
-                WorkItemTypeBadge(task.workItemTypeId, ui.agile)
-                StoryPointBadge(task.storyPoints, ui.agile)
-                BlockerBadge(task.isBlocked, ui.agile)
-                task.labels.forEach { LabelPill(it) }
-            }
-            Text(
-                task.title, color = colors.text, fontSize = 0.84.rem, fontWeight = FontWeight.SemiBold, lineHeight = 0.84.rem * 1.35f,
-                maxLines = 2, overflow = TextOverflow.Ellipsis, textDecoration = doneDecoration(done),
-            )
-            if (preview.isNotBlank()) Text(preview, color = colors.textMuted, fontSize = 0.75.rem, lineHeight = 0.75.rem * 1.35f, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Box(Modifier.padding(top = 2.4.dp).fillMaxWidth().height(1.dp).background(colors.glassBorder))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                task.assignee?.let { a ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        UserAvatar(a.display(), avatarPath(a.avatar), 16.dp)
-                        Spacer(Modifier.width(4.dp))
-                        Text(a.display(), color = colors.textMuted, fontSize = 0.72.rem, maxLines = 1)
-                    }
-                }
-                due?.let { MetaChip(HeroIcons.CalendarDays, it, if (overdue) colors.danger else colors.textMuted, bold = overdue) }
-                if (task.commentCount > 0) MetaChip(HeroIcons.ChatBubbleOvalLeft, "${task.commentCount}", colors.textMuted)
-                Text(formatRelativeTime(task.createdAt), color = colors.textMuted.copy(alpha = 0.7f), fontSize = 0.68.rem)
-            }
-            Box(Modifier.fillMaxWidth().height(1.dp).background(colors.glassBorder))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                if (ui.scheduleTaskId == task.id) {
-                    WebDateField(ui.scheduleDate, viewModel::setScheduleDate, Modifier.weight(1f), clearable = false)
-                    Spacer(Modifier.width(6.dp))
-                    WebButton("Go", { viewModel.schedule(task.id, task.title) }, style = BtnStyle.Primary, small = true)
-                    Spacer(Modifier.width(6.dp))
-                    Box(
-                        Modifier.clip(RoundedCornerShape(6.dp)).background(colors.surface).border(1.dp, colors.border, RoundedCornerShape(6.dp))
-                            .clickable(onClick = viewModel::cancelSchedule).padding(6.dp),
-                    ) { Icon(HeroIcons.XMark, "Cancel", Modifier.size(14.dp), tint = colors.text) }
-                } else {
-                    WebButton("Schedule", { viewModel.startSchedule(task.id) }, small = true, icon = HeroIcons.CalendarDays)
-                }
-            }
-        }
     }
 }

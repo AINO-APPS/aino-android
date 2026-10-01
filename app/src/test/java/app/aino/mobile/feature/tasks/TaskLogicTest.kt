@@ -74,6 +74,52 @@ class TaskLogicTest {
     }
 
     @Test
+    fun groupsTheBacklogByPriorityDroppingEmptyBands() {
+        val list = listOf(
+            Task(1, "a", priority = "low"),
+            Task(2, "b", priority = "high"),
+            Task(3, "c", priority = "urgent"), // unknown → Medium, like sortBacklog
+            Task(4, "d", priority = "high"),
+        )
+        val groups = groupBacklog(sortBacklog(list, BacklogSort.Priority), BacklogSort.Priority, today)!!
+        assertEquals(listOf("high", "medium", "low"), groups.map { it.key })
+        assertEquals(listOf(2L, 4L), groups[0].tasks.map { it.id })
+        assertEquals(listOf(3L), groups[1].tasks.map { it.id })
+        assertEquals("High priority", groups[0].label)
+        assertEquals(Tone.Danger, groups[0].tone)
+
+        val onlyLow = groupBacklog(listOf(Task(9, "z", priority = "low")), BacklogSort.Priority, today)!!
+        assertEquals(listOf("low"), onlyLow.map { it.key })
+    }
+
+    @Test
+    fun groupsTheBacklogIntoDueDateBuckets() {
+        val list = listOf(
+            Task(1, "overdue", dueDate = "2026-09-20"),
+            Task(2, "done late", dueDate = "2026-09-20", status = "done"),
+            Task(3, "today", dueDate = "2026-09-25"),
+            Task(4, "week", dueDate = "2026-10-02"),
+            Task(5, "later", dueDate = "2026-10-03T00:00:00Z"),
+            Task(6, "none"),
+        )
+        val groups = groupBacklog(sortBacklog(list, BacklogSort.DueDate), BacklogSort.DueDate, today)!!
+        assertEquals(listOf("overdue", "today", "week", "later", "none", "past"), groups.map { it.key })
+        assertEquals(listOf(1L), groups.first { it.key == "overdue" }.tasks.map { it.id })
+        assertEquals(listOf(2L), groups.first { it.key == "past" }.tasks.map { it.id })
+        assertEquals(listOf(6L), groups.first { it.key == "none" }.tasks.map { it.id })
+        assertEquals(list.size, groups.sumOf { it.tasks.size })
+    }
+
+    @Test
+    fun otherSortsStayFlat() {
+        val list = listOf(Task(1, "a"), Task(2, "b", priority = "high"))
+        assertNull(groupBacklog(list, BacklogSort.Newest, today))
+        assertNull(groupBacklog(list, BacklogSort.Oldest, today))
+        assertNull(groupBacklog(list, BacklogSort.Title, today))
+        assertTrue(groupBacklog(emptyList(), BacklogSort.Priority, today)!!.isEmpty())
+    }
+
+    @Test
     fun sprintHeaderAndSelection() {
         val active = AvailableSprint(id = 2, name = "S2", startDate = "2026-09-20", endDate = "2026-10-01", status = "active")
         val planned = AvailableSprint(id = 3, name = "S3", startDate = "2026-10-02", endDate = "2026-10-15")
