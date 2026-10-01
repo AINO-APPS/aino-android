@@ -37,35 +37,35 @@ class AinoDestinationTest {
     }
 
     @Test
-    fun bottomBarIsHomeCalendarTasksChatMore() {
-        // Web §2: the mobile tab bar is exactly Home·Calendar·Tasks·Chat·More.
-        // Attendance is demoted out of the bar to the More sheet.
+    fun bottomBarIsHomeAttendanceTasksChatMore() {
+        // Mobile decision (2026-10-01): Attendance takes the web's Calendar slot.
         assertEquals(
             listOf(
                 AinoDestination.Dashboard,
-                AinoDestination.Calendar,
+                AinoDestination.Attendance,
                 AinoDestination.Tasks,
                 AinoDestination.Chat,
                 AinoDestination.More,
             ),
             bottomDestinations,
         )
-        assertFalse(AinoDestination.Attendance in bottomDestinations)
+        assertFalse(AinoDestination.Calendar in bottomDestinations)
+        assertEquals(AinoDestination.Attendance.route, bottomBarRoute(ATTENDANCE_ROUTE_PATTERN))
     }
 
     @Test
     fun moreDestinationsMatchWebOrderAndConditions() {
-        // Web §2 order: Notes, Attendance, Organization, My Team, Tenants (Admin is web-only).
+        // Web §2 order with the mobile swap: Notes, Calendar, Organization, My Team, Tenants (Admin is web-only).
         val full = availableMoreDestinations(
             role = "hr_admin",
             hasReports = true,
-            features = mapOf("notes" to true, "attendance" to true),
+            features = mapOf("notes" to true, "calendar" to true, "attendance" to true),
             orgId = 3,
         )
         assertEquals(
             listOf(
                 AinoDestination.Notes,
-                AinoDestination.Attendance,
+                AinoDestination.Calendar,
                 AinoDestination.Organization,
                 AinoDestination.Manager,
             ),
@@ -75,7 +75,7 @@ class AinoDestinationTest {
 
         val employee = availableMoreDestinations("employee", hasReports = false)
         assertFalse(AinoDestination.Notes in employee)
-        assertFalse(AinoDestination.Attendance in employee)
+        assertFalse(AinoDestination.Calendar in employee)
         assertFalse(AinoDestination.Manager in employee)
         assertFalse(AinoDestination.Tenants in employee)
         // Organization requires org_id or platform_admin.
@@ -93,9 +93,9 @@ class AinoDestinationTest {
         val bare = visibleBottomDestinations(emptyMap())
         assertEquals(listOf(AinoDestination.Dashboard, AinoDestination.More), bare)
 
-        val subscribed = visibleBottomDestinations(mapOf("calendar" to true, "tasks" to true, "chat" to false))
+        val subscribed = visibleBottomDestinations(mapOf("attendance" to true, "tasks" to true, "chat" to false))
         assertEquals(
-            listOf(AinoDestination.Dashboard, AinoDestination.Calendar, AinoDestination.Tasks, AinoDestination.More),
+            listOf(AinoDestination.Dashboard, AinoDestination.Attendance, AinoDestination.Tasks, AinoDestination.More),
             subscribed,
         )
         assertEquals(bottomDestinations, visibleBottomDestinations(emptyMap(), ungatedPlatformAdmin = true))

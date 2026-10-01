@@ -796,6 +796,346 @@
       "key": "GET /api/projects/:param/tasks",
       "owner": "security (admin web-only)",
       "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/auth/forgot-password",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/auth/reset-password",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/auth/register",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/auth/registration-mode",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/auth/handoff",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/auth/switch-realm",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/auth/webauthn",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "DELETE /api/auth/webauthn/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/auth/webauthn/login/options",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/auth/webauthn/login/verify",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/auth/webauthn/register/options",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/auth/webauthn/register/verify",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/custom-fields",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "DELETE /api/custom-fields/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "PUT /api/custom-fields/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/custom-fields/all",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "PUT /api/custom-fields/reorder",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/export/my-analytics",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/export/my-leaves",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/export/my-tasks",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/export/payroll-hours",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/export/team-analytics",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/export/team-leaves",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/integrations",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "DELETE /api/integrations/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/integrations/:param/webhook",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/integrations/github",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/integrations/github/disconnect",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/integrations/github/oauth/callback",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/integrations/github/oauth/start",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/integrations/github/repos",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "DELETE /api/integrations/github/repos/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/integrations/github/repos/connect",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/integrations/github/status",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/leave-policy/balances/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "PUT /api/leave-policy/balances/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/leave-policy/holidays",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "DELETE /api/leave-policy/holidays/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/leave-policy/holidays/batch",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "POST /api/leave-policy/policies",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "DELETE /api/leave-policy/policies/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/public/plan-catalog",
+      "owner": "product (P10 web-only)",
+      "reason": "Phase 10 is web / desktop only (user decision 2026-10-01): administration, integrations, custom-field definitions, exports and the remaining auth flows (registration, password reset, passkeys, realm handoff) are not required on mobile. See WEB_PARITY_PLAN.md Phase 10."
+    },
+    {
+      "key": "GET /api/giphy/trending",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "PATCH /api/leaves/:param/approve",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "PATCH /api/leaves/:param/reject",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "PATCH /api/leaves/:param/revoke",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "GET /api/leaves/balance",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "GET /api/leaves/monthly-summary",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "GET /api/leaves/pending",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "GET /api/leaves/summary",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "POST /api/sprints",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "DELETE /api/sprints/:param",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "PUT /api/sprints/:param",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "GET /api/sprints/:param/carried-over",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "POST /api/tasks",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "GET /api/tasks/:param/git",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "POST /api/tasks/:param/git",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "DELETE /api/tasks/:param/git/:param",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "DELETE /api/tracker/entries/:param",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "GET /api/tracker/weekly",
+      "owner": "parity (no web UI)",
+      "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
+    },
+    {
+      "key": "POST /api/webhooks/github/:param",
+      "owner": "ops",
+      "reason": "Infrastructure probe / server-to-server endpoint, not a client API."
+    },
+    {
+      "key": "GET /healthz",
+      "owner": "ops",
+      "reason": "Infrastructure probe / server-to-server endpoint, not a client API."
+    },
+    {
+      "key": "GET /metrics",
+      "owner": "ops",
+      "reason": "Infrastructure probe / server-to-server endpoint, not a client API."
+    },
+    {
+      "key": "GET /readyz",
+      "owner": "ops",
+      "reason": "Infrastructure probe / server-to-server endpoint, not a client API."
+    },
+    {
+      "key": "POST /api/profile/face-enroll",
+      "owner": "product (P5.5)",
+      "reason": "The endpoint takes a face-api.js descriptor that Android cannot produce; Face Enrollment on Android shows status and clear only and points to web / desktop for capture. See WEB_PARITY_PLAN.md P5.5 footnote 1."
+    },
+    {
+      "key": "GET /api/public/notes/:param",
+      "owner": "product (P7.2)",
+      "reason": "The anonymous shared-note viewer is a public web page; Android shares the link through the system share sheet. See WEB_PARITY_PLAN.md Phase 7 notes."
+    },
+    {
+      "key": "GET /api/service-desk/tickets/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Only the web admin console reads a single ticket; admin is web / desktop only (2026-10-01). Android lists, creates and deletes own tickets. See WEB_PARITY_PLAN.md P6.7 footnote 4."
+    },
+    {
+      "key": "PATCH /api/service-desk/tickets/:param",
+      "owner": "product (P10 web-only)",
+      "reason": "Only the web admin console edits a ticket; admin is web / desktop only (2026-10-01). See WEB_PARITY_PLAN.md P6.7 footnote 4."
     }
   ]
 }

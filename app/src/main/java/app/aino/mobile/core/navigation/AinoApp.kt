@@ -136,7 +136,14 @@ fun AinoApp(
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
     val tenantAuthenticated = (ui.state as? AuthState.Authenticated)?.user?.tenantId != null
     LaunchedEffect(tenantAuthenticated) { realtime.setAuthenticatedTenant(tenantAuthenticated) }
-    // A terminal socket close is the server ending this session (e.g. a newer sign-in elsewhere).
+    // Foreground: skip any pending backoff and replace a socket that went stale while asleep.
+    androidx.lifecycle.compose.LifecycleResumeEffect(realtime, tenantAuthenticated) {
+        // A socket stopped by a 4001 we could not verify (offline at the time) gets one more try.
+        if (tenantAuthenticated && realtime.state.value is RealtimeState.Stopped) realtime.setAuthenticatedTenant(true)
+        else realtime.reconnectNow()
+        onPauseOrDispose { }
+    }
+    // A terminal socket close is the server ending this session (sign-out elsewhere, password change, removal).
     LaunchedEffect(realtimeState) {
         val stopped = realtimeState as? RealtimeState.Stopped ?: return@LaunchedEffect
         if (!tenantAuthenticated) return@LaunchedEffect
@@ -245,6 +252,14 @@ fun AinoApp(
                     "theme_changed" -> themeFromEvent(event.data)?.let { dark -> setDark(dark) }
                     // Live accent / logo sync (web BrandingContext).
                     "branding_changed" -> brandingStore.refresh()
+                    // Web FeaturesContext: patch the effective feature map so gates react immediately.
+                    "tenant_features_changed" -> featuresFromEvent(event.data)?.let { features ->
+                        auth.updateUser { it.copy(tenantFeatures = features) }
+                    }
+                    // A leave applied / approved / rejected elsewhere.
+                    "leave_update" -> attendance.onRemoteLeaveChange()
+                    // Names / avatars shown in the conversation list (web useChatState).
+                    "user_profile_updated" -> chat.refresh()
                 }
                 notifications.onRealtimeEvent(event.type, event.data)
             }
@@ -254,6 +269,19 @@ fun AinoApp(
         if (tenantAuthenticated) {
             realtime.domain(RealtimeDomain.Chat).collect(chat::onRealtimeEvent)
         }
+    }
+    // Catch-up after a reconnect (or a dropped event): the server keeps no
+    // replay log, so every session-scoped screen revalidates silently.
+    val resync by realtime.resync.collectAsStateWithLifecycle()
+    LaunchedEffect(resync) {
+        if (resync == 0L || !tenantAuthenticated) return@LaunchedEffect
+        chat.refresh()
+        chat.refreshThread()
+        dashboard.refresh()
+        attendance.refresh()
+        tasks.onTaskEvent()
+        notifications.refresh()
+        profile.refresh()
     }
     // Call surfaces overlay the shell rather than replacing it, so the NavHost
     // (and a minimised meeting) survive a ring or a 1:1 call.
@@ -317,6 +345,7 @@ fun AinoApp(
                 profile.pushTheme(next)
             },
             realtimeEvents = realtime.events,
+            resync = realtime.resync,
             notifications = notifications,
             notes = notes,
         )
@@ -357,6 +386,8 @@ private fun AuthenticatedShell(
     onToggleTheme: () -> Unit,
     /** Raw WS events for per-route ViewModels (Calendar, …) to refetch on. */
     realtimeEvents: kotlinx.coroutines.flow.Flow<app.aino.mobile.core.realtime.RealtimeEnvelope>,
+    /** Reconnect catch-up signal for per-route ViewModels. */
+    resync: kotlinx.coroutines.flow.StateFlow<Long>,
     notifications: app.aino.mobile.feature.notifications.NotificationsViewModel,
     notes: app.aino.mobile.feature.notes.NotesViewModel,
 ) {
@@ -639,7 +670,7 @@ private fun AuthenticatedShell(
                 LaunchedEffect(calendar) {
                     realtimeEvents.collect { event -> if (event.type in CALENDAR_REFRESH_EVENTS) calendar.refresh() }
                 }
-                RefetchOnResume(calendar::refresh)
+                RefetchOnResume(calendar::refresh, resync)
                 app.aino.mobile.feature.calendar.CalendarScreen(
                     viewModel = calendar,
                     userId = user.id,
@@ -760,7 +791,7 @@ private fun AuthenticatedShell(
             // P3.1/P3.8: the Attendance page hosts its tabs; `?tab=` carries the
             // web hash deep links (#leaves, #manual-entry, #analytics).
             composable(
-                route = AinoDestination.Attendance.route + "?tab={tab}",
+                route = ATTENDANCE_ROUTE_PATTERN,
                 arguments = listOf(androidx.navigation.navArgument("tab") { defaultValue = "" }),
             ) { backStackEntry ->
                 AttendanceScreen(
@@ -842,7 +873,7 @@ private fun AuthenticatedShell(
                 val organization = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.organization.OrganizationViewModel>(
                     factory = app.aino.mobile.feature.organization.OrganizationViewModel.factory(context),
                 )
-                RefetchOnResume(organization::refresh)
+                RefetchOnResume(organization::refresh, resync)
                 app.aino.mobile.feature.organization.OrganizationScreen(
                     viewModel = organization,
                     userRole = role,
@@ -862,7 +893,10 @@ private fun AuthenticatedShell(
                 val manager = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.manager.ManagerViewModel>(
                     factory = app.aino.mobile.feature.manager.ManagerViewModel.factory(context),
                 )
-                RefetchOnResume(manager::refresh)
+                RefetchOnResume(manager::refresh, resync)
+                LaunchedEffect(manager) {
+                    realtimeEvents.collect { event -> if (event.type in MANAGER_REFRESH_EVENTS) manager.refresh() }
+                }
                 app.aino.mobile.feature.manager.ManagerScreen(
                     viewModel = manager,
                     userRole = role,
@@ -876,7 +910,7 @@ private fun AuthenticatedShell(
                     factory = app.aino.mobile.feature.manager.ManagerViewModel.factory(context),
                     viewModelStoreOwner = androidx.compose.runtime.remember(entry) { nav.getBackStackEntry(AinoDestination.Manager.route) },
                 )
-                RefetchOnResume(manager::refreshMemberDetail)
+                RefetchOnResume(manager::refreshMemberDetail, resync)
                 app.aino.mobile.feature.manager.MemberDetailScreen(
                     viewModel = manager,
                     userId = userId,
@@ -896,6 +930,7 @@ private fun AuthenticatedShell(
                 // Screens with real routes above must never be shadowed by a placeholder.
                 .filter {
                     it != AinoDestination.Attendance && it != AinoDestination.Leaves &&
+                        it != AinoDestination.Calendar &&
                         it != AinoDestination.Organization && it != AinoDestination.Notes &&
                         it != AinoDestination.Manager
                 }
@@ -1114,13 +1149,27 @@ private fun themeFromEvent(data: kotlinx.serialization.json.JsonElement?): Boole
     return when (theme) { "dark" -> true; "light" -> false; else -> null }
 }
 
+/** `tenant_features_changed` WS payload `{ features: { name: bool } }`. */
+private fun featuresFromEvent(data: kotlinx.serialization.json.JsonElement?): Map<String, Boolean>? {
+    val features = (data as? kotlinx.serialization.json.JsonObject)?.get("features") as? kotlinx.serialization.json.JsonObject ?: return null
+    return features.mapNotNull { (key, value) ->
+        (value as? kotlinx.serialization.json.JsonPrimitive)?.content?.toBooleanStrictOrNull()?.let { key to it }
+    }.toMap()
+}
+
 private val DASHBOARD_REFRESH_EVENTS = setOf(
     "task_assigned",
     "task_updated",
     "calendar_refresh",
     "meeting_updated",
     "meeting_cancelled",
+    // Pending approvals card (managers).
+    "approval_update",
+    "leave_update",
 )
+
+/** My Team reloads its visible tab on these (approvals, leaves, attendance). */
+private val MANAGER_REFRESH_EVENTS = setOf("approval_update", "leave_update", "attendance_update")
 
 /** Task-scoped realtime events; the planner reloads rather than patching a row. */
 private val TASK_REFRESH_EVENTS = setOf("task_assigned", "task_updated")
@@ -1146,11 +1195,17 @@ private val CALENDAR_REFRESH_EVENTS = setOf("calendar_refresh", "meeting_updated
 
 /** Web focus/visibility refetch for a per-route ViewModel (skips the first resume, which is the initial load). */
 @Composable
-private fun RefetchOnResume(refetch: () -> Unit) {
+private fun RefetchOnResume(refetch: () -> Unit, resync: kotlinx.coroutines.flow.StateFlow<Long>? = null) {
     var resumedOnce by androidx.compose.runtime.remember { mutableStateOf(false) }
     androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
         if (resumedOnce) refetch()
         resumedOnce = true
         onPauseOrDispose { }
+    }
+    // Reconnect catch-up while this screen is open.
+    if (resync != null) {
+        val opened = androidx.compose.runtime.remember { resync.value }
+        val current by resync.collectAsStateWithLifecycle()
+        LaunchedEffect(current) { if (current != opened) refetch() }
     }
 }

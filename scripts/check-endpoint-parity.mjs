@@ -39,6 +39,9 @@ function add(found, method, route, source) {
   // Explicit @api markers use Express-style named parameters (`:id`). Keep
   // accepting interpolated Kotlin templates as well; both normalize to the
   // same structural route below.
+  // Query strings (`?year=$year&x=1`) are not part of the operation key; strip
+  // them before validating, or every parameterised GET reads as unproven.
+  route = route?.replace(/\?.*$/, "");
   if (!route || !/^[a-z][a-z0-9/_?${}.:\-]+$/i.test(route)) return;
   // These two finite dynamic forms are declared through adjacent @api markers.
   // Do not also record their unresolved expression as an unmatched operation.

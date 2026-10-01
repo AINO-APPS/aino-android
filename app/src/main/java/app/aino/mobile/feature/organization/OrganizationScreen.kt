@@ -19,7 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,8 +59,7 @@ fun OrganizationScreen(
     val colors = LocalWebColors.current
     LaunchedEffect(userRole, userId, payroll) { viewModel.bind(userRole, userId, payroll) }
 
-    PullToRefreshBox(
-        isRefreshing = ui.refreshing,
+    AinoPullToRefreshBox(loading = ui.refreshing,
         onRefresh = viewModel::refresh,
         modifier = modifier.fillMaxSize().background(colors.bg),
     ) {

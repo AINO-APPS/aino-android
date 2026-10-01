@@ -28,6 +28,7 @@ fun rememberWebColors(darkTheme: Boolean): WebColors =
  * whole app repaints without restart when the user toggles the theme.
  * [accent] is the org branding accent (P10.4, see [withBrandAccent]).
  */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun WebTheme(
     darkTheme: Boolean = true,
@@ -42,9 +43,24 @@ fun WebTheme(
     ) {
         androidx.compose.material3.MaterialTheme(
             colorScheme = if (darkTheme) darkColorSchemeFor(colors) else lightColorSchemeFor(colors),
-            content = content,
-        )
+        ) {
+            // Mobile decision (2026-10-01): no touch ripple / square press highlight
+            // anywhere. Must sit inside MaterialTheme, which re-provides a ripple.
+            CompositionLocalProvider(
+                androidx.compose.material3.LocalRippleConfiguration provides null,
+                androidx.compose.foundation.LocalIndication provides NoIndication,
+                content = content,
+            )
+        }
     }
+}
+
+/** An [androidx.compose.foundation.Indication] that draws nothing. */
+private object NoIndication : androidx.compose.foundation.IndicationNodeFactory {
+    override fun create(interactionSource: androidx.compose.foundation.interaction.InteractionSource): androidx.compose.ui.node.DelegatableNode =
+        object : androidx.compose.ui.Modifier.Node() {}
+    override fun equals(other: Any?): Boolean = other === this
+    override fun hashCode(): Int = 0
 }
 
 /**

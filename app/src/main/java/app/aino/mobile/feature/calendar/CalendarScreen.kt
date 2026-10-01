@@ -24,7 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,7 +76,7 @@ fun CalendarScreen(
     // The now-line and past-slot shading follow the clock.
     val now by produceState(LocalDateTime.now()) { while (true) { delay(30_000); value = LocalDateTime.now() } }
 
-    PullToRefreshBox(isRefreshing = ui.loading && ui.events.isEmpty(), onRefresh = viewModel::refresh, modifier = modifier.fillMaxSize().background(colors.bg)) {
+    AinoPullToRefreshBox(loading = ui.loading, onRefresh = viewModel::refresh, modifier = modifier.fillMaxSize().background(colors.bg)) {
         Column(Modifier.fillMaxSize().padding(start = 8.dp, end = 8.dp, top = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(HeroIcons.CalendarDays, null, Modifier.size(22.dp), tint = colors.text)

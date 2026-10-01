@@ -43,7 +43,7 @@ class RealtimeDispatcher {
      * Dispatch one envelope. Returns the routed event, or null when the type is
      * unrecognised.
      */
-    fun dispatch(envelope: RealtimeEnvelope): RoutedRealtimeEvent? {
+    fun dispatch(envelope: RealtimeEnvelope, onDropped: () -> Unit = {}): RoutedRealtimeEvent? {
         val event = RealtimeEvent.from(envelope.type)
         if (event == null) {
             // `pong` is handled by the transport's liveness tracking and is
@@ -52,7 +52,8 @@ class RealtimeDispatcher {
             return null
         }
         val routed = RoutedRealtimeEvent(event, envelope.data)
-        _events.tryEmit(routed)
+        // A slow collector filled the buffer: the event is lost, so ask for a catch-up.
+        if (!_events.tryEmit(routed)) onDropped()
         return routed
     }
 }

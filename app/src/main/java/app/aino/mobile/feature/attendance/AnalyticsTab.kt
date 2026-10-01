@@ -70,7 +70,8 @@ fun AnalyticsTab(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
         }
 
         when {
-            ui.analyticsLoading -> AnalyticsSkeleton()
+            ui.analyticsLoading && ui.analyticsData.isEmpty() && ui.analyticsHistory.isEmpty() ->
+                app.aino.mobile.core.designsystem.component.FirstLoadSpinner(Modifier.height(240.dp))
             ui.analyticsError != null -> WebErrorBanner(ui.analyticsError)
             else -> {
                 ui.analyticsWidgets?.let { WidgetsTiles(it) }
@@ -82,21 +83,6 @@ fun AnalyticsTab(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
                 HistoryLogCard(ui.analyticsHistory)
             }
         }
-    }
-}
-
-@Composable
-private fun AnalyticsSkeleton() {
-    val colors = LocalWebColors.current
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            repeat(2) { Box(Modifier.weight(1f).height(64.dp).background(colors.surface, RoundedCornerShape(12.dp))) }
-        }
-        Box(Modifier.fillMaxWidth().height(180.dp).background(colors.surface, RoundedCornerShape(12.dp)))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            repeat(2) { Box(Modifier.weight(1f).height(140.dp).background(colors.surface, RoundedCornerShape(12.dp))) }
-        }
-        Box(Modifier.fillMaxWidth().height(200.dp).background(colors.surface, RoundedCornerShape(12.dp)))
     }
 }
 

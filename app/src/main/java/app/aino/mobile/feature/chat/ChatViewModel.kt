@@ -174,6 +174,8 @@ class ChatViewModel(
     private val repository: ChatRepository,
     private val cacheFactory: (CacheScope) -> ChatCache,
     private val enqueueText: suspend (CacheScope, Long, String, Long?, Long, String) -> String,
+    /** Same reads served from the last responses: lists and threads paint instantly. */
+    private val warm: ChatRepository? = null,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ChatUiState())
     val ui: StateFlow<ChatUiState> = _ui.asStateFlow()
@@ -277,6 +279,11 @@ class ChatViewModel(
         if (_ui.value.loading) return
         _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
+            if (_ui.value.conversations.isEmpty()) {
+                warm?.let { runCatching(it::loadConversations).getOrNull() }?.takeIf { it.isNotEmpty() }?.let { cached ->
+                    if (_ui.value.conversations.isEmpty()) _ui.value = _ui.value.copy(conversations = zeroUnread(cached, visibleConversationId()))
+                }
+            }
             runCatching(repository::loadConversations).fold(
                 onSuccess = { conversations ->
                     scopedCache.replace(conversations)
@@ -602,6 +609,13 @@ class ChatViewModel(
         val scopedCache = cache ?: return
         _ui.value = _ui.value.copy(threadLoading = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
+            if (_ui.value.messages.isEmpty()) {
+                warm?.let { runCatching { it.loadMessages(conversation.id) }.getOrNull() }?.takeIf { it.isNotEmpty() }?.let { cached ->
+                    if (_ui.value.selectedConversation?.id == conversation.id && _ui.value.messages.isEmpty()) {
+                        _ui.value = _ui.value.copy(messages = cached, hasOlderMessages = cached.size >= 50)
+                    }
+                }
+            }
             runCatching { repository.loadMessages(conversation.id) }.fold(
                 onSuccess = { messages ->
                     scopedCache.replaceMessages(conversation.id, messages)
@@ -1596,6 +1610,7 @@ class ChatViewModel(
                     { scope, conversationId, content, replyToId, now, clientId ->
                         outbox.enqueueText(scope, conversationId, content, replyToId, nowEpochMs = now, clientMessageId = clientId)
                     },
+                    warm = ChatRepository(container.cachedApi),
                 ).also { it.context = context.applicationContext } as T
             }
         }

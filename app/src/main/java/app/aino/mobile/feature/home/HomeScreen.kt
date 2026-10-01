@@ -17,7 +17,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.auth.AinoUser
 import app.aino.mobile.core.common.TrackerStatus
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
-import app.aino.mobile.feature.home.component.DashboardSkeleton
 import app.aino.mobile.feature.home.component.EventReminderToast
 import app.aino.mobile.feature.home.component.GreetingBanner
 import app.aino.mobile.feature.home.component.PendingApprovalsCard
@@ -63,14 +62,13 @@ fun HomeScreen(
     val status = attendanceStatus ?: snapshot?.status
     val (reminders, dismissReminder) = rememberEventReminders(snapshot?.todayEvents.orEmpty())
 
-    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
-        isRefreshing = ui.loading && snapshot != null,
+    app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox(
+        loading = ui.loading,
         onRefresh = viewModel::refresh,
         modifier = Modifier.fillMaxSize().background(colors.bg),
     ) {
         if (ui.loading && snapshot == null) {
-            // First load with nothing cached ? skeleton (stale-while-revalidate).
-            Column(modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 18.dp)) { DashboardSkeleton() }
+            app.aino.mobile.core.designsystem.component.FirstLoadSpinner(modifier)
         } else {
             Column(
                 modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 18.dp),

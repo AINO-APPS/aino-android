@@ -12,6 +12,25 @@ object RequestHeaders {
     /** Marks app-minted tokens server-side; admin routes are web-only and refuse them. */
     const val CLIENT = "X-AINO-Client"
     const val ANDROID = "android"
+
+    /** Stable install id: the server keeps one session per device (see [DeviceId]). */
+    const val DEVICE_ID = "X-AINO-Device-Id"
+}
+
+/**
+ * This install's id, set once by `AppContainer`. Signing in again on this
+ * device replaces only this device's server session; other devices (web,
+ * desktop, other phones) stay signed in.
+ */
+object DeviceId {
+    @Volatile var value: String? = null
+
+    /** Kept in `noBackupFilesDir` so a restored backup never clones another phone's id. */
+    fun load(context: android.content.Context): String {
+        val file = java.io.File(context.noBackupFilesDir, "aino_device_id")
+        return runCatching { file.readText().trim() }.getOrNull()?.takeIf { it.length >= 8 }
+            ?: java.util.UUID.randomUUID().toString().also { runCatching { file.writeText(it) } }
+    }
 }
 
 /** Mirrors JavaScript Date.getTimezoneOffset(): UTC minus local time, in minutes. */
@@ -25,6 +44,7 @@ fun standardHeaders(
     put(RequestHeaders.REQUESTED_WITH, RequestHeaders.AINO)
     put(RequestHeaders.CLIENT, RequestHeaders.ANDROID)
     put(RequestHeaders.TIMEZONE_OFFSET, timezoneOffsetMinutes.toString())
+    DeviceId.value?.let { put(RequestHeaders.DEVICE_ID, it) }
     token?.trim()?.takeIf(String::isNotEmpty)?.let {
         put(RequestHeaders.AUTHORIZATION, "Bearer $it")
     }

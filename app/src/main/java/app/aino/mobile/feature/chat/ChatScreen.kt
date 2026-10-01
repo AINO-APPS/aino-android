@@ -214,8 +214,8 @@ fun ChatScreen(
             }
             if (newGroupOpen) NewGroupDialog(ui, viewModel) { newGroupOpen = false }
 
-            androidx.compose.material3.pulltorefresh.PullToRefreshBox(
-                isRefreshing = if (activeTab == ChatListTab.Calls) ui.callsLoading else ui.loading,
+            app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox(
+                loading = if (activeTab == ChatListTab.Calls) ui.callsLoading else ui.loading,
                 onRefresh = { if (activeTab == ChatListTab.Calls) viewModel.loadCalls() else viewModel.refresh() },
                 modifier = Modifier.fillMaxSize(),
             ) {
@@ -253,7 +253,7 @@ fun ChatScreen(
                 } else when (activeTab) {
                     ChatListTab.Calls -> {
                         when {
-                            ui.callsLoading -> item(key = "calls-loading") { SearchHint("Loading call history…", true) }
+                            ui.callsLoading && ui.calls.isEmpty() -> item(key = "calls-loading") { app.aino.mobile.core.designsystem.component.FirstLoadSpinner(Modifier.height(160.dp)) }
                             ui.calls.isEmpty() -> item(key = "calls-empty") { HonestEmpty(HeroIcons.Phone, "No calls yet") }
                             else -> items(ui.calls, key = { "call-${it.id}" }) { call ->
                                 CallRow(
@@ -278,7 +278,8 @@ fun ChatScreen(
                             visibleConversations.filter { !it.isPinned && !it.isFavourite }
                         if (archivedOpen) item(key = "archived-header") { ArchivedHeader { archivedOpen = false } }
                         if (visibleConversations.isEmpty()) item(key = "chat-empty") {
-                            HonestEmpty(HeroIcons.ChatBubbleOvalLeft, if (ui.loading) "Loading conversations…" else if (archivedOpen) "No archived chats" else "No conversations yet")
+                            if (ui.loading) app.aino.mobile.core.designsystem.component.FirstLoadSpinner(Modifier.height(160.dp))
+                            else HonestEmpty(HeroIcons.ChatBubbleOvalLeft, if (archivedOpen) "No archived chats" else "No conversations yet")
                         }
                         items(ordered, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation) }
                         val archivedCount = ui.conversations.count { it.isArchived && !it.isMeetingChat }
@@ -810,6 +811,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 onOpenCamera = openCamera,
                 onOpenGallery = openGallery,
                 onSendMedia = { sendItems = sendItems.orEmpty() + it },
+                onSendGif = { uri, mime -> viewModel.upload(uri, mimeOverride = mime, keepComposer = true) },
             )
         }
         if (cameraOpen) app.aino.mobile.feature.chat.media.ChatCameraScreen(
@@ -1833,6 +1835,7 @@ private fun MessageComposer(
     onOpenCamera: () -> Unit,
     onOpenGallery: () -> Unit,
     onSendMedia: (List<app.aino.mobile.feature.chat.media.MediaSendItem>) -> Unit,
+    onSendGif: (Uri, String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val signal = signalColors
@@ -2142,6 +2145,13 @@ private fun MessageComposer(
                 height = keyboardHeight,
                 modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
                 onOpenSearch = { panel = ComposerPanel.EmojiSearch },
+                onOpenGif = { panel = ComposerPanel.Gif },
+            )
+            // Web EmojiGifPicker GIF / Sticker: the search field raises the IME, so the grid shrinks above it.
+            ComposerPanel.Gif -> GifKeyboard(
+                height = if (imeOpening) 220.dp else keyboardHeight,
+                onPicked = { uri, mime -> panel = ComposerPanel.None; onSendGif(uri, mime) },
+                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
             )
             // Signal: search bar docks above the system keyboard; Back returns to the grid.
             ComposerPanel.EmojiSearch -> EmojiSearchBar(
@@ -2165,7 +2175,7 @@ private fun MessageComposer(
     }
 }
 
-private enum class ComposerPanel { None, Emoji, EmojiSearch, Attach }
+private enum class ComposerPanel { None, Emoji, EmojiSearch, Gif, Attach }
 
 /** Replaces [start, end) of [text] with [insert]; returns the new text and caret position. */
 internal fun insertAtSelection(text: String, start: Int, end: Int, insert: String): Pair<String, Int> {

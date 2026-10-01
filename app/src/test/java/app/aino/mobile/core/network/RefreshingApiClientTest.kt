@@ -49,6 +49,19 @@ class RefreshingApiClientTest {
         assertNull(tokens.value)
     }
 
+    @Test
+    fun keepsCredentialWhenRefreshHitsANetworkError() {
+        val tokens = MemoryTokens("valid")
+        val delegate = ApiClient { request ->
+            if (request.path == "auth/refresh") throw ApiError.Network(request.method, request.path, java.io.IOException("offline"))
+            throw http401(request)
+        }
+
+        runCatching { RefreshingApiClient(delegate, tokens).execute(ApiRequest(path = "profile")) }
+
+        assertEquals("valid", tokens.value)
+    }
+
     private fun response(text: String) = ApiResponse(200, emptyMap(), text.toByteArray())
 
     private fun http401(request: ApiRequest) = ApiError.Http(401, "{}", request.method, request.path)

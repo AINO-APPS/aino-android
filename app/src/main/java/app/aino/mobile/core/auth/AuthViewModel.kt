@@ -44,7 +44,7 @@ class AuthViewModel(
             // the exact stored scope. A transient network failure leaves the
             // credential intact, so preserve offline cache for the next retry.
             if (restored.isSuccess || !repository.hasStoredCredential()) persistOrClearScope(state)
-            // Sessions never time out, so a rejected stored credential means it was replaced elsewhere.
+            // Sessions never time out, so a rejected stored credential was revoked (password change, removal, sign-out elsewhere).
             val message = SIGNED_IN_ELSEWHERE.takeIf { hadCredential && restored.isSuccess && state is AuthState.SignedOut }
             _ui.value = AuthUiState(state = state, message = message, biometricEnrolled = biometricCredentials.isEnrolled())
         }
@@ -180,8 +180,9 @@ class AuthViewModel(
 
     /**
      * The server ended this session (the socket closed as terminal). Sessions no
-     * longer expire, so under the one-session-per-user policy that means a newer
-     * sign-in on another device or the web. Confirm with the API: sign out with an
+     * longer expire and other devices no longer replace them (one session per
+     * device), so it was revoked: sign-out, password change or removal. Confirm
+     * with the API: sign out with an
      * explanation and return false; true if the session is fine. Network failures
      * keep the user signed in (and return false so callers don't reconnect-loop).
      */
@@ -246,6 +247,8 @@ class AuthViewModel(
                     OutboxWorker.cancel(context, scope)
                     AinoDatabase.get(context).dao().clearScope(scope.tenantId, scope.userId)
                 }
+                // The previous user's cached responses must not outlive their session.
+                app.aino.mobile.core.AppContainer.get(context).responses.apply { this.scope = null; clearAll() }
                 scopeStore.clear()
                 state
             }.fold(
@@ -268,9 +271,16 @@ class AuthViewModel(
             else -> null
         }
         val tenantId = user?.tenantId
+        val responses = app.aino.mobile.core.AppContainer.get(context).responses
         if (tenantId != null && user.id > 0) {
-            scopeStore.save(CacheScope(tenantId, user.id))
+            val next = CacheScope(tenantId, user.id)
+            // A different user signed in: never show their predecessor's data.
+            if (scopeStore.read().let { it != null && it != next }) responses.clearAll()
+            responses.scope = "${tenantId}_${user.id}"
+            scopeStore.save(next)
         } else if (state is AuthState.SignedOut) {
+            responses.scope = null
+            responses.clearAll()
             val stale = scopeStore.read()
             if (stale != null) {
                 OutboxWorker.cancel(context, stale)
@@ -281,7 +291,7 @@ class AuthViewModel(
     }
 
     companion object {
-        const val SIGNED_IN_ELSEWHERE = "You were signed out because your account signed in on another device."
+        const val SIGNED_IN_ELSEWHERE = "Your session ended. Please sign in again."
 
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")

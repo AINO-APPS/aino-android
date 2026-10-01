@@ -170,6 +170,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.video)
+    implementation(libs.coil.gif)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.datasource.okhttp)

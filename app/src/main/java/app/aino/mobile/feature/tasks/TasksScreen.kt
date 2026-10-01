@@ -403,7 +403,7 @@ private fun LazyListScope.sprintTab(ui: TaskUiState, viewModel: TaskViewModel, o
     if (ui.carriedCount > 0) item { CarryBanner(ui.carriedCount) }
     ui.error?.let { item { ErrorMsg(it, Modifier.padding(bottom = 16.dp)) } }
     if (ui.importOpen) item { SprintImportPanel(ui, viewModel) }
-    if (ui.sprintLoading) {
+    if (ui.sprintLoading && ui.tasks.isEmpty()) {
         item { WebSpinner() }
         return
     }
@@ -523,7 +523,7 @@ private fun SprintImportPanel(ui: TaskUiState, viewModel: TaskViewModel) {
         }
         Spacer(Modifier.height(10.dp))
         when {
-            ui.backlogLoading -> WebSpinner()
+            ui.backlogLoading && ui.importable.isEmpty() -> WebSpinner()
             ui.importable.isEmpty() -> Text("No backlog tickets available to import.", color = colors.textMuted, fontSize = 0.82.rem)
             else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ui.importable.forEach { task ->
@@ -759,7 +759,7 @@ private fun LazyListScope.backlogTab(ui: TaskUiState, viewModel: TaskViewModel, 
         item { BacklogToolbar(ui, viewModel) }
     }
     if (ui.backlogFormOpen) item { BacklogForm(ui, viewModel) }
-    if (ui.backlogLoading) {
+    if (ui.backlogLoading && ui.backlog.isEmpty()) {
         item { WebSpinner() }
         return
     }

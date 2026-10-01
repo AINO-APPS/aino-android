@@ -12,6 +12,7 @@
 > Signal-Android — patterns only, per `docs/SOURCE_PROVENANCE.md` (no code copied).
 >
 > Created: 2026-09-18. Revised: 2026-09-25 (Phase R stabilisation, status audit; Phases 5, 6, 7 and 9 landed).
+> Revised: 2026-10-01 (Phase 10 web-only; Phase S sync, sessions and mobile UX; parity matrix at 0 pending).
 > Status legend: `TODO` / `WIP` / `DONE` / `BLOCKED`.
 
 ### Product decisions (confirmed 2026-09-25)
@@ -33,6 +34,29 @@
   web's dropdown; Edit Profile, Notification Sounds and Face Enrollment are
   full-screen sub-pages. Loading states use native Android indicators, not the
   web's skeleton/shimmer animations. See Phase 5 notes.
+
+### Mobile decisions (confirmed 2026-10-01)
+
+These deliberately deviate from the web at 430px:
+
+- **Bottom bar is `Home · Attendance · Tasks · Chat · More`.** Attendance
+  takes the web's Calendar slot, and Calendar moves into More, in the slot
+  Attendance had.
+- **No touch ripple.** The square press highlight is disabled app-wide in
+  `WebTheme` (`LocalRippleConfiguration = null`, no-op `LocalIndication`).
+- **No loading animations on open.** Screens paint their last known data at
+  once and revalidate silently. Only a first load with nothing cached shows a
+  single small native spinner (`FirstLoadSpinner`). The pull-to-refresh
+  indicator shows only for a pull the user started (`AinoPullToRefreshBox`).
+  Skeletons are removed.
+- **Signing in on another device no longer signs the app out.** The server
+  keeps one session per device instead of one per user (Phase S).
+- **Sync follows Slack / Teams**, see Phase S:
+  - one live socket that reconnects immediately when the network returns or
+    the app comes back to the foreground;
+  - a catch-up revalidation after every reconnect;
+  - a local cache that paints every screen instantly;
+  - pushes prefetch new chat messages.
 
 ### Admin is web-only (security decision 2026-10-01)
 
@@ -82,14 +106,14 @@ self-service and approvals on mobile.
 
 | Area                   | Web (430px)                                                                                                                  | Android today                                                                                                           | Verdict                                            |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| Bottom tab bar         | `Home · Calendar · Tasks · Chat · More` (64px, `--bg-secondary`)                                                             | `Home · Attendance · Tasks · Chat · More` (Material3 NavigationBar)                                                     | **Wrong tabs, wrong chrome**                       |
-| Attendance entry point | inside the **More** popup                                                                                                    | a bottom tab                                                                                                            | **Wrong placement**                                |
+| Bottom tab bar         | `Home · Calendar · Tasks · Chat · More` (64px, `--bg-secondary`)                                                             | `Home · Attendance · Tasks · Chat · More` (`WebTabBar`)                                                                 | **Decided deviation (2026-10-01)**                 |
+| Attendance entry point | inside the **More** popup                                                                                                    | a bottom tab; Calendar is in More                                                                                       | **Decided deviation (2026-10-01)**                 |
 | Profile                | `ProfileMenu` dropdown (280px) + modals, **no page**                                                                         | full-page `ProfileScreen` + sub-pages (deliberate, Phase 5)                                                             | **Decided deviation**                              |
 | Theme                  | dark-default token set (`#131314` / `#2383e2`), 8px radius, Inter                                                            | bespoke cream `#F6F0E4` + "glass/atmosphere"                                                                            | **Different design language**                      |
 | Dashboard              | greeting + announcement carousel, WorkTimer, TodayEvents, TasksSummary, SprintProgress, PendingApprovals, EventReminderToast | greeting + hand-drawn Canvas illustration, WorkTimer, 7-day date strip, Work-Location toggle, TodayEvents, TasksPlanner | **~50% missing, ~40% invented**                    |
 | Attendance tabs        | `Overview(calendar) · Leaves · Manual Entry · Analytics`                                                                     | `Today · Overview · Leaves · Manual · Analytics`                                                                        | **Extra tab, no calendar, 2 tabs not wired to VM** |
 | Chat                   | list ⇄ thread with back stack, reactions, replies, ticks, typing, attachments                                                | native list ⇄ thread routes, complete message actions/composer, calls/info panes, and realtime reconciliation           | **Phase 4 complete**                               |
-| Endpoint coverage      | 464 operations                                                                                                               | 248 implemented (**53.4%**) per `docs/PARITY_MATRIX.md` after Phase 9                                                   | **216 pending**                                    |
+| Endpoint coverage      | 464 operations                                                                                                               | 237 proven, 227 waived (web-only / no web UI / ops) per `docs/PARITY_MATRIX.md` (2026-10-01)                            | **0 pending**                                      |
 
 ### The single blocking defect
 
@@ -377,6 +401,12 @@ Each dashboard module overrides to `text-align: left; padding: 1.2rem; margin-bo
 `ROLE_LEVELS = { employee:1, team_lead:2, manager:3, hr_admin:4, super_admin:5, platform_admin:6 }`
 
 The More button renders `active` when `mobileMoreOpen || moreItems.some(i => i.to === pathname)`.
+
+> **Android (decision 2026-10-01):** the bar is `Home · Attendance · Tasks ·
+> Chat · More`. Attendance (`HeroIcons.Clock`, gated by `hasFeature("attendance")`)
+> takes slot 2, and More lists `Notes · Calendar · Organization · My Team ·
+> Tenants`, with Calendar gated by `hasFeature("calendar")`. See
+> `AinoDestination.kt` and `AinoDestinationTest`.
 
 ### Top bar (`Navbar` at ≤768px)
 
@@ -1341,13 +1371,13 @@ Endpoint coverage after Phase 9: **248/464 (53.4%)** (`docs/PARITY_MATRIX.md`).
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | P10.1 | Admin: users, roles, announcements, invite codes, audit logs, pay periods, registration settings, role requests, stats, task labels, organizations; plus Admin → My Organization (org roles, invite, members, remove member, org settings incl. office geofences — moved from P7.5) | N/A ⁴  |
 | P10.2 | Tenants console: CRUD, features, limits, plan, suspend/reactivate, seed, stats, users, impersonation, access requests, plan catalog, platform config, platform users — **web only (product decision 2026-09-26)** | N/A ³  |
-| P10.3 | Compensation/payroll: employees, CTC config, templates, salary slips (incl. the Organization page's "Salary Slips" tab — moved from P7.5), PDF, publish, bulk publish, payroll run, disbursements, bank details + verification, payment config | DONE ⁴ |
-| P10.4 | Branding: logo, email templates, preview                                                                                                                                  | DONE ⁴ |
-| P10.5 | Custom fields                                                                                                                                                             | TODO   |
-| P10.6 | Integrations: GitHub OAuth, repos, webhooks                                                                                                                               | TODO   |
-| P10.7 | Exports: my/team analytics, leaves, tasks, payroll hours                                                                                                                  | TODO   |
+| P10.3 | Compensation/payroll: employees, CTC config, templates, salary slips (incl. the Organization page's "Salary Slips" tab — moved from P7.5), PDF, publish, bulk publish, payroll run, disbursements, bank details + verification, payment config | N/A ⁴ |
+| P10.4 | Branding: logo, email templates, preview                                                                                                                                  | N/A ⁴ |
+| P10.5 | Custom fields                                                                                                                                                             | N/A ⁵ |
+| P10.6 | Integrations: GitHub OAuth, repos, webhooks                                                                                                                               | N/A ⁵ |
+| P10.7 | Exports: my/team analytics, leaves, tasks, payroll hours                                                                                                                  | N/A ⁵ |
 | P10.8 | Platform access requests                                                                                                                                                  | N/A ⁴  |
-| P10.9 | Remaining auth: register, forgot/reset password, refresh, handoff, switch-realm, registration-mode, webauthn, biometric list/delete                                       | TODO   |
+| P10.9 | Remaining auth: register, forgot/reset password, refresh, handoff, switch-realm, registration-mode, webauthn, biometric list/delete                                       | N/A ⁵ |
 
 ³ P10.2 (the 44 `/api/admin/tenants/*` endpoints) stays in the web / desktop platform console by product decision (2026-09-26). Those routes require a tenant-less platform identity (`requirePlatformIdentity`, platform realm when `CONSOLE_HOST` is set), and Android signs in to the tenant realm only (`AuthRepository` fails closed with `PLATFORM_CONSOLE_REQUIRED`). The More → Tenants entry stays for parity with `MobileTabBar.tsx` and opens a page pointing to the web console. The 44 endpoints are recorded as `waived` in `docs/parity-waivers.json` (owner "product (P10.2)"), so `PARITY_MATRIX.md` shows 292/464 proven, 44 waived, 128 pending; the extracted contract lives in `docs/phase10-tenants-contract.md` if this changes. P10.8 (`/api/platform-access`, the tenant-side approval inbox) is not affected.
 
@@ -1366,20 +1396,105 @@ P10.4 notes: all 10 branding routes (`/api/branding*`, `/api/public/branding*`).
 
 Endpoint coverage after P10.4: **336/464 (72.4%)**, plus 44 waived; 84 pending.
 
+⁵ **Not required on mobile (user decision 2026-10-01).** All of Phase 10 lives
+in the web / desktop app only. That covers custom-field definitions, GitHub
+integrations, exports (my / team analytics, leaves, tasks, payroll hours) and
+the remaining auth flows:
+
+- registration;
+- forgot and reset password;
+- passkeys / WebAuthn;
+- realm handoff / switch.
+
+Android keeps only the self-service remnants: Organization → Salary Slips
+(`/compensation/my-*`) and app-wide branding (`GET /branding`). The endpoints
+are `waived` in `docs/parity-waivers.json` with owner "product (P10 web-only)".
+
+---
+
+### PHASE S — Sync, sessions and mobile UX (2026-10-01)
+
+| ID  | Task | Status |
+| --- | ---- | ------ |
+| S1  | **Concurrent sessions, one per device.** Signing in on web, desktop or another phone no longer ends the app session. | DONE |
+| S2  | Refresh failures from the network or a 5xx no longer wipe the token; only a refused refresh (401/403) signs out. | DONE |
+| S3  | Instant reconnect: on network availability (`ConnectivityManager.NetworkCallback`) and on app foreground (`reconnectNow`). A socket silent for longer than one heartbeat is replaced. | DONE |
+| S4  | Catch-up after reconnect. `RealtimeClient.resync` bumps after every reconnect and whenever an event buffer overflows (events can no longer be lost silently). Chat, the open thread, dashboard, attendance, tasks, notifications, profile and the open per-route page (Calendar, Organization, My Team) revalidate silently. | DONE |
+| S5  | Previously ignored events are wired up. | DONE |
+| S6  | Last-known state on disk (`ResponseCache`). Screens paint from it instantly, then revalidate. | DONE |
+| S7  | Chat delta and push wake. | DONE |
+| S8  | Server tenant-wide `broadcast()` now fans out through Redis (`tenantWide` envelopes), so features / plan / branding events reach every instance. | DONE |
+| S9  | No ripple; no skeletons; pull indicator only for user pulls; `FirstLoadSpinner` only when nothing is cached. | DONE |
+| S10 | Bottom bar `Home · Attendance · Tasks · Chat · More`; Calendar in More. | DONE |
+| S11 | Chat GIF / Sticker picker (web `EmojiGifPicker`). | DONE |
+| S12 | Media auth headers are sent only to the AINO API host. | DONE |
+
+**S1 — sessions (server).**
+
+- Migration `0004_device_sessions.sql` drops the unique `user_sessions(user_id)`
+  index and adds `device_id` with a partial unique `(user_id, device_id)` index.
+- `createDeviceSession` upserts the device's row, and adds a concurrent row
+  when the client sends no id (browsers).
+- Each user is pruned to the 10 most recent sessions (`MAX_SESSIONS_PER_USER`).
+- Revoke-all on password change and admin deactivation is unchanged.
+- The app sends a stable `X-AINO-Device-Id`. It lives in `noBackupFilesDir`,
+  so a restored backup never clones another phone's id.
+
+**S5 — newly handled events.**
+
+- `tenant_features_changed` patches the feature gates (web `FeaturesContext`).
+- `leave_update` refreshes the attendance calendar overlay and the Leaves tab.
+- `approval_update` and `leave_update` refresh the dashboard's pending
+  approvals and My Team.
+- `user_profile_updated` refreshes the conversation list.
+
+**S6 — `ResponseCache`.**
+
+- `CachingApiClient` stores every successful JSON GET, per signed-in user, in
+  `cacheDir`. Pages (`before=` / `after=`), writes and non-JSON responses are
+  skipped.
+- `CacheOnlyApiClient` serves those bodies, so each ViewModel runs its normal
+  repository load against it first ("warm" repository). This applies to
+  dashboard, chat list and thread, attendance, calendar, My Team and
+  Organization.
+- The cache is wiped on sign-out and when a different user signs in.
+
+**S7 — chat delta and push wake.**
+
+- Server: `GET /chat/conversations/:id/messages?after=<id>` returns newer
+  messages, oldest first.
+- A chat push runs `PushSync.prefetchChat`, which merges the delta into the
+  cached thread and refreshes the conversation list. Opening the notification
+  then shows the message without loading.
+
+**Not done (deliberate):**
+
+- **The socket stays Activity-scoped.** The ViewModel already survives
+  rotation, and finishing the Activity must still end calls and meetings
+  (Phase 9).
+- **No server event log with sequence numbers.** Catch-up is by revalidation.
+  Add it only if missed edits to messages older than the last 50 become a
+  problem.
+- **The WebSocket token still travels as a query parameter.** Move it to the
+  first frame or to `Sec-WebSocket-Protocol` to keep it out of proxy logs.
+- **Release R8 shrinking stays off.** Enable it only together with device QA,
+  because of WebRTC JNI and serialization reflection. Library baseline
+  profiles already install through the transitive `profileinstaller`.
+
 ---
 
 ## 4. Cross-cutting workstreams
 
 | ID  | Task                                                                                                                               | Status |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| X.1 | Regenerate `docs/PARITY_MATRIX.md` after every phase (`node scripts/check-endpoint-parity.mjs`); coverage % is the phase exit gate | TODO   |
-| X.2 | Keep `contracts/realtime-events.json` current (`scripts/check-realtime-parity.mjs`)                                                | TODO   |
-| X.3 | Keep `contracts/http-route-inventory.json` and `contracts/android-endpoint-coverage.json` in sync                                  | TODO   |
-| X.4 | Screenshot-diff harness: render each Compose screen at 430×932 (both themes) and diff against the web at the same viewport         | TODO   |
+| X.1 | Regenerate `docs/PARITY_MATRIX.md` after every phase (`node scripts/check-endpoint-parity.mjs`); coverage % is the phase exit gate | DONE (2026-10-01: 237 proven, 227 waived, 0 pending; the scanner now ignores query strings) |
+| X.2 | Keep `contracts/realtime-events.json` current (`scripts/check-realtime-parity.mjs`)                                                | DONE (75/75 routed) |
+| X.3 | Keep `contracts/http-route-inventory.json` and `contracts/android-endpoint-coverage.json` in sync                                  | DONE   |
+| X.4 | Screenshot-diff harness: render each Compose screen at 430×932 (both themes) and diff against the web at the same viewport         | N/A (mobile deviations are now deliberate: tab bar, no ripple, no skeletons) |
 | X.5 | Per-repository decode tests against captured real payloads                                                                         | TODO   |
-| X.6 | `scripts/check-module-boundaries.mjs`, `check-independence.mjs`, `check-source-provenance.mjs` must stay green                     | TODO   |
-| X.7 | Offline/outbox behaviour preserved for every new write path (`core/db/OutboxWorker`)                                               | TODO   |
-| X.8 | Accessibility: content descriptions mirroring the web's `aria-label`s                                                              | TODO   |
+| X.6 | `scripts/check-module-boundaries.mjs`, `check-independence.mjs`, `check-source-provenance.mjs` must stay green                     | DONE (green 2026-10-01) |
+| X.7 | Offline/outbox behaviour preserved for every new write path (`core/db/OutboxWorker`)                                               | DONE (no new offline write paths; GIF sends use the media upload path) |
+| X.8 | Accessibility: content descriptions mirroring the web's `aria-label`s                                                              | DONE (audited: shell chrome and every `IconButton` are labelled) |
 
 ---
 
@@ -1419,7 +1534,7 @@ Endpoint coverage after P10.4: **336/464 (72.4%)**, plus 44 waived; 84 pending.
 | `core/navigation/AinoApp.kt` → `MoreScreen` composable                         | Replaced by anchored popup         |
 | `core/navigation/AinoApp.kt` → `destinationSubtitle()`                         | More rows have no subtitles on web |
 | `AinoDestination.Profile` as a NavHost page — **reversed 2026-09-25**: Profile is a full page by product decision (Phase 5) | Web has no profile page            |
-| `AinoDestination.Attendance.inBottomBar = true`                                | Attendance is a More item on web   |
+| `AinoDestination.Attendance.inBottomBar = true` — **reversed 2026-10-01**: Attendance is a bottom tab on mobile (Calendar moved to More) | Attendance is a More item on web   |
 | `AinoAtmosphere` / `AinoGlassCard` on parity screens                           | Web has no glass aesthetic         |
 
 ---
@@ -1434,7 +1549,8 @@ P7.* Calendar · Notes · Notifications · Organization · Search   (landed 2026
 P6.* Tasks · Agile · Sprints · Projects   (landed 2026-09-25 — 227/464)
 P8   Manager / My Team                    (landed 2026-09-26 — 237/464)
 P9   Meetings & group calls               (landed 2026-09-25 — 248/464)
-P10  Admin · Tenants · Compensation · remaining auth   (next)
+P10  Admin · Tenants · Compensation · remaining auth   (web-only 2026-10-01 — not required on mobile)
+S    Sync, sessions and mobile UX            (landed 2026-10-01 — 237 proven / 0 pending)
 X.* run continuously
 ```
 

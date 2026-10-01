@@ -23,7 +23,11 @@ data class DashboardUiState(
     val error: String? = null,
 )
 
-class DashboardViewModel(private val repository: DashboardRepository) : ViewModel() {
+class DashboardViewModel(
+    private val repository: DashboardRepository,
+    /** Same loads served from the last responses (instant paint before the network answers). */
+    private val warm: DashboardRepository? = null,
+) : ViewModel() {
     private val _ui = MutableStateFlow(DashboardUiState())
     val ui: StateFlow<DashboardUiState> = _ui.asStateFlow()
     private var isManager: Boolean = false
@@ -55,6 +59,12 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
         if (_ui.value.loading) { refreshAgain = true; return }
         _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
+            if (_ui.value.snapshot == null && warm != null) {
+                runCatching { warm.load(isManager) }.getOrNull()?.let { cached ->
+                    val (floor, breaks) = liveDurations(cached.status, cached.loadedAtEpochMs, System.currentTimeMillis())
+                    if (_ui.value.snapshot == null) _ui.value = _ui.value.copy(snapshot = cached, floorSeconds = floor, breakSeconds = breaks)
+                }
+            }
             runCatching { repository.load(isManager) }.fold(
                 onSuccess = { snapshot ->
                     val (floor, breaks) = liveDurations(snapshot.status, snapshot.loadedAtEpochMs, System.currentTimeMillis())
@@ -89,7 +99,7 @@ class DashboardViewModel(private val repository: DashboardRepository) : ViewMode
                 val container = app.aino.mobile.core.AppContainer.get(context)
                 val tokens = container.tokens
                 val api = container.api
-                return DashboardViewModel(DashboardRepository(api)) as T
+                return DashboardViewModel(DashboardRepository(api), DashboardRepository(container.cachedApi)) as T
             }
         }
     }

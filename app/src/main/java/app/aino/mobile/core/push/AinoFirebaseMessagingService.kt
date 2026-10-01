@@ -51,6 +51,9 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
                         }
                     }
                 }
+                validated.data["conversationId"]?.toLongOrNull()?.let { conversationId ->
+                    scope.launch { runCatching { PushSync.prefetchChat(applicationContext, conversationId) } }
+                }
             }
             PushKind.IncomingCall -> {
                 val extras = incomingCallServiceExtras(

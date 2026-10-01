@@ -6,9 +6,9 @@
   },
   "totals": {
     "platform": 464,
-    "covered": 229,
-    "waived": 159,
-    "missing": 76,
+    "covered": 237,
+    "waived": 227,
+    "missing": 0,
     "unmatched": 0
   },
   "covered": [
@@ -56,6 +56,11 @@
       "method": "POST",
       "path": "/api/auth/logout",
       "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/refresh",
+      "source": "app/src/main/java/app/aino/mobile/core/network/RefreshingApiClient.kt"
     },
     {
       "method": "GET",
@@ -315,7 +320,7 @@
     {
       "method": "GET",
       "path": "/api/chat/search",
-      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingRepository.kt"
     },
     {
       "method": "GET",
@@ -374,12 +379,32 @@
     },
     {
       "method": "GET",
+      "path": "/api/giphy/search",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatGifKeyboard.kt"
+    },
+    {
+      "method": "GET",
       "path": "/api/health",
       "source": "app/src/main/java/app/aino/mobile/feature/meeting/MeetingJoinScreen.kt"
     },
     {
       "method": "GET",
+      "path": "/api/leave-policy/balances",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/leave-policy/holidays",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
       "path": "/api/leave-policy/policies",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/leaves",
       "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     },
     {
@@ -666,6 +691,11 @@
       "method": "GET",
       "path": "/api/notifications/announcements",
       "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/notifications/metrics",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     },
     {
       "method": "POST",
@@ -1114,6 +1144,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/tracker/history",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
       "path": "/api/tracker/manual-entries",
       "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     },
@@ -1141,6 +1176,11 @@
       "method": "GET",
       "path": "/api/tracker/status",
       "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tracker/task-summary",
+      "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
     },
     {
       "method": "GET",

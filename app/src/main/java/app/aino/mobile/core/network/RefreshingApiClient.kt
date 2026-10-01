@@ -38,12 +38,15 @@ class RefreshingApiClient(
             val refreshed = json.decodeFromString<TokenResponse>(response.bodyAsString())
             tokens.saveToken(refreshed.token)
         } catch (error: Exception) {
-            tokens.clearToken()
+            // Only a refused refresh ends the session; a network blip or a 5xx
+            // must not sign the user out (the next request simply retries).
+            if (error is ApiError.Http && (error.statusCode == 401 || error.statusCode == 403)) tokens.clearToken()
             throw error
         }
     }
 
     private companion object {
+        // @api POST auth/refresh
         const val REFRESH_PATH = "auth/refresh"
     }
 }

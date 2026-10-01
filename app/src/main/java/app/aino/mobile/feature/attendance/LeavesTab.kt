@@ -433,7 +433,7 @@ private fun LeaveHistorySection(ui: AttendanceUiState, viewModel: AttendanceView
             Text("Leave History", color = colors.text, fontWeight = FontWeight.Bold, fontSize = 1.05.rem)
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 when {
-                    ui.leavesLoading -> Text("Loading…", color = colors.textMuted, fontSize = 0.85.rem)
+                    ui.leavesLoading && filtered.isEmpty() -> app.aino.mobile.core.designsystem.component.FirstLoadSpinner(Modifier.height(96.dp))
                     filtered.isEmpty() -> Text(
                         "No leave records found for the selected filters.",
                         color = colors.textMuted,
@@ -530,7 +530,7 @@ private fun MyBalancesPanel(ui: AttendanceUiState, viewModel: AttendanceViewMode
         }
 
         when {
-            ui.myBalancesLoading -> Text("Loading…", color = colors.textMuted, fontSize = 0.85.rem)
+            ui.myBalancesLoading && ui.myBalances.isEmpty() -> app.aino.mobile.core.designsystem.component.FirstLoadSpinner(Modifier.height(96.dp))
             ui.myBalances.isEmpty() -> AttendanceCard {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(HeroIcons.ChartBar, null, Modifier.size(32.dp), tint = colors.textMuted)
@@ -684,7 +684,7 @@ private fun AllBalancesPanel(ui: AttendanceUiState, viewModel: AttendanceViewMod
             Text("All Balances", color = colors.text, fontWeight = FontWeight.Bold, fontSize = 1.05.rem)
             Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 when {
-                    ui.allBalancesLoading -> Text("Loading…", color = colors.textMuted, fontSize = 0.85.rem)
+                    ui.allBalancesLoading && rows.isEmpty() -> app.aino.mobile.core.designsystem.component.FirstLoadSpinner(Modifier.height(96.dp))
                     rows.isEmpty() -> Text("No balances found.", color = colors.textMuted, fontSize = 0.85.rem)
                     else -> rows.forEach { row ->
                         val meta = getLeaveType(row.leaveType)

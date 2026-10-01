@@ -19,6 +19,7 @@ class DashboardRepository(
 
     fun loadStatus(): TrackerStatus = get("tracker/status")
 
+    // @api GET tracker/task-summary
     fun loadTaskSummary(): TaskSummary = get("tracker/task-summary")
 
     // @api GET calendar

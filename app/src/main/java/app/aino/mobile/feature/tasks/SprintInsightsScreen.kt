@@ -152,7 +152,6 @@ fun SprintInsightsScreen(viewModel: TaskViewModel, onBack: () -> Unit, requested
             InsightCard(HeroIcons.ChatBubbleOvalLeft, "Retrospective") {
                 RetrospectivePanel(selectedId!!, d?.retro, viewModel) { reloadKey++ }
             }
-            if (loading) Text("Loading…", color = colors.textMuted, fontSize = 0.85.rem)
         }
     }
 }
@@ -287,7 +286,7 @@ private fun BurndownChart(sprintId: Long, reloadKey: Int, viewModel: TaskViewMod
     }
     val d = data
     when {
-        loading -> return Text("Loading burndown…", color = colors.textMuted, fontSize = 0.85.rem, modifier = Modifier.padding(30.dp))
+        loading && d == null -> return Text("Loading burndown…", color = colors.textMuted, fontSize = 0.85.rem, modifier = Modifier.padding(30.dp))
         d == null -> return EmptyChart("Burndown unavailable")
         d.snapshots.isEmpty() && d.startScope == 0.0 -> return EmptyChart("No data yet — add story points & start the sprint to see a burndown.")
     }
@@ -368,7 +367,7 @@ private fun VelocityChart(reloadKey: Int, viewModel: TaskViewModel, unitLabel: S
         loading = false
     }
     val d = data
-    if (loading) return Text("Loading velocity…", color = colors.textMuted, fontSize = 0.85.rem, modifier = Modifier.padding(30.dp))
+    if (loading && d == null) return Text("Loading velocity…", color = colors.textMuted, fontSize = 0.85.rem, modifier = Modifier.padding(30.dp))
     if (d == null || d.sprints.isEmpty()) return EmptyChart("No completed sprints yet — velocity will appear after the first sprint completes.")
     val measurer = rememberTextMeasurer()
     Column {

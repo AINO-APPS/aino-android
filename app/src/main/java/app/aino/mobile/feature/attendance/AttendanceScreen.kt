@@ -58,8 +58,12 @@ fun AttendanceScreen(
     LaunchedEffect(initialTab) { if (initialTab != null) viewModel.openTab(initialTab) }
     LaunchedEffect(userRole) { viewModel.setHrRole(userRole in HR_ROLES) }
 
-    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
-        isRefreshing = ui.loading,
+    app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox(
+        loading = when (ui.selectedTab) {
+            AttendanceTab.Leaves -> ui.leavesLoading
+            AttendanceTab.Analytics -> ui.analyticsLoading
+            else -> ui.loading
+        },
         onRefresh = {
             when (ui.selectedTab) {
                 AttendanceTab.Leaves -> viewModel.loadLeavesTab()

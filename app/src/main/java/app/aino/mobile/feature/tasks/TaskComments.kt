@@ -82,7 +82,7 @@ internal fun CommentSection(
     var editingId by remember { mutableStateOf<Long?>(null) }
     var editText by remember { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (loading) WebSpinner()
+        if (loading && comments.isEmpty()) WebSpinner()
         if (comments.isEmpty() && !loading) {
             Text(
                 "No comments yet. Start the conversation!",

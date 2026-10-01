@@ -37,7 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -138,8 +138,7 @@ fun NotesHomeScreen(
     val active = ui.activePages
     val uid = userId.toString()
 
-    PullToRefreshBox(
-        isRefreshing = ui.loading && ui.loaded,
+    AinoPullToRefreshBox(loading = ui.loading,
         onRefresh = { viewModel.refresh() },
         modifier = modifier.fillMaxSize().background(colors.bg),
     ) {
@@ -150,7 +149,7 @@ fun NotesHomeScreen(
                     TextButton(onClick = { viewModel.refresh() }) { Text("Try again", color = colors.primary) }
                 } else CircularProgressIndicator(color = colors.primary)
             }
-            return@PullToRefreshBox
+            return@AinoPullToRefreshBox
         }
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 64.dp),

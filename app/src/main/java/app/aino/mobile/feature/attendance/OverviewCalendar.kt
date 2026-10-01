@@ -114,8 +114,7 @@ fun OverviewCalendarTab(ui: AttendanceUiState, viewModel: AttendanceViewModel) {
         Spacer(Modifier.height(12.dp))
         WeekdayHeader()
         Spacer(Modifier.height(4.dp))
-        if (ui.loading && ui.history.isEmpty()) CalendarSkeleton()
-        else CalendarGrid(cells, ui, today, workDays, minMinutes)
+        CalendarGrid(cells, ui, today, workDays, minMinutes)
         Spacer(Modifier.height(20.dp))
         StatsRow(presentDays, absentDays, leaveDays, holidayDays)
     }
@@ -177,19 +176,6 @@ private fun WeekdayHeader() {
                 fontWeight = FontWeight.SemiBold,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-        }
-    }
-}
-
-/** 35 shimmering placeholder cells while the first month load is in flight. */
-@Composable
-private fun CalendarSkeleton() {
-    val colors = LocalWebColors.current
-    repeat(5) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            repeat(7) {
-                Box(Modifier.weight(1f).height(38.dp).background(colors.surface, RoundedCornerShape(6.dp)))
-            }
         }
     }
 }

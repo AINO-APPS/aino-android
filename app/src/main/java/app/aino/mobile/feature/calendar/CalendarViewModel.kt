@@ -54,6 +54,8 @@ class CalendarViewModel(
     private val repository: CalendarRepository,
     private val zone: () -> ZoneId = ZoneId::systemDefault,
     private val clock: () -> LocalDateTime = LocalDateTime::now,
+    /** Same reads served from the last responses: the page opens with its last events. */
+    private val warm: CalendarRepository? = null,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(CalendarUiState())
     val ui: StateFlow<CalendarUiState> = _ui.asStateFlow()
@@ -76,6 +78,8 @@ class CalendarViewModel(
         loadJob?.cancel()
         _ui.update { it.copy(loading = true) }
         loadJob = viewModelScope.launch(Dispatchers.IO) {
+            warm?.let { runCatching { it.events(toIso(from.atStartOfDay(), zone()), toIso(to.atStartOfDay(), zone())) }.getOrNull() }
+                ?.let { cached -> _ui.update { if (it.loading) it.copy(events = cached) else it } }
             runCatching { repository.events(toIso(from.atStartOfDay(), zone()), toIso(to.atStartOfDay(), zone())) }.fold(
                 onSuccess = { events -> _ui.update { it.copy(loading = false, events = events, error = null) } },
                 // The web swallows fetch errors; keep whatever is already on screen.
@@ -276,7 +280,10 @@ class CalendarViewModel(
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                CalendarViewModel(CalendarRepository(app.aino.mobile.core.AppContainer.get(context).api)) as T
+                CalendarViewModel(
+                    CalendarRepository(app.aino.mobile.core.AppContainer.get(context).api),
+                    warm = CalendarRepository(app.aino.mobile.core.AppContainer.get(context).cachedApi),
+                ) as T
         }
     }
 }

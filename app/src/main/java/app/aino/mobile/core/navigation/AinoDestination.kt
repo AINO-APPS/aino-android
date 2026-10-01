@@ -9,16 +9,17 @@ enum class AinoDestination(
     val icon: ImageVector,
     val inBottomBar: Boolean = false,
 ) {
-    // Bottom bar (§2): Home · Calendar · Tasks · Chat · More.
+    // Bottom bar: Home · Attendance · Tasks · Chat · More. Mobile decision
+    // (2026-10-01): Attendance takes the web's Calendar slot, Calendar moves to More.
     Dashboard("dashboard", "Home", HeroIcons.Home, true),
-    Calendar("calendar", "Calendar", HeroIcons.CalendarDays, true),
+    Attendance("attendance", "Attendance", HeroIcons.Clock, true),
     Tasks("tasks", "Tasks", HeroIcons.ClipboardDocumentCheck, true),
     Chat("chat", "Chat", HeroIcons.ChatBubbleOvalLeft, true),
     ChatThread("chat/{conversationId}", "Chat", HeroIcons.ChatBubbleOvalLeft),
     More("more", "More", HeroIcons.EllipsisHorizontal, true),
 
-    // Demoted out of the bottom bar (§2): reachable from the More sheet.
-    Attendance("attendance", "Attendance", HeroIcons.Clock),
+    // Reachable from the More sheet.
+    Calendar("calendar", "Calendar", HeroIcons.CalendarDays),
     Leaves("leaves", "Leaves", HeroIcons.Sun),
     Notes("notes", "Notes", HeroIcons.ClipboardDocument),
     Organization("organization", "Organization", HeroIcons.BuildingOffice2),
@@ -145,6 +146,7 @@ fun chatThreadRoute(conversationId: Long): String {
 /** Maps detail routes to their owning tab so a chat thread keeps Chat selected. */
 fun bottomBarRoute(route: String?): String? = when (route) {
     AinoDestination.ChatThread.route -> AinoDestination.Chat.route
+    ATTENDANCE_ROUTE_PATTERN -> AinoDestination.Attendance.route
     TASK_LINK_ROUTE -> AinoDestination.Tasks.route
     SPRINT_INSIGHTS_ROUTE -> AinoDestination.Tasks.route
     else -> route
@@ -165,11 +167,14 @@ private val roleLevels = mapOf(
     "hr_admin" to 4, "super_admin" to 5, "platform_admin" to 6,
 )
 
+/** The registered Attendance route (its `#hash` tab arrives as `?tab=`). */
+const val ATTENDANCE_ROUTE_PATTERN = "attendance?tab={tab}"
+
 /**
- * More-sheet items, in the order of `MobileTabBar.tsx:52-61` (§2):
- * Notes, Attendance, Organization, My Team, Tenants. The web's Admin entry is
- * deliberately absent: administration is web-only (security decision
- * 2026-10-01) and the server refuses app tokens on admin routes.
+ * More-sheet items, in the order of `MobileTabBar.tsx:52-61` (§2) with the
+ * mobile swap: Notes, Calendar, Organization, My Team, Tenants. The web's
+ * Admin entry is deliberately absent: administration is web-only (security
+ * decision 2026-10-01) and the server refuses app tokens on admin routes.
  */
 fun availableMoreDestinations(
     role: String,
@@ -179,16 +184,15 @@ fun availableMoreDestinations(
 ): List<AinoDestination> = buildList {
     val level = roleLevels[role] ?: 1
     if (features["notes"] == true) add(AinoDestination.Notes)
-    if (features["attendance"] == true) add(AinoDestination.Attendance)
+    if (features["calendar"] == true) add(AinoDestination.Calendar)
     if (orgId != null || role == "platform_admin") add(AinoDestination.Organization)
     if (level >= 2 || hasReports) add(AinoDestination.Manager)
     if (role == "platform_admin") add(AinoDestination.Tenants)
 }
 
 /**
- * Bottom-bar visibility, fail-closed by feature (§2): Calendar/Tasks/Chat are
- * gated by `tenant_features`; Home and More always show. Attendance no longer
- * appears in the bar.
+ * Bottom-bar visibility, fail-closed by feature (§2): Attendance/Tasks/Chat are
+ * gated by `tenant_features`; Home and More always show.
  */
 fun visibleBottomDestinations(
     features: Map<String, Boolean>,
@@ -197,7 +201,7 @@ fun visibleBottomDestinations(
     bottomDestinations.filter { destination ->
         if (ungatedPlatformAdmin) return@filter true
         when (destination) {
-            AinoDestination.Calendar -> features["calendar"] == true
+            AinoDestination.Attendance -> features["attendance"] == true
             AinoDestination.Tasks -> features["tasks"] == true
             AinoDestination.Chat -> features["chat"] == true
             else -> true

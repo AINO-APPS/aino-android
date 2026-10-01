@@ -20,7 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -53,8 +53,7 @@ fun MemberDetailScreen(viewModel: ManagerViewModel, userId: Long, onBack: () -> 
     LaunchedEffect(userId) { viewModel.openMemberDetail(userId) }
     val detail = state ?: return
 
-    PullToRefreshBox(
-        isRefreshing = detail.refreshing,
+    AinoPullToRefreshBox(loading = detail.refreshing,
         onRefresh = viewModel::refreshMemberDetail,
         modifier = modifier.fillMaxSize().background(colors.bg),
     ) {

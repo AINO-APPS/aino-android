@@ -25,6 +25,10 @@ import okhttp3.OkHttpClient
  * loser would clear the rotated token (forced sign-out).
  */
 class AppContainer private constructor(private val context: Context) {
+    init {
+        app.aino.mobile.core.network.DeviceId.value = app.aino.mobile.core.network.DeviceId.load(context)
+    }
+
     val tokens = KeystoreTokenStore(context)
 
     val http: OkHttpClient = OkHttpClient.Builder()
@@ -35,13 +39,27 @@ class AppContainer private constructor(private val context: Context) {
 
     /** Un-refreshing client for the auth flow itself (login, refresh). */
     val rawApi: ApiClient = OkHttpApiClient(tokenProvider = tokens, client = http)
-    val api: ApiClient = RefreshingApiClient(rawApi, tokens)
 
-    /** Adds the same bearer/timezone headers as the JSON API to media fetches (images, audio, video, files). */
+    /** Last successful GET bodies of the signed-in user (scope set by AuthViewModel). */
+    val responses = app.aino.mobile.core.network.ResponseCache(context.cacheDir.resolve("api-cache"))
+    val api: ApiClient = app.aino.mobile.core.network.CachingApiClient(RefreshingApiClient(rawApi, tokens), responses)
+
+    /** Serves GETs from [responses] only: repositories rebuild the last state instantly with it. */
+    val cachedApi: ApiClient = app.aino.mobile.core.network.CacheOnlyApiClient(responses)
+
+    private val apiHost: String = runCatching { java.net.URI(app.aino.mobile.core.network.NetworkConfig.apiUrl).host }.getOrNull().orEmpty()
+
+    /**
+     * Adds the same bearer/timezone headers as the JSON API to media fetches
+     * (images, audio, video, files) on the AINO origin only. Third-party URLs
+     * (GIPHY, link-preview images) must never receive the session token.
+     */
     val mediaHttp: OkHttpClient = http.newBuilder()
         .addInterceptor { chain ->
+            val original = chain.request()
+            if (!original.url.host.equals(apiHost, ignoreCase = true)) return@addInterceptor chain.proceed(original)
             val headers = standardHeaders(tokens.getToken(), timezoneOffsetMinutes(TimeZone.getDefault(), System.currentTimeMillis()))
-            val request = chain.request().newBuilder().apply { headers.forEach(::header) }.build()
+            val request = original.newBuilder().apply { headers.forEach(::header) }.build()
             chain.proceed(request)
         }
         .build()
@@ -50,6 +68,8 @@ class AppContainer private constructor(private val context: Context) {
         .components {
             add(OkHttpNetworkFetcherFactory(callFactory = { mediaHttp }))
             add(VideoFrameDecoder.Factory())
+            // GIFs / stickers from the web's GIPHY picker animate in chat.
+            if (android.os.Build.VERSION.SDK_INT >= 28) add(coil3.gif.AnimatedImageDecoder.Factory()) else add(coil3.gif.GifDecoder.Factory())
         }
         .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.2).build() }
         .diskCache { DiskCache.Builder().directory(context.cacheDir.resolve("image-cache")).maxSizeBytes(128L * 1024 * 1024).build() }

@@ -102,7 +102,11 @@ data class MemberDetailUiState(
     }
 }
 
-class ManagerViewModel(private val repository: ManagerRepository) : ViewModel() {
+class ManagerViewModel(
+    private val repository: ManagerRepository,
+    /** Same reads served from the last responses: tabs open with their last data. */
+    private val warm: ManagerRepository? = null,
+) : ViewModel() {
     private val _ui = MutableStateFlow(ManagerUiState())
     val ui: StateFlow<ManagerUiState> = _ui.asStateFlow()
 
@@ -147,7 +151,7 @@ class ManagerViewModel(private val repository: ManagerRepository) : ViewModel() 
         get = { it.attendance },
         set = { s, v -> s.copy(attendance = v) },
         fallback = "Failed to fetch team attendance",
-    ) { repository.teamAttendance(_ui.value.attendanceDate) }
+    ) { r -> r.teamAttendance(_ui.value.attendanceDate) }
 
     // ── Approvals ─────────────────────────────────────────────────────────────
 
@@ -160,7 +164,7 @@ class ManagerViewModel(private val repository: ManagerRepository) : ViewModel() 
         get = { it.approvals },
         set = { s, v -> s.copy(approvals = v) },
         fallback = "Failed to fetch approvals",
-    ) { repository.approvals(_ui.value.approvalsFilter.ifEmpty { null }) }
+    ) { r -> r.approvals(_ui.value.approvalsFilter.ifEmpty { null }) }
 
     private fun refreshApprovals() {
         _ui.update { it.copy(selectedApprovalIds = emptySet()) }
@@ -224,7 +228,7 @@ class ManagerViewModel(private val repository: ManagerRepository) : ViewModel() 
         get = { it.myRequests },
         set = { s, v -> s.copy(myRequests = v) },
         fallback = "Failed to fetch requests",
-    ) { repository.myRequests("all") }
+    ) { r -> r.myRequests("all") }
 
     // ── Team Analytics ───────────────────────────────────────────────────────
 
@@ -264,8 +268,8 @@ class ManagerViewModel(private val repository: ManagerRepository) : ViewModel() 
             get = { it.teamAnalytics },
             set = { s, v -> s.copy(teamAnalytics = v) },
             fallback = "Failed to fetch team analytics",
-        ) {
-            if (range == "custom") repository.teamAnalytics(null, from, to) else repository.teamAnalytics(range, null, null)
+        ) { r ->
+            if (range == "custom") r.teamAnalytics(null, from, to) else r.teamAnalytics(range, null, null)
         }
     }
 
@@ -298,31 +302,31 @@ class ManagerViewModel(private val repository: ManagerRepository) : ViewModel() 
                 get = { it.overview },
                 set = { s, v -> s.copy(overview = v) },
                 fallback = "Failed to fetch member overview",
-            ) { repository.memberOverview(userId) }
+            ) { r -> r.memberOverview(userId) }
             MemberTab.Leaves -> loadMemberSection(
                 get = { it.leaves },
                 set = { s, v -> s.copy(leaves = v) },
                 fallback = "Failed to fetch member leaves",
-            ) { repository.memberLeaves(userId, "${LocalDate.now().year}-01-01") }
+            ) { r -> r.memberLeaves(userId, "${LocalDate.now().year}-01-01") }
             MemberTab.Requests -> loadMemberSection(
                 get = { it.requests },
                 set = { s, v -> s.copy(requests = v) },
                 fallback = "Failed to fetch member requests",
-            ) { repository.memberRequests(userId) }
+            ) { r -> r.memberRequests(userId) }
             MemberTab.Hours -> loadMemberSection(
                 get = { it.hours },
                 set = { s, v -> s.copy(hours = v) },
                 fallback = "Failed to fetch member hours",
-            ) {
+            ) { r ->
                 val to = today()
                 val from = LocalDate.now().minusDays(30).toString()
-                repository.memberHours(userId, from, to)
+                r.memberHours(userId, from, to)
             }
             MemberTab.Tasks -> loadMemberSection(
                 get = { it.tasks },
                 set = { s, v -> s.copy(tasks = v) },
                 fallback = "Failed to fetch member tasks",
-            ) { repository.memberTasks(userId) }
+            ) { r -> r.memberTasks(userId) }
         }
     }
 
@@ -330,12 +334,17 @@ class ManagerViewModel(private val repository: ManagerRepository) : ViewModel() 
         get: (MemberDetailUiState) -> Section<T>,
         set: (MemberDetailUiState, Section<T>) -> MemberDetailUiState,
         fallback: String,
-        fetch: () -> T,
+        fetch: (ManagerRepository) -> T,
     ) {
         if (get(_memberDetail.value ?: return).loading) return
         _memberDetail.update { it?.let { s -> set(s, get(s).copy(loading = true)) } }
         io {
-            val result = runCatching(fetch)
+            if (warm != null && _memberDetail.value?.let(get)?.data == null) {
+                warm?.let { w -> runCatching { fetch(w) }.getOrNull() }?.let { cached ->
+                    _memberDetail.update { it?.let { s -> if (get(s).data == null) set(s, get(s).copy(data = cached)) else s } }
+                }
+            }
+            val result = runCatching { fetch(repository) }
             _memberDetail.update { state ->
                 state?.let { s ->
                     val current = get(s)
@@ -357,12 +366,17 @@ class ManagerViewModel(private val repository: ManagerRepository) : ViewModel() 
         get: (ManagerUiState) -> Section<T>,
         set: (ManagerUiState, Section<T>) -> ManagerUiState,
         fallback: String,
-        fetch: () -> T,
+        fetch: (ManagerRepository) -> T,
     ) {
         if (get(_ui.value).loading) return
         _ui.update { set(it, get(it).copy(loading = true)) }
         io {
-            val result = runCatching(fetch)
+            if (warm != null && get(_ui.value).data == null) {
+                warm?.let { w -> runCatching { fetch(w) }.getOrNull() }?.let { cached ->
+                    _ui.update { s -> if (get(s).data == null) set(s, get(s).copy(data = cached)) else s }
+                }
+            }
+            val result = runCatching { fetch(repository) }
             _ui.update { state ->
                 val current = get(state)
                 set(
@@ -395,7 +409,7 @@ class ManagerViewModel(private val repository: ManagerRepository) : ViewModel() 
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val container = app.aino.mobile.core.AppContainer.get(context)
-                return ManagerViewModel(ManagerRepository(container.api)) as T
+                return ManagerViewModel(ManagerRepository(container.api), ManagerRepository(container.cachedApi)) as T
             }
         }
     }

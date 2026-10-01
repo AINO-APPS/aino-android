@@ -241,6 +241,8 @@ fun SignalEmojiKeyboard(
     modifier: Modifier = Modifier,
     height: Dp = 300.dp,
     onOpenSearch: () -> Unit = {},
+    /** Web EmojiGifPicker GIF / Sticker modes; null hides the switch (reaction picker). */
+    onOpenGif: (() -> Unit)? = null,
 ) {
     val colors = signalColors
     val context = LocalContext.current
@@ -368,6 +370,17 @@ fun SignalEmojiKeyboard(
                         Icon(icon, null, Modifier.size(20.dp), tint = if (active) colors.primary else colors.textSecondary)
                     }
                 }
+            }
+            if (onOpenGif != null) {
+                Text(
+                    "GIF",
+                    color = colors.textSecondary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                        .combinedClickable(role = Role.Button, onClickLabel = "GIFs and stickers", onClick = onOpenGif)
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                )
             }
             BackspaceButton(onBackspace, colors.textSecondary)
         }

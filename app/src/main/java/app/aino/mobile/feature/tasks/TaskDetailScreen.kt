@@ -474,7 +474,7 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TaskUiState, viewModel: T
                 color = colors.success, trackColor = colors.surfaceHover, drawStopIndicator = {}, gapSize = 0.dp,
             )
         }
-        if (loading) Text("Loading…", color = colors.textMuted, fontSize = 0.8.rem)
+        if (loading && items.isEmpty()) Text("Loading…", color = colors.textMuted, fontSize = 0.8.rem)
         items.forEachIndexed { index, item ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(

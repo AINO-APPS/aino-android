@@ -75,7 +75,11 @@ data class OrganizationUiState(
     }
 }
 
-class OrganizationViewModel(private val repository: OrganizationRepository) : ViewModel() {
+class OrganizationViewModel(
+    private val repository: OrganizationRepository,
+    /** Same reads served from the last responses: the page opens with its last data. */
+    private val warm: OrganizationRepository? = null,
+) : ViewModel() {
     private val _ui = MutableStateFlow(OrganizationUiState())
     val ui: StateFlow<OrganizationUiState> = _ui.asStateFlow()
     private val noticeJobs = mutableMapOf<NoticeSlot, Job>()
@@ -110,6 +114,11 @@ class OrganizationViewModel(private val repository: OrganizationRepository) : Vi
         if (_ui.value.orgLoading) return
         _ui.update { it.copy(orgLoading = true) }
         io {
+            if (warm != null && _ui.value.org == null) {
+                runCatching(warm::currentOrg).getOrNull()?.let { cached ->
+                    _ui.update { if (it.org == null) it.copy(org = cached, orgLoaded = true) else it }
+                }
+            }
             val result = runCatching(repository::currentOrg)
             _ui.update { state ->
                 result.fold(
@@ -145,13 +154,13 @@ class OrganizationViewModel(private val repository: OrganizationRepository) : Vi
         get = { it.departments },
         set = { s, v -> s.copy(departments = v) },
         fallback = "Failed to fetch departments",
-    ) { repository.departments(orgId) }
+    ) { r -> r.departments(orgId) }
 
     private fun loadTeams() = loadSection(
         get = { it.teams },
         set = { s, v -> s.copy(teams = v) },
         fallback = "Failed to fetch teams",
-    ) { TeamsData(repository.teams(orgId), repository.departments(orgId)) }
+    ) { r -> TeamsData(r.teams(orgId), r.departments(orgId)) }
 
     /** Head / lead pickers: `enabled: canManage`. */
     private fun loadMembers() {
@@ -160,20 +169,20 @@ class OrganizationViewModel(private val repository: OrganizationRepository) : Vi
             get = { it.members },
             set = { s, v -> s.copy(members = v) },
             fallback = "Failed to fetch members",
-        ) { repository.activeMembers(orgId) }
+        ) { r -> r.activeMembers(orgId) }
     }
 
     private fun loadChart() = loadSection(
         get = { it.chart },
         set = { s, v -> s.copy(chart = v) },
         fallback = "Failed to fetch org chart",
-    ) { repository.orgChart(orgId) }
+    ) { r -> r.orgChart(orgId) }
 
     private fun loadSalary() = loadSection(
         get = { it.salary },
         set = { s, v -> s.copy(salary = v) },
         fallback = "Failed to fetch salary slips",
-    ) { repository.mySalary() }
+    ) { r -> r.mySalary() }
 
     /** `handleSaveBank`: required-field check, save, refetch. */
     fun saveMyBank(form: MyBankForm, onDone: () -> Unit) {
@@ -196,18 +205,23 @@ class OrganizationViewModel(private val repository: OrganizationRepository) : Vi
         get = { it.labels },
         set = { s, v -> s.copy(labels = v) },
         fallback = "Failed to fetch labels",
-    ) { repository.taskLabels() }
+    ) { r -> r.taskLabels() }
 
     private fun <T> loadSection(
         get: (OrganizationUiState) -> Section<T>,
         set: (OrganizationUiState, Section<T>) -> OrganizationUiState,
         fallback: String,
-        fetch: () -> T,
+        fetch: (OrganizationRepository) -> T,
     ) {
         if (get(_ui.value).loading) return
         _ui.update { set(it, get(it).copy(loading = true)) }
         io {
-            val result = runCatching(fetch)
+            if (warm != null && get(_ui.value).data == null) {
+                warm?.let { w -> runCatching { fetch(w) }.getOrNull() }?.let { cached ->
+                    _ui.update { s -> if (get(s).data == null) set(s, get(s).copy(data = cached)) else s }
+                }
+            }
+            val result = runCatching { fetch(repository) }
             _ui.update { state ->
                 val current = get(state)
                 set(
@@ -402,7 +416,7 @@ class OrganizationViewModel(private val repository: OrganizationRepository) : Vi
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val container = app.aino.mobile.core.AppContainer.get(context)
-                return OrganizationViewModel(OrganizationRepository(container.api)) as T
+                return OrganizationViewModel(OrganizationRepository(container.api), OrganizationRepository(container.cachedApi)) as T
             }
         }
     }

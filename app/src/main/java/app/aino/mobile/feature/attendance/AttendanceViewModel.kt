@@ -1,4 +1,4 @@
-﻿package app.aino.mobile.feature.attendance
+package app.aino.mobile.feature.attendance
 
 import android.content.Context
 import androidx.lifecycle.ViewModel
@@ -216,6 +216,8 @@ class AttendanceViewModel(
     private val repository: AttendanceRepository,
     private val locationProvider: LocationProvider,
     private val wifiProvider: WifiProvider? = null,
+    /** Same reads served from the last responses: status and calendar paint instantly. */
+    private val warm: AttendanceRepository? = null,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(AttendanceUiState())
     val ui: StateFlow<AttendanceUiState> = _ui.asStateFlow()
@@ -254,6 +256,16 @@ class AttendanceViewModel(
             // discarded all of them — that is how a quoted NUMERIC in
             // `min_hours_present` silently disabled every clock-in button.
             val range = monthRange(_ui.value.month)
+            if (warm != null && _ui.value.status == null) {
+                val cachedStatus = runCatching(warm::loadStatus).getOrNull()
+                val cachedPolicy = runCatching(warm::loadPolicy).getOrNull()
+                val cachedHistory = runCatching { warm.loadHistory(range) }.getOrNull()?.associateBy { LocalDate.parse(it.date.take(10)) }
+                if (_ui.value.status == null) _ui.value = _ui.value.copy(
+                    status = cachedStatus,
+                    policy = _ui.value.policy ?: cachedPolicy,
+                    history = cachedHistory ?: _ui.value.history,
+                )
+            }
             val policy = runCatching(repository::loadPolicy)
             val status = runCatching(repository::loadStatus)
             val history = runCatching { repository.loadHistory(range) }
@@ -953,6 +965,12 @@ class AttendanceViewModel(
         resyncStatus()
     }
 
+    /** A leave was applied / approved / rejected elsewhere: the calendar overlay and, once opened, the Leaves tab. */
+    fun onRemoteLeaveChange() {
+        refresh()
+        if (AttendanceTab.Leaves in loadedTabs) loadLeavesTab()
+    }
+
     /**
      * Location permission was not granted from the flow. `permanentlyDenied`
      * means Android will no longer show the dialog, so offer app settings.
@@ -1028,6 +1046,7 @@ class AttendanceViewModel(
                     AttendanceRepository(api),
                     LocationProvider(context.applicationContext),
                     WifiProvider(context.applicationContext),
+                    warm = AttendanceRepository(container.cachedApi),
                 ) as T
             }
         }
