@@ -572,8 +572,9 @@ private class RetainedThread { var ui: ChatUiState? = null }
 private enum class ThreadBar { Header, Search, Selection }
 
 private fun threadItemsOf(ui: ChatUiState, pending: List<PendingMedia>): List<ThreadItem> = buildThreadItems(
-    ui.messages.filterNot { it.id in ui.hiddenMessageIds }, ui.queuedMessages, ui.currentUserId,
-    uploads = pending.map { OutgoingMediaItem(it.localId, it.createdAtEpochMs) },
+    ui.messages.filterNot { it.id in ui.hiddenMessageIds },
+    ui.queuedMessages.filter { it.conversationId == ui.selectedConversation?.id }, ui.currentUserId,
+    uploads = pending.map { OutgoingMediaItem(it.localId, it.createdAtEpochMs, it.sequence) },
 )
 
 /** Signal's item animator: a live message rises a few dp into place as it fades in. */
@@ -610,12 +611,15 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         }
     }
     val threadPending =  remember(ui.pendingMedia, conversation.id) { ui.pendingMedia.filter { it.conversationId == conversation.id } }
+    // Upload progress changes the bubble only; the item list is rebuilt when the set/order of items changes.
+    val pendingLayout = remember(threadPending) { threadPending.map { Triple(it.localId, it.sequence, it.createdAtEpochMs) } }
     // The first frame builds synchronously so a cached thread paints at once; later rebuilds run off the main thread.
     var threadItems by remember(conversation.id) { mutableStateOf(threadItemsOf(ui, threadPending)) }
-    LaunchedEffect(ui.messages, ui.queuedMessages, ui.currentUserId, ui.hiddenMessageIds, threadPending) {
+    LaunchedEffect(ui.messages, ui.queuedMessages, ui.currentUserId, ui.hiddenMessageIds, pendingLayout) {
         val current = threadItems
         val source = ui
-        withContext(Dispatchers.Default) { threadItemsOf(source, threadPending).takeIf { it != current } }?.let { threadItems = it }
+        val pending = threadPending
+        withContext(Dispatchers.Default) { threadItemsOf(source, pending).takeIf { it != current } }?.let { threadItems = it }
     }
     val pendingById = remember(threadPending) { threadPending.associateBy(PendingMedia::localId) }
     val latestUi by androidx.compose.runtime.rememberUpdatedState(ui)
@@ -893,6 +897,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
             onOpenGallery = openGallery,
         )
         sendItems?.let { items ->
+            DisposableEffect(Unit) { onDispose { viewModel.discardPrewarmedMedia() } }
             app.aino.mobile.feature.chat.media.MediaSendScreen(
                 initial = items,
                 recipientName = conversation.title(),
@@ -901,6 +906,9 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 onSend = { finalItems, caption, viewOnce, highQuality ->
                     sendItems = null
                     viewModel.sendMedia(finalItems.map { MediaUploadSpec(it.uri, it.mimeType, it.width, it.height) }, caption, viewOnce, highQuality)
+                },
+                onPrepare = { prepared, highQuality ->
+                    viewModel.prewarmMedia(prepared.map { MediaUploadSpec(it.uri, it.mimeType, it.width, it.height) }, highQuality)
                 },
             )
         }

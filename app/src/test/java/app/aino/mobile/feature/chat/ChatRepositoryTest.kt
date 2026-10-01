@@ -217,7 +217,9 @@ class ChatRepositoryTest {
         assertEquals("POST", request.method)
         assertEquals("chat/conversations/12/files", request.path)
         assertTrue(request.headers["Content-Type"]!!.startsWith("multipart/form-data; boundary="))
-        assertTrue(request.body!!.toString(Charsets.ISO_8859_1).contains("name=\"file\"; filename=\"report.pdf\""))
+        val sent = java.io.ByteArrayOutputStream().also { request.streamBody!!.writeTo(it) }.toByteArray()
+        assertEquals(request.streamBody!!.contentLength, sent.size.toLong())
+        assertTrue(sent.toString(Charsets.ISO_8859_1).contains("name=\"file\"; filename=\"report.pdf\""))
         assertEquals(9L, message.mediaJobId)
         assertEquals("queued", message.mediaState)
     }

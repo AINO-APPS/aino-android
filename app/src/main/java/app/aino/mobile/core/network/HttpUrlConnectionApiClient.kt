@@ -36,7 +36,12 @@ class HttpUrlConnectionApiClient(
             // Required security/context headers cannot be replaced by an individual request.
             (request.headers + defaults).forEach(connection::setRequestProperty)
 
-            request.body?.let { body ->
+            request.streamBody?.let { stream ->
+                connection.doOutput = true
+                connection.setRequestProperty("Content-Type", stream.contentType)
+                connection.setFixedLengthStreamingMode(stream.contentLength)
+                connection.outputStream.use(stream.writeTo)
+            } ?: request.body?.let { body ->
                 connection.doOutput = true
                 if (connection.getRequestProperty("Content-Type") == null) {
                     connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")

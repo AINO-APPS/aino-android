@@ -141,3 +141,55 @@ data class EditorHistory<T>(val current: T, val past: List<T> = emptyList(), val
     fun undo(): EditorHistory<T> = if (!canUndo) this else EditorHistory(past.last(), past.dropLast(1), listOf(current) + future)
     fun redo(): EditorHistory<T> = if (!canRedo) this else EditorHistory(future.first(), past + current, future.drop(1))
 }
+
+/** Signal `PushMediaConstraints`: SD = `LEVEL_1`, HD = `LEVEL_3`. */
+data class ImageSendConstraints(val dimensionTargets: List<Int>, val jpegQuality: Int, val maxBytes: Long) {
+    companion object {
+        val Standard = ImageSendConstraints(listOf(1600, 1024, 768, 512), 70, 1L * 1024 * 1024)
+        val High = ImageSendConstraints(listOf(4096, 3072, 2048, 1600, 1024, 768, 512), 75, 3L * 1024 * 1024)
+        fun forQuality(quality: String?) = if (quality == "hd") High else Standard
+    }
+}
+
+/** w×h scaled so the long edge is at most [maxEdge]; never upscales. */
+fun fitLongEdge(width: Int, height: Int, maxEdge: Int): Pair<Int, Int> {
+    val long = max(width, height)
+    if (long <= maxEdge || long <= 0) return width to height
+    val s = maxEdge.toDouble() / long
+    return max(1, Math.round(width * s).toInt()) to max(1, Math.round(height * s).toInt())
+}
+
+/** On-device video transcode targets (Signal `TranscodingConfig` standard / high). */
+data class VideoSendConstraints(val shortSide: Int, val videoBitrate: Int, val audioBitrate: Int = 128_000) {
+    companion object {
+        val Standard = VideoSendConstraints(720, 2_000_000)
+        val High = VideoSendConstraints(1080, 5_000_000)
+        fun forQuality(quality: String?) = if (quality == "hd") High else Standard
+        /** Largest source accepted when it can be transcoded below the upload limit. */
+        const val MAX_SOURCE_BYTES = 500L * 1024 * 1024
+        private const val MIN_VIDEO_BITRATE = 300_000
+    }
+
+    /** Target bitrate, lowered so [durationMs] of video plus audio fits in 90% of [maxBytes]. */
+    fun bitrateFor(durationMs: Long, maxBytes: Long): Int {
+        if (durationMs <= 0) return videoBitrate
+        val budgetBits = maxBytes * 8 * 0.9
+        val fit = (budgetBits / (durationMs / 1000.0) - audioBitrate).toLong()
+        return min(videoBitrate.toLong(), max(MIN_VIDEO_BITRATE.toLong(), fit)).toInt()
+    }
+
+    /** Display-oriented output size: short side capped at [shortSide], aspect kept, both edges even (H.264). */
+    fun outputSize(width: Int, height: Int): Pair<Int, Int> {
+        val short = min(shortSide, min(width, height))
+        fun even(v: Long) = max(2, (v - v % 2).toInt())
+        return if (width <= height) {
+            even(short.toLong()) to even(Math.round(height * short.toDouble() / width))
+        } else {
+            even(Math.round(width * short.toDouble() / height)) to even(short.toLong())
+        }
+    }
+
+    /** Signal re-encodes only when the source is bigger than the target in resolution, bitrate or size. */
+    fun needsTranscode(width: Int, height: Int, bitrate: Int, sizeBytes: Long, maxBytes: Long): Boolean =
+        min(width, height) > shortSide || bitrate > videoBitrate * 5 / 4 || sizeBytes > maxBytes
+}

@@ -1,6 +1,9 @@
 package app.aino.mobile.feature.chat
 
+import app.aino.mobile.core.network.StreamBody
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
 import java.nio.charset.StandardCharsets
 
 const val MAX_CHAT_FILE_BYTES: Long = 25L * 1024 * 1024
@@ -19,13 +22,16 @@ val CHAT_ALLOWED_MIME_TYPES = setOf(
 data class ChatUpload(
     val fileName: String,
     val mimeType: String,
-    val bytes: ByteArray,
+    val bytes: ByteArray = ByteArray(0),
     val content: String? = null,
     /** Server `buildUploadedMediaMetadata` fields (Signal view-once / HD / dimensions). */
     val viewOnce: Boolean = false,
     val quality: String? = null,
     val width: Int? = null,
     val height: Int? = null,
+    /** Re-openable streamed source (prepared media on disk); [bytes] is ignored when set. */
+    val source: (() -> InputStream)? = null,
+    val sourceLength: Long = bytes.size.toLong(),
 )
 
 data class MultipartPayload(val contentType: String, val body: ByteArray)
@@ -38,9 +44,9 @@ fun validateChatUpload(fileName: String, mimeType: String, size: Long): String? 
     else -> null
 }
 
-fun buildChatMultipart(upload: ChatUpload, boundary: String): MultipartPayload {
+private fun multipartHead(upload: ChatUpload, boundary: String): ByteArray {
     require(boundary.matches(Regex("^[A-Za-z0-9._-]{8,70}$")))
-    require(validateChatUpload(upload.fileName, upload.mimeType, upload.bytes.size.toLong()) == null)
+    require(validateChatUpload(upload.fileName, upload.mimeType, upload.sourceLength) == null)
     val safeName = upload.fileName.replace(Regex("[\\r\\n\\\"/\\\\]"), "_").take(255).ifBlank { "file" }
     val out = ByteArrayOutputStream()
     fun text(value: String) = out.write(value.toByteArray(StandardCharsets.UTF_8))
@@ -55,7 +61,35 @@ fun buildChatMultipart(upload: ChatUpload, boundary: String): MultipartPayload {
     text("--$boundary\r\n")
     text("Content-Disposition: form-data; name=\"file\"; filename=\"$safeName\"\r\n")
     text("Content-Type: ${upload.mimeType}\r\n\r\n")
+    return out.toByteArray()
+}
+
+private fun multipartTail(boundary: String) = "\r\n--$boundary--\r\n".toByteArray(StandardCharsets.UTF_8)
+
+fun buildChatMultipart(upload: ChatUpload, boundary: String): MultipartPayload {
+    val out = ByteArrayOutputStream()
+    out.write(multipartHead(upload, boundary))
     out.write(upload.bytes)
-    text("\r\n--$boundary--\r\n")
+    out.write(multipartTail(boundary))
     return MultipartPayload("multipart/form-data; boundary=$boundary", out.toByteArray())
+}
+
+/** Same bytes as [buildChatMultipart], streamed from the source so a large file is never held in memory twice. */
+fun streamChatMultipart(upload: ChatUpload, boundary: String): StreamBody {
+    val head = multipartHead(upload, boundary)
+    val tail = multipartTail(boundary)
+    return StreamBody(
+        contentType = "multipart/form-data; boundary=$boundary",
+        contentLength = head.size + upload.sourceLength + tail.size,
+    ) { out ->
+        out.write(head)
+        val source = upload.source
+        if (source == null) {
+            out.write(upload.bytes)
+        } else {
+            val copied = source().use { it.copyTo(out, 64 * 1024) }
+            if (copied != upload.sourceLength) throw IOException("The file changed while it was being sent")
+        }
+        out.write(tail)
+    }
 }

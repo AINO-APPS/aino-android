@@ -169,18 +169,30 @@ class ChatModelsTest {
     }
 
     @Test
-    fun queuedMessagesParticipateInChronologyButBreakServerMessageGroups() {
+    fun unsentItemsFollowServerRowsInSendOrderDespiteClockSkew() {
         val messages = listOf(
             ChatMessage(1, 9, 4, "sent", "2026-09-16T09:00:00Z"),
-            ChatMessage(2, 9, 4, "later", "2026-09-16T09:02:00Z"),
+            ChatMessage(2, 9, 8, "reply", "2026-09-16T09:02:00Z"),
         )
-        val queued = listOf(QueuedMessage("q", 9, 4, "queued", 1_789_549_260_000L)) // 2026-09-16 09:01 UTC
+        // Device clock behind the server; text typed after the photo.
+        val queued = listOf(QueuedMessage("q", 9, 4, "after photo", 1_789_549_200_000L, sequence = 2))
+        val uploads = listOf(OutgoingMediaItem("photo", 1_789_549_260_000L, sequence = 1))
 
-        val items = buildThreadItems(messages, queued, currentUserId = 4, zoneId = ZoneId.of("UTC"))
+        val items = buildThreadItems(messages, queued, currentUserId = 4, zoneId = ZoneId.of("UTC"), uploads = uploads)
         val bubbles = items.drop(1)
-        assertEquals(listOf("server-1", "queued-q", "server-2"), bubbles.map(ThreadItem::key))
-        assertTrue((bubbles[0] as ThreadItem.Message).endsGroup)
-        assertTrue((bubbles[2] as ThreadItem.Message).startsGroup)
+        assertEquals(listOf("server-1", "server-2", "pending-photo", "queued-q"), bubbles.map(ThreadItem::key))
+        assertTrue((bubbles[1] as ThreadItem.Message).endsGroup)
+        assertEquals(1, items.count { it is ThreadItem.DateSeparator })
+    }
+
+    @Test
+    fun reconcileLeavesQueuedTextOfOtherChatsAlone() {
+        val queued = listOf(
+            QueuedMessage("here", 12, 4, "ok", 1_000),
+            QueuedMessage("there", 13, 4, "ok", 2_000),
+        )
+        val echo = ChatMessage(7, 12, 4, "ok", "2026-09-15T00:00:00Z")
+        assertEquals(listOf("there"), reconcileQueuedMessages(queued, listOf(echo), 4).map { it.clientMessageId })
     }
 
     @Test

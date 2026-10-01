@@ -52,4 +52,24 @@ class ChatMultipartTest {
         assertTrue(!text.contains("../bad"))
         assertTrue(!text.contains("name.pdf\r\nContent-Disposition"))
     }
+
+    @Test
+    fun streamedBodyIsByteIdenticalAndRepeatable() {
+        val file = ByteArray(200_000) { (it % 251).toByte() }
+        val meta = ChatUpload("a.jpg", "image/jpeg", file, content = "hi", quality = "standard", width = 4, height = 3)
+        val expected = buildChatMultipart(meta, "aino-boundary-123")
+        val stream = streamChatMultipart(meta.copy(bytes = ByteArray(0), source = { file.inputStream() }, sourceLength = file.size.toLong()), "aino-boundary-123")
+        assertEquals(expected.contentType, stream.contentType)
+        repeat(2) { // a 401 retry writes the body again
+            val written = java.io.ByteArrayOutputStream().also { stream.writeTo(it) }.toByteArray()
+            assertTrue(expected.body.contentEquals(written))
+            assertEquals(written.size.toLong(), stream.contentLength)
+        }
+    }
+
+    @Test(expected = java.io.IOException::class)
+    fun streamedBodyRejectsAFileThatChangedSize() {
+        val upload = ChatUpload("a.pdf", "application/pdf", source = { ByteArray(5).inputStream() }, sourceLength = 10)
+        streamChatMultipart(upload, "aino-boundary-123").writeTo(java.io.ByteArrayOutputStream())
+    }
 }

@@ -147,7 +147,7 @@ class ChatRepository(
 
     fun uploadFile(conversationId: Long, upload: ChatUpload, onProgress: ((Long, Long) -> Unit)? = null): ChatMessage {
         val boundary = "aino-${UUID.randomUUID()}"
-        val multipart = buildChatMultipart(upload, boundary)
+        val multipart = streamChatMultipart(upload, boundary)
         try {
             return decode(
                 api.execute(
@@ -155,7 +155,7 @@ class ChatRepository(
                         "POST",
                         "chat/conversations/$conversationId/files",
                         headers = mapOf("Content-Type" to multipart.contentType),
-                        body = multipart.body,
+                        streamBody = multipart,
                         onUploadProgress = onProgress,
                     ),
                 ),

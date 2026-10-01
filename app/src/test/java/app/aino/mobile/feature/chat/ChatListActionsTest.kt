@@ -61,7 +61,7 @@ class ChatListActionsTest {
         return ChatViewModel(
             ChatRepository(api),
             { scope -> ChatCache(scope, ScopedCache(scope, EmptyDao)) },
-            { _, _, _, _, _, _ -> "" },
+            app.aino.mobile.core.db.ChatOutbox.None,
         ).also { vm ->
             vm.setScope(1, 1)
             await { vm.ui.value.conversations.size == 2 && !vm.ui.value.loading }

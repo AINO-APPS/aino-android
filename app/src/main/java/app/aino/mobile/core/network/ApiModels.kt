@@ -10,6 +10,18 @@ data class ApiRequest(
     val body: ByteArray? = null,
     /** Optional upload progress (bytes sent, total); honoured by [OkHttpApiClient]. */
     val onUploadProgress: ((Long, Long) -> Unit)? = null,
+    /** Large upload streamed from its source instead of [body]; sent on a dedicated upload connection. */
+    val streamBody: StreamBody? = null,
+)
+
+/**
+ * A request body written straight to the socket. [writeTo] must be repeatable:
+ * a 401 retry (see [RefreshingApiClient]) writes it a second time.
+ */
+class StreamBody(
+    val contentType: String,
+    val contentLength: Long,
+    val writeTo: (java.io.OutputStream) -> Unit,
 )
 
 data class ApiResponse(

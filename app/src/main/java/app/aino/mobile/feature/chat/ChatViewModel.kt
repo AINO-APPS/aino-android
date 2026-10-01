@@ -10,13 +10,22 @@ import app.aino.mobile.core.auth.KeystoreTokenStore
 import app.aino.mobile.core.db.AinoDatabase
 import app.aino.mobile.core.db.CacheScope
 import app.aino.mobile.core.db.ScopedCache
+import app.aino.mobile.core.db.ChatOutbox
 import app.aino.mobile.core.db.OutboxCoordinator
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
+import app.aino.mobile.core.network.userFacingMessage
 import app.aino.mobile.core.realtime.RealtimeEvent
 import app.aino.mobile.core.realtime.RealtimeEnvelope
 import app.aino.mobile.core.realtime.RoutedRealtimeEvent
+import app.aino.mobile.feature.chat.media.ContentMediaPreparer
+import app.aino.mobile.feature.chat.media.MediaPrepRequest
+import app.aino.mobile.feature.chat.media.MediaPreparer
+import app.aino.mobile.feature.chat.media.PreparedMedia
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +69,8 @@ data class PendingMedia(
     val progress: Float? = null,
     val state: PendingMediaState = PendingMediaState.Uploading,
     val error: String? = null,
+    /** Local send order shared with queued text (see [ChatSendQueue]). */
+    val sequence: Long = 0,
 ) {
     val isImage get() = mimeType.startsWith("image/")
     val isVideo get() = mimeType.startsWith("video/")
@@ -175,9 +186,12 @@ data class MediaUploadSpec(val uri: Uri, val mimeType: String? = null, val width
 class ChatViewModel(
     private val repository: ChatRepository,
     private val cacheFactory: (CacheScope) -> ChatCache,
-    private val enqueueText: suspend (CacheScope, Long, String, Long?, Long, String) -> String,
+    /** Durable backing for text sends (Room outbox + WorkManager fallback). */
+    private val outbox: ChatOutbox = ChatOutbox.None,
     /** Same reads served from the last responses: lists and threads paint instantly. */
     private val warm: ChatRepository? = null,
+    /** Compression / transcoding before upload; defaults to the content-resolver implementation. */
+    private val mediaPreparer: MediaPreparer? = null,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ChatUiState())
     val ui: StateFlow<ChatUiState> = _ui.asStateFlow()
@@ -195,6 +209,15 @@ class ChatViewModel(
     private var realtimeSend: (RealtimeEnvelope) -> Boolean = { false }
     private val markReadJobs = mutableMapOf<Long, Job>()
     private val threadCache = ThreadMessageCache()
+    private val sendQueue = ChatSendQueue(viewModelScope)
+    private val sendSequence = java.util.concurrent.atomic.AtomicLong(0)
+    /** Signal compresses a couple of attachments at a time; more only fights over CPU. */
+    private val prepSlots = kotlinx.coroutines.sync.Semaphore(2)
+    private val prepJobs = java.util.concurrent.ConcurrentHashMap<String, Deferred<PreparedMedia>>()
+    private val prewarmed = HashMap<PrepKey, Deferred<PreparedMedia>>()
+    private val preparer: MediaPreparer? by lazy { mediaPreparer ?: context?.let { ContentMediaPreparer(it, MAX_CHAT_FILE_BYTES) } }
+
+    private data class PrepKey(val uri: Uri, val quality: String?)
 
     init {
         // A push swallowed for the on-screen thread: mark read and pull the message
@@ -222,7 +245,7 @@ class ChatViewModel(
      * per burst of messages instead of one request per message.
      */
     private fun scheduleMarkRead(conversationId: Long) {
-        _ui.value = _ui.value.copy(conversations = zeroUnread(_ui.value.conversations, conversationId))
+        _ui.update { st -> st.copy(conversations = zeroUnread(st.conversations, conversationId)) }
         synchronized(markReadJobs) {
             markReadJobs.remove(conversationId)?.cancel()
             markReadJobs[conversationId] = viewModelScope.launch(Dispatchers.IO) {
@@ -253,7 +276,7 @@ class ChatViewModel(
             peerName = conversation.title(),
             peerAvatar = conversation.avatar(),
             peerUserId = conversation.otherUserId,
-        )?.let { _ui.value = _ui.value.copy(error = it) }
+        )?.let { _ui.update { st -> st.copy(error = it) } }
     }
 
     /** Web `startGroupCall`: a huddle meeting, then `/huddle/:code` (members are rung by the server). */
@@ -261,7 +284,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.startGroupCall(conversation.id, conversation.groupName, callType) }.fold(
                 onSuccess = { app.aino.mobile.core.navigation.RouteRequests.open(app.aino.mobile.core.navigation.huddleRoute(it.meetingCode)) },
-                onFailure = { _ui.value = _ui.value.copy(error = "Could not start the group call. Please try again.") },
+                onFailure = { _ui.update { st -> st.copy(error = "Could not start the group call. Please try again.") } },
             )
         }
     }
@@ -271,21 +294,28 @@ class ChatViewModel(
             CacheScope(tenantId, userId)
         } else null
         if (next == scope) return
+        // In-flight texts of the previous account stop at their next attempt; its durable worker takes them over.
+        scope?.let { previous -> viewModelScope.launch(Dispatchers.IO) { runCatching { outbox.recover(previous) } } }
         scope = next
         cache = next?.let(cacheFactory)
         threadCache.clear()
+        discardPrewarmedMedia()
         _ui.value = ChatUiState(currentUserId = next?.userId)
-        if (next != null) refresh()
+        if (next != null) {
+            // Texts leased by a previous process never reached the server: let the durable worker send them.
+            viewModelScope.launch(Dispatchers.IO) { runCatching { outbox.recover(next) } }
+            refresh()
+        }
     }
 
     fun refresh() {
         val scopedCache = cache ?: return
         if (_ui.value.loading) return
-        _ui.value = _ui.value.copy(loading = true, error = null)
+        _ui.update { st -> st.copy(loading = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             if (_ui.value.conversations.isEmpty()) {
                 warm?.let { runCatching(it::loadConversations).getOrNull() }?.takeIf { it.isNotEmpty() }?.let { cached ->
-                    if (_ui.value.conversations.isEmpty()) _ui.value = _ui.value.copy(conversations = zeroUnread(cached, visibleConversationId()))
+                    if (_ui.value.conversations.isEmpty()) _ui.update { st -> st.copy(conversations = zeroUnread(cached, visibleConversationId())) }
                 }
             }
             runCatching(repository::loadConversations).fold(
@@ -293,26 +323,26 @@ class ChatViewModel(
                     scopedCache.replace(conversations)
                     val userIds = conversations.mapNotNull { it.otherUserId }.distinct()
                     val presence = runCatching { repository.loadPresence(userIds) }.getOrDefault(emptyMap())
-                    _ui.value = _ui.value.copy(
+                    _ui.update { st -> st.copy(
                         loading = false,
                         conversations = zeroUnread(conversations, visibleConversationId()),
                         presence = presence,
                         fromCache = false,
-                    )
+                    ) }
                     warmThreads(scopedCache, conversations)
                 },
                 onFailure = { error ->
                     // Offline first: keep the exact scoped cache visible, while
                     // reporting that freshness/presence are unavailable.
                     val cached = runCatching { scopedCache.snapshot() }.getOrDefault(emptyList())
-                    _ui.value = _ui.value.copy(
+                    _ui.update { st -> st.copy(
                         loading = false,
                         conversations = zeroUnread(cached, visibleConversationId()),
                         presence = emptyMap(),
                         fromCache = cached.isNotEmpty(),
                         error = if (cached.isEmpty()) error.message ?: "Could not load conversations" else null,
                         message = if (cached.isNotEmpty()) "Offline · showing cached conversations" else null,
-                    )
+                    ) }
                 },
             )
         }
@@ -323,57 +353,57 @@ class ChatViewModel(
             RealtimeEvent.ChatTyping -> {
                 val typing = decodeChatRealtime<ChatTypingEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id != typing.conversationId || typing.userId == scope?.userId) return
-                _ui.value = _ui.value.copy(typingUserId = typing.userId)
+                _ui.update { st -> st.copy(typingUserId = typing.userId) }
                 typingExpiry?.cancel()
                 typingExpiry = viewModelScope.launch {
                     delay(3_000)
-                    if (_ui.value.typingUserId == typing.userId) _ui.value = _ui.value.copy(typingUserId = null)
+                    if (_ui.value.typingUserId == typing.userId) _ui.update { st -> st.copy(typingUserId = null) }
                 }
                 return
             }
             RealtimeEvent.ChatReadReceipt -> {
                 val receipt = decodeChatRealtime<ChatReadReceiptEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id == receipt.conversationId) {
-                    _ui.value = _ui.value.copy(receipts = applyRealtimeReceipt(_ui.value.receipts, receipt))
+                    _ui.update { st -> st.copy(receipts = applyRealtimeReceipt(st.receipts, receipt)) }
                 }
                 return
             }
             RealtimeEvent.ChatReaction -> {
                 val reaction = decodeChatRealtime<ChatReactionEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id == reaction.conversationId) {
-                    _ui.value = _ui.value.copy(messages = applyRealtimeReaction(_ui.value.messages, reaction))
+                    _ui.update { st -> st.copy(messages = applyRealtimeReaction(st.messages, reaction)) }
                 }
                 // Reconcile after the immediate patch, matching web behavior.
             }
             RealtimeEvent.ChatEdit -> {
                 val edit = decodeChatRealtime<ChatEditEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id == edit.conversationId) {
-                    _ui.value = _ui.value.copy(messages = applyRealtimeEdit(_ui.value.messages, edit))
+                    _ui.update { st -> st.copy(messages = applyRealtimeEdit(st.messages, edit)) }
                 }
                 return
             }
             RealtimeEvent.ChatDelete -> {
                 val delete = decodeChatRealtime<ChatDeleteEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id == delete.conversationId) {
-                    _ui.value = _ui.value.copy(
-                        messages = applyRealtimeDelete(_ui.value.messages, delete),
-                        editingMessage = _ui.value.editingMessage?.takeUnless { it.id == delete.messageId },
-                        infoContent = pruneSharedFiles(_ui.value.infoContent, setOf(delete.messageId)),
-                    )
+                    _ui.update { st -> st.copy(
+                        messages = applyRealtimeDelete(st.messages, delete),
+                        editingMessage = st.editingMessage?.takeUnless { it.id == delete.messageId },
+                        infoContent = pruneSharedFiles(st.infoContent, setOf(delete.messageId)),
+                    ) }
                 }
                 return
             }
             RealtimeEvent.ChatMessageDelivered -> {
                 val delivered = decodeChatRealtime<ChatDeliveredEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id == delivered.conversationId) {
-                    _ui.value = _ui.value.copy(messages = applyDelivered(_ui.value.messages, delivered))
+                    _ui.update { st -> st.copy(messages = applyDelivered(st.messages, delivered)) }
                 }
                 return
             }
             RealtimeEvent.ChatViewOnce -> {
                 val viewed = decodeChatRealtime<ChatViewOnceEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id == viewed.conversationId) {
-                    _ui.value = _ui.value.copy(messages = applyViewOnce(_ui.value.messages, viewed))
+                    _ui.update { st -> st.copy(messages = applyViewOnce(st.messages, viewed)) }
                 }
                 return
             }
@@ -381,7 +411,7 @@ class ChatViewModel(
                 val pin = decodeChatRealtime<ChatPinEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id == pin.conversationId) {
                     val messages = applyRealtimePin(_ui.value.messages, pin)
-                    _ui.value = _ui.value.copy(messages = messages, pinnedMessages = updatePinnedList(_ui.value.pinnedMessages, messages, pin.messageId, pin.pinned))
+                    _ui.update { st -> st.copy(messages = messages, pinnedMessages = updatePinnedList(st.pinnedMessages, messages, pin.messageId, pin.pinned)) }
                 }
                 return
             }
@@ -393,17 +423,18 @@ class ChatViewModel(
                 incoming?.toChatMessage()?.let { received -> acknowledgeDelivery(listOf(received)) }
                 if (incoming != null && _ui.value.selectedConversation?.id == incoming.conversationId) {
                     val message = incoming.toChatMessage()
-                    val state = _ui.value
-                    echoedPendingMedia(state.pendingMedia, message, scope?.userId)?.let {
+                    echoedPendingMedia(_ui.value.pendingMedia, message, scope?.userId)?.let {
                         ChatMediaMemory.rememberSent(message.fileUrl, it.uri, it.aspect())
                     }
-                    val messages = mergeIncomingMessage(state.messages, message)
-                    _ui.value = state.copy(
-                        messages = messages,
-                        queuedMessages = reconcileQueuedMessages(state.queuedMessages, messages, scope?.userId),
-                        pendingMedia = dropEchoedPendingMedia(state.pendingMedia, message, scope?.userId),
-                        typingUserId = state.typingUserId.takeUnless { it == message.senderId },
-                    )
+                    _ui.update { state ->
+                        val messages = mergeIncomingMessage(state.messages, message)
+                        state.copy(
+                            messages = messages,
+                            queuedMessages = reconcileQueuedMessages(state.queuedMessages, messages, scope?.userId),
+                            pendingMedia = dropEchoedPendingMedia(state.pendingMedia, message, scope?.userId),
+                            typingUserId = state.typingUserId.takeUnless { it == message.senderId },
+                        )
+                    }
                     // Read live, as Signal does for the thread on screen.
                     if (message.senderId != scope?.userId && visibleConversationId() == incoming.conversationId) {
                         scheduleMarkRead(incoming.conversationId)
@@ -441,40 +472,40 @@ class ChatViewModel(
         _ui.value.selectedConversation?.id?.takeIf(app.aino.mobile.core.push.VisibleThread::isVisible)
 
     fun updateUserSearch(value: String) {
-        _ui.value = _ui.value.copy(userSearch = value, error = null)
-        if (value.trim().length < 2) _ui.value = _ui.value.copy(userResults = emptyList())
+        _ui.update { st -> st.copy(userSearch = value, error = null) }
+        if (value.trim().length < 2) _ui.update { st -> st.copy(userResults = emptyList()) }
     }
 
     fun searchUsers() {
         val query = _ui.value.userSearch.trim()
         if (query.length < 2) {
-            _ui.value = _ui.value.copy(error = "Enter at least 2 characters")
+            _ui.update { st -> st.copy(error = "Enter at least 2 characters") }
             return
         }
-        _ui.value = _ui.value.copy(searching = true, error = null)
+        _ui.update { st -> st.copy(searching = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.searchUsers(query) }.fold(
-                onSuccess = { _ui.value = _ui.value.copy(searching = false, userResults = it) },
-                onFailure = { _ui.value = _ui.value.copy(searching = false, error = it.message ?: "User search failed") },
+                onSuccess = { _ui.update { st -> st.copy(searching = false, userResults = it) } },
+                onFailure = { _ui.update { st -> st.copy(searching = false, error = it.message ?: "User search failed") } },
             )
         }
     }
 
     fun startDirect(user: ChatUser) {
-        _ui.value = _ui.value.copy(loading = true, error = null)
+        _ui.update { st -> st.copy(loading = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.createDirect(user.id) }.fold(
                 onSuccess = { created ->
-                    _ui.value = _ui.value.copy(
+                    _ui.update { st -> st.copy(
                         loading = false,
                         userSearch = "",
                         userResults = emptyList(),
                         // Web opens the conversation straight away.
                         openConversationId = created.conversationId,
-                    )
+                    ) }
                     refresh()
                 },
-                onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Could not start conversation") },
+                onFailure = { _ui.update { st -> st.copy(loading = false, error = it.message ?: "Could not start conversation") } },
             )
         }
     }
@@ -482,14 +513,14 @@ class ChatViewModel(
     fun markRead(conversation: ChatConversation) {
         if (conversation.unreadCount == 0) return
         val original = _ui.value.conversations
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             conversations = original.map { if (it.id == conversation.id) it.copy(unreadCount = 0) else it },
-        )
+        ) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.markRead(conversation.id) }.fold(
                 onSuccess = { refresh() },
                 onFailure = {
-                    _ui.value = _ui.value.copy(conversations = original, error = it.message ?: "Could not mark conversation read")
+                    _ui.update { st -> st.copy(conversations = original, error = it.message ?: "Could not mark conversation read") }
                 },
             )
         }
@@ -497,35 +528,35 @@ class ChatViewModel(
 
     fun toggleConversationSelection(conversationId: Long) {
         val selected = _ui.value.selectedConversationIds
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             selectedConversationIds = if (conversationId in selected) selected - conversationId else selected + conversationId,
-        )
+        ) }
     }
 
     fun selectAll(conversationIds: Collection<Long>) {
         val ids = conversationIds.toSet()
-        _ui.value = _ui.value.copy(
-            selectedConversationIds = if (ids.isNotEmpty() && ids.all(_ui.value.selectedConversationIds::contains)) emptySet() else ids,
-        )
+        _ui.update { st -> st.copy(
+            selectedConversationIds = if (ids.isNotEmpty() && ids.all(st.selectedConversationIds::contains)) emptySet() else ids,
+        ) }
     }
 
     fun cancelConversationSelection() {
-        _ui.value = _ui.value.copy(selectedConversationIds = emptySet())
+        _ui.update { st -> st.copy(selectedConversationIds = emptySet()) }
     }
 
     fun deleteSelectedConversations() {
         val ids = _ui.value.selectedConversationIds
         if (ids.isEmpty() || _ui.value.deletingConversations) return
-        _ui.value = _ui.value.copy(deletingConversations = true, error = null)
+        _ui.update { st -> st.copy(deletingConversations = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             val failed = ids.filter { id -> runCatching { repository.deleteConversation(id) }.isFailure }
-            _ui.value = _ui.value.copy(
+            _ui.update { st -> st.copy(
                 deletingConversations = false,
                 selectedConversationIds = failed.toSet(),
-                conversations = _ui.value.conversations.filterNot { it.id in ids && it.id !in failed },
+                conversations = st.conversations.filterNot { it.id in ids && it.id !in failed },
                 message = if (failed.isEmpty()) "${ids.size} conversation${if (ids.size == 1) "" else "s"} deleted" else null,
                 error = if (failed.isNotEmpty()) "Could not delete ${failed.size} selected conversation${if (failed.size == 1) "" else "s"}" else null,
-            )
+            ) }
         }
     }
 
@@ -538,10 +569,9 @@ class ChatViewModel(
     fun openConversation(conversation: ChatConversation) {
         rememberOpenThread()
         val cached = threadCache.get(conversation.id)
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             selectedConversation = conversation,
             messages = cached?.messages.orEmpty(),
-            queuedMessages = emptyList(),
             receipts = cached?.receipts.orEmpty(),
             threadFromCache = false,
             loadingOlder = false,
@@ -564,7 +594,7 @@ class ChatViewModel(
             forwardTargets = emptySet(),
             forwarding = false,
             error = null,
-        )
+        ) }
         pendingJump = null
         // Opening a thread clears its system notification (Signal behaviour);
         // the screen's ON_RESUME (onThreadVisible) coalesces into the same read mark.
@@ -577,7 +607,7 @@ class ChatViewModel(
             refreshPinned(conversation.id)
             // Members feed @mention suggestions (web MentionInput uses convMembers).
             val members = runCatching { repository.loadMembers(conversation.id) }.getOrNull() ?: return@launch
-            if (isOpen(conversation.id)) _ui.value = _ui.value.copy(members = members)
+            if (isOpen(conversation.id)) _ui.update { st -> st.copy(members = members) }
         }
         if (pendingSettings == conversation.id) { pendingSettings = null; openInfo() }
     }
@@ -592,10 +622,9 @@ class ChatViewModel(
         typingExpiry?.cancel()
         typingDispatch?.cancel()
         _ui.value.selectedConversation?.let { app.aino.mobile.core.push.VisibleThread.clear(it.id) }
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             selectedConversation = null,
             messages = emptyList(),
-            queuedMessages = emptyList(),
             pinnedMessages = emptyList(),
             receipts = emptyList(),
             typingUserId = null,
@@ -608,7 +637,7 @@ class ChatViewModel(
             forwarding = false,
             threadFromCache = false,
             loadingOlder = false,
-        )
+        ) }
     }
 
     private fun isOpen(conversationId: Long) = _ui.value.selectedConversation?.id == conversationId
@@ -628,7 +657,7 @@ class ChatViewModel(
     }
 
     fun updateComposer(value: String) {
-        _ui.value = _ui.value.copy(composer = value.take(5_000), error = null)
+        _ui.update { st -> st.copy(composer = value.take(5_000), error = null) }
         val conversationId = _ui.value.selectedConversation?.id ?: return
         if (_ui.value.editingMessage == null) saveDraft(conversationId, _ui.value.composer)
         scheduleLinkPreview(_ui.value.composer)
@@ -648,7 +677,7 @@ class ChatViewModel(
         val conversation = _ui.value.selectedConversation ?: return
         val scopedCache = cache ?: return
         val id = conversation.id
-        _ui.value = _ui.value.copy(threadLoading = true, error = null)
+        _ui.update { st -> st.copy(threadLoading = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             if (_ui.value.messages.isEmpty()) {
                 val stored = runCatching { scopedCache.fullMessages(id, limit = CACHED_THREAD_MESSAGES) }.getOrNull().orEmpty()
@@ -711,7 +740,7 @@ class ChatViewModel(
         val oldestId = _ui.value.messages.minOfOrNull(ChatMessage::id) ?: return
         if (_ui.value.loadingOlder || !_ui.value.hasOlderMessages) return
         val id = conversation.id
-        _ui.value = _ui.value.copy(loadingOlder = true, error = null)
+        _ui.update { st -> st.copy(loadingOlder = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             // Older rows already on disk paint first; the server page then revalidates them in place.
             val stored = runCatching { cache?.fullMessages(id, before = oldestId, limit = THREAD_PAGE_SIZE) }.getOrNull().orEmpty()
@@ -761,7 +790,7 @@ class ChatViewModel(
         val conversation = _ui.value.selectedConversation ?: return
         val content = _ui.value.composer.trim()
         if (content.isEmpty()) {
-            _ui.value = _ui.value.copy(error = "Message content is required")
+            _ui.update { st -> st.copy(error = "Message content is required") }
             return
         }
         val clientId = UUID.randomUUID().toString()
@@ -769,28 +798,73 @@ class ChatViewModel(
         val replyToId = _ui.value.replyingTo?.id
         val preview = _ui.value.composerLinkPreview?.takeIf { it.url == firstLinkIn(content) }
         val mentions = _ui.value.members.filter { it.id in mentionedIds && content.contains("@" + it.display()) }.map { it.id }
-        val queued = QueuedMessage(clientId, conversation.id, currentScope.userId, content, now)
-        _ui.value = _ui.value.copy(
+        val queued = QueuedMessage(clientId, conversation.id, currentScope.userId, content, now, sendSequence.incrementAndGet())
+        _ui.update { st -> st.copy(
             composer = "", replyingTo = null, composerLinkPreview = null, dismissedPreviewUrl = null,
-            queuedMessages = _ui.value.queuedMessages + queued, error = null,
-        )
+            queuedMessages = st.queuedMessages + queued, error = null,
+        ) }
         saveDraft(conversation.id, "")
         saveDraftTarget("reply", null)
         mentionedIds.clear()
         linkPreviewJob?.cancel()
         context?.let(app.aino.mobile.core.notifications.NotificationSoundPrefs::playSendConfirmation)
+        // Durable right away (leased: the worker won't overtake media queued ahead of it).
+        val persisted = viewModelScope.async(Dispatchers.IO) {
+            runCatching { outbox.persist(currentScope, conversation.id, content, replyToId, now, clientId) }.isSuccess
+        }
         // Mentions and link previews only travel on the web's WS `chat_message`
-        // frame (the REST send route drops them). Use it when connected; plain
-        // text keeps the durable offline outbox.
-        if ((preview != null || mentions.isNotEmpty()) &&
-            realtimeSend(chatMessageEnvelope(conversation.id, content, clientId, replyToId, mentions, preview))
-        ) return
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { enqueueText(currentScope, conversation.id, content, replyToId, now, clientId) }.onFailure {
-                _ui.value = _ui.value.copy(
-                    queuedMessages = _ui.value.queuedMessages.filterNot { it.clientMessageId == clientId },
-                    composer = content,
-                    error = it.message ?: "Could not queue message",
+        // frame (the REST send route drops them).
+        val socketEnvelope = if (preview != null || mentions.isNotEmpty()) {
+            chatMessageEnvelope(conversation.id, content, clientId, replyToId, mentions, preview)
+        } else null
+        sendQueue.submit(conversation.id) {
+            val stored = persisted.await()
+            if (scope != currentScope) return@submit
+            if (socketEnvelope != null && realtimeSend(socketEnvelope)) {
+                if (stored) runCatching { outbox.delivered(currentScope, clientId) }
+                return@submit
+            }
+            val send = runCatching {
+                withSendRetries(attempts = TEXT_SEND_ATTEMPTS) {
+                    // Signed out / switched tenant meanwhile: setScope released the row to the durable worker.
+                    if (scope != currentScope) throw ScopeChanged()
+                    repository.sendMessage(conversation.id, content, replyToId, clientId)
+                }
+            }
+            send.fold(
+                onSuccess = { row ->
+                    onOwnMessageSent(row.copy(conversationId = row.conversationId ?: conversation.id), clientId)
+                    if (stored) runCatching { outbox.delivered(currentScope, clientId) }
+                },
+                onFailure = { error ->
+                    if (error is CancellationException) throw error
+                    if (error is ScopeChanged) return@fold
+                    // A final answer (blocked, not a participant, …): the text can never be sent.
+                    if (stored) runCatching { outbox.delivered(currentScope, clientId) }
+                    _ui.update { st -> st.copy(
+                        queuedMessages = st.queuedMessages.filterNot { it.clientMessageId == clientId },
+                        composer = if (st.selectedConversation?.id == conversation.id && st.composer.isBlank()) content else st.composer,
+                        error = userFacingMessage(error, "Could not send message"),
+                    ) }
+                },
+            )
+        }
+    }
+
+    private class ScopeChanged : Exception()
+
+    /** Swaps the optimistic bubble for the server row the moment the send returns (no wait for the WS echo). */
+    private fun onOwnMessageSent(row: ChatMessage, clientId: String) {
+        val conversationId = row.conversationId ?: return
+        _ui.update { st ->
+            if (st.selectedConversation?.id != conversationId) {
+                st.copy(queuedMessages = st.queuedMessages.filterNot { it.clientMessageId == clientId })
+            } else {
+                val messages = mergeIncomingMessage(st.messages, row.copy(clientMessageId = row.clientMessageId ?: clientId))
+                st.copy(
+                    messages = messages,
+                    queuedMessages = reconcileQueuedMessages(st.queuedMessages, messages, scope?.userId)
+                        .filterNot { it.clientMessageId == clientId },
                 )
             }
         }
@@ -801,7 +875,7 @@ class ChatViewModel(
         val url = firstLinkIn(text)
         if (url == null) {
             linkPreviewJob?.cancel()
-            _ui.value = _ui.value.copy(composerLinkPreview = null, dismissedPreviewUrl = null)
+            _ui.update { st -> st.copy(composerLinkPreview = null, dismissedPreviewUrl = null) }
             return
         }
         if (url == _ui.value.dismissedPreviewUrl || _ui.value.composerLinkPreview?.url == url) return
@@ -809,12 +883,12 @@ class ChatViewModel(
         linkPreviewJob = viewModelScope.launch(Dispatchers.IO) {
             delay(600)
             val preview = runCatching { repository.loadLinkPreview(url) }.getOrNull()
-            if (firstLinkIn(_ui.value.composer) == url) _ui.value = _ui.value.copy(composerLinkPreview = preview)
+            if (firstLinkIn(_ui.value.composer) == url) _ui.update { st -> st.copy(composerLinkPreview = preview) }
         }
     }
 
     fun dismissLinkPreview() {
-        _ui.value = _ui.value.copy(dismissedPreviewUrl = _ui.value.composerLinkPreview?.url, composerLinkPreview = null)
+        _ui.update { st -> st.copy(dismissedPreviewUrl = st.composerLinkPreview?.url, composerLinkPreview = null) }
     }
 
     /** Records a picked @mention so its user id is sent with the message (web `getMentionedIds`). */
@@ -825,46 +899,46 @@ class ChatViewModel(
 
     fun beginReply(message: ChatMessage) {
         if (message.deletedAt != null) return
-        _ui.value = _ui.value.copy(replyingTo = message, editingMessage = null, error = null)
+        _ui.update { st -> st.copy(replyingTo = message, editingMessage = null, error = null) }
         saveDraftTarget("reply", message.id)
         saveDraftTarget("edit", null)
     }
 
     fun cancelReply() {
-        _ui.value = _ui.value.copy(replyingTo = null)
+        _ui.update { st -> st.copy(replyingTo = null) }
         saveDraftTarget("reply", null)
     }
 
     fun beginEdit(message: ChatMessage) {
         if (message.senderId != scope?.userId || message.deletedAt != null) return
-        _ui.value = _ui.value.copy(editingMessage = message, replyingTo = null, composer = message.content.orEmpty(), error = null)
+        _ui.update { st -> st.copy(editingMessage = message, replyingTo = null, composer = message.content.orEmpty(), error = null) }
         saveDraftTarget("edit", message.id)
         saveDraftTarget("reply", null)
     }
 
     fun cancelEdit() {
-        _ui.value = _ui.value.copy(editingMessage = null, composer = "", error = null)
+        _ui.update { st -> st.copy(editingMessage = null, composer = "", error = null) }
         saveDraftTarget("edit", null)
     }
 
     private fun submitEdit(message: ChatMessage) {
         val content = _ui.value.composer.trim()
         if (content.isEmpty() || content.length > 5_000) {
-            _ui.value = _ui.value.copy(error = "Edited message must be 1–5000 characters")
+            _ui.update { st -> st.copy(error = "Edited message must be 1–5000 characters") }
             return
         }
         saveDraftTarget("edit", null)
         val original = _ui.value.messages
         val optimistic = message.copy(content = content, editedAt = java.time.Instant.now().toString())
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             messages = original.map { if (it.id == message.id) optimistic else it },
             editingMessage = null,
             composer = "",
             error = null,
-        )
+        ) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.editMessage(message.id, content) }.onFailure {
-                _ui.value = _ui.value.copy(messages = original, editingMessage = message, composer = content, error = it.message ?: "Could not edit message")
+                _ui.update { st -> st.copy(messages = original, editingMessage = message, composer = content, error = it.message ?: "Could not edit message") }
             }
         }
     }
@@ -872,15 +946,15 @@ class ChatViewModel(
     fun deleteMessage(message: ChatMessage) {
         if (message.senderId != scope?.userId || message.deletedAt != null) return
         val original = _ui.value.messages
-        _ui.value = _ui.value.copy(
-            messages = applyRealtimeDelete(original, ChatDeleteEvent(message.id, message.conversationId ?: _ui.value.selectedConversation?.id ?: return)),
-            editingMessage = _ui.value.editingMessage?.takeUnless { it.id == message.id },
-            infoContent = pruneSharedFiles(_ui.value.infoContent, setOf(message.id)),
+        _ui.update { st -> st.copy(
+            messages = applyRealtimeDelete(original, ChatDeleteEvent(message.id, message.conversationId ?: st.selectedConversation?.id ?: return)),
+            editingMessage = st.editingMessage?.takeUnless { it.id == message.id },
+            infoContent = pruneSharedFiles(st.infoContent, setOf(message.id)),
             error = null,
-        )
+        ) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.deleteMessage(message.id) }.onFailure {
-                _ui.value = _ui.value.copy(messages = original, error = it.message ?: "Could not delete message")
+                _ui.update { st -> st.copy(messages = original, error = it.message ?: "Could not delete message") }
             }
         }
     }
@@ -888,13 +962,13 @@ class ChatViewModel(
     fun toggleStar(message: ChatMessage) {
         if (message.deletedAt != null) return
         val original = _ui.value.messages
-        _ui.value = _ui.value.copy(messages = original.map { if (it.id == message.id) it.copy(starred = !it.starred) else it })
+        _ui.update { st -> st.copy(messages = original.map { if (it.id == message.id) it.copy(starred = !it.starred) else it }) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.toggleStar(message.id) }.fold(
                 onSuccess = { result ->
-                    _ui.value = _ui.value.copy(messages = _ui.value.messages.map { if (it.id == message.id) it.copy(starred = result.starred) else it })
+                    _ui.update { st -> st.copy(messages = st.messages.map { if (it.id == message.id) it.copy(starred = result.starred) else it }) }
                 },
-                onFailure = { _ui.value = _ui.value.copy(messages = original, error = it.message ?: "Could not update saved message") },
+                onFailure = { _ui.update { st -> st.copy(messages = original, error = it.message ?: "Could not update saved message") } },
             )
         }
     }
@@ -904,12 +978,12 @@ class ChatViewModel(
         val conversationId = message.conversationId ?: _ui.value.selectedConversation?.id ?: return
         val original = _ui.value.messages
         val optimisticPinned = message.pinnedAt == null
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             messages = applyRealtimePin(
                 original,
                 ChatPinEvent(message.id, conversationId, optimisticPinned, scope?.userId),
             ),
-        )
+        ) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.toggleMessagePin(message.id) }.fold(
                 onSuccess = { response ->
@@ -917,70 +991,70 @@ class ChatViewModel(
                         _ui.value.messages,
                         ChatPinEvent(message.id, conversationId, response.pinned, scope?.userId),
                     )
-                    _ui.value = _ui.value.copy(
+                    _ui.update { st -> st.copy(
                         messages = messages,
-                        pinnedMessages = updatePinnedList(_ui.value.pinnedMessages, messages, message.id, response.pinned, message),
-                    )
+                        pinnedMessages = updatePinnedList(st.pinnedMessages, messages, message.id, response.pinned, message),
+                    ) }
                 },
-                onFailure = { _ui.value = _ui.value.copy(messages = original, error = it.message ?: "Could not update pinned message") },
+                onFailure = { _ui.update { st -> st.copy(messages = original, error = it.message ?: "Could not update pinned message") } },
             )
         }
     }
 
     fun beginForward(message: ChatMessage) {
         if (message.deletedAt != null) return
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             forwardingMessage = message,
             forwardQuery = "",
             forwardTargets = emptySet(),
             error = null,
-        )
+        ) }
     }
 
     fun cancelForward() {
         if (_ui.value.forwarding) return
-        _ui.value = _ui.value.copy(forwardingMessage = null, forwardQuery = "", forwardTargets = emptySet())
+        _ui.update { st -> st.copy(forwardingMessage = null, forwardQuery = "", forwardTargets = emptySet()) }
     }
 
     fun updateForwardQuery(value: String) {
-        _ui.value = _ui.value.copy(forwardQuery = value.take(100), error = null)
+        _ui.update { st -> st.copy(forwardQuery = value.take(100), error = null) }
     }
 
     fun toggleForwardTarget(conversationId: Long) {
         val current = _ui.value.forwardTargets
         if (conversationId !in current && current.size >= 20) {
-            _ui.value = _ui.value.copy(error = "Choose no more than 20 conversations")
+            _ui.update { st -> st.copy(error = "Choose no more than 20 conversations") }
             return
         }
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             forwardTargets = if (conversationId in current) current - conversationId else current + conversationId,
             error = null,
-        )
+        ) }
     }
 
     fun submitForward() {
         val message = _ui.value.forwardingMessage ?: return
         val targets = _ui.value.forwardTargets.toList()
         if (targets.isEmpty()) {
-            _ui.value = _ui.value.copy(error = "Choose at least one conversation")
+            _ui.update { st -> st.copy(error = "Choose at least one conversation") }
             return
         }
-        _ui.value = _ui.value.copy(forwarding = true, error = null)
+        _ui.update { st -> st.copy(forwarding = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.forwardMessage(message.id, targets) }.fold(
                 onSuccess = {
                     val refreshCurrent = _ui.value.selectedConversation?.id in targets
-                    _ui.value = _ui.value.copy(
+                    _ui.update { st -> st.copy(
                         forwarding = false,
                         forwardingMessage = null,
                         forwardQuery = "",
                         forwardTargets = emptySet(),
                         message = "Forwarded to ${targets.size} conversation${if (targets.size == 1) "" else "s"}",
-                    )
+                    ) }
                     refresh()
                     if (refreshCurrent) refreshThread()
                 },
-                onFailure = { _ui.value = _ui.value.copy(forwarding = false, error = it.message ?: "Could not forward message") },
+                onFailure = { _ui.update { st -> st.copy(forwarding = false, error = it.message ?: "Could not forward message") } },
             )
         }
     }
@@ -990,7 +1064,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.toggleReaction(message.id, emoji) }.fold(
                 onSuccess = { refreshThread() },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update reaction") },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update reaction") } },
             )
         }
     }
@@ -999,13 +1073,13 @@ class ChatViewModel(
         val conversation = _ui.value.selectedConversation ?: return
         val cleaned = options.map(String::trim).filter(String::isNotEmpty)
         if (question.isBlank() || cleaned.size < 2) {
-            _ui.value = _ui.value.copy(error = "A poll needs a question and at least two options")
+            _ui.update { st -> st.copy(error = "A poll needs a question and at least two options") }
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.createPoll(conversation.id, question.trim(), cleaned, multiSelect) }.fold(
                 onSuccess = { refreshThread() },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not create poll") },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not create poll") } },
             )
         }
     }
@@ -1015,7 +1089,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.votePoll(pollId, optionIndex) }.fold(
                 onSuccess = { refreshThread() },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update poll") },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update poll") } },
             )
         }
     }
@@ -1024,15 +1098,15 @@ class ChatViewModel(
 
     fun enterMessageSelection(message: ChatMessage) {
         if (message.deletedAt != null) return
-        _ui.value = _ui.value.copy(selectedMessageIds = setOf(message.id))
+        _ui.update { st -> st.copy(selectedMessageIds = setOf(message.id)) }
     }
 
     fun toggleMessageSelection(messageId: Long) {
         val current = _ui.value.selectedMessageIds
-        _ui.value = _ui.value.copy(selectedMessageIds = if (messageId in current) current - messageId else current + messageId)
+        _ui.update { st -> st.copy(selectedMessageIds = if (messageId in current) current - messageId else current + messageId) }
     }
 
-    fun clearMessageSelection() { _ui.value = _ui.value.copy(selectedMessageIds = emptySet()) }
+    fun clearMessageSelection() { _ui.update { st -> st.copy(selectedMessageIds = emptySet()) } }
 
     private fun selectedMessages(): List<ChatMessage> =
         _ui.value.messages.filter { it.id in _ui.value.selectedMessageIds }
@@ -1052,7 +1126,7 @@ class ChatViewModel(
         val conversationId = _ui.value.selectedConversation?.id ?: return
         val hidden = _ui.value.hiddenMessageIds + _ui.value.selectedMessageIds
         saveHidden(conversationId, hidden)
-        _ui.value = _ui.value.copy(hiddenMessageIds = hidden, selectedMessageIds = emptySet(), infoContent = pruneSharedFiles(_ui.value.infoContent, hidden))
+        _ui.update { st -> st.copy(hiddenMessageIds = hidden, selectedMessageIds = emptySet(), infoContent = pruneSharedFiles(st.infoContent, hidden)) }
     }
 
     private fun hiddenKey(conversationId: Long): String? = draftKey(conversationId)?.replace(":draft:", ":hidden:")
@@ -1073,19 +1147,19 @@ class ChatViewModel(
     fun jumpToMessage(message: ChatMessage) {
         val currentId = _ui.value.selectedConversation?.id
         if (message.conversationId == null || message.conversationId == currentId) {
-            _ui.value = _ui.value.copy(showInfo = false, jumpToMessageId = message.id)
+            _ui.update { st -> st.copy(showInfo = false, jumpToMessageId = message.id) }
         } else {
-            _ui.value = _ui.value.copy(showInfo = false, openConversationId = message.conversationId)
+            _ui.update { st -> st.copy(showInfo = false, openConversationId = message.conversationId) }
         }
     }
 
-    fun consumeJump() { _ui.value = _ui.value.copy(jumpToMessageId = null) }
+    fun consumeJump() { _ui.update { st -> st.copy(jumpToMessageId = null) } }
 
     fun unstarFromList(message: ChatMessage) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.toggleStar(message.id) }.onSuccess {
                 val content = _ui.value.infoContent as? InfoContent.Messages ?: return@onSuccess
-                _ui.value = _ui.value.copy(infoContent = InfoContent.Messages(content.messages.filterNot { it.id == message.id }))
+                _ui.update { st -> st.copy(infoContent = InfoContent.Messages(content.messages.filterNot { it.id == message.id })) }
             }
         }
     }
@@ -1126,8 +1200,8 @@ class ChatViewModel(
         val edit = loadDraftTarget(conversationId, "edit")?.let { id -> messages.firstOrNull { it.id == id && it.deletedAt == null } }
         val reply = loadDraftTarget(conversationId, "reply")?.let { id -> messages.firstOrNull { it.id == id && it.deletedAt == null } }
         when {
-            edit != null -> _ui.value = _ui.value.copy(editingMessage = edit, composer = _ui.value.composer.ifBlank { edit.content.orEmpty() })
-            reply != null -> _ui.value = _ui.value.copy(replyingTo = reply)
+            edit != null -> _ui.update { st -> st.copy(editingMessage = edit, composer = st.composer.ifBlank { edit.content.orEmpty() }) }
+            reply != null -> _ui.update { st -> st.copy(replyingTo = reply) }
         }
     }
 
@@ -1139,14 +1213,14 @@ class ChatViewModel(
             if (cursor.moveToFirst()) name = cursor.getString(0) ?: name
         }
         val mime = resolver.getType(uri) ?: "application/octet-stream"
-        _ui.value = _ui.value.copy(pendingAttachment = PendingAttachment(uri, mime, name), error = null)
+        _ui.update { st -> st.copy(pendingAttachment = PendingAttachment(uri, mime, name), error = null) }
     }
 
-    fun cancelAttachment() { _ui.value = _ui.value.copy(pendingAttachment = null) }
+    fun cancelAttachment() { _ui.update { st -> st.copy(pendingAttachment = null) } }
 
     fun sendAttachment(caption: String) {
         val pending = _ui.value.pendingAttachment ?: return
-        _ui.value = _ui.value.copy(pendingAttachment = null, composer = caption)
+        _ui.update { st -> st.copy(pendingAttachment = null, composer = caption) }
         upload(pending.uri, mimeOverride = pending.mimeType)
     }
 
@@ -1169,121 +1243,168 @@ class ChatViewModel(
         viewOnce: Boolean = false,
         quality: String? = null,
     ) {
+        val currentScope = scope ?: return
         val conversation = _ui.value.selectedConversation ?: return
-        val appContext = context ?: return
-        val resolver = appContext.contentResolver
+        val resolver = context?.contentResolver
         val now = System.currentTimeMillis()
         // Signal: every item gets its own outgoing bubble immediately, in send order.
         val pending = items.mapIndexed { index, item ->
             var name = item.uri.lastPathSegment ?: "file"
             runCatching {
-                resolver.query(item.uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                resolver?.query(item.uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                     if (cursor.moveToFirst()) name = cursor.getString(0) ?: name
                 }
             }
-            val mime = item.mimeType ?: resolver.getType(item.uri) ?: "application/octet-stream"
+            val mime = item.mimeType ?: resolver?.getType(item.uri) ?: "application/octet-stream"
             PendingMedia(
                 localId = "media-${UUID.randomUUID()}", conversationId = conversation.id,
                 uri = item.uri, mimeType = mime, fileName = name,
                 caption = caption.takeIf { index == 0 }, createdAtEpochMs = now + index,
-                width = item.width, height = item.height,
+                width = item.width, height = item.height, sequence = sendSequence.incrementAndGet(),
             )
         }
         pending.forEach { pendingOptions[it.localId] = UploadOptions(viewOnce, quality) }
-        _ui.value = _ui.value.copy(
-            pendingMedia = _ui.value.pendingMedia + pending,
-            composer = if (clearComposer) "" else _ui.value.composer,
+        _ui.update { st -> st.copy(
+            pendingMedia = st.pendingMedia + pending,
+            composer = if (clearComposer) "" else st.composer,
             error = null,
-        )
+        ) }
         if (clearComposer) saveDraft(conversation.id, "")
         context?.let(app.aino.mobile.core.notifications.NotificationSoundPrefs::playSendConfirmation)
-        startUploads(pending)
+        pending.forEach { enqueueUpload(currentScope, it) }
     }
 
     private data class UploadOptions(val viewOnce: Boolean, val quality: String?)
     private val pendingOptions = java.util.concurrent.ConcurrentHashMap<String, UploadOptions>()
 
-    /** Uploads run sequentially (server has no albums), one bubble at a time. */
-    private fun startUploads(queue: List<PendingMedia>) {
-        viewModelScope.launch(Dispatchers.IO) {
-            for (media in queue) {
-                if (_ui.value.pendingMedia.none { it.localId == media.localId }) continue // cancelled
-                uploadOne(media)
+    /** Compression starts now (in parallel); the upload itself waits its turn in the conversation's send queue. */
+    private fun enqueueUpload(currentScope: CacheScope, media: PendingMedia) {
+        val options = pendingOptions[media.localId] ?: UploadOptions(false, null)
+        val prep = claimPrepared(media, options.quality)
+        prepJobs[media.localId] = prep
+        sendQueue.submit(media.conversationId) {
+            if (scope != currentScope || _ui.value.pendingMedia.none { it.localId == media.localId }) {
+                discard(prepJobs.remove(media.localId) ?: prep)
+                return@submit
+            }
+            uploadQueued(media, prep, options)
+        }
+    }
+
+    /** The send screen's pre-processed result when it matches (Signal pre-upload), else a fresh preparation. */
+    private fun claimPrepared(media: PendingMedia, quality: String?): Deferred<PreparedMedia> {
+        val key = PrepKey(media.uri, quality.takeIf { media.isImage || media.isVideo })
+        synchronized(prewarmed) { prewarmed.remove(key) }?.let { return it }
+        return startPreparation(MediaPrepRequest(media.uri, media.mimeType, media.fileName, key.quality, media.width, media.height))
+    }
+
+    private fun startPreparation(request: MediaPrepRequest): Deferred<PreparedMedia> =
+        viewModelScope.async(Dispatchers.IO) {
+            val prepare = preparer ?: throw IllegalStateException("Could not read the selected file")
+            prepSlots.acquire()
+            try { prepare.prepare(request) } finally { prepSlots.release() }
+        }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private fun discard(prep: Deferred<PreparedMedia>) {
+        prep.cancel()
+        prep.invokeOnCompletion { cause -> if (cause == null) runCatching { prep.getCompleted().release() } }
+    }
+
+    /** Signal `MediaUploadRepository.startUpload` while the send screen is open: here, compression/transcoding. */
+    fun prewarmMedia(items: List<MediaUploadSpec>, highQuality: Boolean) {
+        val quality = if (highQuality) "hd" else "standard"
+        val wanted = items.filter { it.mimeType?.let { m -> m.startsWith("image/") || m.startsWith("video/") } == true }
+        val keys = wanted.map { PrepKey(it.uri, quality) }.toSet()
+        val stale = synchronized(prewarmed) {
+            val gone = prewarmed.keys.filterNot(keys::contains)
+            gone.mapNotNull(prewarmed::remove)
+        }
+        stale.forEach(::discard)
+        wanted.forEach { item ->
+            val key = PrepKey(item.uri, quality)
+            synchronized(prewarmed) {
+                if (key !in prewarmed) {
+                    val name = item.uri.lastPathSegment ?: "file"
+                    prewarmed[key] = startPreparation(MediaPrepRequest(item.uri, item.mimeType!!, name, quality, item.width, item.height))
+                }
             }
         }
     }
 
+    /** The send screen closed: drop whatever it pre-processed but did not send. */
+    fun discardPrewarmedMedia() {
+        val all = synchronized(prewarmed) { prewarmed.values.toList().also { prewarmed.clear() } }
+        all.forEach(::discard)
+    }
+
     private fun updatePending(localId: String, transform: (PendingMedia) -> PendingMedia) {
-        _ui.value = _ui.value.copy(pendingMedia = _ui.value.pendingMedia.map { if (it.localId == localId) transform(it) else it })
+        _ui.update { st -> st.copy(pendingMedia = st.pendingMedia.map { if (it.localId == localId) transform(it) else it }) }
     }
 
     /** Signal ✕ on the progress ring: removes the bubble (an in-flight request may still land server-side). */
     fun cancelPendingMedia(localId: String) {
         pendingOptions.remove(localId)
-        _ui.value = _ui.value.copy(pendingMedia = _ui.value.pendingMedia.filterNot { it.localId == localId })
+        prepJobs.remove(localId)?.let(::discard)
+        _ui.update { st -> st.copy(pendingMedia = st.pendingMedia.filterNot { it.localId == localId }) }
     }
 
+    /** Signal resend: the item goes to the back of the conversation's queue (and so below later messages). */
     fun retryPendingMedia(localId: String) {
+        val currentScope = scope ?: return
         val media = _ui.value.pendingMedia.firstOrNull { it.localId == localId && it.state == PendingMediaState.Failed } ?: return
-        startUploads(listOf(media))
+        val requeued = media.copy(state = PendingMediaState.Uploading, progress = null, error = null, sequence = sendSequence.incrementAndGet())
+        updatePending(localId) { requeued }
+        enqueueUpload(currentScope, requeued)
     }
 
-    private fun uploadOne(media: PendingMedia) {
-        val appContext = context ?: return
-        val options = pendingOptions[media.localId] ?: UploadOptions(false, null)
+    private suspend fun uploadQueued(media: PendingMedia, prep: Deferred<PreparedMedia>, options: UploadOptions) {
         updatePending(media.localId) { it.copy(state = PendingMediaState.Uploading, progress = null, error = null) }
-        runCatching {
-            val resolver = appContext.contentResolver
-            var size = -1L
-            resolver.query(media.uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst() && !cursor.isNull(0)) size = cursor.getLong(0)
-            }
-            if (size > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
-            val bytes = resolver.openInputStream(media.uri)?.use { input ->
-                val out = java.io.ByteArrayOutputStream()
-                val buffer = ByteArray(64 * 1024)
-                var total = 0L
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    total += read
-                    if (total > MAX_CHAT_FILE_BYTES) throw IllegalArgumentException("Files must be 25 MB or smaller")
-                    out.write(buffer, 0, read)
-                }
-                out.toByteArray()
-            } ?: throw IllegalArgumentException("Could not read the selected file")
-            validateChatUpload(media.fileName, media.mimeType, bytes.size.toLong())?.let { throw IllegalArgumentException(it) }
+        var prepared: PreparedMedia? = null
+        try {
+            val ready = prep.await().also { prepared = it }
+            if (_ui.value.pendingMedia.none { it.localId == media.localId }) return // cancelled while preparing
+            updatePending(media.localId) { it.copy(width = it.width ?: ready.width, height = it.height ?: ready.height) }
+            validateChatUpload(ready.fileName, ready.mimeType, ready.length)?.let { throw IllegalArgumentException(it) }
             val visual = media.isImage || media.isVideo
-            repository.uploadFile(
-                media.conversationId,
-                ChatUpload(
-                    media.fileName, media.mimeType, bytes, media.caption,
-                    viewOnce = options.viewOnce && visual,
-                    quality = options.quality.takeIf { visual },
-                    width = media.width, height = media.height,
-                ),
-            ) { sent, total ->
-                if (total > 0) updatePending(media.localId) { it.copy(progress = (sent.toFloat() / total).coerceIn(0f, 1f)) }
+            // Keep the picked file's display name; only the extension follows a re-encode.
+            val fileName = if (ready.mimeType.equals(media.mimeType, ignoreCase = true)) media.fileName
+            else media.fileName.substringBeforeLast('.', media.fileName) + "." + ready.fileName.substringAfterLast('.', "bin")
+            val upload = ChatUpload(
+                fileName, ready.mimeType,
+                content = media.caption,
+                viewOnce = options.viewOnce && visual,
+                quality = options.quality.takeIf { visual },
+                width = ready.width ?: media.width, height = ready.height ?: media.height,
+                source = ready.open, sourceLength = ready.length,
+            )
+            val uploaded = withSendRetries {
+                repository.uploadFile(media.conversationId, upload) { sent, total ->
+                    if (total > 0) updatePending(media.localId) { it.copy(progress = (sent.toFloat() / total).coerceIn(0f, 1f)) }
+                }
             }
-        }.fold(
-            onSuccess = { uploaded ->
-                if (_ui.value.pendingMedia.none { it.localId == media.localId }) return // cancelled mid-flight
-                pendingOptions.remove(media.localId)
-                val message = uploaded.copy(conversationId = uploaded.conversationId ?: media.conversationId)
-                ChatMediaMemory.rememberSent(message.fileUrl, media.uri, media.aspect())
-                val state = _ui.value
-                val inThread = state.selectedConversation?.id == media.conversationId
-                _ui.value = state.copy(
-                    // Swap the local bubble for the persisted row in one state update.
-                    messages = if (inThread) mergeIncomingMessage(state.messages, message) else state.messages,
+            if (_ui.value.pendingMedia.none { it.localId == media.localId }) return // cancelled mid-flight
+            pendingOptions.remove(media.localId)
+            val message = uploaded.copy(conversationId = uploaded.conversationId ?: media.conversationId)
+            ChatMediaMemory.rememberSent(message.fileUrl, media.uri, media.aspect())
+            // Swap the local bubble for the persisted row in one atomic update.
+            _ui.update { state ->
+                state.copy(
+                    messages = if (state.selectedConversation?.id == media.conversationId) mergeIncomingMessage(state.messages, message) else state.messages,
                     pendingMedia = state.pendingMedia.filterNot { it.localId == media.localId },
                 )
-                refresh()
-            },
-            onFailure = { error ->
-                updatePending(media.localId) { it.copy(state = PendingMediaState.Failed, progress = null, error = error.message ?: "Upload failed") }
-            },
-        )
+            }
+            refresh()
+        } catch (error: CancellationException) {
+            if (_ui.value.pendingMedia.any { it.localId == media.localId } && !prep.isCancelled) throw error
+        } catch (error: Throwable) {
+            updatePending(media.localId) {
+                it.copy(state = PendingMediaState.Failed, progress = null, error = userFacingMessage(error, "Upload failed"))
+            }
+        } finally {
+            prepJobs.remove(media.localId)
+            prepared?.release()
+        }
     }
 
     /** View-once open: the server claims the single allowed view and returns the URL (null once consumed). */
@@ -1293,7 +1414,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val url = runCatching { repository.viewMessage(message.id) }.getOrNull()?.fileUrl
             val event = ChatViewOnceEvent(message.id, message.conversationId ?: 0, me)
-            _ui.value = _ui.value.copy(messages = applyViewOnce(_ui.value.messages, event))
+            _ui.update { st -> st.copy(messages = applyViewOnce(st.messages, event)) }
             kotlinx.coroutines.withContext(Dispatchers.Main) { onUrl(url) }
         }
     }
@@ -1303,53 +1424,53 @@ class ChatViewModel(
         val conversationId = _ui.value.selectedConversation?.id ?: return
         val hidden = _ui.value.hiddenMessageIds + message.id
         saveHidden(conversationId, hidden)
-        _ui.value = _ui.value.copy(hiddenMessageIds = hidden, infoContent = pruneSharedFiles(_ui.value.infoContent, hidden))
+        _ui.update { st -> st.copy(hiddenMessageIds = hidden, infoContent = pruneSharedFiles(st.infoContent, hidden)) }
     }
 
     // ---- Signal in-chat search: toolbar field + "x of y" stepping ----
-    fun openThreadSearch() { _ui.value = _ui.value.copy(threadSearchOpen = true) }
+    fun openThreadSearch() { _ui.update { st -> st.copy(threadSearchOpen = true) } }
 
     fun closeThreadSearch() {
         threadSearchJob?.cancel()
-        _ui.value = _ui.value.copy(threadSearchOpen = false, threadSearchQuery = "", threadSearchMatches = emptyList(), threadSearchIndex = -1)
+        _ui.update { st -> st.copy(threadSearchOpen = false, threadSearchQuery = "", threadSearchMatches = emptyList(), threadSearchIndex = -1) }
     }
 
     fun updateThreadSearch(term: String) {
-        _ui.value = _ui.value.copy(threadSearchQuery = term)
+        _ui.update { st -> st.copy(threadSearchQuery = term) }
         threadSearchJob?.cancel()
         val conversation = _ui.value.selectedConversation ?: return
         if (term.trim().length < 2) {
-            _ui.value = _ui.value.copy(threadSearchMatches = emptyList(), threadSearchIndex = -1)
+            _ui.update { st -> st.copy(threadSearchMatches = emptyList(), threadSearchIndex = -1) }
             return
         }
         threadSearchJob = viewModelScope.launch(Dispatchers.IO) {
             delay(300)
             runCatching { repository.searchMessages(term.trim(), conversation.id) }.onSuccess { found ->
                 val newestFirst = found.filter { it.id !in _ui.value.hiddenMessageIds }.sortedByDescending { it.createdAt }.map { it.id }
-                _ui.value = _ui.value.copy(
+                _ui.update { st -> st.copy(
                     threadSearchMatches = newestFirst,
                     threadSearchIndex = if (newestFirst.isEmpty()) -1 else 0,
                     jumpToMessageId = newestFirst.firstOrNull(),
-                )
+                ) }
             }
         }
     }
 
     /** delta = +1 walks to older matches (Signal "up"), -1 to newer. */
     fun stepThreadSearch(delta: Int) {
-        val state = _ui.value
-        val next = stepSearchMatch(state.threadSearchIndex, state.threadSearchMatches.size, delta)
-        if (next < 0) return
-        _ui.value = state.copy(threadSearchIndex = next, jumpToMessageId = state.threadSearchMatches[next])
+        _ui.update { state ->
+            val next = stepSearchMatch(state.threadSearchIndex, state.threadSearchMatches.size, delta)
+            if (next < 0) state else state.copy(threadSearchIndex = next, jumpToMessageId = state.threadSearchMatches[next])
+        }
     }
 
     // ---- Signal list search: chats + contacts + messages sections ----
     fun searchAllMessages(term: String) {
         globalSearchJob?.cancel()
-        if (term.trim().length < 2) { _ui.value = _ui.value.copy(messageResults = emptyList()); return }
+        if (term.trim().length < 2) { _ui.update { st -> st.copy(messageResults = emptyList()) }; return }
         globalSearchJob = viewModelScope.launch(Dispatchers.IO) {
             delay(300)
-            runCatching { repository.searchMessages(term.trim()) }.onSuccess { _ui.value = _ui.value.copy(messageResults = it) }
+            runCatching { repository.searchMessages(term.trim()) }.onSuccess { _ui.update { st -> st.copy(messageResults = it) } }
         }
     }
 
@@ -1362,7 +1483,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.cancelMediaJob(id) }.fold(
                 onSuccess = { refreshThread() },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not cancel media") },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not cancel media") } },
             )
         }
     }
@@ -1372,62 +1493,62 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.retryMediaJob(id) }.fold(
                 onSuccess = { refreshThread() },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not retry media") },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not retry media") } },
             )
         }
     }
 
     fun loadCalls() {
         if (_ui.value.callsLoading) return
-        _ui.value = _ui.value.copy(callsLoading = true, error = null)
+        _ui.update { st -> st.copy(callsLoading = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching(repository::loadCalls).fold(
-                onSuccess = { _ui.value = _ui.value.copy(callsLoading = false, calls = it) },
-                onFailure = { _ui.value = _ui.value.copy(callsLoading = false, error = it.message ?: "Could not load calls") },
+                onSuccess = { _ui.update { st -> st.copy(callsLoading = false, calls = it) } },
+                onFailure = { _ui.update { st -> st.copy(callsLoading = false, error = it.message ?: "Could not load calls") } },
             )
         }
     }
 
     fun toggleCallSelection(callId: Long) {
         val selected = _ui.value.selectedCallIds
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             selectedCallIds = if (callId in selected) selected - callId else selected + callId,
-        )
+        ) }
     }
 
     fun selectAllCalls() {
         val ids = _ui.value.calls.map(CallLog::id).toSet()
-        _ui.value = _ui.value.copy(
-            selectedCallIds = if (ids.isNotEmpty() && ids.all(_ui.value.selectedCallIds::contains)) emptySet() else ids,
-        )
+        _ui.update { st -> st.copy(
+            selectedCallIds = if (ids.isNotEmpty() && ids.all(st.selectedCallIds::contains)) emptySet() else ids,
+        ) }
     }
 
     fun cancelCallSelection() {
-        _ui.value = _ui.value.copy(selectedCallIds = emptySet())
+        _ui.update { st -> st.copy(selectedCallIds = emptySet()) }
     }
 
     fun deleteSelectedCalls() {
         val ids = _ui.value.selectedCallIds
         if (ids.isEmpty() || _ui.value.deletingCalls) return
-        _ui.value = _ui.value.copy(deletingCalls = true, error = null)
+        _ui.update { st -> st.copy(deletingCalls = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 if (ids.size == _ui.value.calls.size) repository.deleteAllCalls()
                 else repository.deleteCalls(ids.toList())
             }.fold(
                 onSuccess = {
-                    _ui.value = _ui.value.copy(
+                    _ui.update { st -> st.copy(
                         deletingCalls = false,
                         selectedCallIds = emptySet(),
-                        calls = _ui.value.calls.filterNot { it.id in ids },
+                        calls = st.calls.filterNot { it.id in ids },
                         message = "${it.deleted} call${if (it.deleted == 1) "" else "s"} deleted",
-                    )
+                    ) }
                 },
                 onFailure = {
-                    _ui.value = _ui.value.copy(
+                    _ui.update { st -> st.copy(
                         deletingCalls = false,
                         error = it.message ?: "Could not delete call history",
-                    )
+                    ) }
                 },
             )
         }
@@ -1435,15 +1556,15 @@ class ChatViewModel(
 
     fun openInfo() {
         val conversation = _ui.value.selectedConversation ?: return
-        _ui.value = _ui.value.copy(showInfo = true, conversationCalls = emptyList(), infoContent = null, error = null)
+        _ui.update { st -> st.copy(showInfo = true, conversationCalls = emptyList(), infoContent = null, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             val members = runCatching { repository.loadMembers(conversation.id) }.getOrDefault(emptyList())
             val calls = runCatching { repository.loadConversationCalls(conversation.id) }.getOrDefault(emptyList())
-            _ui.value = _ui.value.copy(members = members, conversationCalls = calls)
+            _ui.update { st -> st.copy(members = members, conversationCalls = calls) }
         }
     }
 
-    fun closeInfo() { _ui.value = _ui.value.copy(showInfo = false) }
+    fun closeInfo() { _ui.update { st -> st.copy(showInfo = false) } }
 
     fun togglePin(conversation: ChatConversation? = _ui.value.selectedConversation) {
         val current = conversation ?: return
@@ -1460,7 +1581,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.toggleFavouriteConversation(current.id) }.fold(
                 onSuccess = { updateSelected(current.copy(isFavourite = it.favourite)); refresh() },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update favourite") },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update favourite") } },
             )
         }
     }
@@ -1479,7 +1600,7 @@ class ChatViewModel(
             after = {
                 if (_ui.value.selectedConversation?.id == current.id) closeConversation()
                 // Signal: "Chat archived" snackbar with Undo.
-                if (undoable && archiving) _ui.value = _ui.value.copy(archiveUndo = current.copy(isArchived = true))
+                if (undoable && archiving) _ui.update { st -> st.copy(archiveUndo = current.copy(isArchived = true)) }
                 refresh()
             },
         )
@@ -1488,11 +1609,11 @@ class ChatViewModel(
     /** Signal snackbar Undo: puts the just-archived chat back. */
     fun undoArchive() {
         val archived = _ui.value.archiveUndo ?: return
-        _ui.value = _ui.value.copy(archiveUndo = null)
+        _ui.update { st -> st.copy(archiveUndo = null) }
         toggleArchive(archived)
     }
 
-    fun dismissArchiveUndo() { _ui.value = _ui.value.copy(archiveUndo = null) }
+    fun dismissArchiveUndo() { _ui.update { st -> st.copy(archiveUndo = null) } }
 
     /** Signal list "Mark as unread". */
     fun markUnread(conversation: ChatConversation) {
@@ -1504,19 +1625,20 @@ class ChatViewModel(
     }
 
     private fun updateSelected(conversation: ChatConversation) {
-        _ui.value = _ui.value.copy(
+        _ui.update { st -> st.copy(
             selectedConversation = conversation,
-            conversations = _ui.value.conversations.map { if (it.id == conversation.id) conversation else it },
-        )
+            conversations = st.conversations.map { if (it.id == conversation.id) conversation else it },
+        ) }
     }
 
     /** Patches a conversation in the list and, when it is the open one, in the thread. */
     private fun patchConversation(conversation: ChatConversation) {
-        val state = _ui.value
-        _ui.value = state.copy(
-            selectedConversation = state.selectedConversation?.let { if (it.id == conversation.id) conversation else it },
-            conversations = state.conversations.map { if (it.id == conversation.id) conversation else it },
-        )
+        _ui.update { state ->
+            state.copy(
+                selectedConversation = state.selectedConversation?.let { if (it.id == conversation.id) conversation else it },
+                conversations = state.conversations.map { if (it.id == conversation.id) conversation else it },
+            )
+        }
     }
 
     /** Optimistic list action: show [optimistic] now, reconcile with the server, or roll back to [original]. */
@@ -1534,7 +1656,7 @@ class ChatViewModel(
                 onSuccess = { patchConversation(reconcile(optimistic, it)); after() },
                 onFailure = {
                     patchConversation(original)
-                    _ui.value = _ui.value.copy(error = it.message ?: failure)
+                    _ui.update { st -> st.copy(error = it.message ?: failure) }
                 },
             )
         }
@@ -1544,11 +1666,11 @@ class ChatViewModel(
 
     private fun loadInfo(block: suspend (ChatConversation) -> InfoContent) {
         val conversation = _ui.value.selectedConversation ?: return
-        _ui.value = _ui.value.copy(infoLoading = true, error = null)
+        _ui.update { st -> st.copy(infoLoading = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { block(conversation) }.fold(
-                onSuccess = { _ui.value = _ui.value.copy(infoLoading = false, infoContent = it) },
-                onFailure = { _ui.value = _ui.value.copy(infoLoading = false, error = it.message ?: "Could not load") },
+                onSuccess = { _ui.update { st -> st.copy(infoLoading = false, infoContent = it) } },
+                onFailure = { _ui.update { st -> st.copy(infoLoading = false, error = it.message ?: "Could not load") } },
             )
         }
     }
@@ -1560,7 +1682,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             val pinned = runCatching { repository.loadPinnedMessages(conversationId) }.getOrNull() ?: return@launch
             if (_ui.value.selectedConversation?.id == conversationId) {
-                _ui.value = _ui.value.copy(pinnedMessages = pinned.filter { it.deletedAt == null })
+                _ui.update { st -> st.copy(pinnedMessages = pinned.filter { it.deletedAt == null }) }
             }
         }
     }
@@ -1587,17 +1709,18 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.deleteConversation(conversation.id) }.fold(
                 onSuccess = {
-                    val state = _ui.value
-                    val wasOpen = state.selectedConversation?.id == conversation.id
-                    _ui.value = state.copy(
-                        conversations = state.conversations.filterNot { it.id == conversation.id },
-                        closeThread = wasOpen || state.closeThread,
-                        showInfo = if (wasOpen) false else state.showInfo,
-                    )
+                    _ui.update { state ->
+                        val wasOpen = state.selectedConversation?.id == conversation.id
+                        state.copy(
+                            conversations = state.conversations.filterNot { it.id == conversation.id },
+                            closeThread = wasOpen || state.closeThread,
+                            showInfo = if (wasOpen) false else state.showInfo,
+                        )
+                    }
                     context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversation.id) }
                     refresh()
                 },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not delete chat") },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not delete chat") } },
             )
         }
     }
@@ -1606,7 +1729,7 @@ class ChatViewModel(
         pruneSharedFiles(InfoContent.Files(repository.loadSharedFiles(conversation.id)), _ui.value.hiddenMessageIds)!!
     }
     fun searchInConversation(term: String) {
-        if (term.trim().length < 2) { _ui.value = _ui.value.copy(infoContent = InfoContent.Messages(emptyList())); return }
+        if (term.trim().length < 2) { _ui.update { st -> st.copy(infoContent = InfoContent.Messages(emptyList())) }; return }
         loadInfo { InfoContent.Messages(repository.searchMessages(term.trim(), it.id)) }
     }
 
@@ -1620,7 +1743,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { if (current.isBlocked) repository.unblockUser(userId) else repository.blockUser(userId) }.fold(
                 onSuccess = { patchConversation(current.copy(isBlocked = it.blocked)); refresh() },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update block") },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update block") } },
             )
         }
     }
@@ -1629,8 +1752,8 @@ class ChatViewModel(
         val current = _ui.value.selectedConversation ?: return
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.clearMessages(current.id) }.fold(
-                onSuccess = { _ui.value = _ui.value.copy(messages = emptyList(), showInfo = false); refreshThread(); refresh() },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not clear chat") },
+                onSuccess = { _ui.update { st -> st.copy(messages = emptyList(), showInfo = false) }; refreshThread(); refresh() },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not clear chat") } },
             )
         }
     }
@@ -1639,8 +1762,8 @@ class ChatViewModel(
         val current = _ui.value.selectedConversation ?: return
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.leaveGroup(current.id) }.fold(
-                onSuccess = { closeConversation(); refresh(); _ui.value = _ui.value.copy(closeThread = true) },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not leave group") },
+                onSuccess = { closeConversation(); refresh(); _ui.update { st -> st.copy(closeThread = true) } },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not leave group") } },
             )
         }
     }
@@ -1652,28 +1775,37 @@ class ChatViewModel(
                 onSuccess = {
                     request.name?.let { updateSelected(current.copy(groupName = it)) }
                     val members = runCatching { repository.loadMembers(current.id) }.getOrDefault(_ui.value.members)
-                    _ui.value = _ui.value.copy(members = members)
+                    _ui.update { st -> st.copy(members = members) }
                     refresh()
                 },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not update group") },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update group") } },
             )
         }
     }
 
     fun createGroup(name: String, userIds: List<Long>) {
         if (name.isBlank() || userIds.isEmpty()) {
-            _ui.value = _ui.value.copy(error = "Add a group name and at least one member")
+            _ui.update { st -> st.copy(error = "Add a group name and at least one member") }
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.createGroup(name.trim(), userIds) }.fold(
-                onSuccess = { created -> refresh(); _ui.value = _ui.value.copy(openConversationId = created.conversationId) },
-                onFailure = { _ui.value = _ui.value.copy(error = it.message ?: "Could not create group") },
+                onSuccess = { created -> refresh(); _ui.update { st -> st.copy(openConversationId = created.conversationId) } },
+                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not create group") } },
             )
         }
     }
 
-    fun consumeNavigation() { _ui.value = _ui.value.copy(openConversationId = null, closeThread = false) }
+    fun consumeNavigation() { _ui.update { st -> st.copy(openConversationId = null, closeThread = false) } }
+
+    override fun onCleared() {
+        discardPrewarmedMedia()
+        // The in-process send queue dies with this ViewModel; texts it still held go to the durable worker.
+        val owner = scope ?: return
+        if (_ui.value.queuedMessages.isNotEmpty()) {
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { runCatching { outbox.recover(owner) } }
+        }
+    }
 
     companion object {
         private const val DRAFT_PREFS = "aino_chat_drafts"
@@ -1689,9 +1821,7 @@ class ChatViewModel(
                 return ChatViewModel(
                     ChatRepository(api),
                     { scope -> ChatCache(scope, ScopedCache(scope, dao)) },
-                    { scope, conversationId, content, replyToId, now, clientId ->
-                        outbox.enqueueText(scope, conversationId, content, replyToId, nowEpochMs = now, clientMessageId = clientId)
-                    },
+                    outbox,
                     warm = ChatRepository(container.cachedApi),
                 ).also { it.context = context.applicationContext } as T
             }

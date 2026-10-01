@@ -83,9 +83,12 @@ class OutboxWorker(context: Context, params: WorkerParameters) : CoroutineWorker
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
                 .build()
+            // APPEND_OR_REPLACE: a row queued while a run is in flight (that run
+            // already read its batch) gets its own follow-up run instead of being
+            // dropped until the next reconnect, as KEEP did.
             WorkManager.getInstance(context).enqueueUniqueWork(
                 "aino-outbox-${scope.tenantId}-${scope.userId}",
-                ExistingWorkPolicy.KEEP,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
                 request,
             )
         }

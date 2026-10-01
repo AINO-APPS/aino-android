@@ -568,6 +568,8 @@ data class QueuedMessage(
     val senderId: Long,
     val content: String,
     val createdAtEpochMs: Long,
+    /** Local send order (shared with [OutgoingMediaItem]); unsent items render in this order. */
+    val sequence: Long = 0,
 )
 
 /** Presentation model for a chronological native chat thread. */
@@ -599,7 +601,7 @@ sealed interface ThreadItem {
 }
 
 /** Minimal chronology handle for an outgoing upload bubble (keeps ChatModels Android-free). */
-data class OutgoingMediaItem(val localId: String, val createdAtEpochMs: Long)
+data class OutgoingMediaItem(val localId: String, val createdAtEpochMs: Long, val sequence: Long = 0)
 
 /**
  * Key of the oldest unread incoming message (Signal-style "N unread messages"
@@ -626,17 +628,22 @@ fun buildThreadItems(
     zoneId: ZoneId = ZoneId.systemDefault(),
     uploads: List<OutgoingMediaItem> = emptyList(),
 ): List<ThreadItem> {
-    val positioned = buildList {
-        messages.forEach { message ->
-            add(PositionedThreadItem(parseEpoch(message.createdAt), message = message))
-        }
+    // Signal keeps an outgoing row where it was sent. Unsent items (queued text,
+    // uploading media) always sit below the server rows, in local send order: the
+    // per-conversation send queue makes the server stamp them in exactly that
+    // order, and device/server clock skew can no longer interleave them.
+    val server = messages.map { PositionedThreadItem(parseEpoch(it.createdAt), message = it) }
+        .sortedWith(compareBy<PositionedThreadItem> { it.epochMs }.thenBy { it.message?.id ?: Long.MAX_VALUE })
+    val floor = server.lastOrNull()?.epochMs ?: Long.MIN_VALUE
+    val local = buildList {
         queued.filter { currentUserId == null || it.senderId == currentUserId }.forEach { message ->
-            add(PositionedThreadItem(message.createdAtEpochMs, queued = message))
+            add(message.sequence to PositionedThreadItem(maxOf(message.createdAtEpochMs, floor), queued = message))
         }
         uploads.forEach { upload ->
-            add(PositionedThreadItem(upload.createdAtEpochMs, upload = upload))
+            add(upload.sequence to PositionedThreadItem(maxOf(upload.createdAtEpochMs, floor), upload = upload))
         }
-    }.sortedWith(compareBy<PositionedThreadItem> { it.epochMs }.thenBy { it.message?.id ?: Long.MAX_VALUE })
+    }.sortedWith(compareBy({ it.first }, { it.second.epochMs })).map { it.second }
+    val positioned = server + local
 
     val result = mutableListOf<ThreadItem>()
     var currentDay: LocalDate? = null
@@ -743,18 +750,23 @@ fun reconcileQueuedMessages(
 ): List<QueuedMessage> {
     if (currentUserId == null || queued.isEmpty()) return queued
     val own = messages.filter { it.senderId == currentUserId && it.deletedAt == null }
+    // Only rows of the same thread can acknowledge a queued bubble (identical text
+    // in another chat must not swallow it).
+    val threadIds = messages.mapNotNull { it.conversationId }.toSet()
+    val elsewhere = queued.filter { threadIds.isNotEmpty() && it.conversationId !in threadIds }
     val acknowledgedIds = own.mapNotNull { it.clientMessageId }.toSet()
-    val remaining = queued.filterNot { it.clientMessageId in acknowledgedIds }
+    val remaining = (queued - elsewhere.toSet()).filterNot { it.clientMessageId in acknowledgedIds }
     val unclaimed = own.filter { it.clientMessageId == null }
         .sortedBy { parseEpoch(it.createdAt) }
         .toMutableList()
-    return remaining.sortedBy { it.createdAtEpochMs }.filter { pending ->
+    val unmatched = remaining.sortedBy { it.createdAtEpochMs }.filter { pending ->
         val match = unclaimed.indexOfFirst { it.content?.trim() == pending.content.trim() }
         if (match >= 0) {
             unclaimed.removeAt(match)
             false
         } else true
     }
+    return if (elsewhere.isEmpty()) unmatched else queued.filter { it in elsewhere || it in unmatched }
 }
 
 /**

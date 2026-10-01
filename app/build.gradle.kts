@@ -68,8 +68,8 @@ android {
         // version: X.Y.Z -> X*1_000_000 + Y*1_000 + Z (each part 0..999).
         // `android-release.yml` re-derives this from the tag and fails on a mismatch.
         // Written without digit separators so the release workflow can parse it.
-        versionCode = 12000 // 0.12.0
-        versionName = "0.12.0"
+        versionCode = 13000 // 0.13.0
+        versionName = "0.13.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())
@@ -177,6 +177,8 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.datasource.okhttp)
+    implementation(libs.media3.transformer)
+    implementation(libs.media3.effect)
     ksp(libs.androidx.room.compiler)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
