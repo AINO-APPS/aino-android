@@ -652,8 +652,11 @@ private fun AuthenticatedShell(
                 }
                 androidx.compose.runtime.DisposableEffect(backStackEntry) {
                     onDispose {
-                        // Disposal waits for the exit animation; a reopen of the same chat meanwhile
+                        // Disposal waits for the exit animation (and also happens when a screen is
+                        // pushed on top), so check the back stack: a reopen of the same chat meanwhile
                         // pushes a new entry for it, which must keep the thread open.
+                        // No public API exposes the back stack synchronously; this read is stable.
+                        @android.annotation.SuppressLint("RestrictedApi")
                         val stillOpen = nav.currentBackStack.value.any {
                             it.destination.route == AinoDestination.ChatThread.route &&
                                 it.arguments?.getLong(CHAT_CONVERSATION_ARGUMENT) == conversationId
