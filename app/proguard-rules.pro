@@ -7,6 +7,10 @@
 
 # WebRTC: native code calls back into Java by name (JNI / @CalledByNative).
 -keep class org.webrtc.** { *; }
+# Modern WebRTC binds JNI through jni_zero; JNI_OnLoad looks these classes up
+# by name and aborts if R8 removed them. The AAR ships no consumer rules.
+-keep class org.jni_zero.** { *; }
+-dontwarn org.jni_zero.JniZeroJni
 -keepclasseswithmembernames,includedescriptorclasses class * {
     native <methods>;
 }
