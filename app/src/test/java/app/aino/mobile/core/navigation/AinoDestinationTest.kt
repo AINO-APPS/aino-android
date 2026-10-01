@@ -55,7 +55,7 @@ class AinoDestinationTest {
 
     @Test
     fun moreDestinationsMatchWebOrderAndConditions() {
-        // Web §2 order: Notes, Attendance, Organization, My Team, Admin, Tenants.
+        // Web §2 order: Notes, Attendance, Organization, My Team, Tenants (Admin is web-only).
         val full = availableMoreDestinations(
             role = "hr_admin",
             hasReports = true,
@@ -68,7 +68,6 @@ class AinoDestinationTest {
                 AinoDestination.Attendance,
                 AinoDestination.Organization,
                 AinoDestination.Manager,
-                AinoDestination.Admin,
             ),
             full,
         )
@@ -78,7 +77,6 @@ class AinoDestinationTest {
         assertFalse(AinoDestination.Notes in employee)
         assertFalse(AinoDestination.Attendance in employee)
         assertFalse(AinoDestination.Manager in employee)
-        assertFalse(AinoDestination.Admin in employee)
         assertFalse(AinoDestination.Tenants in employee)
         // Organization requires org_id or platform_admin.
         assertFalse(AinoDestination.Organization in employee)
@@ -87,7 +85,6 @@ class AinoDestinationTest {
 
         val platformAdmin = availableMoreDestinations("platform_admin", hasReports = false)
         assertTrue(AinoDestination.Tenants in platformAdmin)
-        assertTrue(AinoDestination.Admin in platformAdmin)
         assertTrue(AinoDestination.Organization in platformAdmin)
     }
 
@@ -105,12 +102,8 @@ class AinoDestinationTest {
     }
 
     @Test
-    fun adminSubRoutesAreFullScreenAndDistinctFromTheAdminTab() {
-        assertEquals("admin/agile", ADMIN_AGILE_ROUTE)
-        assertEquals("admin/projects", ADMIN_PROJECTS_ROUTE)
-        assertTrue(isFullScreenRoute(ADMIN_AGILE_ROUTE))
-        assertTrue(isFullScreenRoute(ADMIN_PROJECTS_ROUTE))
-        assertEquals(ADMIN_PROJECTS_ROUTE, bottomBarRoute(ADMIN_PROJECTS_ROUTE))
-        assertNull(destinationFor(ADMIN_AGILE_ROUTE))
+    fun adminIsNotAnAppDestination() {
+        assertNull(destinationFor("admin"))
+        assertFalse(AinoDestination.entries.any { it.route.startsWith("admin") })
     }
 }

@@ -13,6 +13,7 @@ class RequestHelpersTest {
         assertEquals("Bearer token-value", headers[RequestHeaders.AUTHORIZATION])
         assertEquals("AINO", headers[RequestHeaders.REQUESTED_WITH])
         assertEquals("330", headers[RequestHeaders.TIMEZONE_OFFSET])
+        assertEquals("android", headers[RequestHeaders.CLIENT])
     }
 
     @Test

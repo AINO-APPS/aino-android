@@ -95,9 +95,9 @@ class SearchViewModelTest {
     @Test
     fun roleChangesRefilterPages() = runTest(dispatcher) {
         val vm = viewModel("employee")
-        vm.onQueryChange("admin")
-        assertTrue(vm.ui.value.navResults.none { it.title == "Admin Panel" })
+        vm.onQueryChange("accrual")
+        assertTrue(vm.ui.value.navResults.none { it.title == "Leave Policies" })
         vm.setRole("hr_admin")
-        assertTrue(vm.ui.value.navResults.any { it.title == "Admin Panel" })
+        assertTrue(vm.ui.value.navResults.any { it.title == "Leave Policies" })
     }
 }

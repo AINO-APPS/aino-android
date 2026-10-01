@@ -23,7 +23,6 @@ enum class AinoDestination(
     Notes("notes", "Notes", HeroIcons.ClipboardDocument),
     Organization("organization", "Organization", HeroIcons.BuildingOffice2),
     Manager("manager", "My Team", HeroIcons.UserGroup),
-    Admin("admin", "Admin", HeroIcons.ShieldCheck),
     Tenants("tenants", "Tenants", HeroIcons.CircleStack),
     Profile("profile", "Profile", HeroIcons.User),
     Notifications("notifications", "Notifications", HeroIcons.Bell),
@@ -71,38 +70,6 @@ const val TASK_LINK_ROUTE = "tasks/link?task={task}&tab={tab}&sprint_id={sprint_
 fun taskLinkRoute(task: String?, tab: String?, sprintId: String?): String =
     "tasks/link?task=${task.orEmpty()}&tab=${tab.orEmpty()}&sprint_id=${sprintId.orEmpty()}"
 
-/** P6.5 / P6.6: Admin → Projects and Admin → Agile Config (web `/admin?tab=projects|agile`). */
-const val ADMIN_AGILE_ROUTE = "admin/agile"
-const val ADMIN_PROJECTS_ROUTE = "admin/projects"
-
-/** P10.1: one Admin section as a full-screen page (web `/admin?tab=<key>`). */
-const val ADMIN_SECTION_ROUTE = "admin/s/{key}"
-fun adminSectionRoute(key: String): String = "admin/s/" + java.net.URLEncoder.encode(key, "UTF-8")
-
-/** P10.1: the web `UserDrawer` as a full-screen page. */
-const val ADMIN_USER_ROUTE = "admin/users/{userId}"
-fun adminUserRoute(userId: Long): String = "admin/users/$userId"
-
-/** P10.3: a payroll page (web `/admin?tab=compensation|salary-slips|payment-config`). */
-const val ADMIN_PAYROLL_ROUTE = "admin/payroll/{key}"
-fun adminPayrollRoute(key: String): String = "admin/payroll/" + java.net.URLEncoder.encode(key, "UTF-8")
-
-/** `/admin?tab=` keys of the payroll pages. */
-val ADMIN_PAYROLL_PAGE_KEYS = setOf("compensation", "salary-slips", "payment-config")
-
-/** P10.3 Android-only pages: one employee's payroll record, one salary slip. */
-const val ADMIN_PAYROLL_EMPLOYEE_ROUTE = "admin/payroll-employee/{userId}?name={name}"
-fun adminPayrollEmployeeRoute(userId: Long, name: String): String =
-    "admin/payroll-employee/$userId?name=" + java.net.URLEncoder.encode(name, "UTF-8")
-const val ADMIN_SALARY_SLIP_ROUTE = "admin/salary-slip/{slipId}"
-fun adminSalarySlipRoute(slipId: Long): String = "admin/salary-slip/$slipId"
-
-/** `/admin?tab=` keys rendered by the shared Admin section page (web `SECTIONS` + Android-only pages). */
-val ADMIN_SECTION_PAGE_KEYS = setOf(
-    "home", "users", "add", "role-requests", "payroll", "audit", "org-settings",
-    "organizations", "task-labels", "registration", "announcements",
-)
-
 /** P8: `EmployeeDashboard.tsx` — a manager's view of one team member (full screen, own back button). */
 const val MANAGER_MEMBER_ROUTE = "manager/member/{userId}"
 fun managerMemberRoute(userId: Long): String = "manager/member/$userId"
@@ -120,13 +87,6 @@ private val FULL_SCREEN_ROUTES = setOf(
     SEARCH_ROUTE,
     NOTE_EDITOR_ROUTE,
     NOTE_HISTORY_ROUTE,
-    ADMIN_AGILE_ROUTE,
-    ADMIN_PROJECTS_ROUTE,
-    ADMIN_SECTION_ROUTE,
-    ADMIN_USER_ROUTE,
-    ADMIN_PAYROLL_ROUTE,
-    ADMIN_PAYROLL_EMPLOYEE_ROUTE,
-    ADMIN_SALARY_SLIP_ROUTE,
     MANAGER_MEMBER_ROUTE,
 )
 
@@ -168,18 +128,6 @@ fun webLinkToRoute(link: String, noteRoute: (pageId: String) -> String? = ::note
         path == "/leaves" -> AinoDestination.Attendance.route + "?tab=leaves"
         path == "/organization" -> AinoDestination.Organization.route
         path == "/manager" -> AinoDestination.Manager.route
-        // Web TAB_ALIASES: `labels` → Agile Config (its Labels tab).
-        path == "/admin" -> when (query["tab"]) {
-            "agile", "labels" -> ADMIN_AGILE_ROUTE
-            "projects" -> ADMIN_PROJECTS_ROUTE
-            // Web opens the UserDrawer for `userId`; Android's equivalent is the user detail page.
-            "users" -> query["userId"]?.toLongOrNull()?.let(::adminUserRoute) ?: adminSectionRoute("users")
-            in ADMIN_SECTION_PAGE_KEYS -> adminSectionRoute(query.getValue("tab"))
-            in ADMIN_PAYROLL_PAGE_KEYS -> adminPayrollRoute(query.getValue("tab"))
-            else -> AinoDestination.Admin.route
-        }
-        path == "/agile-settings" -> ADMIN_AGILE_ROUTE
-        path == "/projects" -> ADMIN_PROJECTS_ROUTE
         path == "/tenants" -> AinoDestination.Tenants.route
         path == "/profile/face" -> PROFILE_FACE_ROUTE
         path.startsWith("/meeting/") && path.endsWith("/room") -> meetingRoomRoute(path.removePrefix("/meeting/").removeSuffix("/room"))
@@ -218,8 +166,10 @@ private val roleLevels = mapOf(
 )
 
 /**
- * More-sheet items, in the exact order of `MobileTabBar.tsx:52-61` (§2):
- * Notes, Attendance, Organization, My Team, Admin, Tenants.
+ * More-sheet items, in the order of `MobileTabBar.tsx:52-61` (§2):
+ * Notes, Attendance, Organization, My Team, Tenants. The web's Admin entry is
+ * deliberately absent: administration is web-only (security decision
+ * 2026-10-01) and the server refuses app tokens on admin routes.
  */
 fun availableMoreDestinations(
     role: String,
@@ -232,7 +182,6 @@ fun availableMoreDestinations(
     if (features["attendance"] == true) add(AinoDestination.Attendance)
     if (orgId != null || role == "platform_admin") add(AinoDestination.Organization)
     if (level >= 2 || hasReports) add(AinoDestination.Manager)
-    if (level >= 4) add(AinoDestination.Admin)
     if (role == "platform_admin") add(AinoDestination.Tenants)
 }
 

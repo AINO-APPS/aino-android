@@ -32,6 +32,9 @@ class SearchModelsTest {
         assertTrue("Manager Dashboard" in lead)
         assertFalse("Admin Panel" in lead)
 
+        // Administration is web-only: no admin role sees an `/admin` quick link.
+        assertTrue(visibleNav("platform_admin").none { it.path.startsWith("/admin") })
+
         val platform = visibleNav("platform_admin").map { it.title }
         assertTrue("Tenant Management" in platform)
         assertFalse("Organization" in platform)

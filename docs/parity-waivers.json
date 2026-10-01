@@ -226,6 +226,576 @@
       "key": "POST /api/admin/tenants/platform-users/:param/reset-password",
       "owner": "product (P10.2)",
       "reason": "Platform console is web/desktop only (product decision 2026-09-26). Route requires requirePlatformIdentity (platform realm); Android signs in to the tenant realm only and fails closed with PLATFORM_CONSOLE_REQUIRED. See WEB_PARITY_PLAN.md P10.2 footnote 3."
+    },
+    {
+      "key": "GET /api/admin/announcements",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/announcements",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/admin/announcements/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/admin/announcements/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/audit-logs",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/invite-codes",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/invite-codes",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/admin/invite-codes/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/organizations",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/organizations",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/admin/organizations/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/organizations/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/admin/organizations/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/pay-periods",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/pay-periods",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/admin/pay-periods/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/registration-settings",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/admin/registration-settings",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/role-requests",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/role-requests/:param/approve",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/role-requests/:param/cancel",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/role-requests/:param/reject",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/stats",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/task-labels",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/task-labels",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/admin/task-labels/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/admin/task-labels/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/users",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/users",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/admin/users/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/admin/users/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/admin/users/:param/assignment",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/admin/users/:param/deactivate",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/admin/users/:param/face-enroll",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/users/:param/reset-password",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/admin/users/:param/role",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/admin/users/import",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/agile/permissions/cancel-request",
+      "owner": "security (admin web-only)",
+      "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/agile/permissions/grants",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/agile/permissions/grants/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/agile/permissions/me",
+      "owner": "security (admin web-only)",
+      "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/agile/permissions/request",
+      "owner": "security (admin web-only)",
+      "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/agile/permissions/requests",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/agile/permissions/requests/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/agile/settings",
+      "owner": "security (admin web-only)",
+      "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/agile/settings",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/agile/work-item-types",
+      "owner": "security (admin web-only)",
+      "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/agile/work-item-types",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/agile/work-item-types/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/agile/work-item-types/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/agile/work-item-types/reorder",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/agile/workflow-states",
+      "owner": "security (admin web-only)",
+      "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/agile/workflow-states",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/agile/workflow-states/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/agile/workflow-states/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/agile/workflow-states/reorder",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/branding",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/branding/email-templates",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/branding/email-templates/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/branding/email-templates/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/branding/email-templates/:param/preview",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/branding/logo",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/branding/logo",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/bank-details",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/bank-details/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/bank-details/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/bank-details/:param/approve",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/bank-details/:param/reject",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/bank-details/:param/verify",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/bank-verifications",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/ctc-config",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/compensation/ctc-config",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/disburse",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/disburse/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/disburse/retry/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/disbursements",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/employees",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/employees/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/employees/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/compensation/employees/:param/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/payment-config",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/compensation/payment-config",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/payment-config/test",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/payroll-run",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/salary-slips",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/salary-slips/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/salary-slips/:param/pdf",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/compensation/salary-slips/:param/publish",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/salary-slips/bulk-publish",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/compensation/templates",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/compensation/templates",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/compensation/templates/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/compensation/templates/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/internal/db-pool-stats",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/internal/migration-status",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/internal/ws-stats",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/org/invite",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/org/remove-member",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/org/roles",
+      "owner": "security (admin web-only)",
+      "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/org/roles",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/org/roles/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PATCH /api/org/roles/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/org/settings",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/platform-access",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/platform-access/:param/approve",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/platform-access/:param/deny",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/platform-access/:param/revoke",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/platform-access/active-session",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "POST /api/projects",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "DELETE /api/projects/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/projects/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PUT /api/projects/:param",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "PATCH /api/projects/:param/archive",
+      "owner": "security (admin web-only)",
+      "reason": "Administration is web-only (security decision 2026-10-01): mobile tokens are long-lived bearer tokens with no MFA / step-up, so admin routes refuse app-minted tokens server-side (aino-platform server/middleware/webOnly.ts, 403 WEB_ONLY). Android has no Admin hub. See WEB_PARITY_PLAN.md 'Admin is web-only'."
+    },
+    {
+      "key": "GET /api/projects/:param/tasks",
+      "owner": "security (admin web-only)",
+      "reason": "Only used by the Admin hub pages (Agile Config, Projects, Admin → My Organization) that were removed from Android when administration became web-only (security decision 2026-10-01). The server still serves this route to the web; Android has no caller. See WEB_PARITY_PLAN.md 'Admin is web-only'."
     }
   ]
 }

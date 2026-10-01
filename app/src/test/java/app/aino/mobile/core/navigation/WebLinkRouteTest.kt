@@ -20,8 +20,6 @@ class WebLinkRouteTest {
         assertEquals("attendance", webLinkToRoute("/attendance"))
         assertEquals("attendance?tab=leaves", webLinkToRoute("/leaves"))
         assertEquals("chat/42", webLinkToRoute("/chat/42"))
-        assertEquals("admin/users/3", webLinkToRoute("/admin?tab=users&userId=3"))
-        assertEquals("admin/s/users", webLinkToRoute("/admin?tab=users"))
         assertEquals("meeting/abc-def", webLinkToRoute("/meeting/abc-def"))
         assertNull(webLinkToRoute("/unknown"))
     }
@@ -36,31 +34,11 @@ class WebLinkRouteTest {
     }
 
     @Test
-    fun adminSectionLinksOpenTheirFullScreenRoutes() {
-        assertEquals(ADMIN_AGILE_ROUTE, webLinkToRoute("/admin?tab=agile"))
-        assertEquals(ADMIN_AGILE_ROUTE, webLinkToRoute("/admin?tab=labels"))
-        assertEquals(ADMIN_PROJECTS_ROUTE, webLinkToRoute("/admin?tab=projects"))
-        assertEquals(ADMIN_AGILE_ROUTE, webLinkToRoute("/agile-settings"))
-        assertEquals(ADMIN_PROJECTS_ROUTE, webLinkToRoute("/projects"))
-        assertEquals("admin", webLinkToRoute("/admin"))
-        assertEquals("admin/s/audit", webLinkToRoute("/admin?tab=audit"))
-        assertEquals("admin/s/role-requests", webLinkToRoute("/admin?tab=role-requests"))
-        // P10.3 payroll pages; unknown tabs still fall back to the hub.
-        assertEquals("admin/payroll/compensation", webLinkToRoute("/admin?tab=compensation"))
-        assertEquals("admin/payroll/salary-slips", webLinkToRoute("/admin?tab=salary-slips"))
-        assertEquals("admin/payroll/payment-config", webLinkToRoute("/admin?tab=payment-config"))
-        assertEquals("admin", webLinkToRoute("/admin?tab=branding"))
-        assertEquals("admin/payroll-employee/4?name=Ann+Lee", adminPayrollEmployeeRoute(4, "Ann Lee"))
-        assertEquals("admin/salary-slip/9", adminSalarySlipRoute(9))
-        assertTrue(isFullScreenRoute(ADMIN_PAYROLL_ROUTE))
-        assertTrue(isFullScreenRoute(ADMIN_PAYROLL_EMPLOYEE_ROUTE))
-        assertTrue(isFullScreenRoute(ADMIN_SALARY_SLIP_ROUTE))
-        assertEquals("admin/users/7", adminUserRoute(7))
-        assertTrue(isFullScreenRoute(ADMIN_SECTION_ROUTE))
-        assertTrue(isFullScreenRoute(ADMIN_USER_ROUTE))
-        assertTrue(isFullScreenRoute(ADMIN_AGILE_ROUTE))
-        assertTrue(isFullScreenRoute(ADMIN_PROJECTS_ROUTE))
-        assertFalse(isFullScreenRoute(AinoDestination.Admin.route))
+    fun adminLinksHaveNoAppRouteBecauseAdministrationIsWebOnly() {
+        listOf(
+            "/admin", "/admin?tab=users&userId=3", "/admin?tab=audit", "/admin?tab=compensation",
+            "/admin?tab=agile", "/admin?tab=projects", "/agile-settings", "/projects",
+        ).forEach { assertNull(it, webLinkToRoute(it)) }
     }
 
     @Test

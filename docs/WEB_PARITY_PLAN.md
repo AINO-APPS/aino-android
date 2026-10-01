@@ -34,6 +34,48 @@
   full-screen sub-pages. Loading states use native Android indicators, not the
   web's skeleton/shimmer animations. See Phase 5 notes.
 
+### Admin is web-only (security decision 2026-10-01)
+
+Administration lives in the web / desktop app only. App sessions are
+long-lived bearer tokens (365 days, no idle timeout) with no MFA or step-up
+on admin APIs, on a device that can be lost. Peer enterprise suites
+(Salesforce Setup, Jira admin, Slack org admin, Workday / BambooHR
+configuration and payroll) also keep administration on the web and leave
+self-service and approvals on mobile.
+
+- **Android:** More → Admin and the whole Admin hub are removed: users and
+  roles, add people, role requests, payroll periods, audit, org settings,
+  branding and email templates, organizations, task labels, registration
+  and invites, announcements, compensation / salary slips / payment
+  settings, Agile Config and Projects. `/admin*`, `/agile-settings` and
+  `/projects` links have no app route, and the search index no longer
+  offers `/admin` quick links. The following stay: the Organization page,
+  including department and team edits, manager approvals, My Salary,
+  app-wide branding (`GET /branding`) and the Tenants pointer page. The app
+  sends `X-AINO-Client: android` on every request.
+- **Server** (`aino-platform/server/middleware/webOnly.ts`): admin routes
+  answer `403 WEB_ONLY` when any of these signals is present:
+  - the token arrived as `Authorization: Bearer`;
+  - the token carries `cli: "mobile"`, which login, register, refresh and
+    password change stamp on app tokens;
+  - the request sends `X-AINO-Client: android`.
+
+  A stolen app token replayed as a cookie is still refused. Gated routes:
+  - `/api/admin/**`, `/api/platform-access`, `/api/internal`;
+  - `/api/compensation` except `/my-*`;
+  - `/api/branding` except `GET /`;
+  - `/api/projects` writes, plus the agile editor and reviewer routes;
+  - `PUT /api/org/settings`, `POST /api/org/invite`, `POST /api/org/remove-member`
+    and `/api/org/roles` writes.
+
+  `GET /api/search` drops audit logs for app requests. App sessions created
+  before the rollout are ended by
+  `npm run revoke:mobile-admin-sessions -- --apply`; the script is a dry run
+  by default.
+- **Parity:** the affected routes are `waived` in `docs/parity-waivers.json`
+  (owner "security (admin web-only)"). This supersedes P10.1, the admin part
+  of P10.3 and the admin part of P10.4, as well as P10.8.
+
 ---
 
 ## 0. Executive summary of the current state
@@ -329,7 +371,7 @@ Each dashboard module overrides to `text-align: left; padding: 1.2rem; margin-bo
 | `Attendance`   | `CalendarCheck`    | `/attendance`   | `hasFeature("attendance")`                   |
 | `Organization` | `Building2`        | `/organization` | `user.org_id \|\| role === "platform_admin"` |
 | `My Team`      | `Users`            | `/manager`      | `ROLE_LEVEL >= 2 \|\| has_reports`           |
-| `Admin`        | `Settings`         | `/admin`        | `ROLE_LEVEL >= 4`                            |
+| `Admin`        | `Settings`         | `/admin`        | `ROLE_LEVEL >= 4` — **not on Android** (admin is web-only, 2026-10-01) |
 | `Tenants`      | `Server`           | `/tenants`      | `role === "platform_admin"`                  |
 
 `ROLE_LEVELS = { employee:1, team_lead:2, manager:3, hr_admin:4, super_admin:5, platform_admin:6 }`
@@ -967,8 +1009,8 @@ Endpoint coverage after Phase 5: **106/464** (`docs/PARITY_MATRIX.md`).
 | P6.2 | Task detail: comments, acceptance criteria, dependencies, history, git refs, custom fields     | DONE ¹ |
 | P6.3 | Backlog + carry-forward + labels management                                                    | DONE   |
 | P6.4 | Sprints: list, start/pause/resume/complete, burndown, CFD, cycle-time, velocity, retrospective | DONE ² |
-| P6.5 | Projects CRUD + archive + project tasks                                                        | DONE   |
-| P6.6 | Agile settings: work item types, workflow states, reorder, permissions/grants/requests         | DONE ³ |
+| P6.5 | Projects CRUD + archive + project tasks                                                        | N/A (web-only 2026-10-01) |
+| P6.6 | Agile settings: work item types, workflow states, reorder, permissions/grants/requests         | N/A (web-only 2026-10-01) ³ |
 | P6.7 | Service desk tickets + stats                                                                   | DONE ⁴ |
 | P6.8 | `SprintInsights` page                                                                          | DONE   |
 
@@ -1024,6 +1066,7 @@ Phase 6 implementation notes (Android, 2026-09-25):
 - **Admin** (More → Admin) is no longer a placeholder: it lists the sections
   Android has so far — Structure → Agile Config (`admin/agile`) and Projects
   (`admin/projects`) — without dead rows. P10.1 fills in the rest.
+  _Superseded 2026-10-01: removed with the whole Admin hub (admin is web-only)._
 - Refresh: pull-to-refresh on every surface, app-resume refetch, and
   `task_assigned` reloads the visible tab (the only task event the server
   emits). `AinoUser` now decodes `team_id` / `team_name` from `/profile`.
@@ -1296,17 +1339,19 @@ Endpoint coverage after Phase 9: **248/464 (53.4%)** (`docs/PARITY_MATRIX.md`).
 
 | ID    | Task                                                                                                                                                                      | Status |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| P10.1 | Admin: users, roles, announcements, invite codes, audit logs, pay periods, registration settings, role requests, stats, task labels, organizations; plus Admin → My Organization (org roles, invite, members, remove member, org settings incl. office geofences — moved from P7.5) | DONE   |
+| P10.1 | Admin: users, roles, announcements, invite codes, audit logs, pay periods, registration settings, role requests, stats, task labels, organizations; plus Admin → My Organization (org roles, invite, members, remove member, org settings incl. office geofences — moved from P7.5) | N/A ⁴  |
 | P10.2 | Tenants console: CRUD, features, limits, plan, suspend/reactivate, seed, stats, users, impersonation, access requests, plan catalog, platform config, platform users — **web only (product decision 2026-09-26)** | N/A ³  |
-| P10.3 | Compensation/payroll: employees, CTC config, templates, salary slips (incl. the Organization page's "Salary Slips" tab — moved from P7.5), PDF, publish, bulk publish, payroll run, disbursements, bank details + verification, payment config | DONE   |
-| P10.4 | Branding: logo, email templates, preview                                                                                                                                  | DONE   |
+| P10.3 | Compensation/payroll: employees, CTC config, templates, salary slips (incl. the Organization page's "Salary Slips" tab — moved from P7.5), PDF, publish, bulk publish, payroll run, disbursements, bank details + verification, payment config | DONE ⁴ |
+| P10.4 | Branding: logo, email templates, preview                                                                                                                                  | DONE ⁴ |
 | P10.5 | Custom fields                                                                                                                                                             | TODO   |
 | P10.6 | Integrations: GitHub OAuth, repos, webhooks                                                                                                                               | TODO   |
 | P10.7 | Exports: my/team analytics, leaves, tasks, payroll hours                                                                                                                  | TODO   |
-| P10.8 | Platform access requests                                                                                                                                                  | TODO   |
+| P10.8 | Platform access requests                                                                                                                                                  | N/A ⁴  |
 | P10.9 | Remaining auth: register, forgot/reset password, refresh, handoff, switch-realm, registration-mode, webauthn, biometric list/delete                                       | TODO   |
 
 ³ P10.2 (the 44 `/api/admin/tenants/*` endpoints) stays in the web / desktop platform console by product decision (2026-09-26). Those routes require a tenant-less platform identity (`requirePlatformIdentity`, platform realm when `CONSOLE_HOST` is set), and Android signs in to the tenant realm only (`AuthRepository` fails closed with `PLATFORM_CONSOLE_REQUIRED`). The More → Tenants entry stays for parity with `MobileTabBar.tsx` and opens a page pointing to the web console. The 44 endpoints are recorded as `waived` in `docs/parity-waivers.json` (owner "product (P10.2)"), so `PARITY_MATRIX.md` shows 292/464 proven, 44 waived, 128 pending; the extracted contract lives in `docs/phase10-tenants-contract.md` if this changes. P10.8 (`/api/platform-access`, the tenant-side approval inbox) is not affected.
+
+⁴ **Admin is web-only (security decision 2026-10-01, see "Admin is web-only" at the top).** The P10.1 Admin hub, the admin parts of P10.3 (Compensation, Salary Slips, Payment Settings, employee / slip pages) and P10.4 (Branding and Email templates editors), the P6.5/P6.6 Agile Config and Projects pages and P10.8 were removed from Android, and the server refuses app tokens on those routes (`403 WEB_ONLY`). Still on Android: Organization → Salary Slips (`/compensation/my-*`, P10.3) and app-wide branding (`GET /branding`, P10.4). The notes below describe the removed code as it was. After the removal: **229/464 proven, 159 waived, 76 pending**.
 
 
 P10.1 notes: new `feature/admin` package (repository, view model, section pages: Home, Users + full-page user detail, Add people (single / paste import), Role requests, Payroll periods, Audit, Org settings (general, attendance incl. geofence + Wi-Fi APs, role labels)). Android-only pages for endpoints the web UI never calls: Organizations CRUD (platform), Task labels, Registration + invite codes, Announcements (super), org invite / remove member and face-enroll reset on the user page. Routes `admin/s/{key}` and `admin/users/{id}`; `/admin?tab=` links open the matching page (`userId` opens the user). Tests: `AdminRepositoryTest`, `AdminRepositoryOperationsTest`, `AdminHelpersTest`, `WebLinkRouteTest`, `ProjectsRepositoryTest` (section gating).

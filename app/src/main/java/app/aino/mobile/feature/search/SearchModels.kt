@@ -158,7 +158,7 @@ data class NavItem(
     val excludeRole: String? = null,
 )
 
-/** useGlobalSearch `NAV_INDEX`, verbatim. */
+/** useGlobalSearch `NAV_INDEX`, minus the `/admin` entries: administration is web-only. */
 val NAV_INDEX: List<NavItem> = listOf(
     NavItem(NavIcon.Home, "Dashboard", "Home overview & time tracker", "/", "home overview clock tracker"),
     NavItem(NavIcon.Calendar, "Calendar", "Events, reminders & schedules", "/calendar", "events reminders schedule"),
@@ -174,14 +174,6 @@ val NAV_INDEX: List<NavItem> = listOf(
     NavItem(NavIcon.Wallet, "Leave Balances", "My leave balances & quotas", "/attendance#leaves", "quota remaining sick planned balance"),
     NavItem(NavIcon.Palmtree, "Holidays", "Company public holidays", "/attendance#leaves", "public holiday national bank calendar"),
     NavItem(NavIcon.Users, "Manager Dashboard", "Team approvals & reports", "/manager", "approve team overtime manual reports pending", minRole = "team_lead"),
-    NavItem(NavIcon.Settings, "Admin Panel", "User & org management", "/admin", "admin manage settings panel", minRole = "hr_admin"),
-    NavItem(NavIcon.User, "User Management", "View & edit user accounts", "/admin?tab=users", "users employees accounts manage", minRole = "hr_admin"),
-    NavItem(NavIcon.UserPlus, "Create User", "Add a new user account", "/admin?tab=create", "new user create add register", minRole = "hr_admin"),
-    NavItem(NavIcon.Download, "Import Users", "Bulk import from CSV / JSON", "/admin?tab=import", "bulk import csv json users batch", minRole = "hr_admin"),
-    NavItem(NavIcon.ScrollText, "Audit Logs", "System activity history", "/admin?tab=audit", "logs history activity events actions audit", minRole = "hr_admin"),
-    NavItem(NavIcon.RefreshCw, "Role Requests", "Pending role change requests", "/admin?tab=role-requests", "role promotion request pending", minRole = "hr_admin"),
-    NavItem(NavIcon.Wallet, "Payroll", "Pay periods & payroll export", "/admin?tab=payroll", "pay salary export hours period payroll", minRole = "hr_admin"),
-    NavItem(NavIcon.Building, "Org Structure", "Departments, teams & org chart", "/admin?tab=structure", "departments teams structure chart", minRole = "super_admin"),
     NavItem(NavIcon.Building, "Tenant Management", "Manage tenants, organizations & databases", "/tenants", "org tenant company organizations database platform console", minRole = "platform_admin"),
     NavItem(NavIcon.ClipboardList, "Leave Policies", "Configure leave quotas & accrual", "/attendance#leaves", "policy accrual quota configure sick", minRole = "hr_admin"),
     NavItem(NavIcon.Users, "All Leave Balances", "View all employees' leave balances", "/attendance#leaves", "all balances employees leave", minRole = "hr_admin"),

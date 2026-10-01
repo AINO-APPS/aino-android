@@ -8,6 +8,10 @@ object RequestHeaders {
     const val REQUESTED_WITH = "X-Requested-With"
     const val TIMEZONE_OFFSET = "x-timezone-offset"
     const val AINO = "AINO"
+
+    /** Marks app-minted tokens server-side; admin routes are web-only and refuse them. */
+    const val CLIENT = "X-AINO-Client"
+    const val ANDROID = "android"
 }
 
 /** Mirrors JavaScript Date.getTimezoneOffset(): UTC minus local time, in minutes. */
@@ -19,6 +23,7 @@ fun standardHeaders(
     timezoneOffsetMinutes: Int,
 ): Map<String, String> = buildMap {
     put(RequestHeaders.REQUESTED_WITH, RequestHeaders.AINO)
+    put(RequestHeaders.CLIENT, RequestHeaders.ANDROID)
     put(RequestHeaders.TIMEZONE_OFFSET, timezoneOffsetMinutes.toString())
     token?.trim()?.takeIf(String::isNotEmpty)?.let {
         put(RequestHeaders.AUTHORIZATION, "Bearer $it")
