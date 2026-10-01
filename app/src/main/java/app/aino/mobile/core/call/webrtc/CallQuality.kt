@@ -24,6 +24,7 @@ const val MOBILE_TOP_TIER_BITRATE = 1_200_000
 const val BOTTOM_TIER_INDEX = 4
 const val RAMP_START_TIER_INDEX = 3
 const val AUDIO_MAX_BITRATE = 48_000
+const val QUALITY_STATS_INTERVAL_MS = 2_000L
 
 fun buildTiers(isMobile: Boolean = true): List<VideoEncodingTier> = VIDEO_TIERS.mapIndexed { index, tier ->
     if (index == 0 && isMobile) tier.copy(maxBitrate = min(tier.maxBitrate, MOBILE_TOP_TIER_BITRATE)) else tier.copy()

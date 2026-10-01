@@ -142,9 +142,11 @@ data class ChatReaction(
     val emoji: String,
     val userId: Long,
     val fullName: String = "",
+    val avatar: String? = null,
 )
 
 @Serializable
+@androidx.compose.runtime.Immutable
 data class ChatMessage(
     val id: Long,
     @SerialName("conversation_id") val conversationId: Long? = null,
@@ -238,6 +240,7 @@ data class ChatReactionEvent(
     val fullName: String = "",
     val emoji: String,
     val action: String,
+    val avatar: String? = null,
 )
 
 @Serializable
@@ -283,7 +286,7 @@ fun applyRealtimeReaction(
     }
     message.copy(
         reactions = if (event.action == "added") {
-            withoutActorEmoji + ChatReaction(event.emoji, event.userId, event.fullName)
+            withoutActorEmoji + ChatReaction(event.emoji, event.userId, event.fullName, event.avatar)
         } else {
             withoutActorEmoji
         },
@@ -331,6 +334,13 @@ fun ChatMessage.mediaAspect(): Float? {
     val w = (metaObject?.get("width") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull() ?: return null
     val h = (metaObject?.get("height") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull() ?: return null
     return if (w > 0f && h > 0f) w / h else null
+}
+
+/** Upload pixel size from metadata, so the bubble is sized before the image loads. */
+fun ChatMessage.mediaDims(): androidx.compose.ui.unit.IntSize? {
+    val w = (metaObject?.get("width") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()?.toInt() ?: return null
+    val h = (metaObject?.get("height") as? kotlinx.serialization.json.JsonPrimitive)?.content?.toFloatOrNull()?.toInt() ?: return null
+    return if (w > 0 && h > 0) androidx.compose.ui.unit.IntSize(w, h) else null
 }
 
 fun ChatMessage.viewedBy(): List<Long> =
@@ -564,10 +574,12 @@ data class QueuedMessage(
 sealed interface ThreadItem {
     val key: String
 
+    @androidx.compose.runtime.Immutable
     data class DateSeparator(val date: LocalDate) : ThreadItem {
         override val key: String = "date-$date"
     }
 
+    @androidx.compose.runtime.Immutable
     data class Message(
         val message: ChatMessage,
         val startsGroup: Boolean,

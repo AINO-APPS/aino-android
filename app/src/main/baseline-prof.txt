@@ -1,0 +1,9 @@
+HSPLapp/aino/mobile/MainActivity;->**(**)**
+HSPLapp/aino/mobile/AinoApplication**->**(**)**
+HSPLapp/aino/mobile/core/**->**(**)**
+HSPLapp/aino/mobile/feature/auth/**->**(**)**
+HSPLapp/aino/mobile/feature/home/**->**(**)**
+HSPLapp/aino/mobile/feature/attendance/**->**(**)**
+HSPLapp/aino/mobile/feature/chat/**->**(**)**
+HSPLapp/aino/mobile/feature/search/**->**(**)**
+Lapp/aino/mobile/**;

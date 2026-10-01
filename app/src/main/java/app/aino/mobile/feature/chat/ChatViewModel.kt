@@ -20,6 +20,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -192,6 +194,7 @@ class ChatViewModel(
     private val mentionedIds = mutableSetOf<Long>()
     private var realtimeSend: (RealtimeEnvelope) -> Boolean = { false }
     private val markReadJobs = mutableMapOf<Long, Job>()
+    private val threadCache = ThreadMessageCache()
 
     init {
         // A push swallowed for the on-screen thread: mark read and pull the message
@@ -270,6 +273,7 @@ class ChatViewModel(
         if (next == scope) return
         scope = next
         cache = next?.let(cacheFactory)
+        threadCache.clear()
         _ui.value = ChatUiState(currentUserId = next?.userId)
         if (next != null) refresh()
     }
@@ -295,6 +299,7 @@ class ChatViewModel(
                         presence = presence,
                         fromCache = false,
                     )
+                    warmThreads(scopedCache, conversations)
                 },
                 onFailure = { error ->
                     // Offline first: keep the exact scoped cache visible, while
@@ -524,12 +529,22 @@ class ChatViewModel(
         }
     }
 
+    /** Chat row press: publish the thread before the navigation transition starts (Signal opens from memory). */
+    fun prepareConversation(conversationId: Long) {
+        if (_ui.value.selectedConversation?.id == conversationId) return
+        _ui.value.conversations.firstOrNull { it.id == conversationId }?.let(::openConversation)
+    }
+
     fun openConversation(conversation: ChatConversation) {
+        rememberOpenThread()
+        val cached = threadCache.get(conversation.id)
         _ui.value = _ui.value.copy(
             selectedConversation = conversation,
-            messages = emptyList(),
+            messages = cached?.messages.orEmpty(),
             queuedMessages = emptyList(),
-            receipts = emptyList(),
+            receipts = cached?.receipts.orEmpty(),
+            threadFromCache = false,
+            loadingOlder = false,
             composer = loadDraft(conversation.id),
             composerLinkPreview = null,
             dismissedPreviewUrl = null,
@@ -555,12 +570,14 @@ class ChatViewModel(
         // the screen's ON_RESUME (onThreadVisible) coalesces into the same read mark.
         context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversation.id) }
         scheduleMarkRead(conversation.id)
-        refreshThread()
-        refreshPinned(conversation.id)
-        // Members feed @mention suggestions (web MentionInput uses convMembers).
+        refreshThread(secondaryDelayMs = THREAD_SETTLE_MS)
         viewModelScope.launch(Dispatchers.IO) {
+            delay(THREAD_SETTLE_MS)
+            if (!isOpen(conversation.id)) return@launch
+            refreshPinned(conversation.id)
+            // Members feed @mention suggestions (web MentionInput uses convMembers).
             val members = runCatching { repository.loadMembers(conversation.id) }.getOrNull() ?: return@launch
-            if (_ui.value.selectedConversation?.id == conversation.id) _ui.value = _ui.value.copy(members = members)
+            if (isOpen(conversation.id)) _ui.value = _ui.value.copy(members = members)
         }
         if (pendingSettings == conversation.id) { pendingSettings = null; openInfo() }
     }
@@ -568,7 +585,10 @@ class ChatViewModel(
     /** Recipient sheet "Chat settings": open the thread straight onto its info page. */
     fun openSettingsOnOpen(conversationId: Long) { pendingSettings = conversationId }
 
-    fun closeConversation() {
+    /** [conversationId] closes only that thread, so a late close never wipes a newer one. */
+    fun closeConversation(conversationId: Long? = null) {
+        if (conversationId != null && _ui.value.selectedConversation?.id != conversationId) return
+        rememberOpenThread()
         typingExpiry?.cancel()
         typingDispatch?.cancel()
         _ui.value.selectedConversation?.let { app.aino.mobile.core.push.VisibleThread.clear(it.id) }
@@ -587,7 +607,24 @@ class ChatViewModel(
             forwardTargets = emptySet(),
             forwarding = false,
             threadFromCache = false,
+            loadingOlder = false,
         )
+    }
+
+    private fun isOpen(conversationId: Long) = _ui.value.selectedConversation?.id == conversationId
+
+    private fun rememberOpenThread() {
+        val state = _ui.value
+        val id = state.selectedConversation?.id ?: return
+        if (!state.threadFromCache) threadCache.put(id, state.messages, state.receipts)
+    }
+
+    /** Signal keeps recent conversations in memory: the top chats open without touching disk. */
+    private suspend fun warmThreads(scopedCache: ChatCache, conversations: List<ChatConversation>) {
+        conversations.asSequence().filterNot { it.isArchived }.take(WARM_THREADS).filterNot { threadCache.contains(it.id) }.forEach { conversation ->
+            val stored = runCatching { scopedCache.fullMessages(conversation.id, limit = CACHED_THREAD_MESSAGES) }.getOrNull().orEmpty()
+            if (stored.isNotEmpty() && !threadCache.contains(conversation.id)) threadCache.put(conversation.id, stored)
+        }
     }
 
     fun updateComposer(value: String) {
@@ -604,47 +641,68 @@ class ChatViewModel(
         }
     }
 
-    fun refreshThread() {
+    fun refreshThread() = refreshThread(secondaryDelayMs = 0L)
+
+    /** Messages publish as soon as they arrive; receipts follow once [secondaryDelayMs] (the open transition) has passed. */
+    private fun refreshThread(secondaryDelayMs: Long) {
         val conversation = _ui.value.selectedConversation ?: return
         val scopedCache = cache ?: return
+        val id = conversation.id
         _ui.value = _ui.value.copy(threadLoading = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             if (_ui.value.messages.isEmpty()) {
-                warm?.let { runCatching { it.loadMessages(conversation.id) }.getOrNull() }?.takeIf { it.isNotEmpty() }?.let { cached ->
-                    if (_ui.value.selectedConversation?.id == conversation.id && _ui.value.messages.isEmpty()) {
-                        _ui.value = _ui.value.copy(messages = cached, hasOlderMessages = cached.size >= 50)
-                    }
+                val stored = runCatching { scopedCache.fullMessages(id, limit = CACHED_THREAD_MESSAGES) }.getOrNull().orEmpty()
+                    .ifEmpty { warm?.let { runCatching { it.loadMessages(id) }.getOrNull() }.orEmpty() }
+                if (stored.isNotEmpty()) _ui.update {
+                    if (it.selectedConversation?.id == id && it.messages.isEmpty()) it.copy(messages = stored, hasOlderMessages = stored.size >= THREAD_PAGE_SIZE) else it
                 }
             }
-            runCatching { repository.loadMessages(conversation.id) }.fold(
-                onSuccess = { messages ->
-                    scopedCache.replaceMessages(conversation.id, messages)
-                    val receipts = runCatching { repository.loadReadReceipts(conversation.id) }.getOrDefault(emptyList())
-                    _ui.value = _ui.value.copy(
-                        threadLoading = false,
-                        messages = messages,
-                        hasOlderMessages = messages.size >= 50,
-                        // REST rows omit clientMsgId. Reconcile one-to-one by
-                        // own-message chronology rather than deleting every
-                        // queued bubble when a single echo appears.
-                        queuedMessages = reconcileQueuedMessages(_ui.value.queuedMessages, messages, scope?.userId),
-                        receipts = receipts,
-                        threadFromCache = false,
-                    )
-                    restoreDraftTargets(conversation.id, messages)
-                    acknowledgeDelivery(messages.takeLast(50))
+            runCatching { repository.loadMessages(id) }.fold(
+                onSuccess = { latest ->
+                    val next = _ui.updateAndGet { state ->
+                        if (state.selectedConversation?.id != id) return@updateAndGet state
+                        val merged = mergeLatestPage(state.messages, latest)
+                        state.copy(
+                            threadLoading = false,
+                            messages = merged,
+                            hasOlderMessages = if (merged.size > latest.size) state.hasOlderMessages else latest.size >= THREAD_PAGE_SIZE,
+                            // REST rows omit clientMsgId. Reconcile one-to-one by
+                            // own-message chronology rather than deleting every
+                            // queued bubble when a single echo appears.
+                            queuedMessages = reconcileQueuedMessages(state.queuedMessages, merged, scope?.userId),
+                            threadFromCache = false,
+                        )
+                    }
+                    val merged = if (next.selectedConversation?.id == id) next.messages
+                    else mergeLatestPage(threadCache.get(id)?.messages.orEmpty(), latest)
+                    threadCache.put(id, merged)
+                    scopedCache.replaceMessages(id, merged)
+                    if (next.selectedConversation?.id == id) restoreDraftTargets(id, merged)
+                    acknowledgeDelivery(latest.takeLast(THREAD_PAGE_SIZE))
                 },
                 onFailure = { error ->
-                    val cached = runCatching { scopedCache.messageSnapshot(conversation.id) }.getOrDefault(emptyList())
-                    _ui.value = _ui.value.copy(
-                        threadLoading = false,
-                        messages = cached,
-                        receipts = emptyList(),
-                        threadFromCache = cached.isNotEmpty(),
-                        error = if (cached.isEmpty()) error.message ?: "Could not load messages" else null,
-                    )
+                    if (!isOpen(id)) return@fold
+                    // Offline: keep what is already painted; otherwise fall back to the stored rows.
+                    val shown = _ui.value.messages
+                    val cached = shown.ifEmpty { runCatching { scopedCache.messageSnapshot(id) }.getOrDefault(emptyList()) }
+                    _ui.update {
+                        if (it.selectedConversation?.id != id) it else it.copy(
+                            threadLoading = false,
+                            messages = if (it.messages.isEmpty()) cached else it.messages,
+                            threadFromCache = cached.isNotEmpty(),
+                            error = if (cached.isEmpty()) error.message ?: "Could not load messages" else null,
+                        )
+                    }
                 },
             )
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            delay(secondaryDelayMs)
+            if (!isOpen(id)) return@launch
+            val receipts = runCatching { repository.loadReadReceipts(id) }.getOrNull() ?: return@launch
+            // Equal receipts keep the old list instance so the bubbles skip recomposition.
+            _ui.update { if (it.selectedConversation?.id == id && it.receipts != receipts) it.copy(receipts = receipts) else it }
+            threadCache.putReceipts(id, receipts)
         }
     }
 
@@ -652,19 +710,43 @@ class ChatViewModel(
         val conversation = _ui.value.selectedConversation ?: return
         val oldestId = _ui.value.messages.minOfOrNull(ChatMessage::id) ?: return
         if (_ui.value.loadingOlder || !_ui.value.hasOlderMessages) return
+        val id = conversation.id
         _ui.value = _ui.value.copy(loadingOlder = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.loadMessages(conversation.id, oldestId) }.fold(
+            // Older rows already on disk paint first; the server page then revalidates them in place.
+            val stored = runCatching { cache?.fullMessages(id, before = oldestId, limit = THREAD_PAGE_SIZE) }.getOrNull().orEmpty()
+            var storedApplied = false
+            if (stored.isNotEmpty()) _ui.update {
+                storedApplied = it.selectedConversation?.id == id && canMergeOlderPage(it.messages, oldestId)
+                if (storedApplied) it.copy(messages = stored + it.messages.filter { message -> message.id >= oldestId }) else it
+            }
+            runCatching { repository.loadMessages(id, oldestId) }.fold(
                 onSuccess = { older ->
-                    val merged = (older + _ui.value.messages).distinctBy(ChatMessage::id)
-                    _ui.value = _ui.value.copy(
-                        loadingOlder = false,
-                        messages = merged,
-                        hasOlderMessages = older.size >= 50 && merged.size > _ui.value.messages.size,
-                    )
-                    cache?.replaceMessages(conversation.id, merged)
+                    var applied = false
+                    val next = _ui.updateAndGet {
+                        applied = it.selectedConversation?.id == id && canMergeOlderPage(it.messages, oldestId)
+                        when {
+                            it.selectedConversation?.id != id -> it
+                            // The thread was reset meanwhile: drop the page, keep its hasOlder state.
+                            !applied -> it.copy(loadingOlder = false)
+                            else -> it.copy(
+                                loadingOlder = false,
+                                messages = mergeOlderPage(it.messages, older, oldestId),
+                                hasOlderMessages = older.size >= THREAD_PAGE_SIZE && older.any { message -> message.id < oldestId },
+                            )
+                        }
+                    }
+                    if (applied && next.selectedConversation?.id == id) cache?.replaceMessages(id, next.messages)
                 },
-                onFailure = { _ui.value = _ui.value.copy(loadingOlder = false, error = it.message ?: "Could not load older messages") },
+                onFailure = { error ->
+                    _ui.update {
+                        if (it.selectedConversation?.id != id) it else it.copy(
+                            loadingOlder = false,
+                            threadFromCache = it.threadFromCache || storedApplied,
+                            error = if (!storedApplied) error.message ?: "Could not load older messages" else null,
+                        )
+                    }
+                },
             )
         }
     }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -239,10 +240,8 @@ fun SignalEmojiKeyboard(
     onEmoji: (String) -> Unit,
     onBackspace: () -> Unit,
     modifier: Modifier = Modifier,
-    height: Dp = 300.dp,
+    height: Dp = Dp.Unspecified,
     onOpenSearch: () -> Unit = {},
-    /** Web EmojiGifPicker GIF / Sticker modes; null hides the switch (reaction picker). */
-    onOpenGif: (() -> Unit)? = null,
 ) {
     val colors = signalColors
     val context = LocalContext.current
@@ -280,7 +279,7 @@ fun SignalEmojiKeyboard(
         skinPopupFor = null
     }
 
-    Column(modifier.fillMaxWidth().height(height).background(colors.surface)) {
+    Column(modifier.fillMaxWidth().then(if (height != Dp.Unspecified) Modifier.height(height) else Modifier.fillMaxHeight()).background(colors.surface)) {
         // Search pill. Signal swaps to a compact search bar above the system
         // keyboard; typing inside this panel was impossible because showing the
         // IME collapses the emoji panel.
@@ -370,17 +369,6 @@ fun SignalEmojiKeyboard(
                         Icon(icon, null, Modifier.size(20.dp), tint = if (active) colors.primary else colors.textSecondary)
                     }
                 }
-            }
-            if (onOpenGif != null) {
-                Text(
-                    "GIF",
-                    color = colors.textSecondary,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
-                        .combinedClickable(role = Role.Button, onClickLabel = "GIFs and stickers", onClick = onOpenGif)
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                )
             }
             BackspaceButton(onBackspace, colors.textSecondary)
         }

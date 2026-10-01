@@ -1,14 +1,21 @@
 package app.aino.mobile.feature.search
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -52,8 +60,7 @@ import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 
-/** GlobalSearch as a full page; the field is focused with the keyboard up on entry. */
-@OptIn(ExperimentalFoundationApi::class)
+/** GlobalSearch as a full page (deep links); the field is focused with the keyboard up on entry. */
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel,
@@ -62,6 +69,27 @@ fun SearchScreen(
 ) {
     val colors = LocalWebColors.current
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+
+    AinoFullPage(title = "Search", onBack = onBack, scrollable = false) {
+        SearchField(
+            ui = ui,
+            viewModel = viewModel,
+            modifier = Modifier.fillMaxWidth().background(colors.bgSecondary).padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+        HorizontalDivider(color = colors.border)
+        SearchResultsList(ui, onOpenLink, Modifier.fillMaxSize())
+    }
+}
+
+/** Search input row: magnifier, auto-focused field, spinner and clear. */
+@Composable
+fun SearchField(
+    ui: SearchUiState,
+    viewModel: SearchViewModel,
+    modifier: Modifier = Modifier,
+    showIcon: Boolean = true,
+) {
+    val colors = LocalWebColors.current
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
@@ -69,52 +97,63 @@ fun SearchScreen(
         focus.requestFocus()
         keyboard?.show()
     }
+    DisposableEffect(Unit) { onDispose { keyboard?.hide() } }
 
-    AinoFullPage(title = "Search", onBack = onBack, scrollable = false) {
-        Row(
-            Modifier.fillMaxWidth().background(colors.bgSecondary).padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(HeroIcons.MagnifyingGlass, null, tint = colors.text.copy(alpha = 0.6f), modifier = Modifier.size(17.dp))
-            BasicTextField(
-                value = ui.query,
-                onValueChange = viewModel::onQueryChange,
-                singleLine = true,
-                textStyle = TextStyle(color = colors.textPrimary, fontSize = 16.sp),
-                cursorBrush = SolidColor(colors.primaryLight),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, autoCorrectEnabled = false),
-                keyboardActions = KeyboardActions(onSearch = {
-                    viewModel.submit()
-                    keyboard?.hide()
-                }),
-                modifier = Modifier.weight(1f).focusRequester(focus),
-                decorationBox = { inner ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (ui.query.isEmpty()) {
-                            Text(
-                                "Search or jump to any page, task, leave, event…",
-                                color = colors.textMuted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        inner()
+    Row(
+        modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        if (showIcon) Icon(HeroIcons.MagnifyingGlass, null, tint = colors.text.copy(alpha = 0.6f), modifier = Modifier.size(17.dp))
+        BasicTextField(
+            value = ui.query,
+            onValueChange = viewModel::onQueryChange,
+            singleLine = true,
+            textStyle = TextStyle(color = colors.textPrimary, fontSize = 16.sp),
+            cursorBrush = SolidColor(colors.primaryLight),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, autoCorrectEnabled = false),
+            keyboardActions = KeyboardActions(onSearch = {
+                viewModel.submit()
+                keyboard?.hide()
+            }),
+            modifier = Modifier.weight(1f).focusRequester(focus),
+            decorationBox = { inner ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (ui.query.isEmpty()) {
+                        Text(
+                            "Search or jump to any page, task, leave, event…",
+                            color = colors.textMuted, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
                     }
-                },
-            )
-            if (ui.loading) {
-                CircularProgressIndicator(
-                    color = colors.primaryLight, trackColor = colors.border, strokeWidth = 2.dp,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-            if (ui.query.isNotEmpty()) {
-                IconButton(onClick = viewModel::clear, modifier = Modifier.size(28.dp)) {
-                    Icon(HeroIcons.XMark, "Clear search", tint = colors.textMuted, modifier = Modifier.size(16.dp))
+                    inner()
                 }
+            },
+        )
+        if (ui.loading) {
+            CircularProgressIndicator(
+                color = colors.primaryLight, trackColor = colors.border, strokeWidth = 2.dp,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        if (ui.query.isNotEmpty()) {
+            IconButton(onClick = viewModel::clear, modifier = Modifier.size(28.dp)) {
+                Icon(HeroIcons.XMark, "Clear search", tint = colors.textMuted, modifier = Modifier.size(16.dp))
             }
         }
-        HorizontalDivider(color = colors.border)
+    }
+}
 
+/** Error / no-results notice plus the sectioned result list. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun SearchResultsList(
+    ui: SearchUiState,
+    onOpenLink: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalWebColors.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    Column(modifier) {
         if (ui.error.isNotEmpty()) {
             Text(ui.error, color = colors.danger, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
         }
@@ -148,6 +187,29 @@ fun SearchScreen(
     }
 }
 
+/** In-place search: results cover the current page below the shell top bar (Signal main-screen search). */
+@Composable
+fun SearchOverlay(
+    visible: Boolean,
+    viewModel: SearchViewModel,
+    onOpenLink: (String) -> Unit,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalWebColors.current
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(150)),
+        exit = fadeOut(tween(150)),
+        modifier = modifier.padding(contentPadding).consumeWindowInsets(contentPadding),
+    ) {
+        val ui by viewModel.ui.collectAsStateWithLifecycle()
+        Column(Modifier.fillMaxSize().background(colors.bg).imePadding()) {
+            HorizontalDivider(color = colors.border)
+            SearchResultsList(ui, onOpenLink, Modifier.fillMaxSize())
+        }
+    }
+}
 @Composable
 private fun SearchResultRow(row: SearchRow, onClick: () -> Unit) {
     val colors = LocalWebColors.current

@@ -246,6 +246,7 @@ class ActiveCallController(private val context: Context, private val session: Ca
             RtcPeer(WebRtcRuntime.shared(context), config, polite = _ui.value.incoming, listener = Listener())
         }.getOrElse { return null }
         created.addLocalTracks(local.audioTrack, local.videoTrack)
+        created.startQualityAdaptation(scope)
         peer = created
         if (offer) created.createOffer()
         return created

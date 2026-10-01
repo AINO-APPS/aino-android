@@ -202,12 +202,38 @@ fun ChatReactionOverlay(
     }
 }
 
+/**
+ * Reactions only carry `userId`/`fullName`, so avatars come from what the thread
+ * already knows: message senders, the 1:1 peer, then conversation members (freshest).
+ */
+fun reactionAvatarLookup(
+    conversation: ChatConversation?,
+    members: List<ConversationMember>,
+    messages: List<ChatMessage>,
+): Map<Long, String> = buildMap {
+    messages.forEach { m -> m.senderAvatar?.takeIf(String::isNotBlank)?.let { put(m.senderId, it) } }
+    if (conversation != null && !conversation.isGroup) {
+        val peer = conversation.otherUserId
+        val avatar = conversation.otherAvatar?.takeIf(String::isNotBlank)
+        if (peer != null && avatar != null) put(peer, avatar)
+    }
+    members.forEach { m -> m.avatar?.takeIf(String::isNotBlank)?.let { put(m.id, it) } }
+}
+
 /** Signal reactions sheet: "All" tab plus one per emoji, listing who reacted. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReactionsSheet(reactions: List<ChatReaction>, currentUserId: Long?, onRemoveMine: (String) -> Unit, onDismiss: () -> Unit) {
+fun ReactionsSheet(
+    reactions: List<ChatReaction>,
+    currentUserId: Long?,
+    onRemoveMine: (String) -> Unit,
+    avatars: Map<Long, String> = emptyMap(),
+    onDismiss: () -> Unit,
+) {
     val signal = signalColors
-    val groups = remember(reactions) { reactions.groupBy { it.emoji } }
+    val groups = remember(reactions) {
+        reactions.groupBy { it.emoji }.entries.sortedByDescending { it.value.size }.associate { it.key to it.value }
+    }
     var tab by remember { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = signal.surface) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -221,7 +247,9 @@ fun ReactionsSheet(reactions: List<ChatReaction>, currentUserId: Long?, onRemove
                     Modifier.fillMaxWidth().clickable(enabled = mine) { onRemoveMine(r.emoji); onDismiss() }.padding(horizontal = 20.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    app.aino.mobile.core.designsystem.component.UserAvatar(r.fullName.ifBlank { "?" }, null, 36.dp)
+                    app.aino.mobile.core.designsystem.component.UserAvatar(
+                        r.fullName.ifBlank { "?" }, r.avatar?.takeIf(String::isNotBlank) ?: avatars[r.userId], 36.dp,
+                    )
                     Column(Modifier.weight(1f).padding(start = 14.dp)) {
                         Text(if (mine) "You" else r.fullName.ifBlank { "Someone" }, color = signal.text, fontSize = 16.sp)
                         if (mine) Text("Tap to remove", color = signal.textSecondary, fontSize = 13.sp)

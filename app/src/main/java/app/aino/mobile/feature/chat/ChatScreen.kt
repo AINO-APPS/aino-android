@@ -49,7 +49,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.material3.CircularProgressIndicator
@@ -72,7 +74,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.layout
+import kotlin.math.roundToInt
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -80,6 +86,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -151,7 +158,16 @@ fun ChatScreen(
             ).joinToString(" ").contains(query, ignoreCase = true))
         }
     }
-    if (ui.selectedConversation != null) {
+    if (conversationId != null) {
+        // Thread route: while transitions overlap, the VM may already hold another
+        // thread (or none). Keep painting this one instead of flashing the list.
+        val retained = remember(conversationId) { RetainedThread() }
+        if (ui.selectedConversation?.id == conversationId) retained.ui = ui
+        retained.ui?.let { ChatThread(it, viewModel, onPickDocument, onNavigateBack) }
+            ?: Box(Modifier.fillMaxSize().background(signalColors.background))
+        return
+    }
+    if (ui.selectedConversation != null && onOpenConversation == null) {
         ChatThread(ui, viewModel, onPickDocument, onNavigateBack)
         return
     }
@@ -551,6 +567,26 @@ private fun MessageResultRow(message: ChatMessage, conversation: ChatConversatio
         }
     }
 }
+private class RetainedThread { var ui: ChatUiState? = null }
+
+private enum class ThreadBar { Header, Search, Selection }
+
+private fun threadItemsOf(ui: ChatUiState, pending: List<PendingMedia>): List<ThreadItem> = buildThreadItems(
+    ui.messages.filterNot { it.id in ui.hiddenMessageIds }, ui.queuedMessages, ui.currentUserId,
+    uploads = pending.map { OutgoingMediaItem(it.localId, it.createdAtEpochMs) },
+)
+
+/** Signal's item animator: a live message rises a few dp into place as it fades in. */
+@Composable
+private fun Modifier.arrivalSlide(): Modifier {
+    val rise = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(Unit) {
+        rise.animateTo(0f, androidx.compose.animation.core.tween(220, easing = androidx.compose.animation.core.LinearOutSlowInEasing))
+    }
+    val distance = with(androidx.compose.ui.platform.LocalDensity.current) { 16.dp.toPx() }
+    return graphicsLayer { translationY = rise.value * distance }
+}
+
 @Composable
 private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument: () -> Unit, onNavigateBack: (() -> Unit)?) {
     val conversation = ui.selectedConversation ?: return
@@ -574,18 +610,24 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         }
     }
     val threadPending =  remember(ui.pendingMedia, conversation.id) { ui.pendingMedia.filter { it.conversationId == conversation.id } }
-    val threadItems = remember(ui.messages, ui.queuedMessages, ui.currentUserId, ui.hiddenMessageIds, threadPending) {
-        buildThreadItems(
-            ui.messages.filterNot { it.id in ui.hiddenMessageIds }, ui.queuedMessages, ui.currentUserId,
-            uploads = threadPending.map { OutgoingMediaItem(it.localId, it.createdAtEpochMs) },
-        )
+    // The first frame builds synchronously so a cached thread paints at once; later rebuilds run off the main thread.
+    var threadItems by remember(conversation.id) { mutableStateOf(threadItemsOf(ui, threadPending)) }
+    LaunchedEffect(ui.messages, ui.queuedMessages, ui.currentUserId, ui.hiddenMessageIds, threadPending) {
+        val current = threadItems
+        val source = ui
+        withContext(Dispatchers.Default) { threadItemsOf(source, threadPending).takeIf { it != current } }?.let { threadItems = it }
     }
     val pendingById = remember(threadPending) { threadPending.associateBy(PendingMedia::localId) }
+    val latestUi by androidx.compose.runtime.rememberUpdatedState(ui)
+    val reactionAvatars = remember { { reactionAvatarLookup(latestUi.selectedConversation, latestUi.members, latestUi.messages) } }
     var allMediaOpen by remember(conversation.id) { mutableStateOf(false) }
     var pinnedIndex by remember(conversation.id) { mutableStateOf(0) }
     // Signal-style bottom-anchored thread: `reverseLayout` keeps the newest
     // message pinned above the composer when the keyboard shrinks the viewport.
     val newestFirst = remember(threadItems) { threadItems.asReversed() }
+    val arrivals = remember(conversation.id) { ThreadArrivals() }
+    val arrivedKeys = remember(arrivals, newestFirst) { arrivals.update(newestFirst.map(ThreadItem::key)) }
+    val slidKeys = remember(conversation.id) { HashSet<String>() }
     val dividerKey = remember(conversation.id, ui.unreadAtOpen, newestFirst.isNotEmpty()) {
         unreadDividerKey(newestFirst, ui.unreadAtOpen, ui.currentUserId)
     }
@@ -643,10 +685,13 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         if (atBottom || newestMine) { listState.animateScrollToItem(0); unseen = 0 } else unseen++
     }
     LaunchedEffect(atBottom) { if (atBottom) unseen = 0 }
-    // Auto load-more when the oldest loaded row scrolls into view (web: scroll-top load-more).
-    LaunchedEffect(listState, newestFirst.size) {
-        androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
-            .collect { last -> if (newestFirst.isNotEmpty() && last >= newestFirst.size - 3) viewModel.loadOlderMessages() }
+    // Prefetch older history about a screen before the top so scrolling never waits on it.
+    LaunchedEffect(listState) {
+        androidx.compose.runtime.snapshotFlow {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            if (info.totalItemsCount > 0 && last >= info.totalItemsCount - OLDER_PREFETCH_ITEMS) info.totalItemsCount else -1
+        }.collect { if (it > 0) viewModel.loadOlderMessages() }
     }
     val withCallPermissions = app.aino.mobile.core.call.rememberCallPermissions()
     BackHandler(enabled = allMediaOpen) { allMediaOpen = false }
@@ -661,10 +706,24 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     val searchTerm = ui.threadSearchQuery.takeIf { ui.threadSearchOpen }
     Box(Modifier.fillMaxSize().background(signal.background)) {
         Column(Modifier.fillMaxSize()) {
-            when {
-                ui.selectedMessageIds.isNotEmpty() -> MessageSelectionBar(ui, viewModel) { deleteTargets = it }
-                ui.threadSearchOpen -> ThreadSearchToolbar(ui.threadSearchQuery, viewModel::updateThreadSearch, viewModel::closeThreadSearch)
-                else -> ThreadHeader(conversation, ui, viewModel, onNavigateBack, withCallPermissions, onOpenAllMedia = { allMediaOpen = true })
+            // Signal action mode fades over the toolbar instead of popping in.
+            androidx.compose.animation.AnimatedContent(
+                targetState = when {
+                    ui.selectedMessageIds.isNotEmpty() -> ThreadBar.Selection
+                    ui.threadSearchOpen -> ThreadBar.Search
+                    else -> ThreadBar.Header
+                },
+                transitionSpec = {
+                    androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)) togetherWith
+                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150))
+                },
+                label = "threadBar",
+            ) { bar ->
+                when (bar) {
+                    ThreadBar.Selection -> MessageSelectionBar(ui, viewModel) { deleteTargets = it }
+                    ThreadBar.Search -> ThreadSearchToolbar(ui.threadSearchQuery, viewModel::updateThreadSearch, viewModel::closeThreadSearch)
+                    ThreadBar.Header -> ThreadHeader(conversation, ui, viewModel, onNavigateBack, withCallPermissions, onOpenAllMedia = { allMediaOpen = true })
+                }
             }
             // Signal pinned-message bar: newest pin shown; tap jumps and cycles to the next.
             androidx.compose.animation.AnimatedVisibility(
@@ -697,12 +756,15 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 if (threadItems.isEmpty() && !ui.threadLoading) {
-                    item { HonestEmpty(HeroIcons.ChatBubbleOvalLeft, "No messages yet") }
+                    item(contentType = "empty") { HonestEmpty(HeroIcons.ChatBubbleOvalLeft, "No messages yet") }
                 }
-                items(newestFirst, key = ThreadItem::key) { item ->
-                    // Signal: new bubbles slide up + fade in; removals fade (pending → sent swap).
+                items(newestFirst, key = ThreadItem::key, contentType = { it.contentType(ui.currentUserId) }) { item ->
+                    // Signal item animator: only rows that arrive live slide up + fade in (and fade out
+                    // on the pending → sent swap); the first page and older pages appear in place.
+                    val arrived = item.key in arrivedKeys
+                    val slide = remember { arrived && slidKeys.add(item.key) }
                     Column(
-                        Modifier.animateItem(
+                        (if (arrived) Modifier.animateItem(
                             fadeInSpec = androidx.compose.animation.core.tween(220),
                             placementSpec = androidx.compose.animation.core.spring(
                                 dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
@@ -710,7 +772,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                                 visibilityThreshold = androidx.compose.ui.unit.IntOffset(1, 1),
                             ),
                             fadeOutSpec = androidx.compose.animation.core.tween(150),
-                        ),
+                        ) else Modifier).then(if (slide) Modifier.arrivalSlide() else Modifier),
                     ) {
                     if (item.key == dividerKey) UnreadDivider(ui.unreadAtOpen)
                     when (item) {
@@ -742,6 +804,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             onToggleSelect = { viewModel.toggleMessageSelection(item.message.id) },
                             isGroup = conversation.isGroup,
                             currentUserId = ui.currentUserId,
+                            reactionAvatars = reactionAvatars,
                             searchTerm = searchTerm,
                             viewOnceLoading = viewOnceLoadingId == item.message.id,
                             onOpenViewOnce = {
@@ -763,10 +826,19 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                     }
                     }
                 }
-                if (ui.loadingOlder) item(key = "loading-older") {
-                    Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = signal.primary)
-                    }
+            }
+            // Older-page spinner floats over the top edge so the list never shifts when it appears.
+            androidx.compose.animation.AnimatedVisibility(
+                visible = ui.loadingOlder,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp),
+                enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)),
+                exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150)),
+            ) {
+                Box(
+                    Modifier.size(32.dp).shadow(2.dp, CircleShape).background(signal.surface, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = signal.primary)
                 }
             }
             androidx.compose.animation.AnimatedVisibility(
@@ -1272,6 +1344,7 @@ private fun MessageBubble(
     searchTerm: String? = null,
     viewOnceLoading: Boolean = false,
     onOpenViewOnce: () -> Unit = {},
+    reactionAvatars: () -> Map<Long, String> = { emptyMap() },
 ) {
     var actionsOpen by remember { mutableStateOf(false) }
     var reactionsOpen by remember { mutableStateOf(false) }
@@ -1324,8 +1397,8 @@ private fun MessageBubble(
             if (message.starred) Icon(HeroIcons.Star, "Saved message", Modifier.size(12.dp), tint = tint)
             if (message.pinnedAt != null) Icon(HeroIcons.PushPin, "Pinned message", Modifier.size(12.dp), tint = tint)
             if (message.editedAt != null && !deleted) Text("Edited", color = tint, fontSize = SignalDimens.footerText)
-            Text(bubbleTime(message.createdAt), color = tint, fontSize = SignalDimens.footerText)
-            if (isMine && !deleted) DeliveryTickIcon(deliveryTick(message, receipts, participantCount), onMedia)
+            Text(remember(message.createdAt) { bubbleTime(message.createdAt) }, color = tint, fontSize = SignalDimens.footerText)
+            if (isMine && !deleted) DeliveryTickIcon(remember(message, receipts, participantCount) { deliveryTick(message, receipts, participantCount) }, onMedia)
         }
     }
     val showAvatarColumn = isGroup && !isMine
@@ -1433,6 +1506,7 @@ private fun MessageBubble(
                                     onCancelProcessing = { onCancel() }, onRetryProcessing = { onRetry() },
                                     shape = RoundedCornerShape(SignalDimens.bubbleCornerCollapsed * 3), outgoing = isMine,
                                     onLongPress = { if (selectionActive) onToggleSelect() else actionsOpen = true },
+                                    withContent = !message.content.isNullOrBlank(),
                                 )
                                 val caption = message.content?.takeIf(String::isNotBlank)
                                 if (caption != null) BubbleTextWithFooter(highlightTerm(caption, searchTerm, signal.highlight), fg, { footer(false) })
@@ -1537,8 +1611,10 @@ private fun MessageBubble(
                 // Signal lifts the actual media into the overlay, not its file name.
                 if (!deleted && message.isViewableMedia() && !message.isViewOnce()) Column(horizontalAlignment = if (isMine) Alignment.End else Alignment.Start) {
                     ChatThumbnail(
-                        resolveChatMediaUrl(message.fileUrl.orEmpty()), message.fileName,
+                        ChatMediaMemory.localFor(message.fileUrl) ?: resolveChatMediaUrl(message.fileUrl.orEmpty()), message.fileName,
                         video = message.isVideoAttachment(), shape = RoundedCornerShape(18.dp),
+                        naturalSize = message.mediaDims() ?: ChatMediaMemory.dims(message.fileUrl),
+                        withContent = !message.content.isNullOrBlank(),
                     ) {}
                     message.content?.takeIf(String::isNotBlank)?.let { caption ->
                         Text(
@@ -1556,7 +1632,10 @@ private fun MessageBubble(
             },
         )
     }
-    if (reactionsOpen) ReactionsSheet(message.reactions, currentUserId, onRemoveMine = onReact) { reactionsOpen = false }
+    if (reactionsOpen) {
+        val avatars = remember { reactionAvatars() }
+        ReactionsSheet(message.reactions, currentUserId, onRemoveMine = onReact, avatars = avatars) { reactionsOpen = false }
+    }
 }
 
 /** Signal quote block inside a bubble: accent bar, author, 2-line text, optional 60dp thumbnail. */
@@ -1678,13 +1757,15 @@ private fun ForwardMessageDialog(ui: ChatUiState, viewModel: ChatViewModel) {
 @Composable
 private fun DateSeparator(date: LocalDate) {
     val signal = signalColors
-    val today = LocalDate.now()
-    val label = when {
-        date == today -> "Today"
-        date == today.minusDays(1) -> "Yesterday"
-        date.isAfter(today.minusDays(7)) -> date.format(DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()))
-        date.year == today.year -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()))
-        else -> date.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
+    val label = remember(date) {
+        val today = LocalDate.now()
+        when {
+            date == today -> "Today"
+            date == today.minusDays(1) -> "Yesterday"
+            date.isAfter(today.minusDays(7)) -> date.format(DateTimeFormatter.ofPattern("EEEE", Locale.getDefault()))
+            date.year == today.year -> date.format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.getDefault()))
+            else -> date.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))
+        }
     }
     Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), horizontalArrangement = Arrangement.Center) {
         Text(
@@ -1754,9 +1835,11 @@ private fun DeliveryTickIcon(tick: DeliveryTick, onMedia: Boolean) {
     SignalReceiptIcon(tick, tint, punchThrough = if (onMedia) Color.Black.copy(alpha = .55f) else signal.outgoing)
 }
 
+private val explicitOffset = Regex("[+-]\\d{2}:?\\d{2}$")
+
 private fun parseChatInstant(value: String): Instant? = runCatching {
     Instant.parse(value.replace(" ", "T").let {
-        if (it.endsWith("Z") || Regex("[+-]\\d{2}:?\\d{2}$").containsMatchIn(it)) it else "${it}Z"
+        if (it.endsWith("Z") || explicitOffset.containsMatchIn(it)) it else "${it}Z"
     })
 }.getOrNull()
 
@@ -1888,6 +1971,24 @@ private fun MessageComposer(
         if (panel == target) { awaitingIme = true; panel = ComposerPanel.None; keyboard?.show() }
         else { keyboard?.hide(); panel = target }
     }
+    // A drawer opening with the keyboard down, or closing without the keyboard taking
+    // its place, slides the composer like the IME would instead of jumping. Decided
+    // during composition so the very first frame is already offset.
+    val panelMotion = remember { PanelMotion(panel) }
+    if (panelMotion.shown != panel) {
+        val opening = panelMotion.shown == ComposerPanel.None
+        panelMotion.shown = panel
+        val panelPx = with(density) { keyboardHeight.toPx() }
+        when {
+            opening && imeBottom <= navBottom -> { panelMotion.collapse.floatValue = 0f; panelMotion.reveal.floatValue = panelPx }
+            panel == ComposerPanel.None && !awaitingIme && !imeOpening -> { panelMotion.reveal.floatValue = 0f; panelMotion.collapse.floatValue = panelPx + navBottom }
+        }
+    }
+    LaunchedEffect(panel) {
+        launch { panelMotion.reveal.settle() }
+        launch { panelMotion.collapse.settle() }
+    }
+    val insetPx = if (panel == ComposerPanel.None && !awaitingIme) maxOf(navBottom, imeBottom).toFloat() else 0f
     // ---- Voice note state machine (see VoiceNoteRecorder.kt) ----
     val voice = remember { VoiceNoteRecorder(context) }
     var phase by remember { mutableStateOf(VoicePhase.Idle) }
@@ -1953,7 +2054,16 @@ private fun MessageComposer(
     // paddings would sum them); with adjustResize in the manifest the window
     // itself never pans, so this is the only place the keyboard is accounted for.
     Column(
-        Modifier.fillMaxWidth().background(signal.background)
+        Modifier.drawWithContent {
+                if (panelMotion.reveal.floatValue > 0f) clipRect { this@drawWithContent.drawContent() } else drawContent()
+            }
+            .layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints)
+                val extra = (panelMotion.collapse.floatValue - insetPx).coerceAtLeast(0f)
+                val height = (placeable.height - panelMotion.reveal.floatValue + extra).roundToInt().coerceIn(0, constraints.maxHeight)
+                layout(placeable.width, height) { placeable.place(0, 0) }
+            }
+            .fillMaxWidth().background(signal.background)
             .then(
                 when {
                     panel != ComposerPanel.None -> Modifier
@@ -1992,20 +2102,25 @@ private fun MessageComposer(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        app.aino.mobile.core.designsystem.component.UserAvatar(member.display(), null, 28.dp)
+                        app.aino.mobile.core.designsystem.component.UserAvatar(member.display(), member.avatar, 28.dp)
                         Text(member.display(), color = signal.text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                         member.username?.let { Text("@$it", color = signal.textSecondary, fontSize = 13.sp) }
                     }
                 }
             }
         }
-        // Signal quote-style banner above the input for edit / reply.
-        val banner: Pair<String, String>? = when {
-            editingMessage != null -> "Edit message" to editingMessage.body()
-            replyingTo != null -> (replyingTo.senderName ?: replyingTo.senderUsername.orEmpty()) to replyingTo.body()
-            else -> null
-        }
-        if (banner != null) {
+        // Signal quote-style banner above the input for edit / reply; expands in and collapses out.
+        androidx.compose.animation.AnimatedVisibility(
+            visible = editingMessage != null || replyingTo != null,
+            enter = androidx.compose.animation.expandVertically(androidx.compose.animation.core.tween(150)) +
+                androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150)),
+            exit = androidx.compose.animation.shrinkVertically(androidx.compose.animation.core.tween(150)) +
+                androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(150)),
+        ) {
+            var quoted by remember { mutableStateOf<Pair<Boolean, ChatMessage>?>(null) }
+            (editingMessage?.let { true to it } ?: replyingTo?.let { false to it })?.let { quoted = it }
+            val (editing, target) = quoted ?: return@AnimatedVisibility
+            val banner = (if (editing) "Edit message" else target.senderName ?: target.senderUsername.orEmpty()) to target.body()
             Row(
                 Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp)
                     .clip(RoundedCornerShape(SignalDimens.quoteCorner)).background(signal.surface)
@@ -2017,7 +2132,7 @@ private fun MessageComposer(
                     Text(banner.first, color = signal.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                     Text(banner.second, color = signal.textSecondary, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-                replyingTo?.fileUrl?.takeIf { replyingTo.fileType?.startsWith("image/") == true }?.let { url ->
+                target.fileUrl?.takeIf { !editing && target.fileType?.startsWith("image/") == true }?.let { url ->
                     coil3.compose.AsyncImage(
                         model = resolveChatMediaUrl(url),
                         imageLoader = app.aino.mobile.core.AppContainer.get(context).imageLoader,
@@ -2027,8 +2142,8 @@ private fun MessageComposer(
                     )
                 }
                 Icon(
-                    HeroIcons.XMark, if (editingMessage != null) "Cancel edit" else "Cancel reply",
-                    Modifier.size(40.dp).clip(CircleShape).clickable(onClick = if (editingMessage != null) onCancelEdit else onCancelReply).padding(10.dp),
+                    HeroIcons.XMark, if (editing) "Cancel edit" else "Cancel reply",
+                    Modifier.size(40.dp).clip(CircleShape).clickable(onClick = if (editing) onCancelEdit else onCancelReply).padding(10.dp),
                     tint = signal.textSecondary,
                 )
             }
@@ -2049,10 +2164,11 @@ private fun MessageComposer(
             ) {
                 when (phase) {
                     VoicePhase.Idle -> {
-                        Box(Modifier.size(SignalDimens.composeHeight).clickable { toggle(ComposerPanel.Emoji) }, contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(SignalDimens.composeHeight).clickable { toggle(if (KeyboardPageStore.get(context) == KeyboardPage.Emoji) ComposerPanel.Emoji else ComposerPanel.Giphy) }, contentAlignment = Alignment.Center) {
+                            val mediaKeyboardOpen = panel == ComposerPanel.Emoji || panel == ComposerPanel.Giphy
                             Icon(
-                                if (panel == ComposerPanel.Emoji) HeroIcons.Keyboard else HeroIcons.FaceSmile,
-                                if (panel == ComposerPanel.Emoji) "Show keyboard" else "Show emoji",
+                                if (mediaKeyboardOpen) HeroIcons.Keyboard else HeroIcons.FaceSmile,
+                                if (mediaKeyboardOpen) "Show keyboard" else "Show emoji",
                                 Modifier.size(24.dp), tint = signal.textSecondary,
                             )
                         }
@@ -2139,19 +2255,19 @@ private fun MessageComposer(
             }
         }
         when (panel) {
-            ComposerPanel.Emoji -> SignalEmojiKeyboard(
+            // Signal media keyboard (Emoji | Sticker | GIF). The GIPHY search field raises the IME, so those pages shrink above it.
+            ComposerPanel.Emoji, ComposerPanel.Giphy -> MediaKeyboard(
+                giphy = panel == ComposerPanel.Giphy,
+                height = if (panel == ComposerPanel.Giphy && imeOpening) 220.dp else keyboardHeight,
+                onShowGiphy = { giphy -> panel = if (giphy) ComposerPanel.Giphy else ComposerPanel.Emoji },
                 onEmoji = ::insertAtCursor,
                 onBackspace = { if (value.isNotEmpty()) onChange(dropLastGrapheme(value)) },
-                height = keyboardHeight,
-                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars),
-                onOpenSearch = { panel = ComposerPanel.EmojiSearch },
-                onOpenGif = { panel = ComposerPanel.Gif },
-            )
-            // Web EmojiGifPicker GIF / Sticker: the search field raises the IME, so the grid shrinks above it.
-            ComposerPanel.Gif -> GifKeyboard(
-                height = if (imeOpening) 220.dp else keyboardHeight,
-                onPicked = { uri, mime -> panel = ComposerPanel.None; onSendGif(uri, mime) },
-                modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
+                onOpenEmojiSearch = { panel = ComposerPanel.EmojiSearch },
+                onGiphyPicked = { uri, mime -> panel = ComposerPanel.None; onSendGif(uri, mime) },
+                showTabs = !(panel == ComposerPanel.Giphy && imeOpening),
+                modifier = Modifier.windowInsetsPadding(
+                    if (panel == ComposerPanel.Giphy) WindowInsets.navigationBars.union(WindowInsets.ime) else WindowInsets.navigationBars,
+                ),
             )
             // Signal: search bar docks above the system keyboard; Back returns to the grid.
             ComposerPanel.EmojiSearch -> EmojiSearchBar(
@@ -2175,7 +2291,22 @@ private fun MessageComposer(
     }
 }
 
-private enum class ComposerPanel { None, Emoji, EmojiSearch, Gif, Attach }
+/** [Emoji] and [Giphy] are the same media keyboard on its Emoji vs Sticker/GIF pages (only the latter keeps the IME). */
+private enum class ComposerPanel { None, Emoji, EmojiSearch, Giphy, Attach }
+
+/** Composer height offsets (px) that ease a drawer in/out when the IME isn't there to do it. */
+private class PanelMotion(var shown: ComposerPanel) {
+    val reveal = androidx.compose.runtime.mutableFloatStateOf(0f)
+    val collapse = androidx.compose.runtime.mutableFloatStateOf(0f)
+}
+
+private suspend fun androidx.compose.runtime.MutableFloatState.settle() {
+    if (floatValue == 0f) return
+    androidx.compose.animation.core.animate(
+        floatValue, 0f,
+        animationSpec = androidx.compose.animation.core.tween(200, easing = androidx.compose.animation.core.LinearOutSlowInEasing),
+    ) { value, _ -> floatValue = value }
+}
 
 /** Replaces [start, end) of [text] with [insert]; returns the new text and caret position. */
 internal fun insertAtSelection(text: String, start: Int, end: Int, insert: String): Pair<String, Int> {

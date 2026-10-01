@@ -1,6 +1,10 @@
 package app.aino.mobile.core.call.webrtc
 
 import android.content.Context
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.NoiseSuppressor
+import android.os.Build
+import android.util.Log
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.DefaultVideoDecoderFactory
@@ -33,6 +37,10 @@ class WebRtcRuntime private constructor(
             iceTransportsType = if (relayOnly) PeerConnection.IceTransportsType.RELAY else PeerConnection.IceTransportsType.ALL
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
+            // Host TCP only; TURN over TCP/TLS relays are unaffected.
+            tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.DISABLED
+            audioJitterBufferMaxPackets = AUDIO_JITTER_BUFFER_MAX_PACKETS
+            audioJitterBufferFastAccelerate = true
         }
     }
 
@@ -66,18 +74,75 @@ class WebRtcRuntime private constructor(
                 }
             }
             val egl = EglBase.create()
+            val processing = selectAudioProcessing(
+                sdkInt = Build.VERSION.SDK_INT,
+                hardwareAecAvailable = runCatching { AcousticEchoCanceler.isAvailable() }.getOrDefault(false),
+                hardwareNsAvailable = runCatching { NoiseSuppressor.isAvailable() }.getOrDefault(false),
+            )
+            Log.i(TAG, "Audio processing: $processing")
+            val admLogger = AudioDeviceModuleLogger()
             val audioModule = JavaAudioDeviceModule.builder(context.applicationContext)
-                .setUseHardwareAcousticEchoCanceler(true)
-                .setUseHardwareNoiseSuppressor(true)
+                .setUseHardwareAcousticEchoCanceler(processing.hardwareAec)
+                .setUseHardwareNoiseSuppressor(processing.hardwareNs)
+                .setAudioRecordErrorCallback(admLogger)
+                .setAudioRecordStateCallback(admLogger)
+                .setAudioTrackErrorCallback(admLogger)
+                .setAudioTrackStateCallback(admLogger)
                 .setSamplesReadyCallback { samples -> micLevel = pcm16Level(samples.data) }
                 .createAudioDeviceModule()
+            // DefaultVideo*Factory here already wraps hardware codecs with software fallback.
             val factory = PeerConnectionFactory.builder()
                 .setAudioDeviceModule(audioModule)
                 .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl.eglBaseContext, true, true))
                 .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl.eglBaseContext))
                 .createPeerConnectionFactory()
+            audioModule.release()
             return WebRtcRuntime(factory, egl)
         }
+
+        private const val TAG = "WebRtcRuntime"
+    }
+}
+
+const val AUDIO_JITTER_BUFFER_MAX_PACKETS = 50
+
+data class AudioProcessing(val hardwareAec: Boolean, val hardwareNs: Boolean)
+
+/**
+ * Signal `AudioDeviceConfig.applyOverrides`: platform AEC/NS only where the
+ * effect exists and on API 29+; otherwise WebRTC's software AEC/NS.
+ */
+fun selectAudioProcessing(sdkInt: Int, hardwareAecAvailable: Boolean, hardwareNsAvailable: Boolean): AudioProcessing {
+    val platformOk = sdkInt >= Build.VERSION_CODES.Q
+    return AudioProcessing(
+        hardwareAec = platformOk && hardwareAecAvailable,
+        hardwareNs = platformOk && hardwareNsAvailable,
+    )
+}
+
+/** Surfaces audio device module failures and state changes in logcat. */
+private class AudioDeviceModuleLogger :
+    JavaAudioDeviceModule.AudioRecordErrorCallback,
+    JavaAudioDeviceModule.AudioRecordStateCallback,
+    JavaAudioDeviceModule.AudioTrackErrorCallback,
+    JavaAudioDeviceModule.AudioTrackStateCallback {
+    override fun onWebRtcAudioRecordInitError(errorMessage: String) { Log.e(TAG, "AudioRecord init error: $errorMessage") }
+    override fun onWebRtcAudioRecordStartError(errorCode: JavaAudioDeviceModule.AudioRecordStartErrorCode, errorMessage: String) {
+        Log.e(TAG, "AudioRecord start error $errorCode: $errorMessage")
+    }
+    override fun onWebRtcAudioRecordError(errorMessage: String) { Log.e(TAG, "AudioRecord error: $errorMessage") }
+    override fun onWebRtcAudioRecordStart() { Log.i(TAG, "AudioRecord started") }
+    override fun onWebRtcAudioRecordStop() { Log.i(TAG, "AudioRecord stopped") }
+    override fun onWebRtcAudioTrackInitError(errorMessage: String) { Log.e(TAG, "AudioTrack init error: $errorMessage") }
+    override fun onWebRtcAudioTrackStartError(errorCode: JavaAudioDeviceModule.AudioTrackStartErrorCode, errorMessage: String) {
+        Log.e(TAG, "AudioTrack start error $errorCode: $errorMessage")
+    }
+    override fun onWebRtcAudioTrackError(errorMessage: String) { Log.e(TAG, "AudioTrack error: $errorMessage") }
+    override fun onWebRtcAudioTrackStart() { Log.i(TAG, "AudioTrack started") }
+    override fun onWebRtcAudioTrackStop() { Log.i(TAG, "AudioTrack stopped") }
+
+    private companion object {
+        const val TAG = "AinoAudioDevice"
     }
 }
 

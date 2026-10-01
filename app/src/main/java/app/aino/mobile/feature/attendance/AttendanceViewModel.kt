@@ -101,6 +101,13 @@ fun classifySubmitError(message: String, code: String?, action: AttendanceAction
     }
 }
 
+const val LOCATION_DISABLED_CODE = "LOCATION_DISABLED"
+
+/** The sheet is parked on "Location Is Off" for a pending action and location is now on: resume it. */
+fun shouldResumeAfterLocationEnabled(session: VerifySession?, pendingAction: AttendanceAction?, locationEnabled: Boolean): Boolean =
+    locationEnabled && pendingAction != null && session != null &&
+        session.step == VerifyStep.Ready && session.submitError?.code == LOCATION_DISABLED_CODE
+
 data class VerifySession(
     val action: AttendanceAction,
     val workMode: WorkMode,
@@ -751,6 +758,20 @@ class AttendanceViewModel(
         prepare(action, onPermissionRequired)
     }
 
+    /**
+     * Location was switched on (in-app dialog, Settings, or Quick Settings):
+     * continue the parked clock action straight into presence + fingerprint.
+     * Idempotent: only the "Location Is Off" state resumes, and it is cleared first.
+     */
+    fun onLocationSettingsChanged(onPermissionRequired: () -> Unit, locationEnabled: Boolean) {
+        val state = _ui.value
+        if (!shouldResumeAfterLocationEnabled(state.verifySession, state.pendingAction, locationEnabled)) return
+        _ui.value = state.copy(
+            verifySession = state.verifySession?.copy(step = VerifyStep.Collecting, submitError = null, locationError = null),
+        )
+        resumePending(onPermissionRequired)
+    }
+
     fun dismissVerify() {
         val step = _ui.value.verifySession?.step
         if (step == VerifyStep.Submitting || step == VerifyStep.Authenticating) return
@@ -829,7 +850,7 @@ class AttendanceViewModel(
                 !locationProvider.isLocationEnabled() -> locationError = VerifySubmitError(
                     VerifyErrorKind.Location, "Location Is Off",
                     "Turn on location to verify you are at the office, or connect to the office Wi-Fi.",
-                    "LOCATION_DISABLED", VerifyFix.EnableLocation,
+                    LOCATION_DISABLED_CODE, VerifyFix.EnableLocation,
                 )
                 else -> runCatching { locationProvider.currentPreciseLocation() }.fold(
                     onSuccess = { fix = it },

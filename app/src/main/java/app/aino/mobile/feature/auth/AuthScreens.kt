@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.MaterialTheme
@@ -31,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -75,8 +79,12 @@ fun LoginScreen(
         }
         message?.let { AinoAlert(it, AlertTone.Success) }
         error?.let { AinoAlert(it, AlertTone.Error) }
-        AinoTextField(username, { username = it }, "Username", placeholder = "Enter your username")
-        AinoTextField(password, { password = it }, "Password", placeholder = "Enter your password", isPassword = true, passwordVisible = showPassword, onTogglePassword = { showPassword = !showPassword })
+        AinoTextField(username, { username = it }, "Username", placeholder = "Enter your username", imeAction = ImeAction.Next)
+        AinoTextField(
+            password, { password = it }, "Password", placeholder = "Enter your password", isPassword = true,
+            passwordVisible = showPassword, onTogglePassword = { showPassword = !showPassword },
+            imeAction = ImeAction.Done, onDone = { if (canSubmit) onLogin(username, password) },
+        )
         Text(
             "Forgot password?",
             Modifier.fillMaxWidth(),
@@ -142,7 +150,7 @@ fun ChangePasswordScreen(displayName: String, loading: Boolean, error: String?, 
         error?.let { AinoAlert(it, AlertTone.Error) }
         PasswordField("Current password", current) { current = it }
         PasswordField("New password", next) { next = it }
-        PasswordField("Confirm new password", confirmation) { confirmation = it }
+        PasswordField("Confirm new password", confirmation, ImeAction.Done, onDone = { if (!loading) onSubmit(current, next, confirmation) }) { confirmation = it }
         AinoPrimaryButton(
             if (loading) "Updating…" else "Set new password",
             { onSubmit(current, next, confirmation) },
@@ -154,13 +162,21 @@ fun ChangePasswordScreen(displayName: String, loading: Boolean, error: String?, 
 }
 
 @Composable
-private fun PasswordField(label: String, value: String, onChange: (String) -> Unit) =
-    AinoTextField(value, onChange, label, isPassword = true)
+private fun PasswordField(
+    label: String,
+    value: String,
+    imeAction: ImeAction = ImeAction.Next,
+    onDone: (() -> Unit)? = null,
+    onChange: (String) -> Unit,
+) = AinoTextField(value, onChange, label, isPassword = true, imeAction = imeAction, onDone = onDone)
 
 @Composable
 private fun AuthFrame(content: @Composable () -> Unit) {
     AinoAtmosphere {
-        Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.fillMaxSize().systemBarsPadding().imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
             AinoGlassCard(Modifier.fillMaxWidth().widthIn(max = 440.dp)) {
                 Column(
                     Modifier.padding(28.dp),
@@ -210,6 +226,8 @@ private fun AinoTextField(
     isPassword: Boolean = false,
     passwordVisible: Boolean = false,
     onTogglePassword: (() -> Unit)? = null,
+    imeAction: ImeAction = ImeAction.Next,
+    onDone: (() -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(label.uppercase(), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
@@ -219,7 +237,11 @@ private fun AinoTextField(
             placeholder = { if (placeholder.isNotEmpty()) Text(placeholder) },
             singleLine = true,
             visualTransformation = if (isPassword && !passwordVisible) PasswordVisualTransformation() else VisualTransformation.None,
-            keyboardOptions = KeyboardOptions(keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Text),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Text,
+                imeAction = imeAction,
+            ),
+            keyboardActions = if (onDone != null) KeyboardActions(onDone = { onDone() }) else KeyboardActions.Default,
             trailingIcon = if (isPassword && onTogglePassword != null) {{
                 Icon(
                     if (passwordVisible) HeroIcons.EyeSlash else HeroIcons.Eye,

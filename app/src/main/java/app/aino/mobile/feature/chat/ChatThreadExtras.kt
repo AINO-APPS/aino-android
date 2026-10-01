@@ -41,6 +41,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.Instant
@@ -128,14 +129,16 @@ internal fun PendingMediaBubble(media: PendingMedia, onCancel: () -> Unit, onRet
             else SignalReceiptIcon(DeliveryTick.Sending, tint)
         }
     }
-    val aspect = if (media.width != null && media.height != null && media.height > 0) media.width.toFloat() / media.height else null
+    val natural = if (media.width != null && media.height != null && media.width > 0 && media.height > 0) IntSize(media.width, media.height) else null
     BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp, start = SignalDimens.gutter, end = SignalDimens.gutter)) {
         val bubbleMax = maxWidth - SignalDimens.bubbleEdgeMargin
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
             if (media.isImage || media.isVideo) {
                 Column(Modifier.widthIn(max = bubbleMax).clip(shape).background(signal.outgoing)) {
                     Box {
-                        ChatThumbnail(media.uri, media.fileName, video = media.isVideo, shape = RoundedCornerShape(0.dp), initialAspect = aspect) {}
+                        ChatThumbnail(media.uri, media.fileName, video = media.isVideo, shape = RoundedCornerShape(0.dp),
+                            naturalSize = natural, withContent = media.caption != null,
+                        ) {}
                         Crossfade(failed, Modifier.matchParentSize(), label = "transfer") { isFailed ->
                             if (isFailed) TransferRetry(onRetry, Modifier.fillMaxSize())
                             else TransferRing(media.progress, onCancel, Modifier.fillMaxSize())

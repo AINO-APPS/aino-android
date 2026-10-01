@@ -32,6 +32,8 @@ data class MessageEntity(
     val body: String,
     val createdAtEpochMs: Long,
     val deliveryState: String,
+    /** Full server row, so a cached thread renders exactly like the live one. */
+    val payloadJson: String? = null,
 )
 
 @Entity(

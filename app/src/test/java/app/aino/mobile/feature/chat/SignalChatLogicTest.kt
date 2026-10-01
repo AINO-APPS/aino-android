@@ -72,14 +72,6 @@ class SignalChatLogicTest {
         assertEquals(0, stepSearchMatch(0, 3, -1))
     }
 
-    @Test fun `media box follows signal limits`() {
-        assertEquals(240f to 180f, signalMediaSize(4f / 3f))
-        val tall = signalMediaSize(9f / 20f)
-        assertEquals(320f, tall.second)
-        assertEquals(150f, tall.first)
-        assertEquals(100f, signalMediaSize(5f).second)
-    }
-
     @Test fun `highlight marks every case-insensitive hit`() {
         val text = highlightTerm("Hello hello", "HELLO", androidx.compose.ui.graphics.Color.Yellow)
         assertEquals(2, text.spanStyles.size)

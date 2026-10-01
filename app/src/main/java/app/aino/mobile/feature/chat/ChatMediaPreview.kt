@@ -14,8 +14,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.AppContainer
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
@@ -24,6 +26,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.video.videoFrameMillis
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** Attachment URLs resolve exactly like every other server upload path. */
@@ -51,24 +54,24 @@ fun ChatMessage.mediaFailed(): Boolean = mediaState?.lowercase() in setOf("faile
 /**
  * Session memory for chat media. Files this device just sent map their server URL
  * to the local copy, so the delivered bubble keeps showing the already-decoded
- * image/voice note (no refetch blink). Decoded aspect ratios are kept per model so
- * a bubble that remounts never starts at the 4:3 fallback and resizes.
+ * image/voice note (no refetch blink). Pixel dimensions are kept per model so a
+ * bubble that remounts is sized before decode and never resizes.
  */
 object ChatMediaMemory {
     private val localByUrl = java.util.concurrent.ConcurrentHashMap<String, String>()
-    private val aspects = java.util.concurrent.ConcurrentHashMap<String, Float>()
+    private val sizes = java.util.concurrent.ConcurrentHashMap<String, IntSize>()
 
     fun rememberSent(fileUrl: String?, local: android.net.Uri, aspect: Float?) {
         if (fileUrl.isNullOrBlank()) return
         val key = local.toString()
         localByUrl[fileUrl] = key
-        (aspect ?: aspects[key])?.let { putAspect(fileUrl, it) }
+        (sizes[key] ?: aspect?.let(::aspectDims))?.let { putDims(fileUrl, it) }
     }
 
     fun localFor(fileUrl: String?): String? = fileUrl?.let(localByUrl::get)
-    fun aspect(key: Any?): Float? = key?.toString()?.let(aspects::get)
-    fun putAspect(key: Any?, aspect: Float) {
-        if (key != null && aspect > 0f) aspects[key.toString()] = aspect
+    fun dims(key: Any?): IntSize? = key?.toString()?.let(sizes::get)
+    fun putDims(key: Any?, size: IntSize) {
+        if (key != null && size.width > 0 && size.height > 0) sizes.putIfAbsent(key.toString(), size)
     }
 }
 
@@ -83,6 +86,8 @@ fun ChatMediaPreview(
     outgoing: Boolean = false,
     /** Long-press must reach the bubble's action overlay; media handles its own clicks. */
     onLongPress: () -> Unit = {},
+    /** Caption/text below the media: Signal widens the minimum to the full bubble width. */
+    withContent: Boolean = false,
 ) {
     val rawUrl = message.fileUrl ?: return
     val url = resolveChatMediaUrl(rawUrl)
@@ -94,7 +99,8 @@ fun ChatMediaPreview(
             visual -> Box {
                 ChatThumbnail(
                     local ?: url, message.fileName, video = message.isVideoAttachment(), shape = shape,
-                    initialAspect = ChatMediaMemory.aspect(rawUrl) ?: message.mediaAspect(), onLongClick = onLongPress,
+                    naturalSize = message.mediaDims() ?: ChatMediaMemory.dims(rawUrl), withContent = withContent,
+                    onLongClick = onLongPress,
                 ) { onOpenMedia(message) }
                 if (message.mediaFailed()) TransferRetry(
                     onRetry = { onRetryProcessing(message) },
@@ -149,8 +155,9 @@ fun TransferRetry(onRetry: () -> Unit, modifier: Modifier = Modifier) {
 
 /**
  * Image / video-poster thumbnail via the shared Coil loader (auth headers,
- * memory+disk cache, downsampled decode). Aspect ratio follows the decoded
- * image, like the web's `--img-aspect`, falling back to 4:3.
+ * memory+disk cache, downsampled decode). The box follows Signal's
+ * `ThumbnailView.fillTargetDimensions` from the known pixel size; the decoded
+ * size is only used when nothing was known beforehand.
  */
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -159,21 +166,24 @@ fun ChatThumbnail(
     label: String?,
     video: Boolean,
     shape: androidx.compose.ui.graphics.Shape,
-    initialAspect: Float? = null,
+    naturalSize: IntSize? = null,
+    withContent: Boolean = false,
     onLongClick: (() -> Unit)? = null,
-    /** When set, replaces Signal's aspect-fitted bubble box (e.g. square grid cells). */
+    /** When set, replaces Signal's fitted bubble box (e.g. square grid cells). */
     modifier: Modifier? = null,
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
     val loader = AppContainer.get(context).imageLoader
-    var aspect by remember(url) { mutableFloatStateOf(initialAspect?.takeIf { it > 0f } ?: ChatMediaMemory.aspect(url) ?: (4f / 3f)) }
+    val known = remember(url, naturalSize) { naturalSize?.takeIf { it.width > 0 && it.height > 0 }?.also { ChatMediaMemory.putDims(url, it) } ?: ChatMediaMemory.dims(url) }
+    var decoded by remember(url) { mutableStateOf<IntSize?>(null) }
     var failed by remember(url) { mutableStateOf(false) }
     // ponytail: Coil's VideoFrameDecoder needs the file on disk, so a poster downloads the whole video once (then disk-cached); add server-side posters if videos get large.
     val request = remember(url, video) {
         ImageRequest.Builder(context).data(url).apply { if (video) videoFrameMillis(100) }.build()
     }
-    val (width, height) = signalMediaSize(aspect)
+    val density = LocalDensity.current.density
+    val (width, height) = signalMediaSize(known ?: decoded, density, withContent)
     Box(
         (modifier ?: Modifier.size(width.dp, height.dp))
             .clip(shape).background(LocalWebColors.current.surface)
@@ -188,9 +198,12 @@ fun ChatThumbnail(
             modifier = Modifier.fillMaxSize(),
             onSuccess = { state ->
                 val image = state.result.image
-                if (image.width > 0 && image.height > 0) {
-                    aspect = image.width.toFloat() / image.height
-                    ChatMediaMemory.putAspect(url, aspect)
+                if (known == null && image.width > 0 && image.height > 0) {
+                    // Coil downsamples to the placeholder box, so only the decoded aspect is trustworthy.
+                    aspectDims(image.width.toFloat() / image.height)?.let { size ->
+                        decoded = size
+                        ChatMediaMemory.putDims(url, size)
+                    }
                 }
             },
             onError = { failed = true },
@@ -204,13 +217,58 @@ fun ChatThumbnail(
     }
 }
 
-/** Signal media bubble box: 240dp wide, 100–320dp tall; tall images narrow down to 150dp. */
-fun signalMediaSize(aspect: Float): Pair<Float, Float> {
-    val ratio = aspect.takeIf { it > 0f } ?: (4f / 3f)
-    var width = 240f
-    var height = width / ratio
-    if (height > 320f) { height = 320f; width = (height * ratio).coerceIn(150f, 240f) }
-    return width to height.coerceAtLeast(100f)
+/** Long side used when only an aspect ratio is known, so it sizes like a camera photo. */
+private const val ASPECT_ONLY_LONG_SIDE_PX = 4000
+
+fun aspectDims(aspect: Float): IntSize? {
+    if (!(aspect > 0f) || aspect.isInfinite()) return null
+    return if (aspect >= 1f) IntSize(ASPECT_ONLY_LONG_SIDE_PX, (ASPECT_ONLY_LONG_SIDE_PX / aspect).roundToInt().coerceAtLeast(1))
+    else IntSize((ASPECT_ONLY_LONG_SIDE_PX * aspect).roundToInt().coerceAtLeast(1), ASPECT_ONLY_LONG_SIDE_PX)
+}
+
+/**
+ * Signal media bubble box in dp for an attachment of [natural] pixel size:
+ * bounds are `[min width (150dp solo / 240dp with caption), 240dp] x [100dp, 320dp]`,
+ * unknown size falls back to Signal's 210dp square.
+ */
+fun signalMediaSize(natural: IntSize?, density: Float, withContent: Boolean = false): Pair<Float, Float> {
+    val minWidth = (if (withContent) SignalDimens.mediaMinWidthWithContent else SignalDimens.mediaMinWidthSolo).value
+    val (w, h) = natural?.takeIf { it.width > 0 && it.height > 0 && density > 0f }
+        ?.let { it.width / density to it.height / density }
+        ?: (SignalDimens.mediaDefault.value to SignalDimens.mediaDefault.value)
+    return fillTargetDimensions(
+        w, h, minWidth, SignalDimens.mediaMaxWidth.value, SignalDimens.mediaMinHeight.value, SignalDimens.mediaMaxHeight.value,
+    )
+}
+
+/** Signal `ThumbnailView.fillTargetDimensions`. */
+fun fillTargetDimensions(
+    naturalWidth: Float,
+    naturalHeight: Float,
+    minWidth: Float,
+    maxWidth: Float,
+    minHeight: Float,
+    maxHeight: Float,
+): Pair<Float, Float> {
+    var width = naturalWidth
+    var height = naturalHeight
+    val widthInBounds = width in minWidth..maxWidth
+    val heightInBounds = height in minHeight..maxHeight
+    if (widthInBounds && heightInBounds) return width to height
+    val minWidthRatio = naturalWidth / minWidth
+    val maxWidthRatio = naturalWidth / maxWidth
+    val minHeightRatio = naturalHeight / minHeight
+    val maxHeightRatio = naturalHeight / maxHeight
+    if (maxWidthRatio > 1f || maxHeightRatio > 1f) {
+        val ratio = if (maxWidthRatio >= maxHeightRatio) maxWidthRatio else maxHeightRatio
+        width = (width / ratio).coerceAtLeast(minWidth)
+        height = (height / ratio).coerceAtLeast(minHeight)
+    } else if (minWidthRatio < 1f || minHeightRatio < 1f) {
+        val ratio = if (minWidthRatio <= minHeightRatio) minWidthRatio else minHeightRatio
+        width = (width / ratio).coerceAtMost(maxWidth)
+        height = (height / ratio).coerceAtMost(maxHeight)
+    }
+    return width to height
 }
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)

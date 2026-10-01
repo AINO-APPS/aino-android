@@ -32,6 +32,7 @@ object SignalDimens {
     val mediaDefault = 210.dp
     val mediaMaxWidth = 240.dp
     val mediaMinWidthSolo = 150.dp
+    val mediaMinWidthWithContent = 240.dp
     val mediaMinHeight = 100.dp
     val mediaMaxHeight = 320.dp
     val quoteCorner = 10.dp

@@ -6,9 +6,23 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationSettingsRequest
+import com.google.android.gms.location.LocationSettingsStatusCodes
+import com.google.android.gms.location.Priority
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import app.aino.mobile.feature.attendance.LOCATION_DISABLED_CODE
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 import androidx.fragment.app.FragmentActivity
 import javax.crypto.Cipher
 import app.aino.mobile.core.auth.AuthViewModel
@@ -74,6 +88,9 @@ class MainActivity : FragmentActivity() {
     private val chatDocumentPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(chatViewModel::stageAttachment)
     }
+    private val locationResolution = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == RESULT_OK) resumeAfterLocationEnabled(locationEnabled = true)
+    }
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -106,7 +123,7 @@ class MainActivity : FragmentActivity() {
                     onAttendanceBiometric = ::requestAttendanceBiometric,
                     attendanceSystemActions = AttendanceSystemActions(
                         openAppSettings = ::openAppSettings,
-                        openLocationSettings = ::openLocationSettings,
+                        enableLocation = ::enableLocation,
                         openSecuritySettings = ::openSecuritySettings,
                         enableFingerprintForAttendance = { requestBiometricEnrollment(thenClockAction = true) },
                     ),
@@ -141,6 +158,13 @@ class MainActivity : FragmentActivity() {
                         val visible = state.route != null && state.state !in setOf(IncomingCallState.Ended)
                         lockScreenController.setShowingForCall(this@MainActivity, visible)
                     }
+                }
+                // Location turned on from Settings / Quick Settings while the sheet waits on it.
+                launch {
+                    attendanceViewModel.ui
+                        .map { it.verifySession?.submitError?.code == LOCATION_DISABLED_CODE }
+                        .distinctUntilChanged()
+                        .collectLatest { waiting -> if (waiting) locationProviderChanges().collect { resumeAfterLocationEnabled() } }
                 }
                 // Leaving the app during a connected call or a meeting enters system PiP.
                 val activeCall = app.aino.mobile.core.call.ActiveCallRuntime.get(applicationContext).ui
@@ -203,6 +227,7 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         consumePendingCallAction()
+        resumeAfterLocationEnabled()
         Thread { runCatching { PushTokenRegistrar(applicationContext).syncCurrentToken() } }.start()
     }
 
@@ -464,6 +489,44 @@ class MainActivity : FragmentActivity() {
 
     private fun openLocationSettings() {
         runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)) }
+    }
+
+    /** Google's in-app "Turn on location" dialog; Settings when Play services can't resolve it. */
+    private fun enableLocation() {
+        val request = LocationSettingsRequest.Builder()
+            .addLocationRequest(LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10_000L).build())
+            .setAlwaysShow(true)
+            .build()
+        val check = runCatching { LocationServices.getSettingsClient(this).checkLocationSettings(request) }
+            .getOrElse { openLocationSettings(); return }
+        check.addOnSuccessListener(this) { resumeAfterLocationEnabled(locationEnabled = true) }
+        check.addOnFailureListener(this) { error ->
+            val resolvable = (error as? ResolvableApiException)
+                ?.takeIf { it.statusCode == LocationSettingsStatusCodes.RESOLUTION_REQUIRED }
+            val launched = resolvable != null && runCatching {
+                locationResolution.launch(IntentSenderRequest.Builder(resolvable.resolution).build())
+            }.isSuccess
+            if (!launched) openLocationSettings()
+        }
+    }
+
+    private fun resumeAfterLocationEnabled(
+        locationEnabled: Boolean = LocationManagerCompat.isLocationEnabled(getSystemService(android.location.LocationManager::class.java)),
+    ) = attendanceViewModel.onLocationSettingsChanged(onPermissionRequired = { requestLocationPermission() }, locationEnabled = locationEnabled)
+
+    private fun locationProviderChanges() = callbackFlow {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context, intent: android.content.Intent) {
+                trySend(Unit)
+            }
+        }
+        ContextCompat.registerReceiver(
+            this@MainActivity,
+            receiver,
+            android.content.IntentFilter(android.location.LocationManager.PROVIDERS_CHANGED_ACTION),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        awaitClose { runCatching { unregisterReceiver(receiver) } }
     }
 
     /** Fingerprint / screen-lock enrollment (Android 11+ has a direct enroll screen). */

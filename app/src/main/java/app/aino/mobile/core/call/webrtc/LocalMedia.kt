@@ -15,7 +15,8 @@ import org.webrtc.VideoTrack
  * The local microphone + camera (web `getUserMedia`). The video track exists
  * whenever [withVideo] is set so it can be attached to peers once; turning the
  * camera off stops capture (camera LED off) and disables the track instead of
- * renegotiating. Mobile constraints: 640×480 @ 24 fps, front camera.
+ * renegotiating. Capture 1280×720 @ 30 fps (Signal `Camera`), front camera;
+ * the sender's encoding tier downscales as bandwidth requires.
  */
 class LocalMedia(context: Context, private val runtime: WebRtcRuntime, withVideo: Boolean) {
     private val appContext = context.applicationContext
@@ -59,7 +60,7 @@ class LocalMedia(context: Context, private val runtime: WebRtcRuntime, withVideo
         val cam = capturer ?: return false
         val allowed = appContext.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (enabled && allowed && !capturing) {
-            runCatching { cam.startCapture(640, 480, 24) }.onSuccess { capturing = true }
+            runCatching { cam.startCapture(1280, 720, 30) }.onSuccess { capturing = true }
         } else if (!enabled && capturing) {
             runCatching { cam.stopCapture() }
             capturing = false

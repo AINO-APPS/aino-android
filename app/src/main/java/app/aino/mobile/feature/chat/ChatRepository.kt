@@ -1,6 +1,7 @@
 package app.aino.mobile.feature.chat
 
 import app.aino.mobile.core.db.CacheScope
+import app.aino.mobile.core.db.MessageEntity
 import app.aino.mobile.core.db.ScopedCache
 import app.aino.mobile.core.network.ApiClient
 import app.aino.mobile.core.network.ApiError
@@ -277,7 +278,11 @@ class ChatRepository(
         json.decodeFromString(response.bodyAsString())
 }
 
-class ChatCache(private val scope: CacheScope, private val cache: ScopedCache) {
+class ChatCache(
+    private val scope: CacheScope,
+    private val cache: ScopedCache,
+    private val json: Json = Json { ignoreUnknownKeys = true },
+) {
     suspend fun replace(conversations: List<ChatConversation>) =
         cache.replaceConversations(conversations.map { it.toEntity(scope) })
 
@@ -285,10 +290,23 @@ class ChatCache(private val scope: CacheScope, private val cache: ScopedCache) {
         cache.conversationSnapshot().map { it.toCachedConversation() }
 
     suspend fun replaceMessages(conversationId: Long, messages: List<ChatMessage>) =
-        cache.replaceMessages(conversationId, messages.map { it.toEntity(scope, conversationId) })
+        cache.replaceMessages(conversationId, messages.map { message ->
+            message.toEntity(scope, conversationId).copy(payloadJson = runCatching { json.encodeToString(message) }.getOrNull())
+        })
 
     suspend fun messageSnapshot(conversationId: Long): List<ChatMessage> =
-        cache.messageSnapshot(conversationId).map { it.toCachedMessage() }
+        cache.messageSnapshot(conversationId).map { it.decodeMessage() ?: it.toCachedMessage() }
+
+    /**
+     * Rows older than [before] (newest [limit]) stored with their full payload;
+     * empty when any is a text-only legacy row, which would repaint once the server answers.
+     */
+    suspend fun fullMessages(conversationId: Long, before: Long = Long.MAX_VALUE, limit: Int = Int.MAX_VALUE): List<ChatMessage> =
+        cache.messageSnapshot(conversationId).filter { it.messageId < before }.takeLast(limit)
+            .map { it.decodeMessage() ?: return emptyList() }
+
+    private fun MessageEntity.decodeMessage(): ChatMessage? =
+        payloadJson?.let { runCatching { json.decodeFromString<ChatMessage>(it) }.getOrNull() }
 }
 
 class ChatFailure(message: String, val statusCode: Int, cause: Throwable) : Exception(message, cause)

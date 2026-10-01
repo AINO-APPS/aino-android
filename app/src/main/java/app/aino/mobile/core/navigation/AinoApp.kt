@@ -471,6 +471,18 @@ private fun AuthenticatedShell(
         resumedOnce = true
         onPauseOrDispose { }
     }
+    // Signal-style in-place search: the top bar becomes the field and results cover the page.
+    val shellSearch = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.search.SearchViewModel>(
+        key = "shell-search",
+        factory = app.aino.mobile.feature.search.SearchViewModel.factory(shellContext, role),
+    )
+    LaunchedEffect(role) { shellSearch.setRole(role) }
+    var searchActive by androidx.compose.runtime.remember { mutableStateOf(false) }
+    fun closeSearch() {
+        searchActive = false
+        shellSearch.clear()
+    }
+    LaunchedEffect(current) { if (searchActive) closeSearch() }
     Box(Modifier.fillMaxSize()) {
     AinoScaffold(
         topBar = {
@@ -479,7 +491,10 @@ private fun AuthenticatedShell(
                     user = user,
                     statusVisual = statusVisual,
                     unreadNotifications = unreadNotifications,
-                    onSearch = { moreOpen = false; nav.navigate(SEARCH_ROUTE) { launchSingleTop = true } },
+                    onSearch = { moreOpen = false; searchActive = true },
+                    searchActive = searchActive,
+                    search = shellSearch,
+                    onCloseSearch = ::closeSearch,
                     onNotifications = { moreOpen = false; navigate(AinoDestination.Notifications) },
                     onProfile = { moreOpen = false; navigate(AinoDestination.Profile) },
                 )
@@ -594,18 +609,14 @@ private fun AuthenticatedShell(
             }
             composable(
                 AinoDestination.Chat.route,
-                // Chat list side of the Signal parallax (the thread supplies the slide).
+                // Chat list side of the Signal transition (the thread supplies the slide).
                 exitTransition = {
-                    if (targetState.destination.route == AinoDestination.ChatThread.route) {
-                        androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(300)) { -it / 3 } +
-                            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300), targetAlpha = 0.6f)
-                    } else androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200))
+                    if (targetState.destination.route == AinoDestination.ChatThread.route) signalFadeScaleOut()
+                    else androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200))
                 },
                 popEnterTransition = {
-                    if (initialState.destination.route == AinoDestination.ChatThread.route) {
-                        androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(300)) { -it / 3 } +
-                            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300), initialAlpha = 0.6f)
-                    } else androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200))
+                    if (initialState.destination.route == AinoDestination.ChatThread.route) signalFadeScaleIn()
+                    else androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200))
                 },
             ) {
                 ChatScreen(
@@ -614,6 +625,7 @@ private fun AuthenticatedShell(
                     conversationId = null,
                     meetingsEnabled = user.tenantFeatures["meetings"] == true,
                     onOpenConversation = { conversationId ->
+                        chat.prepareConversation(conversationId)
                         nav.navigate(chatThreadRoute(conversationId)) { launchSingleTop = true }
                     },
                     onNavigateBack = { nav.popBackStack() },
@@ -623,39 +635,39 @@ private fun AuthenticatedShell(
                 route = AinoDestination.ChatThread.route,
                 arguments = listOf(navArgument(CHAT_CONVERSATION_ARGUMENT) { type = NavType.LongType }),
                 deepLinks = listOf(navDeepLink { uriPattern = CHAT_DEEP_LINK_PATTERN }),
-                // Signal conversation transition: thread slides in from the end while
-                // the list parallaxes 30% and dims; back reverses it.
-                enterTransition = {
-                    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { it } +
-                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(150))
-                },
-                exitTransition = {
-                    androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(300)) { -it / 3 } +
-                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(300), targetAlpha = 0.6f)
-                },
-                popEnterTransition = {
-                    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(300)) { -it / 3 } +
-                        androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(300), initialAlpha = 0.6f)
-                },
-                popExitTransition = {
-                    androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(300, easing = androidx.compose.animation.core.FastOutSlowInEasing)) { it } +
-                        androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(250, delayMillis = 50))
-                },
+                // Signal conversation transition: the thread slides in from the end over
+                // the shrinking, dimming list; back (and predictive back) reverses it.
+                enterTransition = { signalSlideFromEnd() },
+                exitTransition = { signalFadeScaleOut() },
+                popEnterTransition = { signalFadeScaleIn() },
+                popExitTransition = { signalSlideToEnd() },
             ) { backStackEntry ->
                 val conversationId = backStackEntry.arguments?.getLong(CHAT_CONVERSATION_ARGUMENT)
                     ?: return@composable
+                // No BackHandler here: the NavHost owns back so the predictive gesture can
+                // drive the transition. The thread closes once its entry is really popped.
                 val navigateBack = {
-                    chat.closeConversation()
                     nav.popBackStack()
                     Unit
                 }
-                BackHandler(onBack = navigateBack)
+                androidx.compose.runtime.DisposableEffect(backStackEntry) {
+                    onDispose {
+                        // Disposal waits for the exit animation; a reopen of the same chat meanwhile
+                        // pushes a new entry for it, which must keep the thread open.
+                        val stillOpen = nav.currentBackStack.value.any {
+                            it.destination.route == AinoDestination.ChatThread.route &&
+                                it.arguments?.getLong(CHAT_CONVERSATION_ARGUMENT) == conversationId
+                        }
+                        if (!stillOpen) chat.closeConversation(conversationId)
+                    }
+                }
                 ChatScreen(
                     viewModel = chat,
                     onPickDocument = onPickChatDocument,
                     conversationId = conversationId,
                     meetingsEnabled = user.tenantFeatures["meetings"] == true,
                     onOpenConversation = { nextConversationId ->
+                        chat.prepareConversation(nextConversationId)
                         nav.navigate(chatThreadRoute(nextConversationId)) { launchSingleTop = true }
                     },
                     onNavigateBack = navigateBack,
@@ -939,6 +951,15 @@ private fun AuthenticatedShell(
                 }
         }
         }
+        if (!fullScreen) {
+            app.aino.mobile.feature.search.SearchOverlay(
+                visible = searchActive,
+                viewModel = shellSearch,
+                onOpenLink = { link -> closeSearch(); openWebLink(link) },
+                contentPadding = padding,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         // P3.7: the clock verification sheet (ClockInVerifyModal equivalent) is
         // hosted globally so it works from the dashboard timer card too.
         attendanceUi.verifySession?.let { session ->
@@ -953,7 +974,7 @@ private fun AuthenticatedShell(
                 actions = VerifyActions(
                     onRetryLocation = { attendance.resumePending(onAttendanceLocationPermission) },
                     onOpenAppSettings = attendanceSystemActions.openAppSettings,
-                    onEnableLocation = attendanceSystemActions.openLocationSettings,
+                    onEnableLocation = attendanceSystemActions.enableLocation,
                     onSetUpScreenLock = attendanceSystemActions.openSecuritySettings,
                     onEnableFingerprint = attendanceSystemActions.enableFingerprintForAttendance,
                 ),
@@ -1069,6 +1090,9 @@ private fun AinoShellTopBar(
     statusVisual: app.aino.mobile.core.designsystem.component.StatusVisual,
     unreadNotifications: Int,
     onSearch: () -> Unit,
+    searchActive: Boolean,
+    search: app.aino.mobile.feature.search.SearchViewModel,
+    onCloseSearch: () -> Unit,
     onNotifications: () -> Unit,
     onProfile: () -> Unit,
 ) {
@@ -1084,61 +1108,100 @@ private fun AinoShellTopBar(
     val branding by container.branding.state.collectAsStateWithLifecycle()
     val orgLogo = branding.logoUrl?.takeIf(String::isNotBlank)?.let { app.aino.mobile.core.media.resolveServerMediaUrl(it) }
     Surface(color = colors.bg, tonalElevation = 0.dp) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (orgLogo != null) {
-                coil3.compose.AsyncImage(
-                    model = orgLogo,
-                    imageLoader = container.imageLoader,
-                    contentDescription = branding.orgName ?: "Logo",
-                    contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                    modifier = Modifier.height(36.dp).widthIn(max = 140.dp),
-                )
+        androidx.compose.animation.AnimatedContent(
+            targetState = searchActive,
+            transitionSpec = {
+                val enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(180)) +
+                    androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(180)) { width -> if (targetState) width / 6 else -width / 6 }
+                val exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120))
+                androidx.compose.animation.ContentTransform(enter, exit)
+            },
+            label = "shellTopBar",
+        ) { active ->
+            if (active) {
+                ShellSearchBar(search, onCloseSearch)
             } else {
-                Image(
-                    painterResource(R.drawable.aino_icon),
-                    contentDescription = "AINO",
-                    modifier = Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)),
-                )
-            }
-            Spacer(Modifier.weight(1f))
-            Box(
-                Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onSearch),
-                contentAlignment = Alignment.Center,
-            ) { Icon(HeroIcons.MagnifyingGlass, "Search", Modifier.size(22.dp), tint = colors.textSecondary) }
-            Box(
-                Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onNotifications),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(HeroIcons.Bell, "Notifications", Modifier.size(22.dp), tint = colors.textSecondary)
-                app.aino.mobile.feature.notifications.unreadBadgeLabel(unreadNotifications)?.let { label ->
-                    // `.chatBadge`-style count: danger fill, white text, ringed with the bar colour.
+                Row(
+                    Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (orgLogo != null) {
+                        coil3.compose.AsyncImage(
+                            model = orgLogo,
+                            imageLoader = container.imageLoader,
+                            contentDescription = branding.orgName ?: "Logo",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                            modifier = Modifier.height(36.dp).widthIn(max = 140.dp),
+                        )
+                    } else {
+                        Image(
+                            painterResource(R.drawable.aino_icon),
+                            contentDescription = "AINO",
+                            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(9.dp)),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
                     Box(
-                        Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 2.dp)
-                            .background(colors.danger, CircleShape).border(2.dp, colors.bg, CircleShape)
-                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                        Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onSearch),
                         contentAlignment = Alignment.Center,
-                    ) { Text(label, color = androidx.compose.ui.graphics.Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
-                }
-            }
-            // The touch target is a plain (unclipped) box: a CircleShape clip here
-            // would crop the status dot, which deliberately overhangs the avatar's
-            // bottom-right corner.
-            Box(
-                Modifier.padding(start = 8.dp).size(44.dp).clickable(onClickLabel = "Profile", onClick = onProfile),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(Modifier.size(38.dp)) {
-                    app.aino.mobile.core.designsystem.component.UserAvatar(user.fullName ?: user.username, user.avatar, 38.dp)
-                    app.aino.mobile.core.designsystem.component.StatusDot(
-                        statusVisual, 15.dp, colors.bg,
-                        Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp),
-                    )
+                    ) { Icon(HeroIcons.MagnifyingGlass, "Search", Modifier.size(22.dp), tint = colors.textSecondary) }
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onNotifications),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(HeroIcons.Bell, "Notifications", Modifier.size(22.dp), tint = colors.textSecondary)
+                        app.aino.mobile.feature.notifications.unreadBadgeLabel(unreadNotifications)?.let { label ->
+                            // `.chatBadge`-style count: danger fill, white text, ringed with the bar colour.
+                            Box(
+                                Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 2.dp)
+                                    .background(colors.danger, CircleShape).border(2.dp, colors.bg, CircleShape)
+                                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                                contentAlignment = Alignment.Center,
+                            ) { Text(label, color = androidx.compose.ui.graphics.Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                        }
+                    }
+                    // The touch target is a plain (unclipped) box: a CircleShape clip here
+                    // would crop the status dot, which deliberately overhangs the avatar's
+                    // bottom-right corner.
+                    Box(
+                        Modifier.padding(start = 8.dp).size(44.dp).clickable(onClickLabel = "Profile", onClick = onProfile),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Box(Modifier.size(38.dp)) {
+                            app.aino.mobile.core.designsystem.component.UserAvatar(user.fullName ?: user.username, user.avatar, 38.dp)
+                            app.aino.mobile.core.designsystem.component.StatusDot(
+                                statusVisual, 15.dp, colors.bg,
+                                Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+/** The search icon morphs the top bar into the field; back / the arrow collapses it. */
+@Composable
+private fun ShellSearchBar(search: app.aino.mobile.feature.search.SearchViewModel, onClose: () -> Unit) {
+    val colors = LocalWebColors.current
+    val ui by search.ui.collectAsStateWithLifecycle()
+    // Composed on open, so it takes precedence over the NavHost's back callback.
+    BackHandler(onBack = onClose)
+    Row(
+        Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(start = 4.dp, end = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Close search", onClick = onClose),
+            contentAlignment = Alignment.Center,
+        ) { Icon(HeroIcons.ArrowLeft, "Close search", Modifier.size(22.dp), tint = colors.textSecondary) }
+        app.aino.mobile.feature.search.SearchField(
+            ui = ui,
+            viewModel = search,
+            modifier = Modifier.weight(1f).padding(start = 4.dp),
+            showIcon = false,
+        )
     }
 }
 

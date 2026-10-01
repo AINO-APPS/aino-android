@@ -1,10 +1,18 @@
 package app.aino.mobile.core.call.webrtc
 
+import kotlin.coroutines.resume
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.webrtc.AudioTrack
 import org.webrtc.IceCandidate
 import org.webrtc.MediaConstraints
 import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
+import org.webrtc.RTCStatsReport
 import org.webrtc.RtpParameters
 import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
@@ -34,6 +42,8 @@ class RtcPeer(
     }
 
     private val candidates = IceCandidateBuffer()
+    private val encodings = EncodingParameterApplier()
+    private var qualityJob: Job? = null
     @Volatile private var makingOffer = false
     @Volatile private var remoteDescriptionSet = false
     @Volatile private var closed = false
@@ -180,15 +190,50 @@ class RtcPeer(
             if (params.encodings.isEmpty()) return@forEach
             params.encodings.forEach { it.maxBitrateBps = cap }
             if (kind == MediaStreamTrack.VIDEO_TRACK_KIND) {
-                params.degradationPreference = RtpParameters.DegradationPreference.MAINTAIN_FRAMERATE
+                params.degradationPreference = RtpParameters.DegradationPreference.BALANCED
             }
             sender.parameters = params
         }
     }
 
+    /**
+     * Caps audio at [AUDIO_MAX_BITRATE], starts video at the controller's ramp
+     * tier, then polls stats every [intervalMs] and applies tier changes until
+     * [close]. Idempotent while running.
+     */
+    fun startQualityAdaptation(scope: CoroutineScope, intervalMs: Long = QUALITY_STATS_INTERVAL_MS) {
+        if (closed || qualityJob?.isActive == true) return
+        val controller = CallQualityController()
+        qualityJob = scope.launch {
+            var capped = applyQuality(controller.getTier())
+            while (isActive && !closed) {
+                delay(intervalMs)
+                val report = stats() ?: break
+                val decision = controller.observe(collectStatsSample(report))
+                if (decision.changed || !capped) capped = applyQuality(decision.tier)
+            }
+        }
+    }
+
+    private suspend fun applyQuality(tier: VideoEncodingTier): Boolean {
+        if (closed) return false
+        val audio = encodings.applyAudioCap(peer)
+        if (!closed) encodings.applyVideoTier(peer, tier)
+        return audio
+    }
+
+    private suspend fun stats(): RTCStatsReport? {
+        if (closed) return null
+        val report = suspendCancellableCoroutine { continuation -> peer.getStats { continuation.resume(it) } }
+        return report.takeUnless { closed }
+    }
+
     fun close() {
         if (closed) return
         closed = true
+        qualityJob?.cancel()
+        qualityJob = null
+        encodings.clear(peer)
         synchronized(candidates) { candidates.clear() }
         runCatching { peer.dispose() }
     }

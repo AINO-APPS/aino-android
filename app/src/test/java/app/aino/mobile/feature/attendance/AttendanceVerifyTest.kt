@@ -1,7 +1,9 @@
 package app.aino.mobile.feature.attendance
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** P3.6/P3.7: verify-sheet classification, BSSID normalisation, hash tabs. */
@@ -72,6 +74,25 @@ class AttendanceVerifyTest {
             VerifyErrorKind.Face,
             classifySubmitError("Face verification failed", null, AttendanceAction.ClockIn).kind,
         )
+    }
+
+    @Test
+    fun resumesOnlyAParkedLocationOffSessionOnceLocationIsOn() {
+        val parked = VerifySession(
+            action = AttendanceAction.ClockIn,
+            workMode = WorkMode.Office,
+            step = VerifyStep.Ready,
+            submitError = VerifySubmitError(VerifyErrorKind.Location, "Location Is Off", "off", LOCATION_DISABLED_CODE, VerifyFix.EnableLocation),
+        )
+        assertTrue(shouldResumeAfterLocationEnabled(parked, AttendanceAction.ClockIn, locationEnabled = true))
+        assertFalse(shouldResumeAfterLocationEnabled(parked, AttendanceAction.ClockIn, locationEnabled = false))
+        assertFalse(shouldResumeAfterLocationEnabled(parked, null, locationEnabled = true))
+        assertFalse(shouldResumeAfterLocationEnabled(null, AttendanceAction.ClockIn, locationEnabled = true))
+        // Already resumed (error cleared, collecting again): a second broadcast/onResume is a no-op.
+        assertFalse(shouldResumeAfterLocationEnabled(parked.copy(step = VerifyStep.Collecting, submitError = null), AttendanceAction.ClockIn, true))
+        assertFalse(shouldResumeAfterLocationEnabled(parked.copy(step = VerifyStep.Collecting), AttendanceAction.ClockIn, true))
+        val otherError = parked.copy(submitError = classifySubmitError("You are 320 m from the office", "OUTSIDE_GEOFENCE", AttendanceAction.ClockIn))
+        assertFalse(shouldResumeAfterLocationEnabled(otherError, AttendanceAction.ClockIn, true))
     }
 
     @Test

@@ -11,6 +11,9 @@ import android.os.CancellationSignal
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.core.location.LocationManagerCompat
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
@@ -56,6 +59,7 @@ class LocationProvider(private val context: Context) {
             ?.takeIf { it.accuracyMeters <= 100f }
             ?.let { return it }
 
+        withTimeoutOrNull(10_000L) { fusedFix() }?.let { return it }
         for (provider in providers) {
             val fix = withTimeoutOrNull(if (provider == LocationManager.GPS_PROVIDER) 20_000L else 10_000L) { requestFix(manager, provider) }
             if (fix != null) return fix
@@ -63,6 +67,21 @@ class LocationProvider(private val context: Context) {
         // Fall back to a fresh-enough cached fix of any accuracy; the server judges it.
         return pickRecentFix(ages.keys.toList(), { ages[it] ?: Long.MAX_VALUE }, maxAgeMs = 300_000)
             ?: error("A precise location fix is unavailable. Move near a window or connect to the office Wi-Fi.")
+    }
+
+    /** Play services fused fix (Wi-Fi + cell + GPS); null when unavailable so LocationManager takes over. */
+    @SuppressLint("MissingPermission")
+    private suspend fun fusedFix(): LocationProof? = suspendCancellableCoroutine { continuation ->
+        val cancellation = CancellationTokenSource()
+        continuation.invokeOnCancellation { cancellation.cancel() }
+        runCatching {
+            LocationServices.getFusedLocationProviderClient(context)
+                .getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cancellation.token)
+                .addOnCompleteListener { task ->
+                    val fix = if (task.isSuccessful) task.result?.takeIf(Location::hasAccuracy)?.toProof() else null
+                    if (continuation.isActive) continuation.resume(fix)
+                }
+        }.onFailure { if (continuation.isActive) continuation.resume(null) }
     }
 
     @SuppressLint("MissingPermission")

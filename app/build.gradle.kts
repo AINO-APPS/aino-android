@@ -68,8 +68,8 @@ android {
         // version: X.Y.Z -> X*1_000_000 + Y*1_000 + Z (each part 0..999).
         // `android-release.yml` re-derives this from the tag and fails on a mismatch.
         // Written without digit separators so the release workflow can parse it.
-        versionCode = 11000 // 0.11.0
-        versionName = "0.11.0"
+        versionCode = 12000 // 0.12.0
+        versionName = "0.12.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())
@@ -93,7 +93,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -161,6 +162,8 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
     implementation(libs.webrtc.android)
+    implementation(libs.play.services.location)
+    implementation(libs.androidx.profileinstaller)
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
