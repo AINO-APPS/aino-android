@@ -23,6 +23,8 @@ import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person as PersonCompat
 import app.aino.mobile.MainActivity
+import app.aino.mobile.core.media.resolveServerMediaUrl
+import app.aino.mobile.core.push.NotificationAvatars
 
 /**
  * CallRingService
@@ -193,9 +195,18 @@ class CallRingService : Service() {
     }
     timeoutHandler.postDelayed(timeoutStop, remaining)
 
-    // Post the foreground notification FIRST, with NO avatar bitmap yet
-    // (required within ~5s of startForegroundService or the OS throws — a
-    // network avatar fetch must never block this). The avatar is loaded
+    // Signal-style initials avatar (rendered locally, no I/O) so the call
+    // notification always shows the caller's identity — even before / without
+    // the network photo. Same per-user key as chat notifications for a stable colour.
+    val fallbackAvatar = callerFallbackAvatar(callerName.ifEmpty { title }, callerId)
+    // The server sends the stored upload path (e.g. `/uploads/<tenant>/avatars/x.png`),
+    // not an absolute URL; HttpURLConnection cannot open a relative path, so resolve
+    // it against the server origin exactly like chat notifications / UserAvatar do.
+    val avatarUrl = callAvatarUrl(callerAvatar)
+
+    // Post the foreground notification FIRST, with only the local initials
+    // avatar (required within ~5s of startForegroundService or the OS throws — a
+    // network avatar fetch must never block this). The photo is loaded
     // asynchronously below and the notification is re-posted once it lands.
     val notification = buildCallNotification(
       title = title,
@@ -207,7 +218,7 @@ class CallRingService : Service() {
       callerAvatar = callerAvatar,
       callType = callType,
       scheme = scheme,
-      avatarBitmap = null,
+      avatarBitmap = fallbackAvatar,
     )
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -225,9 +236,9 @@ class CallRingService : Service() {
     // as the CallStyle Person icon + largeIcon. Best-effort: any failure just
     // leaves the already-posted text/icon notification untouched. Skipped when
     // no avatar URL was supplied.
-    if (callerAvatar.isNotBlank()) {
+    if (avatarUrl != null) {
       Thread {
-        val bitmap = AvatarLoader.load(applicationContext, callerAvatar, token)
+        val bitmap = AvatarLoader.load(applicationContext, avatarUrl, token)
         if (bitmap != null) {
           try {
             val withAvatar = buildCallNotification(
@@ -262,6 +273,12 @@ class CallRingService : Service() {
     if (!silent && vibrate) {
       startVibration()
     }
+  }
+
+  private fun callerFallbackAvatar(name: String, callerId: String): Bitmap? = try {
+    NotificationAvatars.fallback(name, if (callerId.isNotBlank()) "aino-user-$callerId" else name)
+  } catch (_: Throwable) {
+    null
   }
 
   /**
@@ -636,3 +653,13 @@ class CallRingService : Service() {
     super.onDestroy()
   }
 }
+
+/**
+ * The caller avatar as an absolute, loadable URL, or null when there is none.
+ * Pushes / socket events carry the stored upload path (`/uploads/...`), which
+ * must be resolved against the server origin before AvatarLoader can fetch it.
+ */
+internal fun callAvatarUrl(
+  callerAvatar: String?,
+  origin: String = app.aino.mobile.core.network.NetworkConfig.serverOrigin,
+): String? = callerAvatar?.takeIf(String::isNotBlank)?.let { resolveServerMediaUrl(it, origin) }

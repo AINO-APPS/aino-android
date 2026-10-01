@@ -40,6 +40,23 @@ class NativeCallControllerTest {
     }
 
     @Test
+    fun callerAvatarPathResolvesToAbsoluteUrlForNotification() {
+        val origin = "https://aino.example.test"
+        assertEquals(
+            "https://aino.example.test/uploads/t1/avatars/a.png",
+            callAvatarUrl("/uploads/t1/avatars/a.png", origin),
+        )
+        assertEquals(
+            "https://aino.example.test/uploads/t1/avatars/a.png",
+            callAvatarUrl("uploads/t1/avatars/a.png", "$origin/"),
+        )
+        assertEquals("https://cdn.example.test/priya.png", callAvatarUrl("https://cdn.example.test/priya.png", origin))
+        assertNull(callAvatarUrl("", origin))
+        assertNull(callAvatarUrl("   ", origin))
+        assertNull(callAvatarUrl(null, origin))
+    }
+
+    @Test
     fun ringWindowIsCappedAtThirtySecondsAndExpires() {
         val now = Instant.parse("2026-09-15T00:00:00Z")
         assertEquals(30_000, remainingRingMillis("2026-09-15T00:01:00Z", now))
