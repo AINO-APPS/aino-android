@@ -18,32 +18,75 @@ data class PushTap(
     val conversationId: Long?,
     val messageId: String?,
     val tappedAtMs: Long,
+    /** Generic alerts: the server's relative web path, when it sent one. */
+    val link: String? = null,
+    val taskId: Long? = null,
+    /** `notifications.id`, marked read when the tap is routed. */
+    val notificationId: Long? = null,
+    val title: String? = null,
 )
 
 private const val EXTRA_TYPE = "push_type"
 private const val EXTRA_CONVERSATION = "conversation_id"
 private const val EXTRA_DEDUPE = "push_dedupe_key"
 private const val EXTRA_MESSAGE = "push_message_id"
+private const val EXTRA_LINK = "push_link"
+private const val EXTRA_TASK = "push_task_id"
+private const val EXTRA_NOTIFICATION = "push_notification_id"
+private const val EXTRA_TITLE = "push_title"
 
 fun Intent.putPushTapExtras(push: ValidatedPush): Intent = apply {
     putExtra(EXTRA_TYPE, push.data["type"])
     putExtra(EXTRA_CONVERSATION, push.data["conversationId"])
     putExtra(EXTRA_DEDUPE, push.dedupeKey)
     putExtra(EXTRA_MESSAGE, push.data["messageId"])
+    if (push.kind == PushKind.General) {
+        putExtra(EXTRA_LINK, pushLink(push.data))
+        putExtra(EXTRA_TASK, pushLinkTaskId(push.data)?.toString())
+        putExtra(EXTRA_NOTIFICATION, push.data["notificationId"])
+        putExtra(EXTRA_TITLE, push.data["title"])
+    }
 }
 
 /** Null for launches that did not come from one of our notifications. Calls are routed by the call stack. */
 fun parsePushTap(intent: Intent?, nowMs: Long = System.currentTimeMillis()): PushTap? {
     val type = intent?.getStringExtra(EXTRA_TYPE)?.takeIf(String::isNotBlank) ?: return null
     if (type == "incoming_call" || type == "call_handled_elsewhere") return null
-    return PushTap(
+    return pushTapOf(
         type = type,
         dedupeKey = intent.getStringExtra(EXTRA_DEDUPE),
-        conversationId = intent.getStringExtra(EXTRA_CONVERSATION)?.toLongOrNull()?.takeIf { it > 0 },
+        conversationId = intent.getStringExtra(EXTRA_CONVERSATION),
         messageId = intent.getStringExtra(EXTRA_MESSAGE),
-        tappedAtMs = nowMs,
+        link = intent.getStringExtra(EXTRA_LINK),
+        taskId = intent.getStringExtra(EXTRA_TASK),
+        notificationId = intent.getStringExtra(EXTRA_NOTIFICATION),
+        title = intent.getStringExtra(EXTRA_TITLE),
+        nowMs = nowMs,
     )
 }
+
+/** Lenient extras → [PushTap]: blank / malformed optional values become null. */
+fun pushTapOf(
+    type: String,
+    dedupeKey: String?,
+    conversationId: String?,
+    messageId: String?,
+    link: String?,
+    taskId: String?,
+    notificationId: String?,
+    title: String?,
+    nowMs: Long,
+): PushTap = PushTap(
+    type = type,
+    dedupeKey = dedupeKey,
+    conversationId = conversationId?.toLongOrNull()?.takeIf { it > 0 },
+    messageId = messageId,
+    tappedAtMs = nowMs,
+    link = link?.trim()?.takeIf { it.startsWith("/") && !it.startsWith("//") },
+    taskId = taskId?.trim()?.toLongOrNull()?.takeIf { it > 0 },
+    notificationId = notificationId?.trim()?.toLongOrNull()?.takeIf { it > 0 },
+    title = title?.takeIf(String::isNotBlank),
+)
 
 /** The one pending tap; MainActivity sets it, the authenticated shell consumes it. */
 object PendingPushTap {

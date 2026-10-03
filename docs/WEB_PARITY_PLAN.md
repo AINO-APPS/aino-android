@@ -51,6 +51,14 @@ These deliberately deviate from the web at 430px:
   Skeletons are removed.
 - **Signing in on another device no longer signs the app out.** The server
   keeps one session per device instead of one per user (Phase S).
+- **Attendance is mobile-first (approved 2026-10-02), Attendance only.** §5
+  rule 8 (no invented UI / verbatim copy) is waived for the Attendance page and
+  the manager Team Attendance tab; data, actions and endpoints are unchanged.
+  See the Phase 3 "Mobile-first redesign" note.
+- **The work timer lives on Attendance only (2026-10-03).** The Home
+  `WorkTimerCard` was removed; clock in/out, breaks, work mode, the location
+  permission prompt, the verify sheet and the result/error notices are all on
+  the Attendance Today hero card.
 - **Sync follows Slack / Teams**, see Phase S:
   - one live socket that reconnects immediately when the network returns or
     the app comes back to the foreground;
@@ -636,7 +644,7 @@ failure must not blank the page**):
 | ----- | -------------------------------------------------------------------------------------- | ------ |
 | P2.1  | Delete cream design + `DashboardIllustration` Canvas + date strip + Work-Location card | DONE   |
 | P2.2  | Greeting banner + announcement carousel with dots                                      | DONE   |
-| P2.3  | `WorkTimerCard` 1:1 port                                                               | DONE   |
+| P2.3  | `WorkTimerCard` 1:1 port (removed from Home 2026-10-03; timer is on Attendance only)   | DONE   |
 | P2.4  | `TodayEventsCard` (today + tomorrow) 1:1 port                                          | DONE   |
 | P2.5  | `TasksSummary` 1:1 port                                                                | DONE   |
 | P2.6  | `SprintProgressCard` (new on Android)                                                  | DONE   |
@@ -726,6 +734,32 @@ Phase 3 implementation notes (Android, 2026-09-21):
   native fallback in `server/routes/tracker.ts`.
 - Date/time inputs map `<input type=date|time>` to the platform pickers;
   `<input type=month>` and the year `<select>` map to chevron steppers.
+
+Mobile-first redesign (2026-10-02, approved deviation — Attendance only):
+
+- Shell: "Attendance" header + **Today hero card** (live worked-time timer,
+  Working / On break / Not started / Done chip, work mode, target progress,
+  Clock in / Clock out + Start / End break). The hero calls the same
+  `AttendanceViewModel.prepare` / `breakAction` / `setWorkMode` entry points
+  (permission prompt, global verify sheet, `clockBusy`). It is the only work
+  timer: the Home `WorkTimerCard` was removed on 2026-10-03.
+  Header + hero collapse while a page scrolls (enter-always).
+- Labelled `PrimaryScrollableTabRow` synced with a `HorizontalPager`
+  (Overview · Leaves · Requests · Insights). Requests = Manual Entry + Overtime
+  and Insights = Analytics; hashes stay `#manual-entry` / `#analytics`. Every
+  page keeps its own `LazyColumn` + pull-to-refresh and stays composed
+  (keep-alive). Success messages are a Snackbar; errors are inline with Retry.
+- Overview: swipeable month calendar, summary/legend chips and a day-detail
+  bottom sheet (`tracker/entries/{date}`) with "Request correction", which
+  opens the manual-entry sheet on the Requests page for that date.
+- Leaves: balance rings, month stepper + status/type filter chips, history
+  cards, "Apply leave" FAB → bottom sheet, withdraw/cancel confirmation; HR
+  Policies / All balances behind segmented sub-tabs.
+- Requests: one newest-first list of manual-entry + overtime requests, FAB menu
+  → bottom-sheet forms. Insights: 7d / 30d / 90d / Custom (date-range picker),
+  KPI tiles, charts in cards, compact daily log.
+- Manager Team Attendance: day stepper + picker, filter chips with counts,
+  member cards with an avatar status dot.
 
 Endpoints (from `docs/PARITY_MATRIX.md`, tracker + leaves groups):
 
@@ -912,7 +946,7 @@ would close that gap).
 
 | ID  | Defect (root cause)                                                                                                                                                                              | Fix                                                                                                                                                                                                                       | Status |
 | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| R11 | **Clock-in not working.** (1) `office_wifi_bssids` is JSONB `{bssid,label,…}` objects; Android decoded `List<String>`, so the whole org policy failed and fell back to "verification off" — Login skipped the verify sheet and the server rejected it with `LOCATION_REQUIRED`. (2) Android 12+ ignores a FINE-only location request, so the permission never showed and the sheet hung on "Collecting office signals". (3) `ACCESS_WIFI_STATE` missing, so the BSSID was never readable. (4) Errors/results were written to Attendance state that Home never displayed. (5) A slow page load could overwrite the fresh post-clock-in status (looked like the clock-in failed; a retry then hit "Already logged in"). (6) Login was disabled/"Logging in..." during every attendance page load. (7) GPS-only fix with no timeout hung indoors. (8) Biometric `STRONG`-only prompt failed silently on devices without a strong sensor; a denied camera blocked the verify button. | Lenient `BssidListSerializer`; FINE+COARSE requested together; `ACCESS_WIFI_STATE`; Home shows attendance result/error toasts; `statusVersion` guards stale reloads and triggers a dashboard reload; separate `clockBusy` flag; policy re-fetched on tap when missing/degraded; fused → network → GPS with timeouts and a fresh cached fix; biometric **or screen lock**, with in-sheet errors; permission denial shown in the sheet; verify button always available; server-worded geofence/accuracy messages. `WorkTimerCard` ported fully (stats, Remaining/Breaks, ETA, overtime, progress colours, Resume + Logout on break, logout confirmation, ✓). Attendance page loads now coalesce instead of dropping month changes. | DONE   |
+| R11 | **Clock-in not working.** (1) `office_wifi_bssids` is JSONB `{bssid,label,…}` objects; Android decoded `List<String>`, so the whole org policy failed and fell back to "verification off" — Login skipped the verify sheet and the server rejected it with `LOCATION_REQUIRED`. (2) Android 12+ ignores a FINE-only location request, so the permission never showed and the sheet hung on "Collecting office signals". (3) `ACCESS_WIFI_STATE` missing, so the BSSID was never readable. (4) Errors/results were written to Attendance state that Home never displayed. (5) A slow page load could overwrite the fresh post-clock-in status (looked like the clock-in failed; a retry then hit "Already logged in"). (6) Login was disabled/"Logging in..." during every attendance page load. (7) GPS-only fix with no timeout hung indoors. (8) Biometric `STRONG`-only prompt failed silently on devices without a strong sensor; a denied camera blocked the verify button. | Lenient `BssidListSerializer`; FINE+COARSE requested together; `ACCESS_WIFI_STATE`; Home shows attendance result/error toasts; `statusVersion` guards stale reloads and triggers a dashboard reload; separate `clockBusy` flag; policy re-fetched on tap when missing/degraded; fused → network → GPS with timeouts and a fresh cached fix; biometric **or screen lock**, with in-sheet errors; permission denial shown in the sheet; verify button always available; server-worded geofence/accuracy messages. `WorkTimerCard` ported fully (stats, Remaining/Breaks, ETA, overtime, progress colours, Resume + Logout on break, logout confirmation, ✓). Attendance page loads now coalesce instead of dropping month changes. _2026-10-03: the Home timer and its toasts were removed; clock results show as the Attendance Snackbar and errors as its inline notice._ | DONE   |
 
 Regression checks: `ChatVoiceAndMediaTest` (voice state machine, amplitude,
 URL resolution, speeds, mentions, unread divider, link detection, WS frame),
@@ -1481,6 +1515,47 @@ are `waived` in `docs/parity-waivers.json` with owner "product (P10 web-only)".
 - **Release R8 shrinking stays off.** Enable it only together with device QA,
   because of WebRTC JNI and serialization reflection. Library baseline
   profiles already install through the transitive `profileinstaller`.
+
+### 0.15.0 — notification links and cross-platform sync (2026-10-02)
+
+**Notifications (server + app).**
+
+- Every task-assignment, mention, leave, approval and request notification now
+  goes through the server's single `notifyUser()` path. Each one sends an FCM
+  push as well as the in-app row and WS `notification`. Before this, only
+  `notifyUser()` callers pushed.
+- `notifications.link` holds a relative web path. FCM general alerts carry
+  `link` and `linkTaskId` (empty string when absent). The server sends these
+  two keys only to tokens registered with `pushVersion: 2`. Android 0.14.0 and
+  older reject unknown keys, so they keep receiving the old payload shape.
+  Links in use:
+  - `/tasks?task=<id>`
+  - `/notes?pageId=<id>`
+  - `/manager?tab=approvals&request=<id>`
+  - `/attendance#leaves`
+  - `/attendance#manual-entry`
+  - `/admin?tab=…` (web-only)
+- Push taps and in-app rows resolve their target in this order (`NotificationLinks.kt`):
+  `link` → `link_task_id` → type fallback for older rows → Notifications list.
+  Links without an app route, such as `/admin`, fall through. Opening from a
+  push marks the row read.
+- New high-importance channels: Mentions, Assignments, Approvals & requests.
+  Existing channel ids are unchanged.
+- My Team takes `manager?tab=&request=` and opens a request detail sheet with
+  Approve and Reject.
+
+**Realtime.**
+
+- New events:
+  - `team_attendance_update` (to managers)
+  - `leave_policy_changed` (scope `holidays` | `policies` | `balances`)
+  - `task_updated`
+  - `notifications_changed`
+- `attendance_update`, `leave_update` and `approval_update` now also reach the
+  acting user's own other devices.
+- On Android, a remote attendance, approval, leave or policy change refreshes
+  the timer, calendar, requests, leaves and balances, batched over 400 ms. My
+  Team and the notification list refresh live.
 
 ---
 

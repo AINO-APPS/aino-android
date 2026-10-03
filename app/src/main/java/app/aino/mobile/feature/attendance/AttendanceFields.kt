@@ -1,99 +1,190 @@
-﻿package app.aino.mobile.feature.attendance
+package app.aino.mobile.feature.attendance
 
-import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextFieldColors
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
-import app.aino.mobile.core.designsystem.tokens.rem
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
-/**
- * Form fields matching the web inputs (`Leaves.module.css` /
- * `ManualEntry.module.css`): input background, 1px border, 8px radius.
- */
+/** Outlined-field colours from the web tokens (input border, primary focus). */
 @Composable
-private fun FieldBox(modifier: Modifier, onClick: (() -> Unit)?, content: @Composable () -> Unit) {
+fun attendanceFieldColors(): TextFieldColors {
     val colors = LocalWebColors.current
-    var base = modifier
-        .clip(RoundedCornerShape(8.dp))
-        .background(colors.inputBg)
-        .border(1.dp, colors.inputBorder, RoundedCornerShape(8.dp))
-    if (onClick != null) base = base.clickable(onClick = onClick)
-    Box(base.padding(horizontal = 12.dp, vertical = 10.dp)) { content() }
+    return OutlinedTextFieldDefaults.colors(
+        focusedTextColor = colors.text,
+        unfocusedTextColor = colors.text,
+        disabledTextColor = colors.text,
+        focusedBorderColor = colors.primary,
+        unfocusedBorderColor = colors.inputBorder,
+        disabledBorderColor = colors.inputBorder,
+        focusedLabelColor = colors.primary,
+        unfocusedLabelColor = colors.textSecondary,
+        disabledLabelColor = colors.textSecondary,
+        focusedLeadingIconColor = colors.primary,
+        unfocusedLeadingIconColor = colors.textSecondary,
+        disabledLeadingIconColor = colors.textSecondary,
+        focusedPlaceholderColor = colors.textMuted,
+        unfocusedPlaceholderColor = colors.textMuted,
+        disabledPlaceholderColor = colors.textMuted,
+        cursorColor = colors.primary,
+        focusedContainerColor = Color.Transparent,
+        unfocusedContainerColor = Color.Transparent,
+        disabledContainerColor = Color.Transparent,
+    )
 }
 
-/** `<input type="date">` equivalent backed by the platform date picker. */
+/** Read-only outlined field that opens a picker; announced to TalkBack as a button. */
 @Composable
-fun WebDateField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "yyyy-mm-dd") {
-    val colors = LocalWebColors.current
-    val context = LocalContext.current
-    FieldBox(modifier, {
-        val initial = runCatching { LocalDate.parse(value) }.getOrNull() ?: LocalDate.now()
+fun PickerField(
+    label: String,
+    value: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "Select",
+) {
+    Box(
+        modifier.clearAndSetSemantics {
+            contentDescription = "$label: ${value.ifBlank { "not set" }}"
+            role = Role.Button
+            onClick(label = "Change $label") { onClick(); true }
+        },
+    ) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = {},
+            enabled = false,
+            readOnly = true,
+            singleLine = true,
+            label = { Text(label) },
+            placeholder = { Text(placeholder) },
+            leadingIcon = { Icon(icon, null, Modifier.size(18.dp)) },
+            colors = attendanceFieldColors(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Box(Modifier.matchParentSize().clickable(onClick = onClick))
+    }
+}
+
+private val LONG_DATE = DateTimeFormatter.ofPattern("EEE, MMM d, yyyy", Locale.US)
+
+private fun LocalDate.toPickerMillis(): Long = atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+private fun Long.toPickerDate(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
+
+/** Date input ("yyyy-MM-dd" value) backed by the Material3 date picker. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DateField(
+    label: String,
+    value: String,
+    onChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    allowFuture: Boolean = true,
+) {
+    var open by remember { mutableStateOf(false) }
+    val parsed = runCatching { LocalDate.parse(value) }.getOrNull()
+    PickerField(label, parsed?.format(LONG_DATE) ?: value, HeroIcons.CalendarDays, { open = true }, modifier, "Pick a date")
+    if (open) {
+        val today = LocalDate.now()
+        val state = rememberDatePickerState(
+            initialSelectedDateMillis = (parsed ?: today).toPickerMillis(),
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = allowFuture || utcTimeMillis.toPickerDate() <= today
+            },
+        )
         DatePickerDialog(
-            context,
-            { _, year, month, day -> onChange(LocalDate.of(year, month + 1, day).toString()) },
-            initial.year,
-            initial.monthValue - 1,
-            initial.dayOfMonth,
-        ).show()
-    }) {
-        Text(
-            value.ifBlank { placeholder },
-            color = if (value.isBlank()) colors.textMuted else colors.text,
-            fontSize = 0.85.rem,
-        )
+            onDismissRequest = { open = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { onChange(it.toPickerDate().toString()) }
+                    open = false
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { open = false }) { Text("Cancel") } },
+        ) { DatePicker(state) }
     }
 }
 
-/** `<input type="time">` equivalent backed by the platform time picker. */
+/** Material3 date-range dialog (Insights custom period); past dates only. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WebTimeField(value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "--:--") {
-    val colors = LocalWebColors.current
+fun DateRangeDialog(from: String, to: String, onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
+    val today = LocalDate.now()
+    val state = rememberDateRangePickerState(
+        initialSelectedStartDateMillis = runCatching { LocalDate.parse(from) }.getOrNull()?.toPickerMillis(),
+        initialSelectedEndDateMillis = runCatching { LocalDate.parse(to) }.getOrNull()?.toPickerMillis(),
+        selectableDates = object : SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis.toPickerDate() <= today
+        },
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            val start = state.selectedStartDateMillis
+            val end = state.selectedEndDateMillis
+            TextButton(
+                enabled = start != null && end != null,
+                onClick = { if (start != null && end != null) onConfirm(start.toPickerDate().toString(), end.toPickerDate().toString()) },
+            ) { Text("Apply") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    ) {
+        DateRangePicker(state, Modifier.weight(1f))
+    }
+}
+
+/** Time input ("HH:mm") backed by the platform 24h time picker. */
+@Composable
+fun TimeField(label: String, value: String, onChange: (String) -> Unit, modifier: Modifier = Modifier, placeholder: String = "--:--") {
     val context = LocalContext.current
-    FieldBox(modifier, {
+    PickerField(label, value, HeroIcons.Clock, {
         val initial = runCatching { LocalTime.parse(value) }.getOrNull() ?: LocalTime.of(9, 0)
-        TimePickerDialog(
-            context,
-            { _, hour, minute -> onChange("%02d:%02d".format(hour, minute)) },
-            initial.hour,
-            initial.minute,
-            true,
-        ).show()
-    }) {
-        Text(
-            value.ifBlank { placeholder },
-            color = if (value.isBlank()) colors.textMuted else colors.text,
-            fontSize = 0.85.rem,
-        )
-    }
+        TimePickerDialog(context, { _, hour, minute -> onChange("%02d:%02d".format(hour, minute)) }, initial.hour, initial.minute, true).show()
+    }, modifier, placeholder)
 }
 
-/** Single/multi-line text input with the web input chrome. */
+/** Outlined text input with the attendance colours. */
 @Composable
-fun WebTextInput(
+fun TextInput(
+    label: String,
     value: String,
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -101,78 +192,18 @@ fun WebTextInput(
     singleLine: Boolean = true,
     minLines: Int = 1,
     keyboardType: KeyboardType = KeyboardType.Text,
+    leadingIcon: ImageVector? = null,
 ) {
-    val colors = LocalWebColors.current
-    BasicTextField(
+    OutlinedTextField(
         value = value,
         onValueChange = onChange,
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(colors.inputBg)
-            .border(1.dp, colors.inputBorder, RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        textStyle = TextStyle(color = colors.text, fontSize = 0.85.rem),
-        cursorBrush = SolidColor(colors.primary),
+        label = { Text(label) },
+        placeholder = { Text(placeholder) },
         singleLine = singleLine,
         minLines = if (singleLine) 1 else minLines,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        decorationBox = { inner ->
-            Box {
-                if (value.isBlank()) Text(placeholder, color = colors.textMuted, fontSize = 0.85.rem)
-                inner()
-            }
-        },
+        leadingIcon = leadingIcon?.let { { Icon(it, null, Modifier.size(18.dp)) } },
+        colors = attendanceFieldColors(),
+        modifier = modifier.fillMaxWidth(),
     )
-}
-
-/** `.segmented` toggle row: equal buttons, active is primary-filled. */
-@Composable
-fun SegmentedRow(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    val colors = LocalWebColors.current
-    Row(
-        modifier
-            .fillMaxWidth()
-            .background(colors.surface, RoundedCornerShape(10.dp))
-            .border(1.dp, colors.border, RoundedCornerShape(10.dp))
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        options.forEachIndexed { index, label ->
-            val active = index == selected
-            Box(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(7.dp))
-                    .background(if (active) colors.primary else Color.Transparent)
-                    .clickable { onSelect(index) }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label,
-                    color = if (active) colors.onAccent else colors.textSecondary,
-                    fontSize = 0.82.rem,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                )
-            }
-        }
-    }
-}
-
-/** `.btn .btn-primary .btn-fullwidth`: primary fill, 8px radius. */
-@Composable
-fun WebPrimaryButton(label: String, enabled: Boolean = true, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val colors = LocalWebColors.current
-    Box(
-        modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (enabled) colors.primary else colors.primary.copy(alpha = 0.5f))
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 11.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = colors.onAccent, fontWeight = FontWeight.SemiBold, fontSize = 0.88.rem)
-    }
 }

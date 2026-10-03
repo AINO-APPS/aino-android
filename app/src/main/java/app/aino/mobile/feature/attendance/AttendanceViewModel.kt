@@ -8,6 +8,13 @@ import app.aino.mobile.core.auth.KeystoreTokenStore
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
 import app.aino.mobile.core.common.TrackerStatus
+import app.aino.mobile.core.common.reanchor
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.scan
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.plus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,24 +25,40 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /**
- * The four Attendance page tabs, mirroring `Attendance.tsx` TABS (P3.1/P3.8).
- * The `hash` values are the web URL hashes; the Android deep link carries the
- * same token as the `tab` query argument.
+ * The four Attendance pages, in pager order. Mobile-first labels (Requests =
+ * manual entry + overtime, Insights = analytics); the `hash` values stay the
+ * web URL hashes so `attendance?tab=` deep links and legacy redirects keep working.
  */
 enum class AttendanceTab(val id: String, val label: String, val hash: String) {
     Overview("overview", "Overview", ""),
     Leaves("leaves", "Leaves", "#leaves"),
-    Manual("manual", "Manual Entry", "#manual-entry"),
-    Analytics("analytics", "Analytics", "#analytics"),
+    Manual("manual", "Requests", "#manual-entry"),
+    Analytics("analytics", "Insights", "#analytics"),
     ;
+
+    /** Index of this tab's page in the Attendance pager. */
+    val page: Int get() = ordinal
 
     companion object {
         fun fromHash(hash: String?): AttendanceTab {
             val cleaned = hash?.removePrefix("#").orEmpty()
             return entries.firstOrNull { it.hash.removePrefix("#") == cleaned } ?: Overview
         }
+
+        fun fromPage(page: Int): AttendanceTab = entries.getOrElse(page) { Overview }
     }
 }
+
+/** Bottom-sheet forms on the Attendance page; held in the VM so they survive tab switches. */
+enum class AttendanceSheet { ApplyLeave, ManualEntry, Overtime }
+
+/** Overview day-detail sheet: the day's raw entries from `tracker/entries/{date}`. */
+data class DayDetailState(
+    val date: LocalDate,
+    val loading: Boolean = true,
+    val entries: List<RawTimeEntry> = emptyList(),
+    val error: String? = null,
+)
 
 /** Inner tab bar of the Leaves page (`Leaves.tsx` SUB_TABS); last two are HR-only. */
 enum class LeavesSubTab(val id: String, val label: String, val hrOnly: Boolean) {
@@ -158,8 +181,12 @@ data class AttendanceUiState(
     val month: YearMonth = YearMonth.now(),
     val selectedDate: LocalDate = LocalDate.now(),
     val history: Map<LocalDate, AttendanceDay> = emptyMap(),
+    /** Month [history] was loaded for; other months render neutral until their load lands. */
+    val historyMonth: YearMonth? = null,
     val leaves: Map<LocalDate, LeaveOverlay> = emptyMap(),
     val holidays: Map<LocalDate, HolidayOverlay> = emptyMap(),
+    val dayDetail: DayDetailState? = null,
+    val sheet: AttendanceSheet? = null,
 
     // ---- Leaves tab ----
     val leavesSubTab: LeavesSubTab = LeavesSubTab.MyLeaves,
@@ -229,10 +256,29 @@ class AttendanceViewModel(
     private val _ui = MutableStateFlow(AttendanceUiState())
     val ui: StateFlow<AttendanceUiState> = _ui.asStateFlow()
 
+    /**
+     * Live work-timer anchor, re-derived whenever [AttendanceUiState.status]
+     * changes (refresh, resync, clock actions). Lives here, not in `remember`,
+     * so recomposition and tab switches never restart the seconds at :00, and
+     * refreshes within the smoothing window keep the on-screen count.
+     */
+    val timer: StateFlow<app.aino.mobile.core.common.TimerAnchor?> = _ui
+        .map { it.status }
+        .distinctUntilChanged()
+        .scan(null as app.aino.mobile.core.common.TimerAnchor?) { current, status ->
+            status?.let {
+                val now = System.currentTimeMillis()
+                current.reanchor(app.aino.mobile.core.common.TimerAnchor.of(it, nowEpochMs = now), now)
+            }
+        }
+        .stateIn(viewModelScope + Dispatchers.Unconfined, SharingStarted.Eagerly, null)
+
     /** Keep-alive parity (P3.8): each tab fetches once, then keeps its state. */
     private val loadedTabs = mutableSetOf(AttendanceTab.Overview)
     private var refreshAgain = false
     private var policyRetried = false
+    /** Date the manual form was last checked for; reopening the sheet on it keeps the user's input. */
+    private var manualCheckedDate: String? = null
 
     // No refresh() in init: MainActivity creates this before sign-in and a
     // token-less `tracker/status` answers HTTP 400 (requireTenant). AinoApp
@@ -242,6 +288,7 @@ class AttendanceViewModel(
     fun reset() {
         refreshAgain = false
         policyRetried = false
+        manualCheckedDate = null
         loadedTabs.clear()
         loadedTabs.add(AttendanceTab.Overview)
         _ui.value = AttendanceUiState()
@@ -262,15 +309,18 @@ class AttendanceViewModel(
             // runCatching wrapped policy + status + history, so one bad decode
             // discarded all of them — that is how a quoted NUMERIC in
             // `min_hours_present` silently disabled every clock-in button.
-            val range = monthRange(_ui.value.month)
+            val loadMonth = _ui.value.month
+            val range = monthRange(loadMonth)
             if (warm != null && _ui.value.status == null) {
-                val cachedStatus = runCatching(warm::loadStatus).getOrNull()
+                // A status cached on an earlier day is not today's: leave it to the network load.
+                val cachedStatus = runCatching(warm::loadStatus).getOrNull()?.takeIf { it.isFromDayOf(System.currentTimeMillis()) }
                 val cachedPolicy = runCatching(warm::loadPolicy).getOrNull()
                 val cachedHistory = runCatching { warm.loadHistory(range) }.getOrNull()?.associateBy { LocalDate.parse(it.date.take(10)) }
                 if (_ui.value.status == null) _ui.value = _ui.value.copy(
                     status = cachedStatus,
                     policy = _ui.value.policy ?: cachedPolicy,
                     history = cachedHistory ?: _ui.value.history,
+                    historyMonth = if (cachedHistory != null) loadMonth else _ui.value.historyMonth,
                 )
             }
             val policy = runCatching(repository::loadPolicy)
@@ -296,6 +346,7 @@ class AttendanceViewModel(
                 policyDegraded = policy.isFailure,
                 status = if (statusFresh) status.getOrNull() ?: _ui.value.status else _ui.value.status,
                 history = history,
+                historyMonth = loadMonth,
                 leaves = leaves,
                 holidays = holidays,
                 manualRequests = manual,
@@ -351,6 +402,54 @@ class AttendanceViewModel(
         _ui.value = _ui.value.copy(month = now, selectedDate = LocalDate.now())
         refresh()
     }
+
+    /** Overview day tap: open the detail sheet and fetch that day's raw entries. */
+    fun openDayDetail(date: LocalDate) {
+        val future = date > LocalDate.now()
+        _ui.value = _ui.value.copy(selectedDate = date, dayDetail = DayDetailState(date, loading = !future))
+        if (future) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = runCatching { repository.loadEntries(date.toString()) }
+            val current = _ui.value.dayDetail?.takeIf { it.date == date } ?: return@launch
+            _ui.value = _ui.value.copy(
+                dayDetail = current.copy(
+                    loading = false,
+                    entries = result.getOrDefault(current.entries),
+                    error = result.exceptionOrNull()?.let { app.aino.mobile.core.network.userFacingMessage(it, "Could not load this day") },
+                ),
+            )
+        }
+    }
+
+    fun closeDayDetail() { _ui.value = _ui.value.copy(dayDetail = null) }
+
+    /** Day sheet "Request correction": Requests page + manual-entry sheet loaded with that day's entries. */
+    fun requestCorrection(date: LocalDate) {
+        _ui.value = _ui.value.copy(dayDetail = null)
+        selectTab(AttendanceTab.Manual)
+        _ui.value = _ui.value.copy(sheet = AttendanceSheet.ManualEntry, error = null)
+        updateManualForm(date = date.toString())
+    }
+
+    fun openSheet(sheet: AttendanceSheet) {
+        _ui.value = _ui.value.copy(sheet = sheet, error = null, leaveError = null, leaveSuccess = null)
+        // Same date check the form runs on a date change: detects edit mode / leave / live session.
+        if (sheet == AttendanceSheet.ManualEntry && manualCheckedDate != _ui.value.manualDate) {
+            updateManualForm(date = _ui.value.manualDate)
+        }
+    }
+
+    fun closeSheet() {
+        val formSheet = _ui.value.sheet == AttendanceSheet.ManualEntry || _ui.value.sheet == AttendanceSheet.Overtime
+        _ui.value = _ui.value.copy(
+            sheet = null,
+            error = if (formSheet) null else _ui.value.error,
+            leaveError = null,
+        )
+    }
+
+    /** The snackbar showed the success message: clear it so it is not shown twice. */
+    fun consumeMessage() { _ui.value = _ui.value.copy(message = null, leaveSuccess = null) }
 
     // ------------------------------------------------------------------
     // Leaves tab
@@ -497,6 +596,7 @@ class AttendanceViewModel(
                         leaveSubmitting = false,
                         leaveReason = "",
                         leaveSuccess = response.message.ifBlank { "Leave request submitted" },
+                        sheet = if (_ui.value.sheet == AttendanceSheet.ApplyLeave) null else _ui.value.sheet,
                     )
                     loadLeavesTab()
                 },
@@ -584,11 +684,12 @@ class AttendanceViewModel(
     private fun loadManualDate(date: String) {
         _ui.value = _ui.value.copy(
             checkingManualDate = true, error = null,
-            manualLeaveConflict = null, manualLiveSession = false,
+            manualLeaveConflict = null, manualLiveSession = false, manualEditMode = false,
         )
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.loadEntries(date) }.fold(
                 onSuccess = { entries ->
+                    manualCheckedDate = date
                     val editable = editableDay(entries)
                     val selectedDate = LocalDate.parse(date)
                     val leave = _ui.value.leaves[selectedDate]
@@ -611,6 +712,8 @@ class AttendanceViewModel(
                             manualMode = editable.workMode,
                             manualBreaks = editable.breaks,
                         )
+                        // Entries without a clock-in still mean the day has attendance: edit request, not a new day.
+                        entries.isNotEmpty() -> _ui.value.copy(checkingManualDate = false, manualEditMode = true)
                         else -> _ui.value.copy(
                             checkingManualDate = false, manualEditMode = false, manualBreaks = emptyList(),
                         )
@@ -649,15 +752,23 @@ class AttendanceViewModel(
                     workMode = current.manualMode.name.lowercase(),
                     breaks = current.manualBreaks,
                 )
-                if (current.manualEditMode) repository.updateManualEntry(payload) else repository.submitManualEntry(payload)
+                repository.saveManualEntry(payload, hasExistingEntries = current.manualEditMode)
             }.fold(
                 onSuccess = { response ->
-                    val manual = repository.loadManualRequests()
-                    val history = repository.loadHistory(monthRange(current.month)).associateBy { LocalDate.parse(it.date.take(10)) }
+                    manualCheckedDate = null
+                    // The request is already filed; a failed refresh must not turn it into an error.
+                    val manual = runCatching(repository::loadManualRequests).getOrNull()
+                    val history = runCatching {
+                        repository.loadHistory(monthRange(current.month)).associateBy { LocalDate.parse(it.date.take(10)) }
+                    }.getOrNull()
                     _ui.value = _ui.value.copy(
-                        loading = false, manualRequests = manual, history = history,
+                        loading = false,
+                        manualRequests = manual ?: _ui.value.manualRequests,
+                        history = history ?: _ui.value.history,
+                        historyMonth = if (history != null) current.month else _ui.value.historyMonth,
                         manualEditMode = false, manualBreaks = emptyList(),
-                        message = response.message,
+                        message = manualEntrySuccessMessage(response),
+                        sheet = if (_ui.value.sheet == AttendanceSheet.ManualEntry) null else _ui.value.sheet,
                     )
                 },
                 onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Manual entry failed") },
@@ -685,6 +796,7 @@ class AttendanceViewModel(
                         overtimeReason = "",
                         overtimeRequests = repository.loadOvertimeRequests(),
                         message = response.message,
+                        sheet = if (_ui.value.sheet == AttendanceSheet.Overtime) null else _ui.value.sheet,
                     )
                 },
                 onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Overtime request failed") },
@@ -980,17 +1092,70 @@ class AttendanceViewModel(
         }
     }
 
-    /** Another device (web tab / desktop) clocked in/out or took a break: refetch. */
+    /**
+     * Own attendance changed elsewhere — clock/break on another device, or a
+     * manual entry filed / deleted (`attendance_update`): the tracker status,
+     * the visible month's calendar, manual/overtime requests and, once opened,
+     * Analytics. Status keeps its clockBusy/statusVersion guards.
+     */
     fun onRemoteAttendanceChange() {
-        if (_ui.value.clockBusy) return
-        resyncStatus()
+        if (!_ui.value.clockBusy) resyncStatus()
+        scheduleRemoteRefresh(RemoteRefresh.Calendar, RemoteRefresh.Analytics)
     }
 
-    /** A leave was applied / approved / rejected elsewhere: the calendar overlay and, once opened, the Leaves tab. */
-    fun onRemoteLeaveChange() {
-        refresh()
-        if (AttendanceTab.Leaves in loadedTabs) loadLeavesTab()
+    /** A leave was applied / approved / rejected / withdrawn elsewhere: calendar overlay, Leaves tab, balances. */
+    fun onRemoteLeaveChange() =
+        scheduleRemoteRefresh(RemoteRefresh.Calendar, RemoteRefresh.Leaves, RemoteRefresh.Balances)
+
+    /**
+     * A manual-entry / overtime / leave request was decided (`approval_update`):
+     * the requests lists and calendar (both reloaded by [refresh]) and, once
+     * opened, the Leaves tab.
+     */
+    fun onRemoteApprovalChange() =
+        scheduleRemoteRefresh(RemoteRefresh.Calendar, RemoteRefresh.Leaves, RemoteRefresh.Analytics)
+
+    /** HR changed holidays / leave policies / balances (`leave_policy_changed { scope }`). */
+    fun onRemoteLeavePolicyChange(scope: String?) = when (scope) {
+        "holidays" -> scheduleRemoteRefresh(RemoteRefresh.Calendar, RemoteRefresh.Policies)
+        "policies" -> scheduleRemoteRefresh(RemoteRefresh.Leaves, RemoteRefresh.Policies)
+        "balances" -> scheduleRemoteRefresh(RemoteRefresh.Leaves, RemoteRefresh.Balances)
+        else -> scheduleRemoteRefresh(*RemoteRefresh.entries.toTypedArray())
     }
+
+    private enum class RemoteRefresh { Calendar, Leaves, Balances, Policies, Analytics }
+
+    private val pendingRemoteRefresh = mutableSetOf<RemoteRefresh>()
+    private var remoteRefreshJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Coalesces realtime bursts (one approval emits approval_update +
+     * attendance_update + leave_update): the first event opens a short window,
+     * later ones join it, then each affected surface reloads once. Tabs the
+     * user never opened stay lazy.
+     */
+    private fun scheduleRemoteRefresh(vararg parts: RemoteRefresh) {
+        pendingRemoteRefresh += parts
+        if (remoteRefreshJob?.isActive == true) return
+        remoteRefreshJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(remoteRefreshWindowMs)
+            val due = pendingRemoteRefresh.toSet()
+            pendingRemoteRefresh.clear()
+            val state = _ui.value
+            if (RemoteRefresh.Calendar in due) refresh()
+            if (RemoteRefresh.Leaves in due && AttendanceTab.Leaves in loadedTabs) loadLeavesTab()
+            if (RemoteRefresh.Balances in due) {
+                if (state.leavesSubTab == LeavesSubTab.MyBalances || state.myBalances.isNotEmpty()) loadMyBalances()
+                if (state.isHr && (state.leavesSubTab == LeavesSubTab.AllBalances || state.allBalances.isNotEmpty())) loadAllBalances()
+            }
+            if (RemoteRefresh.Policies in due &&
+                (state.leavesSubTab == LeavesSubTab.Policies || state.policiesHolidays.isNotEmpty())
+            ) loadPoliciesTab()
+            if (RemoteRefresh.Analytics in due && AttendanceTab.Analytics in loadedTabs) loadAnalytics()
+        }
+    }
+
+    private val remoteRefreshWindowMs = 400L
 
     /**
      * Location permission was not granted from the flow. `permanentlyDenied`

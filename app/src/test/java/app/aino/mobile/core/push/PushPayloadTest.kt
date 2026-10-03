@@ -2,6 +2,7 @@ package app.aino.mobile.core.push
 
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -43,6 +44,51 @@ class PushPayloadTest {
         val call = validatePushPayload(visibleCall(), fixtureTime).getOrThrow()
         assertEquals(456L.hashCode(), notificationId(chat))
         assertEquals(199L.hashCode(), notificationId(call))
+    }
+
+    @Test
+    fun genericAlertsAcceptOptionalDeepLinkKeys() {
+        // New servers add link + linkTaskId (empty strings when absent); old servers omit both.
+        val linked = validatePushPayload(general() + mapOf("link" to "/tasks?task=12", "linkTaskId" to "12"), fixtureTime).getOrThrow()
+        assertEquals(PushKind.General, linked.kind)
+        assertEquals("/tasks?task=12", pushLink(linked.data))
+        assertEquals(12L, pushLinkTaskId(linked.data))
+
+        val empty = validatePushPayload(general() + mapOf("link" to "", "linkTaskId" to ""), fixtureTime).getOrThrow()
+        assertNull(pushLink(empty.data))
+        assertNull(pushLinkTaskId(empty.data))
+
+        val legacy = validatePushPayload(general(), fixtureTime).getOrThrow()
+        assertNull(pushLink(legacy.data))
+        assertNull(pushLinkTaskId(legacy.data))
+
+        // Malformed hints never reject the alert; they are just ignored for routing.
+        val odd = validatePushPayload(general() + mapOf("link" to "https://evil.test/x", "linkTaskId" to "abc"), fixtureTime).getOrThrow()
+        assertNull(pushLink(odd.data))
+        assertNull(pushLinkTaskId(odd.data))
+        assertNull(pushLink(mapOf("link" to "//evil.test/x")))
+        assertNull(pushLinkTaskId(mapOf("linkTaskId" to "-4")))
+    }
+
+    @Test
+    fun deepLinkKeysAreOnlyOptionalForGenericAlerts() {
+        assertTrue(validatePushPayload(chat() + ("link" to "/chat/456"), fixtureTime).isFailure)
+        assertTrue(validatePushPayload(cancel() + ("linkTaskId" to "3"), fixtureTime).isFailure)
+    }
+
+    @Test
+    fun genericAlertsPickTheirChannelByType() {
+        assertEquals(PushNotifications.MENTIONS, generalPushChannel("mention"))
+        assertEquals(PushNotifications.MENTIONS, generalPushChannel("note_mention"))
+        assertEquals(PushNotifications.ASSIGNMENTS, generalPushChannel("task"))
+        for (type in listOf("approval", "leave", "agile_request", "agile_grant")) {
+            assertEquals(type, PushNotifications.APPROVALS, generalPushChannel(type))
+        }
+        assertEquals(PushNotifications.GENERAL, generalPushChannel("meeting_invite"))
+        assertEquals(PushNotifications.GENERAL, generalPushChannel(null))
+        // Existing ids are never renamed, so users keep their per-channel settings.
+        assertEquals("aino_general", PushNotifications.GENERAL)
+        assertEquals("aino_messages", PushNotifications.MESSAGES)
     }
 
     private fun chat() = mapOf(

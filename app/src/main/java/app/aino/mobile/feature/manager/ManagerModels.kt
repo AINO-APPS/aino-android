@@ -20,10 +20,30 @@ data class RequestMetadata(
     @SerialName("clock_in") val clockIn: String? = null,
     @SerialName("clock_out") val clockOut: String? = null,
     @SerialName("work_mode") val workMode: String? = null,
-    val hours: String? = null,
+    /** Overtime stores a JSON number (`{ date, hours: 2.5 }`); older rows may hold a string. */
+    @Serializable(with = LenientTextSerializer::class) val hours: String? = null,
     val edit: Boolean? = null,
     val breaks: List<BreakWindow>? = null,
 )
+
+/** Decodes any JSON primitive (string, number, boolean) as its text; `null` stays null. */
+internal object LenientTextSerializer : kotlinx.serialization.KSerializer<String?> {
+    override val descriptor = kotlinx.serialization.descriptors.PrimitiveSerialDescriptor(
+        "app.aino.mobile.feature.manager.LenientText",
+        kotlinx.serialization.descriptors.PrimitiveKind.STRING,
+    )
+
+    override fun deserialize(decoder: kotlinx.serialization.encoding.Decoder): String? {
+        val json = decoder as? kotlinx.serialization.json.JsonDecoder ?: return decoder.decodeString()
+        val element = json.decodeJsonElement() as? kotlinx.serialization.json.JsonPrimitive ?: return null
+        return if (element is kotlinx.serialization.json.JsonNull) null else element.content
+    }
+
+    @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+    override fun serialize(encoder: kotlinx.serialization.encoding.Encoder, value: String?) {
+        if (value == null) encoder.encodeNull() else encoder.encodeString(value)
+    }
+}
 
 @Serializable
 data class BreakWindow(val start: String? = null, val end: String? = null)
@@ -41,6 +61,8 @@ data class ApprovalRow(
     @SerialName("requester_id") val requesterId: Long? = null,
     @SerialName("approver_id") val approverId: Long? = null,
     @SerialName("reference_id") val referenceId: Long? = null,
+    /** Requester's note (`approval_requests.reason`; overtime and some leave rows). */
+    val reason: String? = null,
     @SerialName("reject_reason") val rejectReason: String? = null,
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("reviewed_at") val reviewedAt: String? = null,

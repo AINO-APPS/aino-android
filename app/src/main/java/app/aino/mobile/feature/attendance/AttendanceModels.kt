@@ -167,6 +167,8 @@ data class ManualEntryRequest(
     @SerialName("reviewed_at") val reviewedAt: String? = null,
     @SerialName("reject_reason") val rejectReason: String? = null,
     @SerialName("approver_name") val approverName: String? = null,
+    /** `approval_requests.reason`, e.g. "Manual time entry (edit request)"; not every server build returns it. */
+    val reason: String? = null,
 )
 
 @Serializable
@@ -175,6 +177,8 @@ data class ManualEntryMetadata(
     @SerialName("clock_in") val clockIn: String? = null,
     @SerialName("clock_out") val clockOut: String? = null,
     @SerialName("work_mode") val workMode: String? = null,
+    /** Set when the request changes a day that already had attendance. */
+    val edit: Boolean? = null,
 )
 
 @Serializable
@@ -232,7 +236,11 @@ data class EditableDay(
 data class OvertimePayload(val date: String, val hours: Double, val reason: String)
 
 @Serializable
-data class AttendanceMutationResponse(val message: String)
+data class AttendanceMutationResponse(
+    val message: String = "",
+    val status: String? = null,
+    val needsApproval: Boolean? = null,
+)
 
 data class MonthRange(val firstVisible: java.time.LocalDate, val lastVisible: java.time.LocalDate)
 
@@ -346,10 +354,27 @@ fun editableDay(entries: List<RawTimeEntry>): EditableDay? {
     )
 }
 
-private fun localTime(timestamp: String): String = runCatching {
+private fun localTime(timestamp: String): String =
+    entryLocalTime(timestamp)?.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")) ?: "09:00"
+
+const val EXISTING_DAY_APPROVAL_NOTE =
+    "This day already has attendance. Your changes will be sent for approval and applied once approved."
+
+/** Info note for the manual-entry form; only shown when the chosen date already has entries. */
+fun manualEntryNote(hasExistingEntries: Boolean): String? = if (hasExistingEntries) EXISTING_DAY_APPROVAL_NOTE else null
+
+/** A day with existing entries is changed via `PUT tracker/manual-entry/{date}` (an edit request); otherwise `POST`. */
+fun manualEntryMethod(hasExistingEntries: Boolean): String = if (hasExistingEntries) "PUT" else "POST"
+
+/** Success snackbar copy: the server's own wording, else a generic approval notice. */
+fun manualEntrySuccessMessage(response: AttendanceMutationResponse?): String =
+    response?.message?.takeIf(String::isNotBlank) ?: "Submitted for approval"
+
+/** Server entry timestamp (UTC, with or without zone) → device-local time, or null if unparseable. */
+fun entryLocalTime(timestamp: String): java.time.LocalTime? = runCatching {
     java.time.Instant.parse(timestamp.replace(" ", "T").let { if (it.endsWith("Z") || Regex("[+-]\\d{2}:?\\d{2}$").containsMatchIn(it)) it else "${it}Z" })
-        .atZone(java.time.ZoneId.systemDefault()).toLocalTime().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
-}.getOrDefault("09:00")
+        .atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+}.getOrNull()
 
 fun validateOvertime(date: String, hours: String, reason: String): String? {
     if (runCatching { java.time.LocalDate.parse(date) }.isFailure) return "Choose a valid date"

@@ -66,8 +66,6 @@ import app.aino.mobile.feature.home.DashboardViewModel
 import app.aino.mobile.feature.attendance.AttendanceScreen
 import app.aino.mobile.feature.attendance.AttendanceTab
 import app.aino.mobile.feature.attendance.AttendanceViewModel
-import app.aino.mobile.feature.attendance.AttendanceAction
-import app.aino.mobile.feature.attendance.WorkMode
 import app.aino.mobile.feature.attendance.verify.ClockInVerifySheet
 import app.aino.mobile.feature.attendance.verify.VerifyActions
 import app.aino.mobile.feature.tasks.TasksScreen
@@ -244,9 +242,16 @@ fun AinoApp(
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
                 if (event.type in TASK_REFRESH_EVENTS) tasks.onTaskEvent()
                 when (event.type) {
-                    // Clock/break taken on the web, desktop or another phone:
-                    // refresh the timer + attendance status (cross-device sync).
+                    // Clock/break taken on the web, desktop or another phone, or a
+                    // manual entry filed/deleted: timer, status, calendar and loaded tabs.
                     "attendance_update" -> { dashboard.refresh(); attendance.onRemoteAttendanceChange() }
+                    // A manual-entry / overtime / leave request was decided (or acted on elsewhere).
+                    "approval_update" -> attendance.onRemoteApprovalChange()
+                    // HR edited holidays / leave policies / balances.
+                    "leave_policy_changed" -> {
+                        dashboard.refresh()
+                        attendance.onRemoteLeavePolicyChange(leavePolicyScope(event.data))
+                    }
                     "user_status" -> profile.onStatusEvent(event.data)
                     // Multi-device theme sync (web ThemeContext).
                     "theme_changed" -> themeFromEvent(event.data)?.let { dark -> setDark(dark) }
@@ -426,7 +431,7 @@ private fun AuthenticatedShell(
     var moreOpen by androidx.compose.runtime.remember { mutableStateOf(false) }
     BackHandler(enabled = moreOpen) { moreOpen = false }
     val moreRoutes = moreItems.map { it.route }.toSet()
-    val moreActive = current != null && current in moreRoutes
+    val moreActive = currentBottomRoute != null && currentBottomRoute in moreRoutes
     fun navigate(destination: AinoDestination) {
         if (current == AinoDestination.ChatThread.route) chat.closeConversation()
         nav.navigate(destination.route) {
@@ -439,15 +444,19 @@ private fun AuthenticatedShell(
         val route = webLinkToRoute(link) ?: return
         runCatching { nav.navigate(route) { launchSingleTop = true } }
     }
-    // A tapped system notification: chat messages open their thread, everything
-    // else opens the notifications page; the outcome feeds the routing metrics.
+    // A tapped system notification: chat messages open their thread; other
+    // alerts follow the server link / linked task / type fallback (see
+    // `pushTapRoute`) and are marked read. The outcome feeds the routing metrics.
     val pendingTap by app.aino.mobile.core.push.PendingPushTap.tap.collectAsStateWithLifecycle()
     val shellContext = LocalContext.current
     LaunchedEffect(pendingTap) {
         val tap = app.aino.mobile.core.push.PendingPushTap.consume() ?: return@LaunchedEffect
-        val route = if (tap.type == "chat_message" && tap.conversationId != null) chatThreadRoute(tap.conversationId)
-        else AinoDestination.Notifications.route
-        val routed = runCatching { nav.navigate(route) { launchSingleTop = true } }.isSuccess
+        val route = pushTapRoute(tap)
+        val routed = runCatching { nav.navigate(route) { launchSingleTop = true } }.isSuccess ||
+            // A target this build/user cannot open still lands on the notifications list.
+            (route != AinoDestination.Notifications.route &&
+                runCatching { nav.navigate(AinoDestination.Notifications.route) { launchSingleTop = true } }.isSuccess)
+        tap.notificationId?.let(notifications::markReadById)
         val events = app.aino.mobile.core.push.routingEvents(tap, routed, System.currentTimeMillis())
         withContext(Dispatchers.IO) {
             app.aino.mobile.core.push.reportNotificationMetrics(app.aino.mobile.core.AppContainer.get(shellContext).api, events)
@@ -542,24 +551,8 @@ private fun AuthenticatedShell(
                 HomeScreen(
                     user,
                     dashboard,
-                    attendanceUi.status,
-                    attendanceUi.clockBusy,
-                    attendanceUi.workMode.name.lowercase(),
-                    onAttendanceWorkMode = { mode ->
-                        attendance.setWorkMode(WorkMode.entries.first { it.name.equals(mode, ignoreCase = true) })
-                    },
-                    onAttendanceAction = { action ->
-                        attendance.prepare(
-                            if (action == "clock_in") AttendanceAction.ClockIn else AttendanceAction.ClockOut,
-                            onAttendanceLocationPermission,
-                        )
-                    },
-                    onAttendanceBreak = attendance::breakAction,
                     onCalendar = { navigate(AinoDestination.Calendar) },
                     onTasks = { navigate(AinoDestination.Tasks) },
-                    attendanceNotice = attendanceUi.error ?: attendanceUi.message,
-                    attendanceNoticeIsError = attendanceUi.error != null,
-                    onDismissAttendanceNotice = attendance::clearNotice,
                 )
             }
             composable(AinoDestination.Tasks.route) {
@@ -813,6 +806,8 @@ private fun AuthenticatedShell(
                     viewModel = attendance,
                     userRole = role,
                     initialTab = AttendanceTab.fromHash(backStackEntry.arguments?.getString("tab")),
+                    // The only clock entry point: permission prompt + global verify sheet.
+                    onLocationPermission = onAttendanceLocationPermission,
                 )
             }
             // The web redirects /leaves to /attendance#leaves.
@@ -903,7 +898,11 @@ private fun AuthenticatedShell(
                 )
             }
             // P8: the web Manager Dashboard (Approvals / Team Attendance / Analytics / My Requests).
-            composable(AinoDestination.Manager.route) {
+            // `?tab=&request=` carry web `/manager` deep links (notification / push targets).
+            composable(
+                route = MANAGER_ROUTE_PATTERN,
+                arguments = listOf("tab", "request").map { name -> navArgument(name) { defaultValue = "" } },
+            ) { backStackEntry ->
                 val context = LocalContext.current
                 val manager = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.manager.ManagerViewModel>(
                     factory = app.aino.mobile.feature.manager.ManagerViewModel.factory(context),
@@ -915,7 +914,10 @@ private fun AuthenticatedShell(
                 app.aino.mobile.feature.manager.ManagerScreen(
                     viewModel = manager,
                     userRole = role,
+                    userId = user.id,
                     onOpenMember = { userId -> nav.navigate(managerMemberRoute(userId)) { launchSingleTop = true } },
+                    initialTab = backStackEntry.arguments?.getString("tab")?.ifEmpty { null },
+                    initialRequest = backStackEntry.arguments?.getString("request")?.ifEmpty { null },
                 )
             }
             composable(MANAGER_MEMBER_ROUTE, arguments = listOf(navArgument("userId") { type = NavType.LongType })) { entry ->
@@ -923,7 +925,7 @@ private fun AuthenticatedShell(
                 val context = LocalContext.current
                 val manager = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.manager.ManagerViewModel>(
                     factory = app.aino.mobile.feature.manager.ManagerViewModel.factory(context),
-                    viewModelStoreOwner = androidx.compose.runtime.remember(entry) { nav.getBackStackEntry(AinoDestination.Manager.route) },
+                    viewModelStoreOwner = androidx.compose.runtime.remember(entry) { nav.getBackStackEntry(MANAGER_ROUTE_PATTERN) },
                 )
                 RefetchOnResume(manager::refreshMemberDetail, resync)
                 app.aino.mobile.feature.manager.MemberDetailScreen(
@@ -964,7 +966,7 @@ private fun AuthenticatedShell(
             )
         }
         // P3.7: the clock verification sheet (ClockInVerifyModal equivalent) is
-        // hosted globally so it works from the dashboard timer card too.
+        // hosted globally so a clock action started on Attendance survives navigation.
         attendanceUi.verifySession?.let { session ->
             ClockInVerifySheet(
                 session = session,
@@ -1223,6 +1225,10 @@ private fun featuresFromEvent(data: kotlinx.serialization.json.JsonElement?): Ma
     }.toMap()
 }
 
+/** `leave_policy_changed` WS payload `{ scope: "holidays" | "policies" | "balances" }`. */
+private fun leavePolicyScope(data: kotlinx.serialization.json.JsonElement?): String? =
+    ((data as? kotlinx.serialization.json.JsonObject)?.get("scope") as? kotlinx.serialization.json.JsonPrimitive)?.content
+
 private val DASHBOARD_REFRESH_EVENTS = setOf(
     "task_assigned",
     "task_updated",
@@ -1234,8 +1240,11 @@ private val DASHBOARD_REFRESH_EVENTS = setOf(
     "leave_update",
 )
 
-/** My Team reloads its visible tab on these (approvals, leaves, attendance). */
-private val MANAGER_REFRESH_EVENTS = setOf("approval_update", "leave_update", "attendance_update")
+/**
+ * My Team reloads its visible tab on these (approvals, leaves, attendance);
+ * `team_attendance_update` is a direct report's clock/break/manual entry.
+ */
+private val MANAGER_REFRESH_EVENTS = setOf("approval_update", "leave_update", "attendance_update", "team_attendance_update")
 
 /** Task-scoped realtime events; the planner reloads rather than patching a row. */
 private val TASK_REFRESH_EVENTS = setOf("task_assigned", "task_updated")

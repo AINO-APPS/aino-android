@@ -6,7 +6,7 @@
     "path": "server/**/*.ts"
   },
   "totals": {
-    "events": 75
+    "events": 79
   },
   "events": [
     "approval_update",
@@ -47,6 +47,7 @@
     "chat_user_blocked",
     "chat_view_once",
     "huddle_declined",
+    "leave_policy_changed",
     "leave_update",
     "meeting_audio_level",
     "meeting_cancelled",
@@ -71,6 +72,7 @@
     "meeting_track_state",
     "meeting_updated",
     "notification",
+    "notifications_changed",
     "plan_changed",
     "platform_access_request_approved",
     "platform_access_request_created",
@@ -80,6 +82,8 @@
     "platform_access_session_revoked",
     "platform_access_session_started",
     "task_assigned",
+    "task_updated",
+    "team_attendance_update",
     "tenant_features_changed",
     "theme_changed",
     "user_profile_updated",

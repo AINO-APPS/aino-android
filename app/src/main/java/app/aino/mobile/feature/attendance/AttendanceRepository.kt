@@ -3,6 +3,7 @@ package app.aino.mobile.feature.attendance
 import app.aino.mobile.core.network.ApiClient
 import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.ApiRequest
+import app.aino.mobile.core.network.receivedAtEpochMs
 import app.aino.mobile.core.common.TrackerStatus
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -18,7 +19,10 @@ class AttendanceRepository(
         return if (body == "null") AttendancePolicy() else json.decodeFromString(body)
     }
 
-    fun loadStatus(): TrackerStatus = decode(api.execute(ApiRequest(path = "tracker/status")))
+    fun loadStatus(): TrackerStatus {
+        val response = api.execute(ApiRequest(path = "tracker/status"))
+        return decode<TrackerStatus>(response).copy(receivedAtEpochMs = response.receivedAtEpochMs())
+    }
 
     fun loadHistory(range: MonthRange): List<AttendanceDay> = decode(
         api.execute(
@@ -100,6 +104,10 @@ class AttendanceRepository(
 
     fun updateManualEntry(payload: ManualEntryPayload): AttendanceMutationResponse =
         mutate<ManualEntryPayload, AttendanceMutationResponse>("tracker/manual-entry/${payload.date}", payload, "PUT")
+
+    /** Both routes now file an approval request; an already-recorded day goes through the edit route. */
+    fun saveManualEntry(payload: ManualEntryPayload, hasExistingEntries: Boolean): AttendanceMutationResponse =
+        if (manualEntryMethod(hasExistingEntries) == "PUT") updateManualEntry(payload) else submitManualEntry(payload)
 
     fun submitOvertime(payload: OvertimePayload): AttendanceMutationResponse =
         mutate<OvertimePayload, AttendanceMutationResponse>("tracker/overtime-request", payload)

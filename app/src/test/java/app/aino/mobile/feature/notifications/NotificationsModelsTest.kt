@@ -33,13 +33,68 @@ class NotificationsModelsTest {
         assertEquals("/tasks?task=44", notificationLink(NotificationItem(1, type = "task", linkTaskId = 44)))
         assertEquals("/tasks?task=44", notificationLink(NotificationItem(1, type = "meeting_invite", linkTaskId = 44)))
         assertEquals("/calendar", notificationLink(NotificationItem(1, type = "meeting_invite")))
-        assertNull(notificationLink(NotificationItem(1, type = "leave")))
         assertNull(notificationLink(NotificationItem(1, type = "mention", linkTaskId = 0)))
+        assertNull(notificationLink(NotificationItem(1, type = "agile_grant")))
+    }
+
+    @Test
+    fun serverLinkWinsOverEveryFallback() {
+        assertEquals("/notes?pageId=p9", notificationLink(NotificationItem(1, type = "note_mention", link = "/notes?pageId=p9")))
+        assertEquals(
+            "/manager?tab=approvals&request=3",
+            notificationLink(NotificationItem(1, type = "approval", link = " /manager?tab=approvals&request=3 ", linkTaskId = 8)),
+        )
+        // Absolute / protocol-relative URLs are not app routes: fall back.
+        assertEquals("/tasks?task=8", notificationLink(NotificationItem(1, type = "task", link = "https://x.test/tasks", linkTaskId = 8)))
+        assertEquals("/attendance#leaves", notificationLink(NotificationItem(1, type = "leave", link = "//x.test")))
+        assertEquals("/calendar", notificationLink(NotificationItem(1, type = "meeting_invite", link = "")))
+    }
+
+    @Test
+    fun legacyRowsFallBackByTypeAndTitle() {
+        assertEquals("/attendance#leaves", notificationLink(NotificationItem(1, type = "leave", title = "Leave Approved ✅")))
+        assertEquals("/manager?tab=approvals", notificationLink(NotificationItem(1, type = "approval", title = "New Leave Request")))
+        assertEquals("/attendance#manual-entry", notificationLink(NotificationItem(1, type = "approval", title = "Manual Entry Approved ✅")))
+        assertEquals("/attendance#manual-entry", notificationLink(NotificationItem(1, type = "approval", title = "Overtime Rejected")))
+    }
+
+    @Test
+    fun webOnlyAdminLinksFallBackInsteadOfDeadEnding() {
+        // Agile / platform-access requests point at web-only Admin tabs: no Android route, so the tap stays on the list.
+        assertNull(notificationLink(NotificationItem(1, type = "agile_request", link = "/admin?tab=agile")))
+        assertNull(notificationLink(NotificationItem(1, type = "agile_grant", link = "/admin?tab=agile")))
+        assertNull(notificationLink(NotificationItem(1, type = "platform_access_request", link = "/admin?tab=platform-access")))
+        // An unroutable link still yields to the linked task / type fallback.
+        assertEquals("/tasks?task=4", notificationLink(NotificationItem(1, type = "task", link = "/admin?tab=projects", linkTaskId = 4)))
+        assertEquals("/manager?tab=approvals", notificationLink(NotificationItem(1, type = "approval", link = "/agile-settings")))
+        assertEquals(NotificationIcon.AgileAccess, notificationIcon("platform_access_request"))
+    }
+
+    @Test
+    fun serverDecisionLinksRoute() {
+        // Multi-date leaves link to the queue without a request id.
+        assertEquals("/manager?tab=approvals", notificationLink(NotificationItem(1, type = "approval", link = "/manager?tab=approvals")))
+        assertEquals(
+            "/attendance#manual-entry",
+            notificationLink(NotificationItem(1, type = "approval", title = "Overtime Rejected", link = "/attendance#manual-entry")),
+        )
+    }
+
+    @Test
+    fun decodesTheLinkColumnAndToleratesItsAbsence() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val page = json.decodeFromString<NotificationsPage>(
+            """{"notifications":[{"id":1,"type":"task","link":"/tasks?task=2","link_task_id":2},{"id":2,"type":"leave","link":null},{"id":3}],"unread":"1"}""",
+        )
+        assertEquals(listOf("/tasks?task=2", null, null), page.notifications.map { it.link })
     }
 
     @Test
     fun iconsAndBadge() {
         assertEquals(NotificationIcon.Mention, notificationIcon("mention"))
+        assertEquals(NotificationIcon.Mention, notificationIcon("note_mention"))
+        assertEquals(NotificationIcon.AgileAccess, notificationIcon("agile_request"))
+        assertEquals(NotificationIcon.AgileAccess, notificationIcon("agile_grant"))
         assertEquals(NotificationIcon.Leave, notificationIcon("leave"))
         assertEquals(NotificationIcon.Task, notificationIcon("task"))
         assertEquals(NotificationIcon.Approval, notificationIcon("approval"))

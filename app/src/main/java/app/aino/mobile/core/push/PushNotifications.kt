@@ -18,13 +18,30 @@ object PushNotifications {
     const val MESSAGES = "aino_messages"
     const val GENERAL = "aino_general"
     const val CALLS = "aino_incoming_calls"
+    const val MENTIONS = "aino_mentions"
+    const val ASSIGNMENTS = "aino_assignments"
+    const val APPROVALS = "aino_approvals"
 
+    /**
+     * Channel ids are never renamed or deleted: Android keeps the user's
+     * per-channel customisation keyed by id, and re-creating an existing id
+     * only refreshes its name. New categories are added alongside.
+     */
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannels(
             listOf(
                 NotificationChannel(MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(MENTIONS, "Mentions", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "When someone @-mentions you in a task or note"
+                },
+                NotificationChannel(ASSIGNMENTS, "Assignments", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Tasks assigned to you"
+                },
+                NotificationChannel(APPROVALS, "Approvals & requests", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Requests awaiting your approval and decisions on your leave, manual entry and overtime requests"
+                },
                 NotificationChannel(GENERAL, "Notifications", NotificationManager.IMPORTANCE_DEFAULT),
                 NotificationChannel(CALLS, "Incoming calls", NotificationManager.IMPORTANCE_HIGH).apply {
                     description = "Incoming AINO voice and video calls"
@@ -47,7 +64,7 @@ object PushNotifications {
         val channel = when (push.kind) {
             PushKind.ChatMessage -> MESSAGES
             PushKind.IncomingCall -> CALLS
-            else -> GENERAL
+            else -> generalPushChannel(push.data["type"])
         }
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -89,4 +106,13 @@ object PushNotifications {
             runCatching { NotificationManagerCompat.from(context).notify(notificationId(push), notification) }
         }
     }
+}
+
+/** Channel for a generic (`notifications` table) alert by its `type`; unknown types stay on General. */
+fun generalPushChannel(type: String?): String = when (type) {
+    "mention", "note_mention" -> PushNotifications.MENTIONS
+    "task" -> PushNotifications.ASSIGNMENTS
+    // Manual-entry / overtime decisions arrive as `approval` (to the requester).
+    "approval", "leave", "agile_request", "agile_grant" -> PushNotifications.APPROVALS
+    else -> PushNotifications.GENERAL
 }

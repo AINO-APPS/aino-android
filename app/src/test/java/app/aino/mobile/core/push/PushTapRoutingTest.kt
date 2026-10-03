@@ -1,6 +1,7 @@
 package app.aino.mobile.core.push
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class PushTapRoutingTest {
@@ -25,5 +26,32 @@ class PushTapRoutingTest {
         val events = routingEvents(tap, routed = false, nowMs = 900)
         assertEquals("ERROR", events[1].level)
         assertEquals("route_failed", events[1].state)
+    }
+
+    @Test
+    fun tapExtrasAreParsedLeniently() {
+        val full = pushTapOf(
+            type = "approval", dedupeKey = "notif:9", conversationId = null, messageId = null,
+            link = " /manager?tab=approvals&request=4 ", taskId = "", notificationId = "9", title = "New Leave Request", nowMs = 5,
+        )
+        assertEquals("/manager?tab=approvals&request=4", full.link)
+        assertNull(full.taskId)
+        assertEquals(9L, full.notificationId)
+        assertEquals("New Leave Request", full.title)
+        assertEquals(5L, full.tappedAtMs)
+
+        // Older notifications (posted before the update) carry none of the new extras.
+        val legacy = pushTapOf("leave", "notif:3", null, null, null, null, null, null, nowMs = 1)
+        assertNull(legacy.link)
+        assertNull(legacy.taskId)
+        assertNull(legacy.notificationId)
+        assertNull(legacy.title)
+
+        val junk = pushTapOf("task", null, "0", null, "https://x.test", "-2", "abc", " ", nowMs = 1)
+        assertNull(junk.conversationId)
+        assertNull(junk.link)
+        assertNull(junk.taskId)
+        assertNull(junk.notificationId)
+        assertNull(junk.title)
     }
 }

@@ -22,7 +22,57 @@ enum class ManagerTab(val label: String) {
     Attendance("Team Attendance"),
     Approvals("Approvals"),
     Analytics("Analytics"),
-    Requests("My Requests"),
+    Requests("My Requests");
+
+    companion object {
+        /** Web `/manager?tab=` keys (`index.tsx` `setTab`), plus a few forgiving aliases. */
+        fun fromParam(value: String?): ManagerTab? = when (value?.trim()?.lowercase()) {
+            "attendance", "team" -> Attendance
+            "approvals" -> Approvals
+            "analytics" -> Analytics
+            "requests", "my-requests", "my_requests" -> Requests
+            else -> null
+        }
+    }
+}
+
+/** Which list a request detail belongs to: the manager's queue, or the user's own submissions. */
+enum class RequestSource { Approvals, Mine }
+
+/** The only roles the server lets approve / reject a request they filed themselves. */
+internal val SELF_APPROVER_ROLES = setOf("super_admin", "platform_admin")
+
+fun isOwnRequest(row: ApprovalRow, userId: Long?): Boolean =
+    userId != null && row.requesterId != null && row.requesterId == userId
+
+/**
+ * Approve / Reject is offered on a pending request unless it is the viewer's
+ * own and their role cannot self-approve (the server answers 403).
+ */
+fun canDecideRequest(row: ApprovalRow, role: String, userId: Long?): Boolean =
+    row.status == "pending" && (!isOwnRequest(row, userId) || role in SELF_APPROVER_ROLES)
+
+/** "Waiting for approval by …" for the viewer's own pending request they cannot decide. */
+fun awaitingApprovalLabel(row: ApprovalRow, role: String, userId: Long?, source: RequestSource): String? {
+    if (row.status != "pending") return null
+    val own = source == RequestSource.Mine || isOwnRequest(row, userId)
+    if (!own || role in SELF_APPROVER_ROLES) return null
+    return row.approverName?.takeIf(String::isNotBlank)?.let { "Waiting for approval by $it" } ?: "Waiting for approval"
+}
+
+/** The request detail bottom sheet (row tap or `/manager?request=` deep link). */
+data class RequestDetail(
+    val id: Long,
+    val source: RequestSource,
+    val row: ApprovalRow? = null,
+    /** Resolving a deep-linked id that is not on screen yet. */
+    val loading: Boolean = false,
+    /** Deep link to an id the server no longer returns for this user. */
+    val notFound: Boolean = false,
+    val error: String? = null,
+) {
+    /** Approve / Reject only for the approver's still-pending requests. */
+    val actionable: Boolean get() = source == RequestSource.Approvals && row?.status == "pending"
 }
 
 enum class MemberTab(val label: String) {
@@ -36,6 +86,8 @@ enum class MemberTab(val label: String) {
 /** `index.tsx` top-level state, plus each tab's own filters. */
 data class ManagerUiState(
     val role: String = "",
+    /** Signed-in user's id, to recognise their own requests in the queue. */
+    val userId: Long? = null,
     val tab: ManagerTab = ManagerTab.Attendance,
     val busy: Boolean = false,
 
@@ -53,6 +105,9 @@ data class ManagerUiState(
     // My Requests
     val myRequests: Section<List<ApprovalRow>> = Section(),
 
+    // Request detail sheet
+    val detail: RequestDetail? = null,
+
     // Team Analytics
     val analyticsRange: String = "7",
     val analyticsCustomFrom: String = "",
@@ -66,6 +121,17 @@ data class ManagerUiState(
 ) {
     /** Pull-to-refresh spinner: only once content is on screen. */
     val refreshing: Boolean get() = currentSectionLoading && currentSectionHasData
+
+    fun canDecide(row: ApprovalRow): Boolean = canDecideRequest(row, role, userId)
+
+    /** Detail-sheet Approve / Reject: queue rows the viewer may decide, plus a self-approver's own pending request. */
+    fun detailActionable(detail: RequestDetail): Boolean {
+        val row = detail.row ?: return false
+        return when (detail.source) {
+            RequestSource.Approvals -> detail.actionable && canDecide(row)
+            RequestSource.Mine -> row.status == "pending" && role in SELF_APPROVER_ROLES
+        }
+    }
 
     private val currentSectionHasData: Boolean get() = when (tab) {
         ManagerTab.Attendance -> attendance.data != null
@@ -106,6 +172,7 @@ class ManagerViewModel(
     private val repository: ManagerRepository,
     /** Same reads served from the last responses: tabs open with their last data. */
     private val warm: ManagerRepository? = null,
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ManagerUiState())
     val ui: StateFlow<ManagerUiState> = _ui.asStateFlow()
@@ -114,21 +181,98 @@ class ManagerViewModel(
     val memberDetail: StateFlow<MemberDetailUiState?> = _memberDetail.asStateFlow()
 
     private var boundRole: String? = null
+    private var boundUserId: Long? = null
 
-    /** Called by the screen on entry with the signed-in user's role. */
-    fun bind(userRole: String) {
-        if (boundRole == userRole) return
+    /** Called by the screen on entry with the signed-in user's role and id. */
+    fun bind(userRole: String, userId: Long? = null) {
+        if (boundRole == userRole && boundUserId == userId) return
         boundRole = userRole
-        _ui.update { it.copy(role = userRole) }
+        boundUserId = userId
+        _ui.update { it.copy(role = userRole, userId = userId) }
         refresh()
     }
 
-    /** Refetch the active tab (pull-to-refresh / on-resume). */
-    fun refresh() = loadTab(_ui.value.tab)
+    /** Refetch the active tab (pull-to-refresh / on-resume / realtime); an open detail re-resolves too. */
+    fun refresh() {
+        loadTab(_ui.value.tab)
+        _ui.value.detail?.takeIf { !it.loading }?.let { resolveDetail(it.id, it.source) }
+    }
 
     fun selectTab(tab: ManagerTab) {
         _ui.update { it.copy(tab = tab) }
         loadTab(tab)
+    }
+
+    private var handledDeepLink: Pair<String, String>? = null
+
+    /**
+     * `/manager?tab=&request=` deep link: selects the tab and opens the
+     * request's detail sheet. A request without a tab is an approval. Applied
+     * once per distinct link so recomposition / resume does not reopen a
+     * dismissed sheet.
+     */
+    fun openDeepLink(tab: String?, request: String?) {
+        val key = tab.orEmpty() to request.orEmpty()
+        if (key == "" to "" || key == handledDeepLink) return
+        handledDeepLink = key
+        val requestId = request?.trim()?.toLongOrNull()?.takeIf { it > 0 }
+        val target = ManagerTab.fromParam(tab) ?: if (requestId != null) ManagerTab.Approvals else null
+        if (requestId != null) {
+            val source = if (target == ManagerTab.Requests) RequestSource.Mine else RequestSource.Approvals
+            val onScreen = rowsFor(source).firstOrNull { it.id == requestId }
+            _ui.update { it.copy(detail = RequestDetail(requestId, source, row = onScreen, loading = onScreen == null)) }
+            resolveDetail(requestId, source)
+        }
+        // A request link reads the pending queue first, whatever filter was left selected.
+        val filterReset = requestId != null && target == ManagerTab.Approvals && _ui.value.approvalsFilter != "pending"
+        if (filterReset) _ui.update { it.copy(approvalsFilter = "pending", selectedApprovalIds = emptySet()) }
+        when {
+            target != null && target != _ui.value.tab -> selectTab(target)
+            filterReset -> loadApprovals()
+        }
+    }
+
+    /** Row tap. */
+    fun openRequest(row: ApprovalRow, source: RequestSource) =
+        _ui.update { it.copy(detail = RequestDetail(row.id, source, row = row)) }
+
+    fun closeRequest() = _ui.update { it.copy(detail = null) }
+
+    private fun rowsFor(source: RequestSource): List<ApprovalRow> = when (source) {
+        RequestSource.Approvals -> _ui.value.approvals.data.orEmpty()
+        RequestSource.Mine -> _ui.value.myRequests.data.orEmpty()
+    }
+
+    /**
+     * Fetch the freshest copy of one request: pending first (the common deep
+     * link), then every status so an already-decided request still opens with
+     * its outcome. My Requests is a single `status=all` list.
+     */
+    private fun resolveDetail(id: Long, source: RequestSource) {
+        io {
+            val result = runCatching {
+                when (source) {
+                    RequestSource.Approvals -> repository.approvals("pending").firstOrNull { it.id == id }
+                        ?: repository.approvals("all").firstOrNull { it.id == id }
+                    RequestSource.Mine -> repository.myRequests("all").firstOrNull { it.id == id }
+                }
+            }
+            _ui.update { state ->
+                val detail = state.detail?.takeIf { it.id == id && it.source == source } ?: return@update state
+                state.copy(
+                    detail = result.fold(
+                        onSuccess = { row ->
+                            // Gone from every list (cancelled / withdrawn while open): drop the stale row and its actions.
+                            if (row != null) detail.copy(row = row, loading = false, notFound = false, error = null)
+                            else detail.copy(row = null, loading = false, notFound = true)
+                        },
+                        onFailure = {
+                            detail.copy(loading = false, error = if (detail.row == null) it.managerMessage("Failed to load request") else null)
+                        },
+                    ),
+                )
+            }
+        }
     }
 
     private fun loadTab(tab: ManagerTab) {
@@ -181,15 +325,19 @@ class ManagerViewModel(
 
     fun toggleApprovalSelectAll() {
         _ui.update { state ->
-            val all = state.approvals.data.orEmpty().map { it.id }.toSet()
+            val all = state.approvals.data.orEmpty().filter(state::canDecide).map { it.id }.toSet()
             state.copy(selectedApprovalIds = if (state.selectedApprovalIds.size == all.size) emptySet() else all)
         }
     }
 
     fun approve(id: Long) = mutation(
         action = { repository.approve(id) },
-        onSuccess = { refreshApprovals() },
-        onError = { /* web: console.error only, no visible notice */ },
+        onSuccess = {
+            closeDetailFor(id)
+            refreshAfterDecision()
+        },
+        // e.g. 403 "You cannot approve your own request": shown in the sheet, or above the list.
+        onError = { error -> decisionError(id, error.managerMessage("Failed to approve request")) },
     )
 
     fun openReject(id: Long) = _ui.update { it.copy(rejectTargetId = id, rejectReason = "") }
@@ -203,10 +351,26 @@ class ManagerViewModel(
             action = { repository.reject(id, reason.ifBlank { null }) },
             onSuccess = {
                 _ui.update { it.copy(rejectTargetId = null, rejectReason = "") }
-                refreshApprovals()
+                closeDetailFor(id)
+                refreshAfterDecision()
             },
-            onError = { /* web: console.error only, no visible notice */ },
+            onError = { error ->
+                _ui.update { it.copy(rejectTargetId = null, rejectReason = "") }
+                decisionError(id, error.managerMessage("Failed to reject request"))
+            },
         )
+    }
+
+    private fun closeDetailFor(id: Long) = _ui.update { if (it.detail?.id == id) it.copy(detail = null) else it }
+
+    private fun refreshAfterDecision() {
+        refreshApprovals()
+        if (_ui.value.tab == ManagerTab.Requests) loadMyRequests()
+    }
+
+    private fun decisionError(id: Long, message: String) = _ui.update { state ->
+        state.detail?.takeIf { it.id == id }?.let { state.copy(detail = it.copy(error = message)) }
+            ?: state.copy(approvals = state.approvals.copy(error = message))
     }
 
     fun bulkApprove() = bulk("approve")
@@ -218,7 +382,10 @@ class ManagerViewModel(
         mutation(
             action = { repository.bulkAction(ids, action, null) },
             onSuccess = { refreshApprovals() },
-            onError = { /* web: console.error only, no visible notice */ },
+            onError = { error ->
+                val message = error.managerMessage("Failed to $action requests")
+                _ui.update { it.copy(approvals = it.approvals.copy(error = message)) }
+            },
         )
     }
 
@@ -402,7 +569,7 @@ class ManagerViewModel(
         }
     }
 
-    private fun io(block: suspend () -> Unit) = viewModelScope.launch(Dispatchers.IO) { block() }
+    private fun io(block: suspend () -> Unit) = viewModelScope.launch(ioDispatcher) { block() }
 
     companion object {
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {

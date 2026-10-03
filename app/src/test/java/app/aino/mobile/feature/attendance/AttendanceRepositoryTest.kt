@@ -120,4 +120,24 @@ class AttendanceRepositoryTest {
         assertEquals("tracker/manual-entry/2026-09-14", captured[1].path)
         assertTrue(captured[1].body!!.toString(Charsets.UTF_8).contains("\"breaks\":[{\"start\":\"12:00\",\"end\":\"12:30\"}]"))
     }
+
+    @Test
+    fun saveManualEntryPutsExistingDaysAndReadsTheApprovalFlag() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = AttendanceRepository(ApiClient { request ->
+            captured += request
+            ApiResponse(200, emptyMap(), """{"message":"Manual entry submitted for approval","status":"pending","needsApproval":true}""".toByteArray())
+        })
+        val payload = ManualEntryPayload("2026-09-14", "09:00", "17:00", -330, "office")
+
+        val edit = repository.saveManualEntry(payload, hasExistingEntries = true)
+        repository.saveManualEntry(payload, hasExistingEntries = false)
+
+        assertEquals("PUT", captured[0].method)
+        assertEquals("tracker/manual-entry/2026-09-14", captured[0].path)
+        assertEquals("POST", captured[1].method)
+        assertEquals("tracker/manual-entry", captured[1].path)
+        assertEquals(true, edit.needsApproval)
+        assertEquals("Manual entry submitted for approval", edit.message)
+    }
 }

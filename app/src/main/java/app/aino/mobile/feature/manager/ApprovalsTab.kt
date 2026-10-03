@@ -61,10 +61,12 @@ internal fun ApprovalsTab(ui: ManagerUiState, viewModel: ManagerViewModel) {
             rows.isEmpty() -> ManagerEmpty("No ${ui.approvalsFilter.ifEmpty { "" }} requests".trim())
             else -> {
                 if (ui.approvalsFilter == "pending") {
+                    val decidable = rows.filter(ui::canDecide)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
-                            checked = ui.selectedApprovalIds.size == rows.size && rows.isNotEmpty(),
+                            checked = decidable.isNotEmpty() && ui.selectedApprovalIds.size == decidable.size,
                             onCheckedChange = { viewModel.toggleApprovalSelectAll() },
+                            enabled = decidable.isNotEmpty(),
                             colors = CheckboxDefaults.colors(checkedColor = colors.primary),
                         )
                         Text("Select all", color = colors.textSecondary, fontSize = 0.8.rem)
@@ -76,7 +78,12 @@ internal fun ApprovalsTab(ui: ManagerUiState, viewModel: ManagerViewModel) {
             }
         }
     }
+}
 
+/** Reject reason prompt; drawn by the screen so it also works from the detail sheet on any tab. */
+@Composable
+internal fun RejectRequestDialog(ui: ManagerUiState, viewModel: ManagerViewModel) {
+    val colors = LocalWebColors.current
     if (ui.rejectTargetId != null) {
         AlertDialog(
             onDismissRequest = viewModel::cancelReject,
@@ -111,9 +118,10 @@ internal fun ApprovalsTab(ui: ManagerUiState, viewModel: ManagerViewModel) {
 @Composable
 private fun ApprovalRowCard(row: ApprovalRow, ui: ManagerUiState, viewModel: ManagerViewModel) {
     val colors = LocalWebColors.current
-    ManagerRowCard {
+    val decidable = ui.approvalsFilter == "pending" && ui.canDecide(row)
+    ManagerRowCard(onClick = { viewModel.openRequest(row, RequestSource.Approvals) }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            if (ui.approvalsFilter == "pending") {
+            if (decidable) {
                 Checkbox(
                     checked = ui.selectedApprovalIds.contains(row.id),
                     onCheckedChange = { viewModel.toggleApprovalSelect(row.id) },
@@ -124,7 +132,8 @@ private fun ApprovalRowCard(row: ApprovalRow, ui: ManagerUiState, viewModel: Man
             UserAvatar(row.requesterName, row.requesterAvatar, 32.dp)
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
-                Text(row.requesterName.orEmpty(), color = colors.text, fontSize = 0.88.rem, fontWeight = FontWeight.SemiBold)
+                val name = row.requesterName.orEmpty()
+                Text(if (isOwnRequest(row, ui.userId)) "$name (you)".trim() else name, color = colors.text, fontSize = 0.88.rem, fontWeight = FontWeight.SemiBold)
                 Text(row.type?.replace("_", " ").orEmpty(), color = colors.textSecondary, fontSize = 0.72.rem)
             }
             ApprovalBadge(row.status)
@@ -132,10 +141,14 @@ private fun ApprovalRowCard(row: ApprovalRow, ui: ManagerUiState, viewModel: Man
         RequestDetails(row)
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text(formatApprovalDate(row.createdAt), color = colors.textMuted, fontSize = 0.72.rem)
-            if (ui.approvalsFilter == "pending") {
+            if (decidable) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     ManagerSmallButton("✓", colors.success, enabled = !ui.busy, onClick = { viewModel.approve(row.id) })
                     ManagerSmallButton("✗", colors.danger, enabled = !ui.busy, onClick = { viewModel.openReject(row.id) })
+                }
+            } else {
+                awaitingApprovalLabel(row, ui.role, ui.userId, RequestSource.Approvals)?.let {
+                    Text(it, color = colors.textMuted, fontSize = 0.72.rem)
                 }
             }
         }

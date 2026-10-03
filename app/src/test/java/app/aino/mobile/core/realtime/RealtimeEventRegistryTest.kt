@@ -17,9 +17,21 @@ import org.junit.Test
 class RealtimeEventRegistryTest {
     @Test
     fun routesTheCompleteServerSurface() {
-        // 75 = 68 sendToUser types (incl. attendance_update, chat_message_delivered) + 6 tenant-wide broadcast types + task_assigned.
-        assertEquals(75, RealtimeEvent.entries.size)
+        // 79 = 68 sendToUser types (incl. attendance_update, chat_message_delivered) + 6 tenant-wide broadcast types
+        // + task_assigned + team_attendance_update, leave_policy_changed, task_updated, notifications_changed.
+        assertEquals(79, RealtimeEvent.entries.size)
         assertEquals(RealtimeEvent.AttendanceUpdate, RealtimeEvent.from("attendance_update"))
+    }
+
+    @Test
+    fun routesTheCrossDeviceSyncEvents() {
+        assertEquals(RealtimeDomain.Attendance, RealtimeEvent.from("team_attendance_update")?.domain)
+        assertEquals(RealtimeDomain.Leaves, RealtimeEvent.from("leave_policy_changed")?.domain)
+        assertEquals(RealtimeDomain.Tasks, RealtimeEvent.from("task_updated")?.domain)
+        assertEquals(RealtimeDomain.Notifications, RealtimeEvent.from("notifications_changed")?.domain)
+        for (type in listOf("team_attendance_update", "leave_policy_changed", "task_updated", "notifications_changed")) {
+            assertEquals(type, RealtimeReaction.Refetch, RealtimeEvent.from(type)?.reaction)
+        }
     }
 
     @Test
@@ -36,7 +48,6 @@ class RealtimeEventRegistryTest {
         // Guards the exact drift this registry exists to prevent: these were
         // routed by the pre-A-100 client but the server never emits them.
         assertNull(RealtimeEvent.from("chat_group_updated"))
-        assertNull(RealtimeEvent.from("task_updated"))
     }
 
     @Test

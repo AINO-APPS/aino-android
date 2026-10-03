@@ -109,14 +109,26 @@ enum class RealtimeEvent(
         RealtimeReaction.MeetingState,
     ),
 
-    // ── Work surfaces (8) ────────────────────────────────────────────────
-    /** Clock-in/out or break taken on another device (web/desktop/Android): refetch tracker status. */
+    // ── Work surfaces (12) ───────────────────────────────────────────────
+    /**
+     * Own attendance changed on another device or by a decision: clock/break
+     * (`action` clock_in/clock_out/break_*), `manual_entry`, `entry_deleted`.
+     */
     AttendanceUpdate("attendance_update", RealtimeDomain.Attendance, RealtimeReaction.Refetch),
+    /** A direct report clocked in/out, took a break or filed a manual entry — `{ userId, action }`, managers only. */
+    TeamAttendanceUpdate("team_attendance_update", RealtimeDomain.Attendance, RealtimeReaction.Refetch),
     TaskAssigned("task_assigned", RealtimeDomain.Tasks, RealtimeReaction.Refetch),
+    /** `{ taskId, action: updated|status|deleted|comment }`. */
+    TaskUpdated("task_updated", RealtimeDomain.Tasks, RealtimeReaction.Refetch),
+    /** `{ type, status, id? }` — also echoed to the acting approver's other devices. */
     ApprovalUpdate("approval_update", RealtimeDomain.Approvals, RealtimeReaction.Refetch),
     LeaveUpdate("leave_update", RealtimeDomain.Leaves, RealtimeReaction.Refetch),
+    /** `{ scope: holidays|policies|balances }`. */
+    LeavePolicyChanged("leave_policy_changed", RealtimeDomain.Leaves, RealtimeReaction.Refetch),
     CalendarRefresh("calendar_refresh", RealtimeDomain.Calendar, RealtimeReaction.Refetch),
     Notification("notification", RealtimeDomain.Notifications, RealtimeReaction.Notify),
+    /** `{ action: read|read_all|deleted, id? }` — the bell changed on another device. */
+    NotificationsChanged("notifications_changed", RealtimeDomain.Notifications, RealtimeReaction.Refetch),
     ThemeChanged("theme_changed", RealtimeDomain.Identity, RealtimeReaction.Patch),
     UserStatus("user_status", RealtimeDomain.Presence, RealtimeReaction.Patch),
 

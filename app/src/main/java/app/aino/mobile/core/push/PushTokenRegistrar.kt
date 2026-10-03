@@ -13,8 +13,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
+/** `pushVersion` 2: general alerts may carry `link` / `linkTaskId` (older apps reject unknown keys). */
 @Serializable
-data class DeviceTokenRequest(val deviceToken: String, val platform: String = "android")
+data class DeviceTokenRequest(val deviceToken: String, val platform: String = "android", val pushVersion: Int = PUSH_PAYLOAD_VERSION)
+
+const val PUSH_PAYLOAD_VERSION = 2
 
 private val DEVICE_TOKEN_JSON = Json { encodeDefaults = true }
 
@@ -71,5 +74,5 @@ internal fun registrationKey(fcmToken: String, jwt: String): String {
         Json.parseToJsonElement(payload).let { it as kotlinx.serialization.json.JsonObject }
             .let { (it["id"] ?: it["userId"] ?: it["sub"])?.toString() }
     }.getOrNull() ?: jwt.hashCode().toString()
-    return "${fcmToken.hashCode()}:$user"
+    return "${fcmToken.hashCode()}:$user:v$PUSH_PAYLOAD_VERSION"
 }

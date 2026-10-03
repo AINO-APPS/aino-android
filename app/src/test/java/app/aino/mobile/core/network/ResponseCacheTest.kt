@@ -48,6 +48,21 @@ class ResponseCacheTest {
     }
 
     @Test
+    fun cachedBodyCarriesItsOriginalFetchTimeNotThePaintTime() {
+        val root = Files.createTempDirectory("api-cache").toFile()
+        val responses = ResponseCache(root).apply { scope = "1_7" }
+        CachingApiClient(ApiClient { json("""{"state":"on_floor"}""") }, responses).execute(ApiRequest(path = "tracker/status"))
+        val fetchedAt = 1_790_000_000_000L
+        root.walkTopDown().filter { it.isFile }.forEach { it.setLastModified(fetchedAt) }
+
+        val cached = CacheOnlyApiClient(responses).execute(ApiRequest(path = "tracker/status"))
+
+        assertEquals(fetchedAt, cached.receivedAtEpochMs(nowEpochMs = fetchedAt + 600_000))
+        // A live response has no stamp: it was received now.
+        assertEquals(42L, json("{}").receivedAtEpochMs(nowEpochMs = 42))
+    }
+
+    @Test
     fun clearAllForgetsEverything() {
         val responses = cache().apply { scope = "1_7" }
         responses.put("profile", "{}".toByteArray())

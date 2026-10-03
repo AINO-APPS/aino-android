@@ -108,6 +108,14 @@ class RealtimeDispatcherTest {
     fun deadListenersFromTheOldClientNoLongerResolve() {
         val dispatcher = RealtimeDispatcher()
         assertNull(dispatcher.dispatch(envelope("chat_group_updated")))
-        assertNull(dispatcher.dispatch(envelope("task_updated")))
+    }
+
+    @Test
+    fun crossDeviceSyncEventsAreRoutedAsRefetches() {
+        val dispatcher = RealtimeDispatcher()
+        // `task_updated` used to be a dead listener; the platform now emits it.
+        for (type in listOf("task_updated", "team_attendance_update", "leave_policy_changed", "notifications_changed")) {
+            assertTrue(type, dispatcher.dispatch(envelope(type))!!.causesRefetch)
+        }
     }
 }

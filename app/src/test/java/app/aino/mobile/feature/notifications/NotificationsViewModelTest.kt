@@ -97,4 +97,19 @@ class NotificationsViewModelTest {
         assertEquals(NotificationsUiState(), vm.ui.value)
         assertEquals(0, vm.unreadCount.value)
     }
+
+    @Test
+    fun pushTapMarksTheRowReadById() {
+        val vm = viewModel()
+        vm.refresh()
+        vm.markReadById(2)
+        assertEquals("notifications/2/read", captured.last().path)
+        assertEquals(0, vm.unreadCount.value)
+
+        // A row not loaded yet: mark it on the server, then reconcile by refetching.
+        val cold = viewModel()
+        captured.clear()
+        cold.markReadById(77)
+        assertEquals(listOf("POST notifications/77/read", "GET notifications"), captured.map { "${it.method} ${it.path}" })
+    }
 }

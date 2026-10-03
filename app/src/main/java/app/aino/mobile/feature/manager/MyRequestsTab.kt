@@ -16,9 +16,9 @@ import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 
-/** `MyRequests.tsx`. */
+/** `MyRequests.tsx`; a row opens its detail sheet. */
 @Composable
-internal fun MyRequestsTab(ui: ManagerUiState) {
+internal fun MyRequestsTab(ui: ManagerUiState, viewModel: ManagerViewModel) {
     val colors = LocalWebColors.current
     val section = ui.myRequests
     val rows = section.data.orEmpty()
@@ -29,24 +29,28 @@ internal fun MyRequestsTab(ui: ManagerUiState) {
         when {
             section.initialLoading -> ManagerLoading()
             rows.isEmpty() -> ManagerEmpty("No requests submitted")
-            else -> rows.forEach { row -> MyRequestRowCard(row) }
+            else -> rows.forEach { row -> MyRequestRowCard(row) { viewModel.openRequest(row, RequestSource.Mine) } }
         }
     }
 }
 
 @Composable
-private fun MyRequestRowCard(row: ApprovalRow) {
+private fun MyRequestRowCard(row: ApprovalRow, onOpen: () -> Unit) {
     val colors = LocalWebColors.current
-    ManagerRowCard {
+    ManagerRowCard(onClick = onOpen) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(row.type?.replace("_", " ").orEmpty(), color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.SemiBold)
+            Text(requestTypeLabel(row.type, row.metadata?.edit == true), color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.width(8.dp))
             ApprovalBadge(row.status)
         }
         RequestDetails(row)
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Text(formatApprovalDate(row.createdAt), color = colors.textMuted, fontSize = 0.72.rem)
-            Text(row.approverName ?: "—", color = colors.textSecondary, fontSize = 0.75.rem)
+            Text(
+                if (row.status == "pending") row.approverName?.let { "Awaiting $it" } ?: "Awaiting approval" else row.approverName ?: "—",
+                color = colors.textSecondary,
+                fontSize = 0.75.rem,
+            )
         }
     }
 }

@@ -84,17 +84,8 @@ data class DashboardSnapshot(
     val sprintTasks: List<SprintTask> = emptyList(),
     val backlogTasks: List<SprintTask> = emptyList(),
     val approvals: List<Approval> = emptyList(),
-    val loadedAtEpochMs: Long,
 )
 
-fun liveDurations(status: TrackerStatus, loadedAtEpochMs: Long, nowEpochMs: Long): Pair<Long, Long> {
-    var floorSeconds = status.floorMinutes.coerceAtLeast(0) * 60L
-    var breakSeconds = status.breakMinutes.coerceAtLeast(0) * 60L
-    val elapsed = ((nowEpochMs - loadedAtEpochMs).coerceAtLeast(0)) / 1_000
-    if (status.state == "on_floor") floorSeconds += elapsed
-    if (status.state == "on_break") breakSeconds += elapsed
-    return floorSeconds to breakSeconds
-}
 /** 7-day window ending on [today] (dashboard date-strip; retained helper). */
 fun dashboardWeek(today: java.time.LocalDate): List<java.time.LocalDate> =
     (6 downTo 0).map { today.minusDays(it.toLong()) }

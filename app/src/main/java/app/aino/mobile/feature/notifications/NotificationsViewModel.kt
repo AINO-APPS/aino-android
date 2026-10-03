@@ -109,6 +109,20 @@ class NotificationsViewModel(
         return notificationLink(item)
     }
 
+    /**
+     * A system notification was opened from the tray: mark its row read on the
+     * server and locally (the row may not be loaded yet — then only the badge
+     * count is reconciled by the refetch that follows).
+     */
+    fun markReadById(id: Long) {
+        val gen = generation
+        viewModelScope.launch {
+            val ok = runIo { repository.markRead(id) }
+            if (!ok || gen != generation) return@launch
+            if (_ui.value.notifications.any { it.id == id }) markLocallyRead(id) else fetch()
+        }
+    }
+
     fun markAllRead() {
         val gen = generation
         viewModelScope.launch {

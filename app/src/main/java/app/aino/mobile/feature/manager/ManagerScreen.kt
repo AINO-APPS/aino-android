@@ -46,10 +46,17 @@ fun ManagerScreen(
     userRole: String,
     onOpenMember: (userId: Long) -> Unit,
     modifier: Modifier = Modifier,
+    /** Signed-in user's id: their own requests only get Approve / Reject when the role may self-approve. */
+    userId: Long? = null,
+    /** `/manager?tab=` deep-link tab key (`attendance`, `approvals`, `analytics`, `requests`). */
+    initialTab: String? = null,
+    /** `/manager?request=` approval request id whose detail sheet opens once resolved. */
+    initialRequest: String? = null,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = LocalWebColors.current
-    LaunchedEffect(userRole) { viewModel.bind(userRole) }
+    LaunchedEffect(initialTab, initialRequest) { viewModel.openDeepLink(initialTab, initialRequest) }
+    LaunchedEffect(userRole, userId) { viewModel.bind(userRole, userId) }
 
     AinoPullToRefreshBox(loading = ui.refreshing,
         onRefresh = viewModel::refresh,
@@ -70,10 +77,12 @@ fun ManagerScreen(
                 ManagerTab.Attendance -> TeamAttendanceTab(ui, viewModel, onSelectMember)
                 ManagerTab.Approvals -> ApprovalsTab(ui, viewModel)
                 ManagerTab.Analytics -> TeamAnalyticsTab(ui, viewModel, onSelectMember)
-                ManagerTab.Requests -> MyRequestsTab(ui)
+                ManagerTab.Requests -> MyRequestsTab(ui, viewModel)
             }
         }
     }
+    ui.detail?.let { RequestDetailSheet(it, ui, viewModel) }
+    RejectRequestDialog(ui, viewModel)
 }
 
 /** `.tabs` — a horizontal strip of bordered tab buttons. */

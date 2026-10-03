@@ -1,9 +1,5 @@
 package app.aino.mobile.feature.home
 
-import app.aino.mobile.core.common.TimeEntryDto
-import app.aino.mobile.core.common.TrackerStatus
-import app.aino.mobile.core.common.formatDuration
-
 import app.aino.mobile.core.network.ApiClient
 import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.ApiRequest
@@ -32,7 +28,7 @@ class DashboardRepositoryTest {
         assertEquals(4, result.tasks?.total)
         assertEquals("Ship Android", result.tasks?.activeTasks?.single()?.title)
         assertEquals("Welcome", result.announcements.single().message)
-        assertEquals(123, result.loadedAtEpochMs)
+        assertEquals(123L, result.status.receivedAtEpochMs)
     }
 
     @Test
@@ -69,30 +65,16 @@ class DashboardModelsTest {
     }
 
     @Test
-    fun calculatesLiveFloorAndBreakDurations() {
-        val status = TrackerStatus(
-            state = "on_floor",
-            floorMinutes = 105,
-            breakMinutes = 15,
-            entries = listOf(
-                TimeEntryDto("clock_in", "2026-09-14T08:00:00Z"),
-                TimeEntryDto("break_start", "2026-09-14T09:00:00Z"),
-                TimeEntryDto("break_end", "2026-09-14T09:15:00Z"),
-            ),
-        )
-        val now = java.time.Instant.parse("2026-09-14T10:15:00Z").toEpochMilli()
+    fun repositoryStampsStatusWithTheCachedFetchTime() {
+        val api = ApiClient { request ->
+            if (request.path == "tracker/status") {
+                ApiResponse(200, mapOf(app.aino.mobile.core.network.RECEIVED_AT_HEADER to listOf("777")), """{"state":"on_floor","floorMinutes":1,"floorSeconds":"75"}""".toByteArray())
+            } else throw ApiError.Network("GET", request.path, java.io.IOException("Not cached"))
+        }
 
-        val loadedAt = java.time.Instant.parse("2026-09-14T10:00:00Z").toEpochMilli()
-        val (floor, breaks) = liveDurations(status, loadedAt, now)
+        val result = DashboardRepository(api).load(isManager = false, nowEpochMs = 999_999)
 
-        assertEquals(7_200, floor)
-        assertEquals(900, breaks)
-        assertEquals("02:00:00", formatDuration(floor))
-    }
-
-    @Test
-    fun malformedEntryTimestampIsIgnored() {
-        val status = TrackerStatus(state = "logged_out", entries = listOf(TimeEntryDto("clock_in", "invalid")))
-        assertEquals(0L to 0L, liveDurations(status, 0, 0))
+        assertEquals(777L, result.status.receivedAtEpochMs)
+        assertEquals(75, result.status.floorSeconds)
     }
 }

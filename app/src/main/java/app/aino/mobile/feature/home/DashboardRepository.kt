@@ -2,6 +2,7 @@ package app.aino.mobile.feature.home
 
 import app.aino.mobile.core.network.ApiClient
 import app.aino.mobile.core.network.ApiRequest
+import app.aino.mobile.core.network.receivedAtEpochMs
 import app.aino.mobile.core.common.TrackerStatus
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
@@ -17,7 +18,11 @@ class DashboardRepository(
     private inline fun <reified T> get(path: String): T =
         json.decodeFromString(api.execute(ApiRequest(path = path)).bodyAsString())
 
-    fun loadStatus(): TrackerStatus = get("tracker/status")
+    fun loadStatus(nowEpochMs: Long? = null): TrackerStatus {
+        val response = api.execute(ApiRequest(path = "tracker/status"))
+        return json.decodeFromString<TrackerStatus>(response.bodyAsString())
+            .copy(receivedAtEpochMs = response.receivedAtEpochMs(nowEpochMs ?: System.currentTimeMillis()))
+    }
 
     // @api GET tracker/task-summary
     fun loadTaskSummary(): TaskSummary = get("tracker/task-summary")
@@ -56,8 +61,8 @@ class DashboardRepository(
      * a partial failure never blanks the page. The status is the only hard
      * requirement (it drives the work timer); everything else degrades to empty.
      */
-    fun load(isManager: Boolean, nowEpochMs: Long = System.currentTimeMillis()): DashboardSnapshot {
-        val status = loadStatus()
+    fun load(isManager: Boolean, nowEpochMs: Long? = null): DashboardSnapshot {
+        val status = loadStatus(nowEpochMs)
         val tasks = runCatching { loadTaskSummary() }.getOrNull()
         val today = LocalDate.now()
         val todayEvents = runCatching { loadEvents(today, today.plusDays(1)) }.getOrDefault(emptyList())
@@ -77,7 +82,6 @@ class DashboardRepository(
             sprintTasks = sprintTasks,
             backlogTasks = backlogTasks,
             approvals = approvals,
-            loadedAtEpochMs = nowEpochMs,
         )
     }
 }

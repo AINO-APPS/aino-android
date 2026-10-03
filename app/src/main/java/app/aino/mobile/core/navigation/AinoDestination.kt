@@ -75,6 +75,16 @@ fun taskLinkRoute(task: String?, tab: String?, sprintId: String?): String =
 const val MANAGER_MEMBER_ROUTE = "manager/member/{userId}"
 fun managerMemberRoute(userId: Long): String = "manager/member/$userId"
 
+/**
+ * The registered My Team route: web `/manager?tab=&request=` deep links select
+ * a tab and open one approval request's detail sheet. Plain `manager` still
+ * matches (both arguments default to empty).
+ */
+const val MANAGER_ROUTE_PATTERN = "manager?tab={tab}&request={request}"
+fun managerRoute(tab: String?, request: String?): String =
+    if (tab.isNullOrEmpty() && request.isNullOrEmpty()) AinoDestination.Manager.route
+    else "manager?tab=${java.net.URLEncoder.encode(tab.orEmpty(), "UTF-8")}&request=${java.net.URLEncoder.encode(request.orEmpty(), "UTF-8")}"
+
 private val FULL_SCREEN_ROUTES = setOf(
     AinoDestination.ChatThread.route,
     AinoDestination.Profile.route,
@@ -128,7 +138,7 @@ fun webLinkToRoute(link: String, noteRoute: (pageId: String) -> String? = ::note
         path == "/attendance" -> AinoDestination.Attendance.route + (hash?.let { "?tab=$it" } ?: "")
         path == "/leaves" -> AinoDestination.Attendance.route + "?tab=leaves"
         path == "/organization" -> AinoDestination.Organization.route
-        path == "/manager" -> AinoDestination.Manager.route
+        path == "/manager" -> managerRoute(query["tab"], query["request"])
         path == "/tenants" -> AinoDestination.Tenants.route
         path == "/profile/face" -> PROFILE_FACE_ROUTE
         path.startsWith("/meeting/") && path.endsWith("/room") -> meetingRoomRoute(path.removePrefix("/meeting/").removeSuffix("/room"))
@@ -149,6 +159,7 @@ fun bottomBarRoute(route: String?): String? = when (route) {
     ATTENDANCE_ROUTE_PATTERN -> AinoDestination.Attendance.route
     TASK_LINK_ROUTE -> AinoDestination.Tasks.route
     SPRINT_INSIGHTS_ROUTE -> AinoDestination.Tasks.route
+    MANAGER_ROUTE_PATTERN -> AinoDestination.Manager.route
     else -> route
 }
 

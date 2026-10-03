@@ -1,169 +1,293 @@
-﻿package app.aino.mobile.feature.attendance
+package app.aino.mobile.feature.attendance
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LeadingIconTab
+import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox
+import app.aino.mobile.core.designsystem.component.FirstLoadSpinner
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
-import app.aino.mobile.core.designsystem.icons.HeroIcons
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private val HR_ROLES = setOf("hr_admin", "super_admin", "platform_admin")
-
-/**
- * Attendance page shell (P3.1) — port of `client/src/pages/Attendance.tsx`:
- * title + subtitle, the four-tab strip (Overview · Leaves · Manual Entry ·
- * Analytics), and the active tab's body. Clock controls live on the Dashboard
- * WorkTimerCard, exactly like the web. At ≤480dp the strip collapses to
- * icons-only, equal-width tabs (`.tabs` @media 480px).
- */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-fun AttendanceScreen(
-    viewModel: AttendanceViewModel,
-    userRole: String = "employee",
-    initialTab: AttendanceTab? = null,
-    modifier: Modifier = Modifier,
-) {
-    val ui by viewModel.ui.collectAsStateWithLifecycle()
-    val colors = LocalWebColors.current
-
-    // Hash deep link (P3.8): `attendance?tab=leaves` selects the tab once.
-    LaunchedEffect(initialTab) { if (initialTab != null) viewModel.openTab(initialTab) }
-    LaunchedEffect(userRole) { viewModel.setHrRole(userRole in HR_ROLES) }
-
-    app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox(
-        loading = when (ui.selectedTab) {
-            AttendanceTab.Leaves -> ui.leavesLoading
-            AttendanceTab.Analytics -> ui.analyticsLoading
-            else -> ui.loading
-        },
-        onRefresh = {
-            when (ui.selectedTab) {
-                AttendanceTab.Leaves -> viewModel.loadLeavesTab()
-                AttendanceTab.Analytics -> viewModel.loadAnalytics()
-                else -> viewModel.refresh()
-            }
-        },
-        modifier = modifier.fillMaxSize().background(colors.bg),
-    ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 64.dp),
-        ) {
-            Text(
-                "Attendance",
-                color = colors.text,
-                fontSize = 1.4.rem,
-                fontWeight = FontWeight.ExtraBold,
-            )
-            Text(
-                "Track your daily attendance, leaves, manual entries and analytics in one place",
-                color = colors.textMuted,
-                fontSize = 0.88.rem,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-            Spacer(Modifier.height(20.dp))
-            AttendanceTabStrip(ui.selectedTab, viewModel::selectTab)
-            Spacer(Modifier.height(24.dp))
-            ui.error?.let {
-                WebErrorBanner(it)
-                Spacer(Modifier.height(12.dp))
-            }
-            ui.message?.let {
-                WebSuccessBanner(it)
-                Spacer(Modifier.height(12.dp))
-            }
-            // Keep-alive (P3.8): tab state lives in the activity-scoped
-            // ViewModel, so switching tabs never loses form input or scroll data.
-            when (ui.selectedTab) {
-                AttendanceTab.Overview -> OverviewCalendarTab(ui, viewModel)
-                AttendanceTab.Leaves -> LeavesTab(ui, viewModel)
-                AttendanceTab.Manual -> ManualEntryTab(ui, viewModel)
-                AttendanceTab.Analytics -> AnalyticsTab(ui, viewModel)
-            }
-        }
-    }
-}
 
 private fun tabIcon(tab: AttendanceTab): ImageVector = when (tab) {
     AttendanceTab.Overview -> HeroIcons.CalendarDays
     AttendanceTab.Leaves -> HeroIcons.Sun
-    AttendanceTab.Manual -> HeroIcons.PencilSquare
+    AttendanceTab.Manual -> HeroIcons.ClipboardDocumentList
     AttendanceTab.Analytics -> HeroIcons.ChartBar
 }
 
-/** `.tabs` strip: surface container, 12px radius; active tab is primary-filled. */
+/**
+ * Attendance page — mobile-first redesign (approved deviation from web parity,
+ * Attendance only). A Today hero card with the clock controls sits above a
+ * labelled scrollable tab row synced to a swipeable pager; each page owns its
+ * lazy list and pull-to-refresh. The header collapses as a page scrolls and
+ * returns on the first scroll back (enter-always). Deep links
+ * (`attendance?tab=leaves|manual-entry|analytics`) select the page.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AttendanceTabStrip(active: AttendanceTab, onSelect: (AttendanceTab) -> Unit) {
+fun AttendanceScreen(
+    viewModel: AttendanceViewModel,
+    modifier: Modifier = Modifier,
+    userRole: String = "employee",
+    initialTab: AttendanceTab? = null,
+    onLocationPermission: () -> Unit = {},
+) {
+    val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val timer by viewModel.timer.collectAsStateWithLifecycle()
     val colors = LocalWebColors.current
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val iconOnly = maxWidth <= 480.dp
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .background(colors.surface, RoundedCornerShape(12.dp))
-                .border(1.dp, colors.border, RoundedCornerShape(12.dp))
-                .padding(6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            AttendanceTab.entries.forEach { tab ->
-                val selected = tab == active
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (selected) colors.primary else Color.Transparent)
-                        .clickable { onSelect(tab) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(initialTab) { if (initialTab != null) viewModel.openTab(initialTab) }
+    LaunchedEffect(userRole) { viewModel.setHrRole(userRole in HR_ROLES) }
+
+    // ---- Pager <-> selected tab -------------------------------------------
+    val pagerState = rememberPagerState(initialPage = ui.selectedTab.page) { AttendanceTab.entries.size }
+    var animatingTo by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(ui.selectedTab) {
+        val target = ui.selectedTab.page
+        if (pagerState.currentPage == target && !pagerState.isScrollInProgress) return@LaunchedEffect
+        animatingTo = target
+        try {
+            pagerState.animateScrollToPage(target)
+        } finally {
+            if (animatingTo == target) animatingTo = null
+        }
+    }
+    // Swipes select the tab once past halfway, so its first-visit load starts mid-swipe.
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            if (animatingTo == null && page != viewModel.ui.value.selectedTab.page) {
+                viewModel.selectTab(AttendanceTab.fromPage(page))
+            }
+        }
+    }
+    // Pages render once visited; before that a swipe shows a spinner, not empty data.
+    var visited by rememberSaveable { mutableStateOf(ui.selectedTab.page.toString()) }
+    LaunchedEffect(ui.selectedTab) {
+        val page = ui.selectedTab.page.toString()
+        if (page !in visited.split(',')) visited = "$visited,$page"
+    }
+
+    // ---- Success messages -> snackbar ---------------------------------------
+    val snackbar = remember { SnackbarHostState() }
+    val notice = ui.message ?: ui.leaveSuccess
+    LaunchedEffect(notice) {
+        if (notice != null) {
+            scope.launch { snackbar.showSnackbar(notice) }
+            viewModel.consumeMessage()
+        }
+    }
+
+    // ---- Collapsing header (enter-always) -----------------------------------
+    var headerHeight by remember { mutableIntStateOf(0) }
+    val headerOffset = remember { mutableFloatStateOf(0f) }
+    val collapse = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val old = headerOffset.floatValue
+                val new = (old + available.y).coerceIn(-headerHeight.toFloat(), 0f)
+                headerOffset.floatValue = new
+                return Offset(0f, new - old)
+            }
+        }
+    }
+
+    val formSheetOpen = ui.sheet == AttendanceSheet.ManualEntry || ui.sheet == AttendanceSheet.Overtime
+    val currentTab = AttendanceTab.fromPage(pagerState.currentPage)
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = colors.bg,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = { SnackbarHost(snackbar) },
+        floatingActionButton = {
+            Box {
+                AnimatedVisibility(
+                    visible = currentTab == AttendanceTab.Leaves &&
+                        (ui.leavesSubTab == LeavesSubTab.MyLeaves || ui.leavesSubTab == LeavesSubTab.MyBalances),
+                    enter = scaleIn() + fadeIn(),
+                    exit = scaleOut() + fadeOut(),
                 ) {
-                    Icon(
-                        tabIcon(tab),
-                        contentDescription = tab.label,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (selected) colors.onAccent else colors.textSecondary,
+                    ExtendedFloatingActionButton(
+                        onClick = { viewModel.openSheet(AttendanceSheet.ApplyLeave) },
+                        icon = { Icon(HeroIcons.Plus, null, Modifier.size(18.dp)) },
+                        text = { Text("Apply leave", fontWeight = FontWeight.SemiBold) },
+                        containerColor = colors.primary,
+                        contentColor = colors.onAccent,
                     )
-                    if (!iconOnly) {
-                        Text(
-                            "  " + tab.label,
-                            color = if (selected) colors.onAccent else colors.textSecondary,
-                            fontSize = 0.82.rem,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
+                }
+                AnimatedVisibility(
+                    visible = currentTab == AttendanceTab.Manual,
+                    enter = scaleIn() + fadeIn(),
+                    exit = scaleOut() + fadeOut(),
+                ) { RequestsFab(viewModel) }
+            }
+        },
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize().nestedScroll(collapse)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clipToBounds()
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+                        val visible = (placeable.height + headerOffset.floatValue).roundToInt().coerceIn(0, placeable.height)
+                        layout(placeable.width, visible) { placeable.place(0, visible - placeable.height) }
+                    },
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged {
+                            headerHeight = it.height
+                            headerOffset.floatValue = headerOffset.floatValue.coerceAtLeast(-it.height.toFloat())
+                        }
+                        .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        "Attendance",
+                        color = colors.text,
+                        fontSize = 1.4.rem,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    TodayHeroCard(
+                        ui = ui,
+                        onWorkMode = viewModel::setWorkMode,
+                        onClock = { action -> viewModel.prepare(action, onLocationPermission) },
+                        onBreak = viewModel::breakAction,
+                        timer = timer,
+                    )
+                    AnimatedVisibility(visible = ui.error != null && !formSheetOpen) {
+                        ErrorNotice(
+                            ui.error.orEmpty(),
+                            onRetry = { refreshPage(viewModel, ui.selectedTab) },
+                            onDismiss = viewModel::clearNotice,
                         )
                     }
                 }
             }
+
+            PrimaryScrollableTabRow(
+                selectedTabIndex = pagerState.currentPage,
+                containerColor = colors.bg,
+                contentColor = colors.primary,
+                edgePadding = 8.dp,
+                divider = { HorizontalDivider(color = colors.border) },
+            ) {
+                AttendanceTab.entries.forEach { tab ->
+                    LeadingIconTab(
+                        selected = pagerState.currentPage == tab.page,
+                        onClick = { viewModel.selectTab(tab) },
+                        text = { Text(tab.label, fontWeight = FontWeight.SemiBold, maxLines = 1) },
+                        icon = { Icon(tabIcon(tab), null, Modifier.size(18.dp)) },
+                        selectedContentColor = colors.primary,
+                        unselectedContentColor = colors.textSecondary,
+                    )
+                }
+            }
+
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                // Keep-alive: every page stays composed, so scroll positions and filters survive tab switches.
+                beyondViewportPageCount = AttendanceTab.entries.size - 1,
+                key = { it },
+            ) { page ->
+                if (page.toString() !in visited.split(',')) {
+                    FirstLoadSpinner()
+                } else {
+                    when (AttendanceTab.fromPage(page)) {
+                        AttendanceTab.Overview -> AttendancePageList(loading = ui.loading, onRefresh = viewModel::refresh) {
+                            overviewItems(ui, viewModel)
+                        }
+                        AttendanceTab.Leaves -> LeavesPage(ui, viewModel)
+                        AttendanceTab.Manual -> RequestsPage(ui, viewModel)
+                        AttendanceTab.Analytics -> InsightsPage(ui, viewModel)
+                    }
+                }
+            }
         }
+    }
+
+    DayDetailSheet(ui, viewModel)
+}
+
+private fun refreshPage(viewModel: AttendanceViewModel, tab: AttendanceTab) {
+    viewModel.clearNotice()
+    when (tab) {
+        AttendanceTab.Leaves -> viewModel.loadLeavesTab()
+        AttendanceTab.Analytics -> viewModel.loadAnalytics()
+        else -> viewModel.refresh()
+    }
+}
+
+/** One pager page: pull-to-refresh (user pulls only) around its own lazy list. */
+@Composable
+internal fun AttendancePageList(loading: Boolean, onRefresh: () -> Unit, content: LazyListScope.() -> Unit) {
+    AinoPullToRefreshBox(loading = loading, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 104.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content,
+        )
     }
 }

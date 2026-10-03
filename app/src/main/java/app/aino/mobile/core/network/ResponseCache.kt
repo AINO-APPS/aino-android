@@ -26,6 +26,10 @@ class ResponseCache(private val root: File) {
 
     fun get(path: String): ByteArray? = dir()?.let { runCatching { File(it, name(path)).takeIf(File::isFile)?.readBytes() }.getOrNull() }
 
+    /** When [path]'s body was fetched from the server (the file's write time), or null on a miss. */
+    fun fetchedAt(path: String): Long? =
+        dir()?.let { runCatching { File(it, name(path)).takeIf(File::isFile)?.lastModified()?.takeIf { t -> t > 0 } }.getOrNull() }
+
     /** Sign-out: the previous user's data must not survive on the device. */
     fun clearAll() {
         runCatching { root.deleteRecursively() }
@@ -67,6 +71,14 @@ class CacheOnlyApiClient(private val cache: ResponseCache) : ApiClient {
     override fun execute(request: ApiRequest): ApiResponse {
         val body = request.method.takeIf { it.equals("GET", ignoreCase = true) }?.let { cache.get(request.path) }
             ?: throw ApiError.Network(request.method, request.path, java.io.IOException("Not cached"))
-        return ApiResponse(200, emptyMap(), body)
+        val headers = cache.fetchedAt(request.path)?.let { mapOf(RECEIVED_AT_HEADER to listOf(it.toString())) } ?: emptyMap()
+        return ApiResponse(200, headers, body)
     }
 }
+
+/** Synthetic header on cached responses: epoch ms when the body was originally received. */
+const val RECEIVED_AT_HEADER = "X-Aino-Received-At"
+
+/** When this body came from the server: the original fetch time for a cached body, else [nowEpochMs]. */
+fun ApiResponse.receivedAtEpochMs(nowEpochMs: Long = System.currentTimeMillis()): Long =
+    headers[RECEIVED_AT_HEADER]?.firstOrNull()?.toLongOrNull() ?: nowEpochMs

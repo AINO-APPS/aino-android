@@ -189,6 +189,7 @@ private fun notificationIconVector(icon: NotificationIcon): ImageVector = when (
     NotificationIcon.Leave -> HeroIcons.ClipboardDocumentList
     NotificationIcon.Task -> HeroIcons.DocumentText
     NotificationIcon.Approval -> HeroIcons.CheckCircle
+    NotificationIcon.AgileAccess -> HeroIcons.Key
     NotificationIcon.MeetingInvite -> HeroIcons.VideoCamera
     NotificationIcon.Default -> HeroIcons.Bell
 }

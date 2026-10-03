@@ -65,7 +65,12 @@ fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now())
             PushKind.CallHandledElsewhere
         }
         else -> {
-            exact(setOf("notificationId", "type", "title", "body", "badgeCount", "dedupeKey", "actorAvatar", "actorName", "tenantId", "sentAt"))
+            // `link` / `linkTaskId` are newer, optional deep-link hints: older
+            // servers omit them and a malformed value is ignored at routing time.
+            exact(
+                setOf("notificationId", "type", "title", "body", "badgeCount", "dedupeKey", "actorAvatar", "actorName", "tenantId", "sentAt"),
+                setOf("link", "linkTaskId"),
+            )
             positive("notificationId"); required("title"); required("body"); positive("badgeCount")
             require(required("dedupeKey") == "notif:${data["notificationId"]}")
             require(type !in setOf("incoming_call", "call_handled_elsewhere", "chat_message"))
@@ -83,3 +88,11 @@ fun notificationId(push: ValidatedPush): Int = when (push.kind) {
     PushKind.IncomingCall, PushKind.CallHandledElsewhere -> push.data.getValue("callId").toLong().hashCode()
     PushKind.General -> push.data.getValue("notificationId").toLong().hashCode()
 }
+
+/** The generic alert's relative web path (`/tasks?task=1`), or null when absent or not app-relative. */
+fun pushLink(data: Map<String, String>): String? =
+    data["link"]?.trim()?.takeIf { it.startsWith("/") && !it.startsWith("//") }
+
+/** The generic alert's linked task id, or null when absent / not a positive number. */
+fun pushLinkTaskId(data: Map<String, String>): Long? =
+    data["linkTaskId"]?.trim()?.toLongOrNull()?.takeIf { it > 0 }

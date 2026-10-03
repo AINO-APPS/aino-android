@@ -25,6 +25,17 @@ class WebLinkRouteTest {
     }
 
     @Test
+    fun managerLinksCarryTabAndRequest() {
+        assertEquals("manager", webLinkToRoute("/manager"))
+        assertEquals("manager?tab=approvals&request=", webLinkToRoute("/manager?tab=approvals"))
+        assertEquals("manager?tab=approvals&request=42", webLinkToRoute("/manager?tab=approvals&request=42"))
+        assertEquals("manager?tab=&request=42", webLinkToRoute("/manager?request=42"))
+        assertEquals("manager?tab=requests&request=", webLinkToRoute("/manager/?tab=requests"))
+        assertEquals("manager", managerRoute(null, ""))
+        assertEquals(AinoDestination.Manager.route, bottomBarRoute(MANAGER_ROUTE_PATTERN))
+    }
+
+    @Test
     fun notesLinksUseTheEditorRouteWhenAPageIsGiven() {
         assertEquals("notes", webLinkToRoute("/notes"))
         assertEquals("notes/p1", webLinkToRoute("/notes?pageId=p1"))
