@@ -66,11 +66,7 @@ fun notificationLink(item: NotificationItem, routable: (String) -> Boolean = { w
 }
 
 /** `notif-badge` text: hidden at zero, capped at "99+". */
-fun unreadBadgeLabel(unread: Int): String? = when {
-    unread <= 0 -> null
-    unread > 99 -> "99+"
-    else -> unread.toString()
-}
+fun unreadBadgeLabel(unread: Int): String? = app.aino.mobile.core.designsystem.component.countBadgeLabel(unread)
 
 /** Realtime events NotificationBell answers with a refetch. */
 val NOTIFICATION_REFRESH_EVENTS: Set<String> = setOf(

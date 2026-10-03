@@ -116,6 +116,8 @@ data class ChatUiState(
     val conversations: List<ChatConversation> = emptyList(),
     val presence: Map<Long, ChatPresence> = emptyMap(),
     val fromCache: Boolean = false,
+    /** Wall-clock start of the last successful server list fetch; null while only cache is shown. */
+    val syncedAtMs: Long? = null,
     val userSearch: String = "",
     val userResults: List<ChatUser> = emptyList(),
     val searching: Boolean = false,
@@ -313,6 +315,7 @@ class ChatViewModel(
         if (_ui.value.loading) return
         _ui.update { st -> st.copy(loading = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
+            val startedAt = System.currentTimeMillis()
             if (_ui.value.conversations.isEmpty()) {
                 warm?.let { runCatching(it::loadConversations).getOrNull() }?.takeIf { it.isNotEmpty() }?.let { cached ->
                     if (_ui.value.conversations.isEmpty()) _ui.update { st -> st.copy(conversations = zeroUnread(cached, visibleConversationId())) }
@@ -328,6 +331,7 @@ class ChatViewModel(
                         conversations = zeroUnread(conversations, visibleConversationId()),
                         presence = presence,
                         fromCache = false,
+                        syncedAtMs = startedAt,
                     ) }
                     warmThreads(scopedCache, conversations)
                 },

@@ -27,7 +27,23 @@ data class NotificationsUiState(
     val refreshing: Boolean = false,
     /** Shown only while nothing has loaded yet (the web ignores polling errors). */
     val error: String? = null,
+    /** Wall-clock time the last successful fetch *started*; null until one succeeded. */
+    val syncedAtMs: Long? = null,
 )
+
+/**
+ * Tray reconciliation input: unread ids in the loaded page. When the page is
+ * full, older rows were not fetched, so only ids inside the page window count.
+ */
+fun NotificationsUiState.unreadTruthWindow(): Pair<Set<Long>, Long> {
+    val unread = notifications.filterNot { it.isRead }.mapTo(mutableSetOf()) { it.id }
+    // `this.unread` is the server's total: zero means nothing is unread anywhere.
+    val window = if (this.unread > 0 && notifications.size >= NOTIFICATIONS_PAGE_SIZE) notifications.minOf { it.id } else 0L
+    return unread to window
+}
+
+/** Server default `per_page` for `GET /notifications`. */
+const val NOTIFICATIONS_PAGE_SIZE = 50
 
 /**
  * NotificationBell state, Activity-scoped. Idle cost is one GET every
@@ -37,6 +53,9 @@ data class NotificationsUiState(
 class NotificationsViewModel(
     private val repository: NotificationsRepository,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** Removes a row's system-tray notification once it is read or deleted. */
+    private val cancelTray: (Long) -> Unit = {},
+    private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(NotificationsUiState())
     val ui: StateFlow<NotificationsUiState> = _ui.asStateFlow()
@@ -99,6 +118,7 @@ class NotificationsViewModel(
      * open, if any. The caller navigates immediately.
      */
     fun open(item: NotificationItem): String? {
+        cancelTray(item.id)
         if (!item.isRead) {
             val gen = generation
             viewModelScope.launch {
@@ -115,6 +135,7 @@ class NotificationsViewModel(
      * count is reconciled by the refetch that follows).
      */
     fun markReadById(id: Long) {
+        cancelTray(id)
         val gen = generation
         viewModelScope.launch {
             val ok = runIo { repository.markRead(id) }
@@ -128,7 +149,9 @@ class NotificationsViewModel(
         viewModelScope.launch {
             val ok = runIo { repository.markAllRead() }
             if (ok && gen == generation) {
-                set(_ui.value.copy(notifications = _ui.value.notifications.map { it.copy(isRead = true) }, unread = 0))
+                _ui.value.notifications.filterNot { it.isRead }.forEach { cancelTray(it.id) }
+                // Everything is read now, including rows outside the loaded page.
+                set(_ui.value.copy(notifications = _ui.value.notifications.map { it.copy(isRead = true) }, unread = 0, syncedAtMs = clock()))
             }
         }
     }
@@ -137,6 +160,7 @@ class NotificationsViewModel(
     fun delete(id: Long) {
         val current = _ui.value
         val removed = current.notifications.firstOrNull { it.id == id } ?: return
+        cancelTray(id)
         set(
             current.copy(
                 notifications = current.notifications.filterNot { it.id == id },
@@ -173,6 +197,9 @@ class NotificationsViewModel(
             set(_ui.value.copy(loading = true))
             do {
                 fetchAgain = false
+                // Taken before the request: an alert pushed while it is in flight
+                // must not be treated as covered by this (older) snapshot.
+                val startedAt = clock()
                 val result = try {
                     Result.success(withContext(io) { repository.list() })
                 } catch (cancelled: CancellationException) {
@@ -183,7 +210,7 @@ class NotificationsViewModel(
                 if (gen != generation) return@launch
                 result.fold(
                     onSuccess = { page ->
-                        set(_ui.value.copy(notifications = page.notifications, unread = page.unread, loaded = true, error = null))
+                        set(_ui.value.copy(notifications = page.notifications, unread = page.unread, loaded = true, error = null, syncedAtMs = startedAt))
                     },
                     onFailure = { error ->
                         if (!_ui.value.loaded) set(_ui.value.copy(error = error.message ?: "Failed to fetch notifications"))
@@ -212,7 +239,10 @@ class NotificationsViewModel(
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                NotificationsViewModel(NotificationsRepository(app.aino.mobile.core.AppContainer.get(context).api)) as T
+                NotificationsViewModel(
+                    NotificationsRepository(app.aino.mobile.core.AppContainer.get(context).api),
+                    cancelTray = { id -> app.aino.mobile.core.push.PushNotifications.cancelAlert(context.applicationContext, id) },
+                ) as T
         }
     }
 }

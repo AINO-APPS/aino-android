@@ -11,6 +11,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import app.aino.mobile.core.designsystem.icons.HeroIcons
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.unit.dp
 
 @RunWith(RobolectricTestRunner::class)
 class AinoComponentsRobolectricTest {
@@ -85,5 +87,37 @@ class AinoComponentsRobolectricTest {
         compose.onNodeWithText("Home").assertExists()
         compose.onNodeWithText("Chat").assertExists()
         compose.onNodeWithText("3", useUnmergedTree = true).assertExists()
+    }
+
+    // Real text measurement: legacy Robolectric graphics reports zero-width text.
+    @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+    @Test
+    fun countBadgeShowsWholeLabelsAndHidesAtZero() {
+        compose.setContent {
+            AinoTheme(dynamicColor = false) {
+                androidx.compose.foundation.layout.Row {
+                    app.aino.mobile.core.designsystem.component.CountBadge(7)
+                    // Inside an icon-sized box, as on the tab bar: must not wrap or clip.
+                    androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.size(26.dp)) {
+                        app.aino.mobile.core.designsystem.component.CountBadge(42)
+                    }
+                    app.aino.mobile.core.designsystem.component.CountBadge(250)
+                    app.aino.mobile.core.designsystem.component.CountBadge(0)
+                }
+            }
+        }
+
+        compose.onNodeWithText("7", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("42", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("99+", useUnmergedTree = true).assertExists()
+        compose.onNodeWithContentDescription("0 unread").assertDoesNotExist()
+        // Two-digit counts get a pill wider than its height instead of a clipped circle.
+        val size = compose.onNodeWithContentDescription("42 unread").fetchSemanticsNode().size
+        assert(size.width >= size.height) { "badge ${size.width}x${size.height} clips its label" }
+        // And the label stays on one line even inside a 26dp icon box.
+        val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithText("42", useUnmergedTree = true).fetchSemanticsNode()
+            .config[androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult].action!!.invoke(layouts)
+        assert(layouts.single().lineCount == 1) { "\"42\" wrapped onto ${layouts.single().lineCount} lines" }
     }
 }

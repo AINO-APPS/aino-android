@@ -35,6 +35,7 @@ object ChatNotifications {
     const val KEY_REPLY = "aino_reply_text"
     const val ACTION_REPLY = "app.aino.mobile.action.CHAT_REPLY"
     const val ACTION_MARK_READ = "app.aino.mobile.action.CHAT_MARK_READ"
+    const val ACTION_DISMISSED = "app.aino.mobile.action.CHAT_DISMISSED"
     const val EXTRA_CONVERSATION_ID = "aino_conversation_id"
     private const val SELF_KEY = "aino-self"
     private const val DEFAULT_ACCENT = 0xFF2383E2.toInt()
@@ -123,9 +124,21 @@ object ChatNotifications {
 
     /** Dismisses a conversation's notification (mark-read action, or the thread was opened in-app). */
     fun cancel(context: Context, conversationId: Long) {
+        forget(conversationId)
+        val manager = NotificationManagerCompat.from(context)
+        runCatching { manager.cancel(NotificationTags.CHAT, conversationId.hashCode()) }
+        // Posted untagged by app versions before 0.15.2.
+        runCatching { manager.cancel(conversationId.hashCode()) }
+    }
+
+    /**
+     * The user swiped the conversation away: drop its stacked lines so the next
+     * message starts a fresh notification instead of resurrecting (and
+     * re-counting) the dismissed ones. Nothing is marked read.
+     */
+    fun forget(conversationId: Long) {
         ChatNotificationHistory.clear(conversationId)
         synchronized(this) { meta.remove(conversationId) }
-        runCatching { NotificationManagerCompat.from(context).cancel(conversationId.hashCode()) }
     }
 
     private fun post(context: Context, conversationId: Long, info: Meta, lines: List<ChatNotificationLine>, silent: Boolean) {
@@ -172,15 +185,28 @@ object ChatNotifications {
             .setContentIntent(contentIntent)
             .addAction(replyAction(context, conversationId, requestCode))
             .addAction(markReadAction(context, conversationId, requestCode))
+            .setDeleteIntent(dismissIntent(context, conversationId, requestCode))
             .setAutoCancel(true)
             .setSilent(silent)
-            .setNumber(lines.count { it.senderKey != null })
+            // Launcher badge: one per conversation. A per-line number made One UI
+            // show the stacked backlog (up to MAX_LINES, own replies aside) as
+            // unread long after the messages were read.
+            .setNumber(1)
+            .setBadgeIconType(NotificationCompat.BADGE_ICON_SMALL)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
         info.shortcutId?.let(builder::setShortcutId)
-        runCatching { NotificationManagerCompat.from(context).notify(requestCode, builder.build()) }
+        runCatching { NotificationManagerCompat.from(context).notify(NotificationTags.CHAT, requestCode, builder.build()) }
     }
+
+    /** Swipe-away / clear-all: forget the stacked lines (Signal `DeleteNotificationReceiver`). */
+    private fun dismissIntent(context: Context, conversationId: Long, requestCode: Int): PendingIntent =
+        PendingIntent.getBroadcast(
+            context, requestCode + 2,
+            actionIntent(context, ACTION_DISMISSED, conversationId),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 
     private fun replyAction(context: Context, conversationId: Long, requestCode: Int): NotificationCompat.Action {
         // RemoteInput needs a MUTABLE PendingIntent so the system can attach the typed text.

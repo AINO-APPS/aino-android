@@ -25,6 +25,9 @@ class NotificationsViewModelTest {
         {"id":2,"type":"task","title":"A","link_task_id":9,"is_read":false},
         {"id":1,"type":"leave","title":"B","is_read":true}],"unread":1}"""
 
+    private val cancelled = mutableListOf<Long>()
+    private var now = 1_000L
+
     private fun viewModel() = NotificationsViewModel(
         NotificationsRepository(
             ApiClient { request ->
@@ -35,7 +38,35 @@ class NotificationsViewModelTest {
             },
         ),
         io = dispatcher,
+        cancelTray = { cancelled += it },
+        clock = { now },
     )
+
+    @Test
+    fun readDeleteAndReadAllRemoveTheTrayNotification() {
+        val vm = viewModel()
+        vm.refresh()
+        vm.open(vm.ui.value.notifications.first())
+        vm.markReadById(5)
+        vm.delete(1)
+        assertEquals(listOf(2L, 5L, 1L), cancelled)
+
+        cancelled.clear()
+        val fresh = viewModel()
+        fresh.refresh()
+        fresh.markAllRead()
+        assertEquals(listOf(2L), cancelled)
+    }
+
+    @Test
+    fun syncTimeIsTakenBeforeTheRequestAndFeedsTheTrayWindow() {
+        val vm = viewModel()
+        assertEquals(null, vm.ui.value.syncedAtMs)
+        now = 5_000
+        vm.refresh()
+        assertEquals(5_000L, vm.ui.value.syncedAtMs)
+        assertEquals(setOf(2L) to 0L, vm.ui.value.unreadTruthWindow())
+    }
 
     @Before fun setUp() = Dispatchers.setMain(dispatcher)
     @After fun tearDown() = Dispatchers.resetMain()

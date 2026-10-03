@@ -92,6 +92,8 @@ class AuthViewModel(
         loader.diskCache?.clear()
         app.aino.mobile.core.notifications.NotificationSoundPrefs.clear(context)
         app.aino.mobile.core.push.PushTokenRegistrar.forget(context)
+        // The previous account's messages and alerts must not linger (or badge the icon).
+        app.aino.mobile.core.push.NotificationReconciler.clearAll(context)
     }
 
     /** Web `updateUser`: patch the signed-in user after a profile/avatar change. */

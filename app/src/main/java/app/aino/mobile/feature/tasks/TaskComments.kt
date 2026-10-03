@@ -241,7 +241,8 @@ private fun CommentComposer(taskId: Long, users: List<AssignableUser>, viewModel
                     .clip(CircleShape)
                     .background(if (canSend) colors.primary else colors.primary.copy(alpha = 0.4f))
                     .clickable(enabled = canSend) {
-                        viewModel.addComment(taskId, text.replace('\u00A0', ' '), file, mentions.toMap()) {
+                        val plain = text.replace('\u00A0', ' ')
+                        viewModel.addComment(taskId, plain, file, resolveCommentMentions(plain, mentions.toMap(), users)) {
                             text = ""
                             file = null
                             mentions.clear()

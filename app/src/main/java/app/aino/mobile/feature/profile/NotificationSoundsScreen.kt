@@ -66,6 +66,7 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
     }
     val ringtoneName = remember(revision) { soundTitle(context, NotificationSoundPrefs.ringtoneUri(context) ?: Settings.System.DEFAULT_RINGTONE_URI) }
     val messageSound = remember(revision) { channelSoundTitle(context, PushNotifications.MESSAGES) }
+    val mentionSound = remember(revision) { channelSoundTitle(context, PushNotifications.MENTIONS) }
     LaunchedEffect(Unit) { PushNotifications.createChannels(context) }
 
     ProfilePage("Notification sounds", onBack) {
@@ -109,7 +110,8 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
         ProfileSection("Messages") {
             ProfileRow(HeroIcons.ChatBubbleOvalLeft, "New message", { openChannelSettings(context, PushNotifications.MESSAGES) }, supporting = messageSound, enabled = !muted)
             RowDivider()
-            ProfileRow(HeroIcons.AtSymbol, "Mention / @-tag", { openChannelSettings(context, PushNotifications.MESSAGES) }, supporting = messageSound, enabled = !muted)
+            // Task / note / chat @-mentions post on their own channel.
+            ProfileRow(HeroIcons.AtSymbol, "Mention / @-tag", { openChannelSettings(context, PushNotifications.MENTIONS) }, supporting = mentionSound, enabled = !muted)
         }
 
         ProfileSection("Behavior") {

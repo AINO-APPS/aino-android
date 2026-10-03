@@ -97,6 +97,7 @@ import app.aino.mobile.core.db.CacheScope
 import app.aino.mobile.core.db.OutboxWorker
 import app.aino.mobile.core.db.shouldWakeOutboxOnReconnect
 import app.aino.mobile.core.push.PushTokenRegistrar
+import app.aino.mobile.feature.notifications.unreadTruthWindow
 import app.aino.mobile.core.call.IncomingCallViewModel
 import app.aino.mobile.core.call.CallRealtimeEvent
 import app.aino.mobile.core.call.CallRealtimeRouter
@@ -184,8 +185,31 @@ fun AinoApp(
         }
     }
     androidx.lifecycle.compose.LifecycleResumeEffect(tenantAuthenticated) {
-        if (tenantAuthenticated) notifications.start()
+        if (tenantAuthenticated) {
+            notifications.start()
+            // Reads made on the web / desktop / another phone send this device
+            // no event; the fresh list lets the tray (and launcher badge) catch up.
+            chat.refresh()
+        }
         onPauseOrDispose { notifications.stop() }
+    }
+    // Keep the tray in step with the server's unread state. Samsung One UI
+    // badges the launcher icon with the tray's AINO notifications, so leftovers
+    // for messages / alerts already read elsewhere showed as a false count.
+    val trayChatUi by chat.ui.collectAsStateWithLifecycle()
+    val trayBellUi by notifications.ui.collectAsStateWithLifecycle()
+    val unreadChatIds = trayChatUi.conversations.filter { it.unreadCount > 0 }.map { it.id }.toSet()
+    val (unreadAlertIds, alertWindowMinId) = trayBellUi.unreadTruthWindow()
+    LaunchedEffect(tenantAuthenticated, unreadChatIds, trayChatUi.syncedAtMs, unreadAlertIds, alertWindowMinId, trayBellUi.syncedAtMs) {
+        if (!tenantAuthenticated) return@LaunchedEffect
+        val truth = app.aino.mobile.core.push.UnreadTruth(
+            unreadConversationIds = unreadChatIds,
+            chatSyncedAtMs = trayChatUi.syncedAtMs,
+            unreadAlertIds = unreadAlertIds,
+            alertWindowMinId = alertWindowMinId,
+            alertsSyncedAtMs = trayBellUi.syncedAtMs,
+        )
+        withContext(Dispatchers.Default) { app.aino.mobile.core.push.NotificationReconciler.reconcile(appContext, truth) }
     }
     // P7.2: one notebook per user for the session; unsaved edits flush when the app stops.
     val notes = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.notes.NotesViewModel>(
@@ -1150,20 +1174,19 @@ private fun AinoShellTopBar(
                         Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onSearch),
                         contentAlignment = Alignment.Center,
                     ) { Icon(HeroIcons.MagnifyingGlass, "Search", Modifier.size(22.dp), tint = colors.textSecondary) }
-                    Box(
-                        Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onNotifications),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(HeroIcons.Bell, "Notifications", Modifier.size(22.dp), tint = colors.textSecondary)
-                        app.aino.mobile.feature.notifications.unreadBadgeLabel(unreadNotifications)?.let { label ->
-                            // `.chatBadge`-style count: danger fill, white text, ringed with the bar colour.
-                            Box(
-                                Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 2.dp)
-                                    .background(colors.danger, CircleShape).border(2.dp, colors.bg, CircleShape)
-                                    .padding(horizontal = 4.dp, vertical = 1.dp),
-                                contentAlignment = Alignment.Center,
-                            ) { Text(label, color = androidx.compose.ui.graphics.Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold) }
-                        }
+                    // Only the ripple target is clipped to a circle; the badge sits in
+                    // the unclipped outer box (a clipped parent cut the pill's corner
+                    // off and squashed it).
+                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier.matchParentSize().clip(CircleShape).clickable(onClick = onNotifications),
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(HeroIcons.Bell, "Notifications", Modifier.size(22.dp), tint = colors.textSecondary) }
+                        // Anchored to the bell glyph's top-right corner (glyph is 22dp, centred).
+                        app.aino.mobile.core.designsystem.component.CountBadge(
+                            unreadNotifications,
+                            Modifier.align(Alignment.Center).offset(x = 9.dp, y = (-9).dp),
+                        )
                     }
                     // The touch target is a plain (unclipped) box: a CircleShape clip here
                     // would crop the status dot, which deliberately overhangs the avatar's

@@ -271,6 +271,44 @@ fun plainTextToHtml(text: String, mentions: Map<String, Long> = emptyMap()): Str
     }
 }
 
+/**
+ * Mentions to send with a comment: the ones picked from the suggestion list,
+ * plus any `@Display Name` / `@username` typed by hand that matches exactly one
+ * known person. Without a `data-user-id` chip the server cannot notify anyone,
+ * so a typed mention used to be silently dropped. Longest names win, and the
+ * match must end at a word boundary (`@Ann` does not match inside `@Anna`).
+ */
+fun resolveCommentMentions(text: String, picked: Map<String, Long>, users: List<AssignableUser>): Map<String, Long> {
+    if ('@' !in text) return picked
+    val result = picked.toMutableMap()
+    // Text already claimed by a (longer) mention; a shorter label must not
+    // match inside it (`@anna` inside `@Anna Joseph`).
+    val claimed = mutableListOf<IntRange>()
+    fun occurrences(label: String) =
+        Regex("(?<![\\w@])@(${Regex.escape(label)})(?![\\w])", RegexOption.IGNORE_CASE).findAll(text)
+            .filter { m -> claimed.none { it.first <= m.range.last && m.range.first <= it.last } }
+            .toList()
+    picked.keys.sortedByDescending { it.length }.forEach { label -> claimed += occurrences(label).map { it.range } }
+
+    val candidates = users.flatMap { user ->
+        listOfNotNull(user.display().takeIf(String::isNotBlank), user.username?.takeIf(String::isNotBlank)).map { it to user.id }
+    }
+    val byLabel = candidates.groupBy({ it.first.lowercase() }, { it })
+    byLabel.values.sortedByDescending { it.first().first.length }.forEach { entries ->
+        val (label, id) = entries.first()
+        val matches = occurrences(label)
+        if (matches.isEmpty()) return@forEach
+        // Claimed even when ambiguous, so `@Vishnu V R` is not read as `@vishnu`.
+        claimed += matches.map { it.range }
+        // A label two different people share is ambiguous — leave it to the picker.
+        if (entries.map { it.second }.distinct().size != 1) return@forEach
+        if (result.keys.any { it.equals(label, ignoreCase = true) }) return@forEach
+        // Use the text as typed so plainTextToHtml's exact replace finds it.
+        result[matches.first().groupValues[1]] = id
+    }
+    return result
+}
+
 /** Server comment validation (`POST /tasks/:id/comments`). */
 fun validateComment(content: String): String? {
     val trimmed = content.trim()

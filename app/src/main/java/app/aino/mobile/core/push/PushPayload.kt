@@ -89,6 +89,13 @@ fun notificationId(push: ValidatedPush): Int = when (push.kind) {
     PushKind.General -> push.data.getValue("notificationId").toLong().hashCode()
 }
 
+/** Tray tag for [push]: keeps chat, alert and call ids in separate namespaces (see [NotificationTags]). */
+fun notificationTag(push: ValidatedPush): String = when (push.kind) {
+    PushKind.ChatMessage -> NotificationTags.CHAT
+    PushKind.IncomingCall, PushKind.CallHandledElsewhere -> NotificationTags.CALL
+    PushKind.General -> NotificationTags.ALERT
+}
+
 /** The generic alert's relative web path (`/tasks?task=1`), or null when absent or not app-relative. */
 fun pushLink(data: Map<String, String>): String? =
     data["link"]?.trim()?.takeIf { it.startsWith("/") && !it.startsWith("//") }

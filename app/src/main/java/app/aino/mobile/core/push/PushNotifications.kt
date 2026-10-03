@@ -34,7 +34,7 @@ object PushNotifications {
             listOf(
                 NotificationChannel(MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel(MENTIONS, "Mentions", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "When someone @-mentions you in a task or note"
+                    description = "When someone @-mentions you in a chat, task or note"
                 },
                 NotificationChannel(ASSIGNMENTS, "Assignments", NotificationManager.IMPORTANCE_HIGH).apply {
                     description = "Tasks assigned to you"
@@ -53,7 +53,10 @@ object PushNotifications {
 
     fun display(context: Context, push: ValidatedPush) {
         if (push.kind == PushKind.CallHandledElsewhere) {
-            NotificationManagerCompat.from(context).cancel(notificationId(push))
+            val manager = NotificationManagerCompat.from(context)
+            manager.cancel(NotificationTags.CALL, notificationId(push))
+            // Posted untagged by app versions before 0.15.2.
+            manager.cancel(notificationId(push))
             return
         }
         val chatId = push.data["conversationId"]?.toLongOrNull()
@@ -95,6 +98,7 @@ object PushNotifications {
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pending)
             .setAutoCancel(true)
+            .setNumber(1)
             .setSilent(silent)
             .setPriority(if (push.kind == PushKind.IncomingCall) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
             .setCategory(if (push.kind == PushKind.IncomingCall) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE)
@@ -103,14 +107,19 @@ object PushNotifications {
         if (Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         ) {
-            runCatching { NotificationManagerCompat.from(context).notify(notificationId(push), notification) }
+            runCatching { NotificationManagerCompat.from(context).notify(notificationTag(push), notificationId(push), notification) }
         }
+    }
+
+    /** Removes a bell alert's tray notification (read / deleted in the app or on another device). */
+    fun cancelAlert(context: Context, notificationId: Long) {
+        runCatching { NotificationManagerCompat.from(context).cancel(NotificationTags.ALERT, notificationId.hashCode()) }
     }
 }
 
 /** Channel for a generic (`notifications` table) alert by its `type`; unknown types stay on General. */
 fun generalPushChannel(type: String?): String = when (type) {
-    "mention", "note_mention" -> PushNotifications.MENTIONS
+    "mention", "note_mention", "chat_mention" -> PushNotifications.MENTIONS
     "task" -> PushNotifications.ASSIGNMENTS
     // Manual-entry / overtime decisions arrive as `approval` (to the requester).
     "approval", "leave", "agile_request", "agile_grant" -> PushNotifications.APPROVALS

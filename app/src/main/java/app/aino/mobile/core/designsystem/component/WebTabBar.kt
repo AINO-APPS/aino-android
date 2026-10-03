@@ -3,7 +3,6 @@ package app.aino.mobile.core.designsystem.component
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.layout.Arrangement
@@ -13,15 +12,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.WebType
@@ -92,24 +90,11 @@ private fun androidx.compose.foundation.layout.RowScope.TabItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
     ) {
-        Box {
+        Box(contentAlignment = Alignment.Center) {
             Icon(destination.icon, destination.label, Modifier.size(26.dp), tint = tint)
-            if (badge > 0) {
-                Box(
-                    Modifier.align(Alignment.TopEnd)
-                        .padding(start = 12.dp)
-                        .size(15.dp)
-                        .background(colors.danger, CircleShape)
-                        .border(2.dp, colors.bg, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        if (badge > 99) "99+" else badge.toString(),
-                        color = Color.White,
-                        style = WebType.micro,
-                    )
-                }
-            }
+            // Pill grows with its label and overhangs the icon's top-right corner;
+            // the old fixed 15dp circle clipped "12" / "99+".
+            CountBadge(badge, Modifier.align(Alignment.Center).offset(x = 12.dp, y = (-10).dp), ringColor = colors.bg)
         }
         Text(destination.label, color = tint, style = WebType.caption)
     }
