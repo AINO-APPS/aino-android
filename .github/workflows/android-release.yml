@@ -111,9 +111,10 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
-          cache: gradle
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       # Written before the build because the Firebase Gradle plugin resolves it at
       # configuration time. Never committed: it carries the FCM sender config.
