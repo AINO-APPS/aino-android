@@ -34,7 +34,7 @@ val PRIORITIES = listOf(
 )
 
 val COLUMNS = listOf(
-    ColumnDef("pending", "To Do", "○", Tone.Muted),
+    ColumnDef("pending", "New", "○", Tone.Muted),
     ColumnDef("in_progress", "In Progress", "◐", Tone.Warning),
     ColumnDef("in_review", "In Review", "◑", Tone.PrimaryLight),
     ColumnDef("done", "Done", "●", Tone.Success),
@@ -255,6 +255,13 @@ fun pickSprint(current: Long?, sprints: List<AvailableSprint>): Long? {
 /** Roles allowed to drive the sprint lifecycle from the board. */
 fun canManageSprint(role: String?): Boolean =
     role in setOf("team_lead", "manager", "super_admin", "hr_admin", "platform_admin")
+
+/** Mirrors the server's `canChangeTaskStatus`: assignee, reporter, or an org admin. */
+fun canChangeStatus(task: Task, userId: Long?, role: String?): Boolean =
+    (userId != null && (task.assignedTo == userId || task.userId == userId)) ||
+        role in setOf("super_admin", "hr_admin", "platform_admin")
+
+const val STATUS_FORBIDDEN = "Only the assignee or reporter can change the status"
 
 /** KanbanBoard `getColTasks`: by workflow_state_id, else by the legacy status key. */
 fun tasksForColumn(tasks: List<Task>, state: WorkflowState): List<Task> = tasks.filter { t ->

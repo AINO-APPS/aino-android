@@ -310,7 +310,7 @@ val FALLBACK_WORK_ITEM_TYPES = listOf(
 )
 
 val FALLBACK_WORKFLOW_STATES = listOf(
-    WorkflowState(0, "pending", "To Do", "open", "#6b7280", isInitial = true, sortOrder = 1),
+    WorkflowState(0, "pending", "New", "open", "#6b7280", isInitial = true, sortOrder = 1),
     WorkflowState(0, "in_progress", "In Progress", "in_progress", "#f59e0b", sortOrder = 2),
     WorkflowState(0, "in_review", "In Review", "in_review", "#3b82f6", sortOrder = 3),
     WorkflowState(0, "done", "Done", "done", "#10b981", isTerminal = true, sortOrder = 4),

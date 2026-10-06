@@ -57,7 +57,7 @@ private val WEEKDAY = DateTimeFormatter.ofPattern("EEE", Locale.US)
 /**
  * Scheduled — tasks planned onto a day (from the Backlog's Schedule, the web
  * planner, or carry-forward). Overdue first, then a section per day from
- * today. A week strip jumps to a day; swipe right to reschedule, swipe left
+ * today. A week strip jumps to one of the next 7 days; swipe right to reschedule, swipe left
  * to send back to the backlog (with Undo).
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -68,7 +68,6 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
     val list = rememberLazyListState()
     var rescheduling by remember { mutableStateOf<Task?>(null) }
     var actionsFor by remember { mutableStateOf<Task?>(null) }
-    var pickDay by remember { mutableStateOf(false) }
     val groups = ui.scheduledGroups
     val today = LocalDate.now()
 
@@ -94,7 +93,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
         LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(bottom = 112.dp)) {
             item(key = "controls") {
                 Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    WeekStrip(today, ui.scheduled, onPick = ::jumpTo, onMore = { pickDay = true })
+                    WeekStrip(today, ui.scheduled, onPick = ::jumpTo)
                     ActiveFilterChips(ui, viewModel, Modifier.padding(horizontal = 16.dp))
                 }
             }
@@ -140,12 +139,6 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
             viewModel.schedule(task.id, date)
         }
     }
-    if (pickDay) {
-        val first = ui.scheduled.firstOrNull() ?: Task(id = 0, title = "")
-        ScheduleDialog(first, title = "Jump to day", initial = today.toString(), onDismiss = { pickDay = false }) { date ->
-            localDateOf(date)?.let(::jumpTo)
-        }
-    }
     actionsFor?.let { task ->
         TaskSheetScaffold(task.displayKey, { actionsFor = null }) {
             Text(task.title, color = colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp))
@@ -160,35 +153,31 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
     }
 }
 
-/** Next 7 days with a dot per day that has tasks, plus a calendar button for other days. */
+/** Next 7 days with a dot per day that has tasks. */
 @Composable
-private fun WeekStrip(today: LocalDate, tasks: List<Task>, onPick: (LocalDate) -> Unit, onMore: () -> Unit) {
+private fun WeekStrip(today: LocalDate, tasks: List<Task>, onPick: (LocalDate) -> Unit) {
     val colors = LocalWebColors.current
     val counts = remember(tasks) { tasks.mapNotNull { localDateOf(it.date) }.groupingBy { it }.eachCount() }
     val days = remember(today) { (0L until 7L).map { today.plusDays(it) } }
-    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(days, key = { it.toString() }) { day ->
-                val count = counts[day] ?: 0
-                val isToday = day == today
-                Column(
-                    Modifier
-                        .width(42.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (isToday) colors.primary.copy(alpha = 0.14f) else colors.surface)
-                        .border(1.dp, if (isToday) colors.primary.copy(alpha = 0.5f) else colors.border, RoundedCornerShape(12.dp))
-                        .clickable(onClickLabel = "Jump to ${day.format(WEEKDAY)} ${day.dayOfMonth}") { onPick(day) }
-                        .padding(vertical = 7.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(day.format(WEEKDAY), color = if (isToday) colors.primary else colors.textMuted, fontSize = 0.66.rem, fontWeight = FontWeight.SemiBold)
-                    Text("${day.dayOfMonth}", color = if (isToday) colors.primary else colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.Bold)
-                    Box(Modifier.padding(top = 3.dp).size(5.dp).background(if (count > 0) colors.primary else androidx.compose.ui.graphics.Color.Transparent, CircleShape))
-                }
+    LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        items(days, key = { it.toString() }) { day ->
+            val count = counts[day] ?: 0
+            val isToday = day == today
+            Column(
+                Modifier
+                    .width(42.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (isToday) colors.primary.copy(alpha = 0.14f) else colors.surface)
+                    .border(1.dp, if (isToday) colors.primary.copy(alpha = 0.5f) else colors.border, RoundedCornerShape(12.dp))
+                    .clickable(onClickLabel = "Jump to ${day.format(WEEKDAY)} ${day.dayOfMonth}") { onPick(day) }
+                    .padding(vertical = 7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(day.format(WEEKDAY), color = if (isToday) colors.primary else colors.textMuted, fontSize = 0.66.rem, fontWeight = FontWeight.SemiBold)
+                Text("${day.dayOfMonth}", color = if (isToday) colors.primary else colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.Bold)
+                Box(Modifier.padding(top = 3.dp).size(5.dp).background(if (count > 0) colors.primary else androidx.compose.ui.graphics.Color.Transparent, CircleShape))
             }
         }
-        Spacer(Modifier.width(8.dp))
-        RoundIconButton(HeroIcons.CalendarDateRange, "Pick a day", onMore, size = 42.dp)
     }
 }
 

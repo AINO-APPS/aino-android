@@ -81,8 +81,9 @@ import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /**
  * Task detail (full screen). A top bar with the issue key and actions; the
- * status chip, title and description (✎ to edit); a properties card where
- * each field is edited inline through a picker sheet; then sections —
+ * title and description (✎ to edit); a properties card where each field
+ * (status sits under priority; only the assignee/reporter or an org admin
+ * can change it) is edited inline through a picker sheet; then sections —
  * Comments · Activity · Checklist · Links · Fields. Realtime edits from
  * web/desktop refresh the page; while editing, a banner offers to reload.
  */
@@ -173,9 +174,9 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
             }
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
                 ui.error?.let { ErrorMsg(it, Modifier.padding(bottom = 12.dp)) }
-                DetailHero(task, ui, viewModel, draft, { draft = it }, onStatus = { statusSheet = true })
+                DetailHero(task, ui, viewModel, draft, { draft = it })
                 Spacer(Modifier.height(16.dp))
-                PropertiesCard(task, ui, viewModel)
+                PropertiesCard(task, ui, viewModel, onStatus = { statusSheet = true })
                 Spacer(Modifier.height(20.dp))
                 DetailSections(task, ui, viewModel)
             }
@@ -200,17 +201,15 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
     ui.confirm?.let { TaskConfirmDialog(it, viewModel::acceptConfirm, viewModel::dismissConfirm) }
 }
 
-// ── Hero: status, title, description, blocker ────────────────────────────
+// ── Hero: type, title, description, blocker ──────────────────────────────
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, draft: TaskEditDraft, onDraft: (TaskEditDraft) -> Unit, onStatus: () -> Unit) {
+private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, draft: TaskEditDraft, onDraft: (TaskEditDraft) -> Unit) {
     val colors = LocalWebColors.current
     var expanded by remember(task.id) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            val state = stateOf(task, ui.agile)
-            StatusPill(state?.let(::stateLabel) ?: columnOf(task.status).label, hexColor(state?.color, colors.tone(columnOf(task.status).tone)), onClick = onStatus)
             WorkItemTypeBadge(task.workItemTypeId, ui.agile)
             when {
                 task.isBacklogItem -> MetaPill(HeroIcons.ArchiveBox, "Backlog", colors.warning)
@@ -287,7 +286,7 @@ private fun MetaPill(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel) {
+private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel, onStatus: () -> Unit) {
     val colors = LocalWebColors.current
     var picker by remember { mutableStateOf<String?>(null) }
     var dueOpen by remember { mutableStateOf(false) }
@@ -308,6 +307,12 @@ private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel
                 Spacer(Modifier.width(8.dp))
                 PropertyText(p.label, color = colors.tone(p.tone))
             }
+        }
+        val canStatus = canChangeStatus(task, ui.userId, ui.role)
+        PropertyRow(HeroIcons.CheckCircle, "Status", if (canStatus) onStatus else null) {
+            val state = stateOf(task, ui.agile)
+            val column = columnOf(task.status)
+            StatusPill(state?.let(::stateLabel) ?: column.label, hexColor(state?.color, colors.tone(column.tone)))
         }
         PropertyRow(HeroIcons.CalendarDays, "Due date", { dueOpen = true }) {
             val due = formatDueDate(task.dueDate)

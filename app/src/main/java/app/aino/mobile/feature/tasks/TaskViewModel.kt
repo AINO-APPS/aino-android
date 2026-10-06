@@ -599,6 +599,7 @@ class TaskViewModel(
      */
     fun moveTask(task: Task, state: WorkflowState) {
         if (task.status == state.key || (state.id != 0L && task.workflowStateId == state.id)) return
+        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role)) return notify(STATUS_FORBIDDEN)
         val previous = task
         val moved = task.copy(status = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: task.workflowStateId)
         applyTask(moved)
@@ -1041,6 +1042,7 @@ class TaskViewModel(
     /** Detail status chip (`handleDetailStatusChange`), workflow-state aware. */
     fun setStatus(task: Task, state: WorkflowState) {
         if (task.status == state.key) return
+        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role)) return notify(STATUS_FORBIDDEN)
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(
                 onSuccess = {

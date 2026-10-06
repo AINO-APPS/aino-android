@@ -154,11 +154,13 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                 var cardOrigin by remember { mutableStateOf(Offset.Zero) }
                                 // pointerInput keeps its first lambdas; read the latest row (realtime may have patched it).
                                 val currentTask by rememberUpdatedState(task)
+                                val canMove = canChangeStatus(task, ui.userId, ui.role)
                                 Box(
                                     Modifier
                                         .onGloballyPositioned { cardOrigin = it.boundsInRoot().topLeft }
                                         .alpha(if (isDragged) 0.35f else 1f)
-                                        .pointerInput(task.id, states) {
+                                        .pointerInput(task.id, states, canMove) {
+                                            if (!canMove) return@pointerInput
                                             detectDragGesturesAfterLongPress(
                                                 onDragStart = { offset ->
                                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -182,7 +184,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                             )
                                         }
                                         .semantics {
-                                            customActions = states.filter { it.key != task.status }.map { s ->
+                                            if (canMove) customActions = states.filter { it.key != task.status }.map { s ->
                                                 CustomAccessibilityAction("Move to ${stateLabel(s)}") { viewModel.moveTask(task, s); true }
                                             }
                                         },
@@ -414,7 +416,7 @@ internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewMo
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     TaskSheetScaffold(task.displayKey, onDismiss) {
         Text(task.title, color = colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp))
-        if (task.sprintId != null) {
+        if (task.sprintId != null && canChangeStatus(task, ui.userId, ui.role)) {
             SectionTitle("Move to", Modifier.padding(bottom = 6.dp))
             ui.agile.workflowStates.forEach { state ->
                 val current = task.status == state.key || (state.id != 0L && task.workflowStateId == state.id)

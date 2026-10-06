@@ -190,4 +190,20 @@ class TaskLogicTest {
         val tasks = listOf(Task(1, "a", status = "done"), Task(2, "b", status = "in_progress"), Task(3, "c"), Task(4, "d", status = "done"))
         assertEquals(TaskStats(total = 4, done = 2, inProgress = 1, percent = 50), recomputeStats(tasks))
     }
+
+    @Test
+    fun onlyAssigneeReporterOrOrgAdminCanChangeStatus() {
+        val task = Task(1, "a", userId = 2, assignedTo = 3)
+        assertTrue(canChangeStatus(task, 2, "employee"))
+        assertTrue(canChangeStatus(task, 3, "employee"))
+        assertTrue(canChangeStatus(task, 9, "hr_admin"))
+        assertFalse(canChangeStatus(task, 9, "manager"))
+        assertFalse(canChangeStatus(task, null, "employee"))
+    }
+
+    @Test
+    fun newTicketsStartInNew() {
+        assertEquals("New", columnOf("pending").label)
+        assertEquals("New", FALLBACK_WORKFLOW_STATES.first { it.isInitial }.name)
+    }
 }
