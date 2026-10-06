@@ -136,6 +136,9 @@ class ChatLocalSyncTest {
 
     @Test fun `rows stored by a push wake join the open thread`() {
         val vm = viewModel().loaded().openLoaded(5)
+        // The open thread writes its rows to Room asynchronously; a push wake only ever
+        // sees a stored thread (the delta path) once that write has landed.
+        await { storedIds(5) == listOf(1L, 2L, 3L) }
         runBlocking { syncChatThread(ApiClient { ApiResponse(200, emptyMap(), "[${row(4)}]".toByteArray()) }, ScopedCache(scope, dao), scope, 5) }
         storedUpdates.tryEmit(5)
         await { vm.ui.value.messages.map(ChatMessage::id) == listOf(1L, 2L, 3L, 4L) }
