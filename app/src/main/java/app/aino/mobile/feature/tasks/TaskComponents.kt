@@ -80,31 +80,6 @@ internal fun WebColors.tone(tone: Tone): Color = when (tone) {
 /** `color + "20"` — the web appends a hex alpha of 0x20. */
 internal fun Color.hexAlpha(alpha: Int): Color = copy(alpha = alpha / 255f)
 
-/** `.task-priority-badge` / `.backlog-status-badge` coloured pill. */
-@Composable
-internal fun ToneBadge(text: String, color: Color, radius: Dp = 6.dp, fontSize: TextUnit = 0.7.rem) {
-    Text(
-        text,
-        color = color,
-        fontSize = fontSize,
-        fontWeight = FontWeight.SemiBold,
-        maxLines = 1,
-        modifier = Modifier.background(color.hexAlpha(0x20), RoundedCornerShape(radius)).padding(horizontal = 8.dp, vertical = 3.dp),
-    )
-}
-
-@Composable
-internal fun PriorityBadge(priority: String?) {
-    val p = priorityOf(priority)
-    ToneBadge("${p.icon} ${p.label}", LocalWebColors.current.tone(p.tone))
-}
-
-@Composable
-internal fun StatusBadge(status: String?) {
-    val c = columnOf(status)
-    ToneBadge("${c.icon} ${c.label}", LocalWebColors.current.tone(c.tone), radius = 99.dp, fontSize = 0.68.rem)
-}
-
 /** `.label-pill`. */
 @Composable
 internal fun LabelPill(label: TaskLabel) {
@@ -134,41 +109,6 @@ internal fun WorkItemTypeBadge(typeId: Long?, agile: AgileConfig) {
         Spacer(Modifier.width(4.dp))
         Text(type.name, color = color, fontSize = 0.7.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
-}
-
-/** AgilePickers `StoryPointBadge` (number only). */
-@Composable
-internal fun StoryPointBadge(points: Double?, agile: AgileConfig) {
-    if (!agile.features.storyPoints) return
-    val display = formatPoints(points).ifEmpty { return }
-    val colors = LocalWebColors.current
-    Box(
-        Modifier
-            .heightIn(min = 20.dp)
-            .widthIn(min = 22.dp)
-            .background(colors.bgSecondary, RoundedCornerShape(10.dp))
-            .border(1.dp, colors.primary.copy(alpha = 0.22f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 7.dp),
-        contentAlignment = Alignment.Center,
-    ) { Text(display, color = colors.primary, fontSize = 0.72.rem, fontWeight = FontWeight.Bold) }
-}
-
-/** AgilePickers `BlockerBadge`. */
-@Composable
-internal fun BlockerBadge(blocked: Boolean, agile: AgileConfig) {
-    if (!agile.features.blockers || !blocked) return
-    val danger = LocalWebColors.current.danger
-    Text(
-        "⛔ Blocked",
-        color = danger,
-        fontSize = 0.7.rem,
-        fontWeight = FontWeight.Bold,
-        maxLines = 1,
-        modifier = Modifier
-            .background(danger.copy(alpha = 0.14f), RoundedCornerShape(10.dp))
-            .border(1.dp, danger.copy(alpha = 0.30f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 8.dp, vertical = 2.dp),
-    )
 }
 
 /** Monospace `.backlog-ticket-id`. */
@@ -359,19 +299,6 @@ internal fun FieldLabel(text: String, icon: ImageVector? = null, uppercase: Bool
     }
 }
 
-/** `.glass` bordered panel (`--glass` / `--glass-border`). */
-@Composable
-internal fun GlassPanel(modifier: Modifier = Modifier, radius: Dp = 8.dp, padding: Dp = 16.dp, content: @Composable () -> Unit) {
-    val colors = LocalWebColors.current
-    Column(
-        modifier
-            .fillMaxWidth()
-            .background(colors.glass, RoundedCornerShape(radius))
-            .border(1.dp, colors.glassBorder, RoundedCornerShape(radius))
-            .padding(padding),
-    ) { content() }
-}
-
 /** `.error-msg`. */
 @Composable
 internal fun ErrorMsg(text: String, modifier: Modifier = Modifier) {
@@ -447,84 +374,5 @@ internal fun StoryPointPicker(value: String?, onChange: (String?) -> Unit, agile
     }
 }
 
-/** LabelSelector: "🏷️ Labels (n)" toggle over a checkbox list. */
-@Composable
-internal fun LabelSelector(labels: List<TaskLabel>, selected: List<Long>, onToggle: (Long) -> Unit) {
-    val colors = LocalWebColors.current
-    var open by remember { mutableStateOf(false) }
-    Column {
-        Row(
-            Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(colors.surface)
-                .border(1.dp, colors.border, RoundedCornerShape(8.dp))
-                .clickable { open = !open }
-                .padding(horizontal = 12.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("🏷️ Labels", color = colors.text, fontSize = 0.85.rem)
-            if (selected.isNotEmpty()) {
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "${selected.size}",
-                    color = Color.White,
-                    fontSize = 0.65.rem,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.background(colors.primary, RoundedCornerShape(99.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
-                )
-            }
-        }
-        if (open) {
-            Column(
-                Modifier
-                    .padding(top = 4.dp)
-                    .fillMaxWidth()
-                    .background(colors.bgElevated, RoundedCornerShape(8.dp))
-                    .border(1.dp, colors.border, RoundedCornerShape(8.dp))
-                    .padding(vertical = 4.dp),
-            ) {
-                if (labels.isEmpty()) {
-                    Text("No labels configured", color = colors.textMuted, fontSize = 0.8.rem, modifier = Modifier.padding(10.dp))
-                }
-                labels.forEach { label ->
-                    val on = label.id in selected
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onToggle(label.id) }.padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        androidx.compose.material3.Checkbox(
-                            checked = on,
-                            onCheckedChange = { onToggle(label.id) },
-                            colors = androidx.compose.material3.CheckboxDefaults.colors(checkedColor = colors.primary, uncheckedColor = colors.textMuted),
-                        )
-                        LabelPill(label)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** Common "Unassigned" + users options. */
-internal fun assigneeOptions(users: List<AssignableUser>): List<Pair<Long?, String>> =
-    listOf<Pair<Long?, String>>(null to "Unassigned") + users.map { it.id to it.display() }
-
-/** SprintSelector: "Backlog (no sprint)" + available sprints. */
-internal fun sprintOptions(sprints: List<AvailableSprint>): List<Pair<Long?, String>> =
-    listOf<Pair<Long?, String>>(null to "Backlog (no sprint)") + sprints.map { sp ->
-        sp.id to "${sp.name} (${sp.startDate.take(10)} → ${sp.endDate.take(10)})" + if (sp.status == "active") " ● Active" else ""
-    }
-
-internal fun typeOptions(agile: AgileConfig): List<Pair<Long?, String>> =
-    listOf<Pair<Long?, String>>(null to "— Type —") + agile.workItemTypes.filter { it.id != 0L }.map { it.id to it.name }
-
-internal fun projectOptions(projects: List<ProjectOption>): List<Pair<Long?, String>> =
-    listOf<Pair<Long?, String>>(null to "— No project —") + projects.map { it.id to "${it.key} · ${it.name}" }
-
 /** Strike-through when done (`.task-done .task-title`). */
 internal fun doneDecoration(done: Boolean): TextDecoration? = if (done) TextDecoration.LineThrough else null
-
-@Composable
-internal fun RowScope.Grow() = Spacer(Modifier.weight(1f))
-
-internal val TinySp = 11.sp

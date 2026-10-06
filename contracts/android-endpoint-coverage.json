@@ -900,12 +900,12 @@
     {
       "method": "POST",
       "path": "/api/sprints/:param/pause",
-      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
       "method": "POST",
       "path": "/api/sprints/:param/resume",
-      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
       "method": "GET",

@@ -9,9 +9,9 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 
-/** The three `Tasks.tsx` tabs; `key` is the web `?tab=` value. */
+/** `Tasks.tsx` tabs plus Android's Scheduled view; `key` is the `?tab=` value. */
 enum class TaskTab(val key: String) {
-    Sprint("sprint"), Backlog("backlog"), ServiceDesk("service-desk");
+    Sprint("sprint"), Backlog("backlog"), Scheduled("scheduled"), ServiceDesk("service-desk");
 
     companion object {
         fun fromKey(key: String?): TaskTab? = entries.firstOrNull { it.key == key }
@@ -60,7 +60,7 @@ data class TaskFilters(
 /** `useFilters.filterCount` — status only counts on the Sprint tab. */
 fun filterCount(filters: TaskFilters, tab: TaskTab): Int {
     val base = mutableListOf(filters.assignee, filters.label, filters.priority, filters.search.trim())
-    if (tab == TaskTab.Sprint) base += filters.status
+    if (tab == TaskTab.Sprint || tab == TaskTab.Scheduled) base += filters.status
     return base.count(String::isNotEmpty)
 }
 
@@ -88,6 +88,46 @@ fun backlogQuery(filters: TaskFilters, limit: Int, offset: Int): String =
     withQuery("tasks/backlog", filterParams(filters, includeStatus = false) + listOf("limit" to "$limit", "offset" to "$offset"))
 
 fun searchQuery(q: String): String = withQuery("tasks/search", listOf("q" to q.trim()))
+
+/** Days back (for overdue) and ahead covered by the Scheduled view. */
+const val SCHEDULED_PAST_DAYS = 30L
+const val SCHEDULED_AHEAD_DAYS = 30L
+
+/** Scheduled view: `GET /tasks?start_date&end_date&<plannerFilters>` (planner-dated tasks in range). */
+fun scheduledQuery(from: LocalDate, to: LocalDate, filters: TaskFilters): String =
+    withQuery("tasks", listOf("start_date" to from.toString(), "end_date" to to.toString()) + filterParams(filters, includeStatus = true))
+
+/** A dated section of the Scheduled view. `date == null` is the Overdue bucket. */
+data class ScheduledGroup(val key: String, val label: String, val date: LocalDate?, val tasks: List<Task>)
+
+private val DAY_HEADER = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)
+
+/**
+ * Overdue (past planner date, not done) first, then one section per day from
+ * today onward in date order. Completed past tasks are dropped — they are history.
+ */
+fun groupScheduled(tasks: List<Task>, today: LocalDate = LocalDate.now()): List<ScheduledGroup> {
+    val dated = tasks.mapNotNull { t -> localDateOf(t.date)?.let { it to t } }
+    val overdue = dated.filter { (d, t) -> d.isBefore(today) && t.status != "done" }
+        .sortedWith(compareBy<Pair<LocalDate, Task>> { it.first }.thenBy { priorityRank(it.second.priority) })
+        .map { it.second }
+    val upcoming = dated.filter { (d, _) -> !d.isBefore(today) }
+        .groupBy({ it.first }, { it.second })
+        .toSortedMap()
+    return buildList {
+        if (overdue.isNotEmpty()) add(ScheduledGroup("overdue", "Overdue", null, overdue))
+        upcoming.forEach { (day, list) ->
+            val label = when (ChronoUnit.DAYS.between(today, day)) {
+                0L -> "Today"
+                1L -> "Tomorrow"
+                else -> day.format(DAY_HEADER)
+            }
+            add(ScheduledGroup(day.toString(), label, day, list.sortedWith(compareBy<Task> { it.status == "done" }.thenBy { priorityRank(it.priority) })))
+        }
+    }
+}
+
+private fun priorityRank(priority: String): Int = when (priority) { "high" -> 0; "medium" -> 1; else -> 2 }
 
 /** `useBacklog` sort options, in `<select>` order. */
 enum class BacklogSort(val key: String, val label: String) {
@@ -205,13 +245,6 @@ fun sprintDaysLeft(endDate: String, today: LocalDate = LocalDate.now()): Long {
     return maxOf(0, ChronoUnit.DAYS.between(today, end))
 }
 
-/** The Sprint tab header subtitle. */
-fun sprintSubtitle(sprint: AvailableSprint?, today: LocalDate = LocalDate.now()): String {
-    if (sprint == null) return "Loading sprint…"
-    val range = "${sprint.startDate.take(10)} → ${sprint.endDate.take(10)}"
-    return if (sprint.status == "paused") "$range • Paused" else "$range • ${sprintDaysLeft(sprint.endDate, today)}d remaining"
-}
-
 /** Keep the current pick, else the active sprint, else the first (Tasks.tsx effect). */
 fun pickSprint(current: Long?, sprints: List<AvailableSprint>): Long? {
     if (sprints.isEmpty()) return current
@@ -323,14 +356,6 @@ fun recomputeStats(tasks: List<Task>): TaskStats {
     val done = tasks.count { it.status == "done" }
     val inProgress = tasks.count { it.status == "in_progress" }
     return TaskStats(total, done, inProgress, if (total > 0) Math.round(done * 100f / total) else 0)
-}
-
-/** `Pagination` range label: "1–25 of 40 tickets". */
-fun paginationLabel(total: Int, limit: Int, offset: Int, itemLabel: String): String {
-    if (total == 0) return "0 ${itemLabel}s"
-    val from = offset + 1
-    val to = minOf(offset + limit, total)
-    return "$from–$to of $total ${itemLabel}${if (total != 1) "s" else ""}"
 }
 
 enum class HistoryPart { Plain, Old, New }

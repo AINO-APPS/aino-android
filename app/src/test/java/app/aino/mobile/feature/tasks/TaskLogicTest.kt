@@ -120,12 +120,9 @@ class TaskLogicTest {
     }
 
     @Test
-    fun sprintHeaderAndSelection() {
+    fun sprintSelectionAndRoles() {
         val active = AvailableSprint(id = 2, name = "S2", startDate = "2026-09-20", endDate = "2026-10-01", status = "active")
         val planned = AvailableSprint(id = 3, name = "S3", startDate = "2026-10-02", endDate = "2026-10-15")
-        assertEquals("2026-09-20 → 2026-10-01 • 6d remaining", sprintSubtitle(active, today))
-        assertEquals("2026-09-20 → 2026-10-01 • Paused", sprintSubtitle(active.copy(status = "paused"), today))
-        assertEquals("Loading sprint…", sprintSubtitle(null, today))
         assertEquals(2L, pickSprint(null, listOf(planned, active)))
         assertEquals(3L, pickSprint(3, listOf(planned, active)))
         assertEquals(3L, pickSprint(99, listOf(planned)))
@@ -182,9 +179,7 @@ class TaskLogicTest {
     }
 
     @Test
-    fun paginationSummaryAndComments() {
-        assertEquals("26–50 of 60 tickets", paginationLabel(60, 25, 25, "ticket"))
-        assertEquals("1–1 of 1 ticket", paginationLabel(1, 25, 0, "ticket"))
+    fun commentValidation() {
         assertNull(validateComment("Looks good"))
         assertEquals("Comment cannot be empty", validateComment("  "))
         assertEquals("Comment must be 2000 characters or less", validateComment("z".repeat(2001)))

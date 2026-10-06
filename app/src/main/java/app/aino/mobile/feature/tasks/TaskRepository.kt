@@ -31,6 +31,9 @@ class TaskRepository(
 
     fun search(q: String): List<Task> = decode(api.execute(ApiRequest(path = searchQuery(q))))
 
+    fun loadScheduled(from: java.time.LocalDate, to: java.time.LocalDate, filters: TaskFilters): List<Task> =
+        decode<TaskListResponse>(api.execute(ApiRequest(path = scheduledQuery(from, to, filters)))).tasks
+
     // ── Metadata ─────────────────────────────────────────────────────────
     fun loadLabels(): List<TaskLabel> = decode(api.execute(ApiRequest(path = "tasks/labels")))
 
@@ -83,6 +86,15 @@ class TaskRepository(
     fun updateTask(id: Long, payload: UpdateTaskPayload): Task = mutate("tasks/$id", payload, "PUT")
 
     fun updateImportFields(id: Long, payload: ImportUpdatePayload): Task = mutate("tasks/$id", payload, "PUT")
+
+    /** Inline property edits: `PUT /tasks/:id` with only the changed keys (the server keeps the rest). */
+    fun patchFields(id: Long, fields: JsonObject): Task = mutate("tasks/$id", fields, "PUT")
+
+    // @api POST sprints/:id/pause
+    // @api POST sprints/:id/resume
+    fun pauseSprint(id: Long): SprintEnvelope = mutate("sprints/$id/pause", Unit)
+
+    fun resumeSprint(id: Long): SprintEnvelope = mutate("sprints/$id/resume", Unit)
 
     fun updateStatus(id: Long, status: String): Task =
         mutate("tasks/$id/status", TaskStatusPayload(status), "PATCH")

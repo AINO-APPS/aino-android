@@ -1,39 +1,48 @@
 package app.aino.mobile.feature.tasks
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +51,6 @@ import kotlinx.coroutines.withContext
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 private fun typeIcon(value: String): ImageVector = when (value) {
     "bug" -> HeroIcons.BugAnt
@@ -51,15 +59,18 @@ private fun typeIcon(value: String): ImageVector = when (value) {
     else -> HeroIcons.QuestionMarkCircle
 }
 
-private val SHORT_DATE = DateTimeFormatter.ofPattern("M/d/yyyy", Locale.US)
+private val SHORT_DATE = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.US)
 
-/** `new Date(x).toLocaleDateString()` (en-US). */
 private fun localeDate(value: String?): String = value?.let {
     runCatching { java.time.OffsetDateTime.parse(it).atZoneSameInstant(ZoneId.systemDefault()).toLocalDate().format(SHORT_DATE) }.getOrNull()
         ?: localDateOf(it)?.format(SHORT_DATE)
 }.orEmpty()
 
-/** `pages/tasks/ServiceDeskTab.tsx`. */
+/**
+ * `pages/tasks/ServiceDeskTab.tsx` for phones: status chips (with counts) and
+ * type chips filter an expandable ticket list; "New ticket" opens a sheet.
+ * Reloads on pull, app resume, the Tasks poll and `serviceDeskVersion`.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ServiceDeskTab(viewModel: TaskViewModel, @Suppress("UNUSED_PARAMETER") role: String) {
@@ -67,23 +78,18 @@ fun ServiceDeskTab(viewModel: TaskViewModel, @Suppress("UNUSED_PARAMETER") role:
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = LocalWebColors.current
     val scope = rememberCoroutineScope()
-    var filterStatus by remember { mutableStateOf("") }
-    var filterType by remember { mutableStateOf("") }
+    var filterStatus by rememberSaveable { mutableStateOf("") }
+    var filterType by rememberSaveable { mutableStateOf("") }
     var tickets by remember { mutableStateOf<List<ServiceTicket>>(emptyList()) }
     var stats by remember { mutableStateOf<ServiceDeskStats?>(null) }
     var loading by remember { mutableStateOf(true) }
     var loadFailed by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     var formOpen by remember { mutableStateOf(false) }
-    var submitting by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf<Long?>(null) }
     var deletingId by remember { mutableStateOf<Long?>(null) }
     var confirmDelete by remember { mutableStateOf<ServiceTicket?>(null) }
-    var title by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("bug") }
-    var priority by remember { mutableStateOf("medium") }
-    var reloadKey by remember { mutableStateOf(0) }
+    var reloadKey by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(filterStatus, filterType, reloadKey, ui.serviceDeskVersion) {
         withContext(Dispatchers.IO) {
@@ -95,157 +101,77 @@ fun ServiceDeskTab(viewModel: TaskViewModel, @Suppress("UNUSED_PARAMETER") role:
         loading = false
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        val shownError = error.ifEmpty { if (loadFailed) "Failed to load tickets" else "" }
-        if (shownError.isNotEmpty()) ErrorMsg(shownError)
-        stats?.let { s ->
-            FlowRow(
-                Modifier.fillMaxWidth().background(colors.glass, RoundedCornerShape(6.dp)).border(1.dp, colors.glassBorder, RoundedCornerShape(6.dp)).padding(horizontal = 12.dp, vertical = 9.6.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.6.dp),
-                verticalArrangement = Arrangement.spacedBy(5.6.dp),
+    Box(Modifier.fillMaxSize()) {
+        TaskPage(loading = loading, onRefresh = { loading = true; reloadKey++ }) {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 10.dp, bottom = 112.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                StatChip("${s.total}", "Total", colors.primary, filterStatus.isEmpty()) { filterStatus = "" }
-                visibleStatusChips(s).forEach { st ->
-                    StatChip("${s.count(st.value)}", st.label, Color(st.color), filterStatus == st.value) {
-                        filterStatus = if (filterStatus == st.value) "" else st.value
+                item(key = "filters") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        stats?.let { s ->
+                            ChipStrip {
+                                CountChip("All", filterStatus.isEmpty(), { filterStatus = "" }, count = s.total)
+                                visibleStatusChips(s).forEach { st ->
+                                    CountChip(st.label, filterStatus == st.value, { filterStatus = if (filterStatus == st.value) "" else st.value }, count = s.count(st.value), accent = Color(st.color), dot = true)
+                                }
+                            }
+                        }
+                        ChipStrip {
+                            CountChip("All types", filterType.isEmpty(), { filterType = "" })
+                            TICKET_TYPES.forEach { t ->
+                                CountChip(t.label, filterType == t.value, { filterType = if (filterType == t.value) "" else t.value }, accent = Color(t.color), dot = true)
+                            }
+                        }
+                        val shownError = error.ifEmpty { if (loadFailed) "Failed to load tickets" else "" }
+                        if (shownError.isNotEmpty()) ErrorMsg(shownError, Modifier.padding(horizontal = 16.dp))
                     }
                 }
-            }
-        }
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            WebSelect(listOf("" to "All Types") + TICKET_TYPES.map { it.value to it.label }, filterType, { filterType = it }, Modifier.fillMaxWidth())
-            WebButton(
-                if (formOpen) "Cancel" else "New Ticket", { formOpen = !formOpen }, Modifier.fillMaxWidth(),
-                style = BtnStyle.Primary, icon = if (formOpen) HeroIcons.XMark else HeroIcons.Plus,
-            )
-        }
-        if (formOpen) {
-            GlassPanel(padding = 24.dp) {
-                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(HeroIcons.Plus, null, Modifier.size(16.dp), tint = colors.text)
-                    Spacer(Modifier.width(5.dp))
-                    Text("New Service Desk Ticket", color = colors.text, fontSize = 1.rem, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Icon(HeroIcons.XMark, "Close", Modifier.size(14.dp).clickable { formOpen = false }, tint = colors.textMuted)
-                }
-                WebTextField(title, { title = it }, "Ticket title...", maxLength = 200)
-                Spacer(Modifier.height(20.dp))
-                WebTextField(description, { description = it }, "Provide details: steps to reproduce (for bugs), expected behavior, etc.", singleLine = false, minLines = 3)
-                Spacer(Modifier.height(16.dp))
-                FieldLabel("Type", HeroIcons.Tag)
-                WebSelect(TICKET_TYPES.map { it.value to it.label }, type, { type = it }, Modifier.fillMaxWidth())
-                Spacer(Modifier.height(12.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.4.dp)) {
-                    TICKET_PRIORITIES.forEach { p ->
-                        val active = priority == p.value
-                        val tint = Color(p.color)
-                        Text(
-                            p.label,
-                            color = if (active) colors.text else colors.textSecondary,
-                            fontSize = 0.8.rem,
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (active) tint.copy(alpha = 0.15f) else colors.surface)
-                                .border(1.dp, if (active) tint else colors.border, RoundedCornerShape(8.dp))
-                                .clickable { priority = p.value }
-                                .padding(6.4.dp),
+                when {
+                    loading && tickets.isEmpty() -> items(3, key = { "sk-$it" }) { Box(Modifier.padding(horizontal = 16.dp)) { TaskCardSkeleton() } }
+                    tickets.isEmpty() -> item(key = "empty") {
+                        TaskEmptyState(
+                            HeroIcons.Lifebuoy, "No tickets found",
+                            "Report a bug, request a feature, or get help with access issues.",
+                            action = "New ticket", onAction = { formOpen = true },
+                        )
+                    }
+                    else -> items(tickets, key = { "sd-${it.id}" }) { ticket ->
+                        TicketCard(
+                            ticket = ticket,
+                            open = expanded == ticket.id,
+                            canDelete = canDeleteTicket(ticket, ui.userId),
+                            deleting = deletingId == ticket.id,
+                            onToggle = { expanded = if (expanded == ticket.id) null else ticket.id },
+                            onDelete = { confirmDelete = ticket },
                         )
                     }
                 }
-                Spacer(Modifier.height(12.dp))
-                WebButton(
-                    if (submitting) "Submitting..." else "Create Ticket",
-                    {
-                        if (title.isBlank()) return@WebButton
-                        submitting = true
-                        error = ""
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                runCatching { repo.create(CreateTicketPayload(title.trim(), plainTextToHtml(description.trim()), type, priority)) }
-                            }
-                            result.onSuccess {
-                                title = ""; description = ""; type = "bug"; priority = "medium"
-                                formOpen = false
-                                reloadKey++
-                            }.onFailure { error = it.message ?: "Failed to submit ticket" }
-                            submitting = false
-                        }
-                    },
-                    Modifier.fillMaxWidth(), style = BtnStyle.Primary, enabled = !submitting && title.isNotBlank(),
-                )
             }
         }
-        when {
-            loading -> WebSpinner()
-            tickets.isEmpty() -> Column(Modifier.fillMaxWidth().padding(vertical = 48.dp, horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("🎫", fontSize = 2.5.rem)
-                Spacer(Modifier.height(12.dp))
-                Text("No tickets found", color = colors.text, fontSize = 1.rem, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(5.6.dp))
-                Text("Submit a ticket to report bugs, request features, or get help with access issues.", color = colors.textMuted, fontSize = 0.85.rem, textAlign = TextAlign.Center)
-            }
-            else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                tickets.forEach { ticket ->
-                    val t = ticketType(ticket.ticketType)
-                    val p = ticketPriority(ticket.priority)
-                    val st = ticketStatus(ticket.status)
-                    val open = expanded == ticket.id
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(colors.glass).border(1.dp, colors.glassBorder, RoundedCornerShape(6.dp))) {
-                        Column(
-                            Modifier.fillMaxWidth().clickable { expanded = if (open) null else ticket.id }.padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                val tint = Color(t.color)
-                                Row(
-                                    Modifier.background(tint.copy(alpha = 0.15f), RoundedCornerShape(6.dp)).padding(horizontal = 8.8.dp, vertical = 3.2.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Icon(typeIcon(t.value), null, Modifier.size(14.dp), tint = tint)
-                                    Spacer(Modifier.width(4.8.dp))
-                                    Text(t.label, color = tint, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                }
-                                Spacer(Modifier.width(10.4.dp))
-                                Text(ticket.title, color = colors.text, fontSize = 0.82.rem, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            }
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Text(p.label, color = Color(p.color), fontSize = 0.75.rem, fontWeight = FontWeight.Bold)
-                                val sc = Color(st.color)
-                                Text(st.label, color = sc, fontSize = 0.7.rem, fontWeight = FontWeight.SemiBold, modifier = Modifier.background(sc.copy(alpha = 0.15f), RoundedCornerShape(99.dp)).padding(horizontal = 8.8.dp, vertical = 3.2.dp))
-                                Text(localeDate(ticket.createdAt), color = colors.textMuted, fontSize = 0.72.rem)
-                                if (canDeleteTicket(ticket, ui.userId)) {
-                                    Icon(
-                                        HeroIcons.Trash, "Cancel this ticket",
-                                        Modifier.size(16.dp).clickable(enabled = deletingId != ticket.id) { confirmDelete = ticket },
-                                        tint = colors.textMuted,
-                                    )
-                                }
-                                Icon(if (open) HeroIcons.ChevronUp else HeroIcons.ChevronDown, null, Modifier.size(16.dp), tint = colors.text)
-                            }
-                        }
-                        if (open) {
-                            Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                ticket.description?.takeIf(String::isNotBlank)?.let { TaskHtml(it, colors.textSecondary, 0.88.rem) }
-                                FlowRow(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    MetaText("Submitted by: ", ticket.submittedByName.orEmpty())
-                                    ticket.tenantName?.let { MetaText("Organization: ", it) }
-                                    ticket.assignedTo?.let { MetaText("Assigned to: ", it) }
-                                    ticket.resolvedAt?.let { Text("Resolved: ${localeDate(it)}", color = colors.textMuted, fontSize = 0.8.rem) }
-                                }
-                                ticket.adminNotes?.takeIf(String::isNotBlank)?.let { notes ->
-                                    Row(Modifier.fillMaxWidth().background(colors.surface, RoundedCornerShape(6.dp)).padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                        Text("Admin Notes: ", color = colors.text, fontSize = 0.82.rem, fontWeight = FontWeight.SemiBold)
-                                        Text(notes, color = colors.textSecondary, fontSize = 0.82.rem)
-                                    }
-                                }
-                            }
-                        }
-                    }
+        ExtendedFloatingActionButton(
+            onClick = { formOpen = true },
+            icon = { Icon(HeroIcons.Plus, null, Modifier.size(18.dp)) },
+            text = { Text("New ticket", fontWeight = FontWeight.SemiBold) },
+            containerColor = colors.primary,
+            contentColor = colors.onAccent,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+        )
+    }
+
+    if (formOpen) {
+        NewTicketSheet(
+            onDismiss = { formOpen = false },
+            onSubmit = { payload, done ->
+                error = ""
+                scope.launch {
+                    val result = withContext(Dispatchers.IO) { runCatching { repo.create(payload) } }
+                    result.onSuccess { formOpen = false; reloadKey++ }.onFailure { error = it.message ?: "Failed to submit ticket" }
+                    done()
                 }
-            }
-        }
+            },
+        )
     }
     confirmDelete?.let { ticket ->
         TaskConfirmDialog(
@@ -265,28 +191,97 @@ fun ServiceDeskTab(viewModel: TaskViewModel, @Suppress("UNUSED_PARAMETER") role:
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StatChip(value: String, label: String, accent: Color, active: Boolean, onClick: () -> Unit) {
+private fun TicketCard(ticket: ServiceTicket, open: Boolean, canDelete: Boolean, deleting: Boolean, onToggle: () -> Unit, onDelete: () -> Unit) {
     val colors = LocalWebColors.current
-    Column(
-        Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (active) accent.copy(alpha = 0.12f) else colors.surface)
-            .border(1.dp, if (active) accent else Color.Transparent, RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 7.2.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(value, color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold)
-        Text(label.uppercase(), color = colors.textMuted, fontSize = 0.6.rem, fontWeight = FontWeight.SemiBold, letterSpacing = 0.04.rem)
+    val t = ticketType(ticket.ticketType)
+    val p = ticketPriority(ticket.priority)
+    val st = ticketStatus(ticket.status)
+    SectionCard(Modifier.padding(horizontal = 16.dp), padding = 0.dp) {
+        Column(Modifier.fillMaxWidth().clickable(onClickLabel = if (open) "Collapse" else "Expand", onClick = onToggle).padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val tint = Color(t.color)
+                Box(Modifier.size(32.dp).background(tint.copy(alpha = 0.14f), CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(typeIcon(t.value), null, Modifier.size(17.dp), tint = tint)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(ticket.title, color = colors.text, fontSize = 0.92.rem, fontWeight = FontWeight.SemiBold, maxLines = if (open) 4 else 2, overflow = TextOverflow.Ellipsis)
+                    Text("${t.label} · ${localeDate(ticket.createdAt)}", color = colors.textMuted, fontSize = 0.74.rem, maxLines = 1)
+                }
+                Icon(HeroIcons.ChevronDown, null, Modifier.size(18.dp).rotate(if (open) 180f else 0f), tint = colors.textMuted)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatusPill(st.label, Color(st.color))
+                Text(p.label, color = Color(p.color), fontSize = 0.74.rem, fontWeight = FontWeight.Bold)
+            }
+        }
+        AnimatedVisibility(open) {
+            Column(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ticket.description?.takeIf { stripHtml(it).isNotBlank() }?.let { TaskHtml(it, colors.textSecondary, 0.88.rem) }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ticket.submittedByName?.let { MetaChip(HeroIcons.User, it, colors.textSecondary) }
+                    ticket.tenantName?.let { MetaChip(HeroIcons.BuildingOffice, it, colors.textSecondary) }
+                    ticket.assignedTo?.let { MetaChip(HeroIcons.UserPlus, it, colors.textSecondary) }
+                    ticket.resolvedAt?.let { MetaChip(HeroIcons.CheckCircle, "Resolved ${localeDate(it)}", colors.success) }
+                }
+                ticket.adminNotes?.takeIf(String::isNotBlank)?.let { notes ->
+                    Column(Modifier.fillMaxWidth().clip(CardShape).background(colors.surface).padding(12.dp)) {
+                        Text("Admin notes", color = colors.textMuted, fontSize = 0.72.rem, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(2.dp))
+                        Text(notes, color = colors.textSecondary, fontSize = 0.84.rem)
+                    }
+                }
+                if (canDelete) {
+                    PillButton(if (deleting) "Cancelling…" else "Cancel ticket", onDelete, danger = false, icon = HeroIcons.Trash, enabled = !deleting)
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun MetaText(label: String, value: String) {
-    val colors = LocalWebColors.current
-    Row {
-        Text(label, color = colors.textMuted, fontSize = 0.8.rem)
-        Text(value, color = colors.text, fontSize = 0.8.rem, fontWeight = FontWeight.SemiBold)
+private fun NewTicketSheet(onDismiss: () -> Unit, onSubmit: (CreateTicketPayload, done: () -> Unit) -> Unit) {
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("bug") }
+    var priority by remember { mutableStateOf("medium") }
+    var submitting by remember { mutableStateOf(false) }
+    TaskSheetScaffold("New service desk ticket", onDismiss, HeroIcons.Lifebuoy) {
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            WebTextField(title, { title = it }, "Ticket title", maxLength = 200, fontSize = 1.rem)
+            WebTextField(description, { description = it }, "Details: steps to reproduce, expected behaviour…", singleLine = false, minLines = 4)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionTitle("Type")
+                ChipStripNoPad {
+                    TICKET_TYPES.forEach { t -> CountChip(t.label, type == t.value, { type = t.value }, accent = Color(t.color), dot = true) }
+                }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionTitle("Priority")
+                ChipStripNoPad {
+                    TICKET_PRIORITIES.forEach { p -> CountChip(p.label, priority == p.value, { priority = p.value }, accent = Color(p.color), dot = true) }
+                }
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PillButton("Cancel", onDismiss, Modifier.weight(1f))
+            PillButton(
+                if (submitting) "Submitting…" else "Create ticket",
+                {
+                    submitting = true
+                    onSubmit(CreateTicketPayload(title.trim(), plainTextToHtml(description.trim()), type, priority)) { submitting = false }
+                },
+                Modifier.weight(1f), primary = true, enabled = title.isNotBlank() && !submitting,
+            )
+        }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChipStripNoPad(content: @Composable () -> Unit) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { content() }
 }

@@ -55,6 +55,17 @@ These deliberately deviate from the web at 430px:
   rule 8 (no invented UI / verbatim copy) is waived for the Attendance page and
   the manager Team Attendance tab; data, actions and endpoints are unchanged.
   See the Phase 3 "Mobile-first redesign" note.
+- **Tasks is mobile-first (approved 2026-10-06, v0.16.0).** §5 rule 8 is
+  waived for the Tasks area (shell, Sprint board, Backlog, Service Desk, task
+  detail, Sprint Insights); data, actions and endpoints are unchanged. Tabs are
+  `Sprint · Backlog · Scheduled · Service Desk` in a swipeable pager; the
+  Scheduled tab (planner-dated tasks: overdue + next 30 days, via
+  `GET /tasks?start_date&end_date`) also ships on web/desktop (platform
+  v3.0.39). Task detail edits each property inline (`PUT /tasks/:id` with only
+  the changed keys). `task_assigned` / `task_updated` patch the affected task
+  from `GET /tasks/:id/detail` instead of reloading the tab, and the visible
+  tab is re-fetched every 30 s while Tasks is in the foreground (the server
+  only targets assignee/creator/actor).
 - **The work timer lives on Attendance only (2026-10-03).** The Home
   `WorkTimerCard` was removed; clock in/out, breaks, work mode, the location
   permission prompt, the verify sheet and the result/error notices are all on

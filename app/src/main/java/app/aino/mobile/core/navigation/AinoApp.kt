@@ -49,6 +49,7 @@ import app.aino.mobile.R
 import app.aino.mobile.core.designsystem.theme.AinoDanger
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -264,7 +265,7 @@ fun AinoApp(
                 }
                 meetingSession.onRealtimeEvent(event)
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
-                if (event.type in TASK_REFRESH_EVENTS) tasks.onTaskEvent()
+                if (event.type in TASK_REFRESH_EVENTS) tasks.onTaskEvent(event.type, event.data)
                 when (event.type) {
                     // Clock/break taken on the web, desktop or another phone, or a
                     // manual entry filed/deleted: timer, status, calendar and loaded tabs.
@@ -580,6 +581,7 @@ private fun AuthenticatedShell(
                 )
             }
             composable(AinoDestination.Tasks.route) {
+                ForegroundPoll(TASKS_POLL_MS, tasks::pollVisible)
                 TasksScreen(
                     viewModel = tasks,
                     onOpenDetail = { nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true } },
@@ -1063,6 +1065,11 @@ private fun AuthenticatedShell(
             modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBars).padding(top = 64.dp, end = 12.dp),
         )
     }
+    // Tasks snackbars live at shell level so Undo / View survive the detail screen closing.
+    app.aino.mobile.feature.tasks.TaskNoticeHost(
+        tasks,
+        modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = if (fullScreen) 8.dp else 72.dp),
+    )
     }
     // Ring answers, chat meeting cards and group-call starts ask for routes from outside the NavHost.
     LaunchedEffect(nav) {
@@ -1269,7 +1276,7 @@ private val DASHBOARD_REFRESH_EVENTS = setOf(
  */
 private val MANAGER_REFRESH_EVENTS = setOf("approval_update", "leave_update", "attendance_update", "team_attendance_update")
 
-/** Task-scoped realtime events; the planner reloads rather than patching a row. */
+/** Task-scoped realtime events; Tasks patches the affected row from `{ taskId, action }`. */
 private val TASK_REFRESH_EVENTS = setOf("task_assigned", "task_updated")
 
 @Composable
@@ -1283,6 +1290,27 @@ private fun PlaceholderScreen(title: String, message: String) {
                     Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 12.dp))
                     Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
+            }
+        }
+    }
+}
+
+private const val TASKS_POLL_MS = 30_000L
+
+/**
+ * Silent refresh every [periodMs] while this route is composed and the app is
+ * at least STARTED. Covers changes the server never pushes to this user
+ * (teammates' edits on a shared board, sprint lifecycle, Service Desk).
+ */
+@Composable
+private fun ForegroundPoll(periodMs: Long, refresh: () -> Unit) {
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val latest by androidx.compose.runtime.rememberUpdatedState(refresh)
+    LaunchedEffect(owner) {
+        owner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                kotlinx.coroutines.delay(periodMs)
+                latest()
             }
         }
     }

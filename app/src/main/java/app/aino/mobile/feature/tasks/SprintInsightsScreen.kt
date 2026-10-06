@@ -1,6 +1,9 @@
 package app.aino.mobile.feature.tasks
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -113,57 +116,89 @@ fun SprintInsightsScreen(viewModel: TaskViewModel, onBack: () -> Unit, requested
     }
     val selected = sprints.firstOrNull { it.id == selectedId }
 
-    PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = { refreshing = true; reloadKey++ },
-        modifier = Modifier.fillMaxSize().background(colors.bg),
-    ) {
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 14.dp, end = 14.dp, top = 16.dp, bottom = 60.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+    var section by rememberSaveable { mutableStateOf(InsightSection.Overview) }
+    var sprintSheet by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxSize().background(colors.bg).statusBarsPadding()) {
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Back", onClick = onBack), contentAlignment = Alignment.Center) {
+                Icon(HeroIcons.ArrowLeft, "Back", Modifier.size(22.dp), tint = colors.text)
+            }
+            Column(Modifier.weight(1f)) {
+                Text("Sprint insights", color = colors.text, fontSize = 1.1.rem, fontWeight = FontWeight.Bold)
+                Row(
+                    Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = sprints.size > 1, onClickLabel = "Change sprint") { sprintSheet = true },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(selected?.name ?: "No sprint", color = colors.textSecondary, fontSize = 0.82.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (sprints.size > 1) Icon(HeroIcons.ChevronDown, null, Modifier.size(15.dp), tint = colors.textSecondary)
+                    selected?.let { Spacer(Modifier.width(6.dp)); SprintStatusPill(it.status) }
+                }
+            }
+            if (loading) CircularProgressIndicatorSmall()
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column {
-                    Row(Modifier.clickable(onClick = onBack).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(HeroIcons.ArrowLeft, null, Modifier.size(14.dp), tint = colors.textMuted)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Back to Tasks", color = colors.textMuted, fontSize = 0.82.rem)
+            InsightSection.entries.forEach { s -> CountChip(s.label, section == s, { section = s }) }
+        }
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { refreshing = true; reloadKey++ },
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        ) {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 60.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (selectedId == null) {
+                    TaskEmptyState(HeroIcons.ChartBar, "No sprints yet", "Insights appear once your team has a sprint.")
+                    return@Column
+                }
+                val d = data
+                when (section) {
+                    InsightSection.Overview -> {
+                        d?.stats?.let { stats -> SummaryCard(stats, selected, ui.agile.unitLabel) }
+                        InsightCard(HeroIcons.ClipboardDocumentCheck, "Sprint tickets") { SprintTicketsTable(d?.tasks.orEmpty(), onOpenTask) }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Text("Sprint Insights", color = colors.text, fontSize = 1.25.rem, fontWeight = FontWeight.Bold)
-                    Text("Burndown, velocity, cumulative flow, cycle time and retrospectives.", color = colors.textMuted, fontSize = 0.85.rem)
+                    InsightSection.Burndown -> InsightCard(HeroIcons.ArrowTrendingUp, "Burndown") { BurndownChart(selectedId!!, reloadKey, viewModel, ui.agile.unitLabel) }
+                    InsightSection.Velocity -> InsightCard(HeroIcons.ChartBar, "Velocity") { VelocityChart(reloadKey, viewModel, ui.agile.unitLabel) }
+                    InsightSection.Flow -> InsightCard(HeroIcons.Square3Stack3d, "Cumulative flow") { CumulativeFlowChart(d?.cfd, loaded = d != null) }
+                    InsightSection.Cycle -> InsightCard(HeroIcons.Clock, "Cycle & lead time") { CycleTimePanel(d?.cycle, loaded = d != null, onOpenTask) }
+                    InsightSection.Retro -> InsightCard(HeroIcons.ChatBubbleOvalLeft, "Retrospective") {
+                        RetrospectivePanel(selectedId!!, d?.retro, viewModel) { reloadKey++ }
+                    }
                 }
-                if (sprints.isNotEmpty()) {
-                    val options = sprintGroups(sprints).flatMap { (group, list) -> list.map { it.id to "${it.name}  ·  $group" } }
-                    WebSelect(options, selectedId ?: sprints.first().id, { selectedId = it }, Modifier.fillMaxWidth())
-                }
-            }
-            if (selectedId == null) {
-                Text("Select a sprint to see insights.", color = colors.textMuted, fontSize = 0.85.rem)
-                return@Column
-            }
-            val d = data
-            d?.stats?.let { stats -> SummaryCard(stats, selected, ui.agile.unitLabel) }
-            InsightCard(HeroIcons.ClipboardDocumentCheck, "Sprint Tickets") { SprintTicketsTable(d?.tasks.orEmpty(), onOpenTask) }
-            InsightCard(HeroIcons.ArrowTrendingUp, "Burndown") { BurndownChart(selectedId!!, reloadKey, viewModel, ui.agile.unitLabel) }
-            InsightCard(HeroIcons.ChartBar, "Velocity") { VelocityChart(reloadKey, viewModel, ui.agile.unitLabel) }
-            InsightCard(HeroIcons.Square3Stack3d, "Cumulative Flow") { CumulativeFlowChart(d?.cfd, loaded = d != null) }
-            InsightCard(HeroIcons.ArrowTrendingUp, "Cycle & Lead Time") { CycleTimePanel(d?.cycle, loaded = d != null, onOpenTask) }
-            InsightCard(HeroIcons.ChatBubbleOvalLeft, "Retrospective") {
-                RetrospectivePanel(selectedId!!, d?.retro, viewModel) { reloadKey++ }
             }
         }
     }
+    if (sprintSheet) {
+        SelectSheet(
+            "Choose sprint",
+            sprintGroups(sprints).flatMap { (group, list) -> list.map { SelectOption(it.id, it.name, "$group · ${formatDate(it.startDate)} – ${formatDate(it.endDate)}") } },
+            setOfNotNull(selectedId),
+            onDismiss = { sprintSheet = false },
+            onSelect = { selectedId = it.firstOrNull() },
+            icon = HeroIcons.RocketLaunch,
+        )
+    }
+}
+
+private enum class InsightSection(val label: String) {
+    Overview("Overview"), Burndown("Burndown"), Velocity("Velocity"), Flow("Flow"), Cycle("Cycle time"), Retro("Retro"),
 }
 
 @Composable
+private fun CircularProgressIndicatorSmall() {
+    androidx.compose.material3.CircularProgressIndicator(Modifier.size(18.dp), color = LocalWebColors.current.primary, strokeWidth = 2.dp)
+}
+@Composable
 private fun InsightCard(icon: ImageVector, title: String, content: @Composable () -> Unit) {
     val colors = LocalWebColors.current
-    Column(
-        Modifier.fillMaxWidth().background(colors.bg, RoundedCornerShape(10.dp)).border(1.dp, colors.border, RoundedCornerShape(10.dp)).padding(16.dp),
-    ) {
+    SectionCard {
         Row(Modifier.padding(bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, null, Modifier.size(16.dp), tint = colors.text)
+            Icon(icon, null, Modifier.size(16.dp), tint = colors.primary)
             Spacer(Modifier.width(6.dp))
             Text(title, color = colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.Bold)
         }
