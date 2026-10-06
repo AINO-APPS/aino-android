@@ -51,6 +51,8 @@ data class ActiveCallUi(
     val phase: CallPhase = CallPhase.Idle,
     /** Caller side: the callee accepted (Ringing… → Connecting…). */
     val accepted: Boolean = false,
+    /** Caller side: the callee's device is ringing (`call_ringing`); before that the callee is not reached yet. */
+    val remoteRinging: Boolean = false,
     val connectedAt: Long? = null,
     val muted: Boolean = false,
     val videoOff: Boolean = false,
@@ -64,10 +66,10 @@ data class ActiveCallUi(
 ) {
     val isVideo: Boolean get() = callType == "video"
 
-    /** `CallOverlay` status line (three ASCII dots, verbatim). */
+    /** `CallOverlay` status line (three ASCII dots, verbatim); Signal/WhatsApp "Calling..." until the callee rings. */
     val statusText: String get() = endMessage ?: when {
         phase == CallPhase.Reconnecting -> "Reconnecting..."
-        !incoming && !accepted -> "Ringing..."
+        !incoming && !accepted -> if (remoteRinging) "Ringing..." else "Calling..."
         else -> "Connecting..."
     }
 }
@@ -114,8 +116,8 @@ class ActiveCallController(private val context: Context, private val session: Ca
             session.localEnd("realtime_unavailable")
             return "Realtime connection is unavailable"
         }
-        startRingback()
-        arm(35_000, "No answer")
+        // Ringback starts with `call_ringing`; the server ends an unanswered ring at 60 s.
+        arm(OUTGOING_NO_ANSWER_MS, "No answer")
         return null
     }
 
@@ -197,6 +199,10 @@ class ActiveCallController(private val context: Context, private val session: Ca
             return
         }
         when (event) {
+            is CallRealtimeEvent.Ringing -> if (!ui.incoming && !ui.accepted && !ui.remoteRinging) {
+                _ui.update { it.copy(remoteRinging = true) }
+                startRingback()
+            }
             is CallRealtimeEvent.Accepted -> if (!ui.incoming) {
                 stopRingback()
                 remoteUserId = event.userId ?: remoteUserId
@@ -365,7 +371,13 @@ class ActiveCallController(private val context: Context, private val session: Ca
                 }
             }
         } else {
-            state.outgoingConversationId?.let { send(callCancelEnvelope(it, clientMsgId)) }
+            state.outgoingConversationId?.let { conversationId ->
+                if (!send(callCancelEnvelope(conversationId, clientMsgId))) {
+                    scope.launch(Dispatchers.IO) {
+                        runCatching { CallApi(AppContainer.get(context).api).cancel(conversationId) }
+                    }
+                }
+            }
         }
         session.localEnd()
     }
@@ -395,12 +407,19 @@ class ActiveCallController(private val context: Context, private val session: Ca
         _ui.update { it.copy(phase = state.phase) }
         if (!state.phase.isTerminal()) return
         releaseMedia()
-        // A timeout message was already on screen, or nothing to say: close now.
-        if (ui.endMessage != null || state.phase != CallPhase.Busy) {
+        val message = when {
+            // A timeout message was already on screen.
+            ui.endMessage != null -> null
+            state.phase == CallPhase.Busy -> "${ui.peerName.ifBlank { "The other person" }} is on another call"
+            // The server's 60 s ring timeout (or a reconcile that found the call missed).
+            !ui.incoming && !ui.accepted && state.terminalReason in setOf("no_answer", "missed") -> "No answer"
+            else -> null
+        }
+        if (message == null) {
             hide()
             return
         }
-        _ui.update { it.copy(endMessage = "${ui.peerName.ifBlank { "The other person" }} is on another call") }
+        _ui.update { it.copy(endMessage = message) }
         closing = scope.launch {
             delay(1_800)
             hide()

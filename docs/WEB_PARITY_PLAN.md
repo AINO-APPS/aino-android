@@ -1326,11 +1326,13 @@ Phase 9 implementation notes (Android, 2026-09-25):
   caller offers after `call_accepted` (re-sends on `call_peer_ready`, rebuilds
   on `call_reconnect`); the callee is polite and sends `call_subscribe` +
   `call_ready` after `POST chat/calls/:id/accept`. `audio-state` / `video-state`
-  signals drive the peer's mute badge and avatar. Timeouts match
-  `call/index.tsx`: 35 s ringing → "No answer", 30 s connecting/reconnecting
+  signals drive the peer's mute badge and avatar. Timeouts: the server ends an
+  unanswered ring at 60 s (`call_ended` reason `no_answer` → "No answer"); the
+  caller's local fallback fires at 63 s; 30 s connecting/reconnecting
   → "Couldn't connect", shown 1.8 s then `call_end`; busy → "`{name}` is on
   another call". Hang-up sends `call_end` (REST `chat/calls/:id/end` if the
-  socket is down) or `call_cancel` before an id exists. One ICE restart after
+  socket is down) or `call_cancel` before an id exists (REST
+  `chat/calls/cancel` if the socket is down). One ICE restart after
   2 s disconnected. Layout follows `CallOverlay.module.css` ≤600px (caller
   card, full-bleed remote video, 120×180 self preview that swaps on tap, the
   "You" card for voice, the blurred control pill). Camera flip and speaker are
@@ -1406,6 +1408,29 @@ Phase 9 implementation notes (Android, 2026-09-25):
   Mic · End toggles (white = on), chrome auto-hides on video, and an outgoing
   ringback tone while "Ringing...". Decline and missed rings close the screen
   immediately.
+- **Call states, acks and missed calls (Signal/WhatsApp behaviour)**: the
+  caller shows "Calling..." until the callee's device acknowledges the ring
+  (`call_ringing`), then "Ringing..." with the ringback tone. The callee acks
+  once per call id from the socket ring or the push ring: WS `call_ringing`
+  when the socket is open, else `POST chat/calls/:callId/ringing`
+  (`CallRingingAck`). Rings last up to the server's 60 s; the ring service's
+  timeout also expires the session. A ring that ends unanswered here (caller
+  cancelled, no answer, local timeout — not accepted/declined here or on
+  another of the user's devices) posts "Missed voice/video call" on the
+  `aino_missed_calls` channel with "Call back" / "Message" (`MissedCalls.kt`).
+  On socket reconnect and app foreground, a live session asks
+  `GET chat/calls/:callId` and ends locally when the server says
+  declined / missed / ended (`CallReconciler`); expired persisted rings are
+  dropped at cold start. When Android refuses the background ring service, the
+  push posts the same CallStyle full-screen-intent notification
+  (`IncomingCallNotifications`) ringing through its own channel. A one-time
+  prompt points to Settings when call notifications are blocked or (Android
+  14+) full-screen intents are denied.
+- **Call history UI**: call `system` messages (`metadata.type == "call"`)
+  render as a centred chip ("Outgoing voice call · 3:05", "Missed video
+  call"); tapping it calls back. The Calls tab and conversation-info history
+  use the same direction-aware labels with an in/out arrow and refresh live
+  when a call ends.
 
 Endpoint coverage after Phase 9: **248/464 (53.4%)** (`docs/PARITY_MATRIX.md`).
 

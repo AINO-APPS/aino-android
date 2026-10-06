@@ -24,6 +24,10 @@ data class PushTap(
     /** `notifications.id`, marked read when the tap is routed. */
     val notificationId: Long? = null,
     val title: String? = null,
+    /** Chat taps: enough to paint the thread header before the conversation list loads. */
+    val isGroup: Boolean = false,
+    val avatar: String? = null,
+    val unreadCount: Int = 0,
 )
 
 private const val EXTRA_TYPE = "push_type"
@@ -34,6 +38,9 @@ private const val EXTRA_LINK = "push_link"
 private const val EXTRA_TASK = "push_task_id"
 private const val EXTRA_NOTIFICATION = "push_notification_id"
 private const val EXTRA_TITLE = "push_title"
+private const val EXTRA_IS_GROUP = "push_is_group"
+private const val EXTRA_AVATAR = "push_avatar"
+private const val EXTRA_UNREAD = "push_unread"
 
 fun Intent.putPushTapExtras(push: ValidatedPush): Intent = apply {
     putExtra(EXTRA_TYPE, push.data["type"])
@@ -46,6 +53,23 @@ fun Intent.putPushTapExtras(push: ValidatedPush): Intent = apply {
         putExtra(EXTRA_NOTIFICATION, push.data["notificationId"])
         putExtra(EXTRA_TITLE, push.data["title"])
     }
+    if (push.kind == PushKind.ChatMessage) {
+        val isGroup = push.data["isGroup"] == "true"
+        putExtra(EXTRA_TITLE, if (isGroup) push.data["groupName"]?.takeIf(String::isNotBlank) ?: push.data["title"] else push.data["senderName"])
+        putExtra(EXTRA_IS_GROUP, isGroup.toString())
+        if (!isGroup) putExtra(EXTRA_AVATAR, push.data["senderAvatar"])
+        putExtra(EXTRA_UNREAD, push.data["unreadCount"])
+    }
+}
+
+/**
+ * Tap extras for a locally posted missed-call notification: routed like a
+ * chat push (`missed_call` opens the conversation thread, see `pushTapRoute`).
+ */
+fun Intent.putMissedCallTapExtras(conversationId: Long, callId: Long): Intent = apply {
+    putExtra(EXTRA_TYPE, "missed_call")
+    putExtra(EXTRA_CONVERSATION, conversationId.toString())
+    putExtra(EXTRA_DEDUPE, "missed_call:$callId")
 }
 
 /** Null for launches that did not come from one of our notifications. Calls are routed by the call stack. */
@@ -62,6 +86,9 @@ fun parsePushTap(intent: Intent?, nowMs: Long = System.currentTimeMillis()): Pus
         notificationId = intent.getStringExtra(EXTRA_NOTIFICATION),
         title = intent.getStringExtra(EXTRA_TITLE),
         nowMs = nowMs,
+        isGroup = intent.getStringExtra(EXTRA_IS_GROUP),
+        avatar = intent.getStringExtra(EXTRA_AVATAR),
+        unreadCount = intent.getStringExtra(EXTRA_UNREAD),
     )
 }
 
@@ -76,6 +103,9 @@ fun pushTapOf(
     notificationId: String?,
     title: String?,
     nowMs: Long,
+    isGroup: String? = null,
+    avatar: String? = null,
+    unreadCount: String? = null,
 ): PushTap = PushTap(
     type = type,
     dedupeKey = dedupeKey,
@@ -86,6 +116,9 @@ fun pushTapOf(
     taskId = taskId?.trim()?.toLongOrNull()?.takeIf { it > 0 },
     notificationId = notificationId?.trim()?.toLongOrNull()?.takeIf { it > 0 },
     title = title?.takeIf(String::isNotBlank),
+    isGroup = isGroup == "true",
+    avatar = avatar?.takeIf(String::isNotBlank),
+    unreadCount = unreadCount?.trim()?.toIntOrNull()?.coerceAtLeast(0) ?: 0,
 )
 
 /** The one pending tap; MainActivity sets it, the authenticated shell consumes it. */

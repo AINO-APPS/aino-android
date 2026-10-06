@@ -11,7 +11,14 @@ data class CallSessionUiState(
     val outgoingConversationId: Long? = null,
     val peerUserId: Long? = null,
     val terminalReason: String? = null,
-)
+    /** Caller side: the callee's device acknowledged the ring (`call_ringing`). */
+    val remoteRinging: Boolean = false,
+    /** Wall clock when this session began (ring received / call placed). */
+    val startedAtMs: Long? = null,
+) {
+    /** This device is the callee. */
+    val incoming: Boolean get() = route != null && outgoingConversationId == null
+}
 
 fun interface CallResourceOwner {
     fun release(callId: Long?)
@@ -20,6 +27,9 @@ fun interface CallResourceOwner {
 class CallSessionController(
     private val resources: CallResourceOwner = CallResourceOwner {},
     private val deduplicator: CallSignalDeduplicator = CallSignalDeduplicator(),
+    private val clock: () -> Long = System::currentTimeMillis,
+    /** A ring on this device ended unanswered (see [shouldNotifyMissedCall]); `reason` is the terminal reason. */
+    private val onMissed: (IncomingCallRoute, String) -> Unit = { _, _ -> },
 ) {
     private val _state = MutableStateFlow(CallSessionUiState())
     val state: StateFlow<CallSessionUiState> = _state.asStateFlow()
@@ -41,6 +51,7 @@ class CallSessionController(
             outgoingConversationId = null,
             peerUserId = route.callerId,
             terminalReason = null,
+            startedAtMs = current.startedAtMs ?: clock(),
         )
         return true
     }
@@ -56,6 +67,7 @@ class CallSessionController(
         _state.value = CallSessionUiState(
             phase = CallPhase.Connecting,
             outgoingConversationId = conversationId,
+            startedAtMs = clock(),
         )
         return true
     }
@@ -78,6 +90,18 @@ class CallSessionController(
                 _state.value = current.copy(
                     route = IncomingCallRoute(event.callId, event.conversationId, null, "", null, event.callType),
                 )
+            }
+            is CallRealtimeEvent.Ringing -> {
+                // Only the caller's own outgoing call, before the callee answered.
+                if (current.outgoingConversationId == null || current.phase != CallPhase.Connecting || current.remoteRinging) return false
+                val route = current.route
+                val matches = if (route != null) {
+                    route.callId == event.callId && route.conversationId == event.conversationId
+                } else {
+                    current.outgoingConversationId == event.conversationId
+                }
+                if (!matches) return false
+                _state.value = current.copy(remoteRinging = true)
             }
             is CallRealtimeEvent.Accepted -> {
                 if (!matches(event.callId, event.conversationId)) return false
@@ -159,6 +183,16 @@ class CallSessionController(
     @Synchronized
     fun expire() = terminate(CallEvent.RingExpired, "expired")
 
+    /** Applies the server's view (`GET chat/calls/:id`) of the current call; true when it ended the session. */
+    @Synchronized
+    fun reconcile(callId: Long, serverStatus: String?): Boolean {
+        val current = _state.value
+        if (current.route?.callId != callId) return false
+        val action = reconcileServerCallStatus(serverStatus, current.phase, current.incoming) ?: return false
+        terminate(action.event, action.reason)
+        return true
+    }
+
     @Synchronized
     fun reset(): Boolean {
         if (!_state.value.phase.isTerminal() || !cleanupComplete) return false
@@ -187,6 +221,12 @@ class CallSessionController(
         val current = _state.value
         if (current.phase.isTerminal()) return
         _state.value = current.copy(phase = reduceCallPhase(current.phase, event), terminalReason = reason)
+        val route = current.route
+        if (route != null && current.incoming && current.phase == CallPhase.Ringing &&
+            (event == CallEvent.RemoteEnded || event == CallEvent.RingExpired) && isMissedCallReason(reason)
+        ) {
+            runCatching { onMissed(route, reason) }
+        }
         if (!cleanupComplete) {
             cleanupComplete = true
             deduplicator.clear()
@@ -217,6 +257,7 @@ object CallSessionRuntime {
                 PendingCallActionStore.clear(context.applicationContext)
                 callId?.let(IncomingCallDismissals::dismiss)
             },
+            onMissed = { route, _ -> MissedCallNotifier.post(context.applicationContext, MissedCallInfo.of(route)) },
         ).also { instance = it }
     }
 }

@@ -97,6 +97,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         PushNotifications.createChannels(applicationContext)
+        // A ring left behind by a process that died is cleared once it expired.
+        app.aino.mobile.core.call.CallReconciler.clearStaleRing(applicationContext)
         setContent {
             val themeStore = ThemePreferenceStore(applicationContext)
             val isDark by themeStore.isDark.collectAsState(initial = true)
@@ -191,6 +193,8 @@ class MainActivity : FragmentActivity() {
 
     /** A tapped notification is routed by the signed-in shell (see `PendingPushTap`). */
     private fun consumePushTap(intent: android.content.Intent?) {
+        // A missed-call notification / "Call back": clear it and queue the call for its thread.
+        app.aino.mobile.core.call.MissedCallNotifier.consumeIntent(applicationContext, intent)
         app.aino.mobile.core.push.parsePushTap(intent)?.let(app.aino.mobile.core.push.PendingPushTap::set) ?: return
         intent?.removeExtra("push_type")
     }

@@ -21,6 +21,7 @@ object PushNotifications {
     const val MENTIONS = "aino_mentions"
     const val ASSIGNMENTS = "aino_assignments"
     const val APPROVALS = "aino_approvals"
+    const val MISSED_CALLS = "aino_missed_calls"
 
     /**
      * Channel ids are never renamed or deleted: Android keeps the user's
@@ -47,20 +48,36 @@ object PushNotifications {
                     description = "Incoming AINO voice and video calls"
                     lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
                 },
+                NotificationChannel(MISSED_CALLS, "Missed calls", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                    description = "Calls that rang on this device and were not answered"
+                },
             ),
         )
     }
 
-    fun display(context: Context, push: ValidatedPush) {
+    /** Posts [push]; true when a notification is now showing for it. */
+    fun display(context: Context, push: ValidatedPush): Boolean {
         if (push.kind == PushKind.CallHandledElsewhere) {
             val manager = NotificationManagerCompat.from(context)
             manager.cancel(NotificationTags.CALL, notificationId(push))
             // Posted untagged by app versions before 0.15.2.
             manager.cancel(notificationId(push))
-            return
+            app.aino.mobile.core.call.IncomingCallNotifications.cancel(context)
+            return false
+        }
+        if (push.kind == PushKind.IncomingCall) {
+            // The ring service was refused: post the same CallStyle + full-screen-intent
+            // notification without a foreground service (it rings through its channel).
+            val extras = app.aino.mobile.core.call.incomingCallServiceExtras(
+                push.data,
+                app.aino.mobile.core.auth.KeystoreTokenStore(context).getToken(),
+            )
+            val posted = runCatching { app.aino.mobile.core.call.IncomingCallNotifications.postWithoutService(context, extras) }
+                .onFailure { android.util.Log.w("AinoPush", "Incoming call notification failed", it) }
+            if (posted.getOrDefault(false)) return true
         }
         val chatId = push.data["conversationId"]?.toLongOrNull()
-        if (push.kind == PushKind.ChatMessage && chatId != null && VisibleThread.isVisible(chatId)) return
+        if (push.kind == PushKind.ChatMessage && chatId != null && VisibleThread.isVisible(chatId)) return false
         val privateCall = push.kind == PushKind.IncomingCall && !push.data.containsKey("callerName")
         val title = if (privateCall) push.data.getValue("title") else push.data["title"] ?: push.data["callerName"] ?: "AINO"
         val body = if (privateCall) "Tap to answer" else push.data["body"].orEmpty()
@@ -107,8 +124,9 @@ object PushNotifications {
         if (Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         ) {
-            runCatching { NotificationManagerCompat.from(context).notify(notificationTag(push), notificationId(push), notification) }
+            return runCatching { NotificationManagerCompat.from(context).notify(notificationTag(push), notificationId(push), notification) }.isSuccess
         }
+        return false
     }
 
     /** Removes a bell alert's tray notification (read / deleted in the app or on another device). */

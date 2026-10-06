@@ -54,4 +54,21 @@ class PushTapRoutingTest {
         assertNull(junk.notificationId)
         assertNull(junk.title)
     }
+
+    @Test
+    fun chatTapsCarryAThreadHint() {
+        val chat = pushTapOf(
+            "chat_message", "msg:9", "42", "9", null, null, null, "Asha", nowMs = 1,
+            isGroup = "false", avatar = "/uploads/a.png", unreadCount = "3",
+        )
+        assertEquals("Asha", chat.title)
+        assertEquals(false, chat.isGroup)
+        assertEquals("/uploads/a.png", chat.avatar)
+        assertEquals(3, chat.unreadCount)
+
+        val sparse = pushTapOf("chat_message", "msg:9", "42", "9", null, null, null, null, nowMs = 1, isGroup = "true", avatar = " ", unreadCount = "-4")
+        assertEquals(true, sparse.isGroup)
+        assertNull(sparse.avatar)
+        assertEquals(0, sparse.unreadCount)
+    }
 }

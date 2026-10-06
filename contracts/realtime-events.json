@@ -6,7 +6,7 @@
     "path": "server/**/*.ts"
   },
   "totals": {
-    "events": 79
+    "events": 80
   },
   "events": [
     "approval_update",
@@ -23,6 +23,7 @@
     "call_reaction",
     "call_reconnect",
     "call_rejected",
+    "call_ringing",
     "call_signal",
     "call_started",
     "chat_cleared",

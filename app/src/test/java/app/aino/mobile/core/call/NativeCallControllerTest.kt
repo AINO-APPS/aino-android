@@ -57,10 +57,13 @@ class NativeCallControllerTest {
     }
 
     @Test
-    fun ringWindowIsCappedAtThirtySecondsAndExpires() {
+    fun ringWindowMatchesTheServerSixtySecondRingAndExpires() {
         val now = Instant.parse("2026-09-15T00:00:00Z")
-        assertEquals(30_000, remainingRingMillis("2026-09-15T00:01:00Z", now))
+        assertEquals(60_000, remainingRingMillis("2026-09-15T00:01:00Z", now))
+        assertEquals(60_000, remainingRingMillis("2026-09-15T00:05:00Z", now))
         assertEquals(15_000, remainingRingMillis("2026-09-15T00:00:15Z", now))
         assertEquals(0, remainingRingMillis("2026-09-14T23:59:59Z", now))
+        // Socket rings carry no expiry: the full server window.
+        assertEquals(60_000, remainingRingMillis(null, now))
     }
 }

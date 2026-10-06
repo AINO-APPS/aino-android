@@ -42,8 +42,24 @@ class ThreadMessageCache(private val maxThreads: Int = 20, private val maxMessag
         threads[conversationId]?.let { threads[conversationId] = it.copy(receipts = receipts) }
     }
 
+    @Synchronized fun remove(conversationId: Long) { threads.remove(conversationId) }
+
     @Synchronized fun clear() = threads.clear()
 }
+
+/**
+ * Adds stored rows (written by a push wake or a live event) that [current] does
+ * not hold yet; rows already shown keep their live state.
+ */
+fun mergeStoredRows(current: List<ChatMessage>, stored: List<ChatMessage>): List<ChatMessage> {
+    if (stored.isEmpty()) return current
+    val known = current.mapTo(HashSet(), ChatMessage::id)
+    val fresh = stored.filter { it.id !in known }
+    if (fresh.isEmpty()) return current
+    return (current + fresh).sortedWith(compareBy<ChatMessage> { parseEpochMs(it.createdAt) }.thenBy { it.id })
+}
+
+private fun parseEpochMs(value: String): Long = runCatching { java.time.Instant.parse(value).toEpochMilli() }.getOrDefault(0L)
 
 /**
  * [next] with every unchanged message replaced by its instance from [current]
@@ -64,13 +80,14 @@ fun reuseUnchanged(current: List<ChatMessage>, next: List<ChatMessage>): List<Ch
 
 /**
  * Folds the newest page into the open thread without dropping older pages
- * already scrolled in. A full page that does not reach the loaded rows may
- * leave a gap, so the thread restarts from that page.
+ * already scrolled in. A full page only joins the loaded rows when it overlaps
+ * them at its oldest row; otherwise (more new rows than a page, or a stored row
+ * written live past a gap) the thread restarts from that page.
  */
 fun mergeLatestPage(current: List<ChatMessage>, latest: List<ChatMessage>, pageSize: Int = THREAD_PAGE_SIZE): List<ChatMessage> {
     if (latest.isEmpty()) return latest
     val oldestLatest = latest.minOf(ChatMessage::id)
-    val contiguous = latest.size >= pageSize && current.any { it.id >= oldestLatest }
+    val contiguous = latest.size >= pageSize && current.any { it.id == oldestLatest }
     val older = if (contiguous) current.filter { it.id < oldestLatest } else emptyList()
     return reuseUnchanged(current, older + latest)
 }

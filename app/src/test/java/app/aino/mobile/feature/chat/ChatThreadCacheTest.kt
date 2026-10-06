@@ -57,6 +57,20 @@ class ChatThreadCacheTest {
         assertEquals((100L..149L).toList(), merged.map(ChatMessage::id))
     }
 
+    @Test fun `a live row stored past a gap does not glue the latest page to stale rows`() {
+        // Stored rows 1-10, then a live row 140; the server page 100-149 must not keep 1-10 above it.
+        val merged = mergeLatestPage(page(1L..10L) + msg(140), page(100L..149L), pageSize = 50)
+        assertEquals((100L..149L).toList(), merged.map(ChatMessage::id))
+    }
+
+    @Test fun `stored rows only add what the thread lacks`() {
+        val shown = listOf(msg(1), msg(2, "live edit"))
+        val merged = mergeStoredRows(shown, listOf(msg(1), msg(2, "stale"), msg(3)))
+        assertEquals(listOf(1L, 2L, 3L), merged.map(ChatMessage::id))
+        assertEquals("live edit", merged[1].content)
+        assertSame(shown, mergeStoredRows(shown, listOf(msg(2))))
+    }
+
     @Test fun `short latest page is the whole history`() {
         val merged = mergeLatestPage(page(1L..10L), page(5L..10L), pageSize = 50)
         assertEquals((5L..10L).toList(), merged.map(ChatMessage::id))
@@ -133,7 +147,10 @@ class ChatThreadCacheTest {
         override fun observeMessages(tenantId: Long, userId: Long, conversationId: Long) = kotlinx.coroutines.flow.flowOf(rows.toList())
         override suspend fun getMessages(tenantId: Long, userId: Long, conversationId: Long) =
             rows.filter { it.conversationId == conversationId }.sortedBy { it.createdAtEpochMs }
-        override suspend fun upsertMessages(values: List<app.aino.mobile.core.db.MessageEntity>) { rows += values }
+        override suspend fun upsertMessages(values: List<app.aino.mobile.core.db.MessageEntity>) {
+            rows.removeIf { row -> values.any { it.messageId == row.messageId } }
+            rows += values
+        }
         override suspend fun clearConversationMessages(tenantId: Long, userId: Long, conversationId: Long) { rows.removeIf { it.conversationId == conversationId } }
         override suspend fun putOutbox(value: app.aino.mobile.core.db.OutboxEntity) = Unit
         override suspend fun pendingOutbox(tenantId: Long, userId: Long, now: Long, limit: Int) = emptyList<app.aino.mobile.core.db.OutboxEntity>()
@@ -141,6 +158,7 @@ class ChatThreadCacheTest {
         override suspend fun markOutboxFailed(tenantId: Long, userId: Long, clientMessageId: String) = Unit
         override suspend fun deleteOutbox(tenantId: Long, userId: Long, clientMessageId: String) = Unit
         override suspend fun clearConversations(tenantId: Long, userId: Long) = Unit
+        override suspend fun deleteConversation(tenantId: Long, userId: Long, conversationId: Long) = Unit
         override suspend fun clearMessages(tenantId: Long, userId: Long) = Unit
         override suspend fun clearOutbox(tenantId: Long, userId: Long) = Unit
     }

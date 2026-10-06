@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -127,9 +128,11 @@ fun ChatScreen(
     var newGroupOpen by remember { mutableStateOf(false) }
     var archivedOpen by remember { mutableStateOf(false) }
     val query = ui.userSearch.trim()
-    LaunchedEffect(conversationId, ui.conversations) {
-        if (conversationId != null && ui.selectedConversation?.id != conversationId) {
-            ui.conversations.firstOrNull { it.id == conversationId }?.let(viewModel::openConversation)
+    // Deep links and notification taps open by id at once (placeholder header, stored rows)
+    // instead of waiting for the conversation list.
+    LaunchedEffect(conversationId) {
+        if (conversationId != null && viewModel.ui.value.selectedConversation?.id != conversationId) {
+            viewModel.openConversationById(conversationId)
         }
     }
     BackHandler(enabled = ui.selectedConversationIds.isNotEmpty()) { viewModel.cancelConversationSelection() }
@@ -569,6 +572,18 @@ private fun MessageResultRow(message: ChatMessage, conversation: ChatConversatio
 }
 private class RetainedThread { var ui: ChatUiState? = null }
 
+/**
+ * Reversed thread: [index] first lands on the bottom edge, then the list moves
+ * toward the newest rows until that row (the first unread) sits at the top.
+ */
+private suspend fun androidx.compose.foundation.lazy.LazyListState.scrollToUnreadTop(index: Int) {
+    scrollToItem(index)
+    val info = layoutInfo
+    val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+    val lift = info.viewportSize.height - item.size - info.beforeContentPadding - info.afterContentPadding
+    if (lift > 0) scrollBy(-lift.toFloat())
+}
+
 private enum class ThreadBar { Header, Search, Selection }
 
 private fun threadItemsOf(ui: ChatUiState, pending: List<PendingMedia>): List<ThreadItem> = buildThreadItems(
@@ -615,11 +630,14 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     val pendingLayout = remember(threadPending) { threadPending.map { Triple(it.localId, it.sequence, it.createdAtEpochMs) } }
     // The first frame builds synchronously so a cached thread paints at once; later rebuilds run off the main thread.
     var threadItems by remember(conversation.id) { mutableStateOf(threadItemsOf(ui, threadPending)) }
-    LaunchedEffect(ui.messages, ui.queuedMessages, ui.currentUserId, ui.hiddenMessageIds, pendingLayout) {
+    // Whether [threadItems] already reflect the server page, not only stored rows (second open positioning).
+    var itemsSettled by remember(conversation.id) { mutableStateOf(!ui.threadLoading) }
+    LaunchedEffect(ui.messages, ui.queuedMessages, ui.currentUserId, ui.hiddenMessageIds, pendingLayout, ui.threadLoading) {
         val current = threadItems
         val source = ui
         val pending = threadPending
         withContext(Dispatchers.Default) { threadItemsOf(source, pending).takeIf { it != current } }?.let { threadItems = it }
+        itemsSettled = !source.threadLoading
     }
     val pendingById = remember(threadPending) { threadPending.associateBy(PendingMedia::localId) }
     val latestUi by androidx.compose.runtime.rememberUpdatedState(ui)
@@ -632,12 +650,30 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     val arrivals = remember(conversation.id) { ThreadArrivals() }
     val arrivedKeys = remember(arrivals, newestFirst) { arrivals.update(newestFirst.map(ThreadItem::key)) }
     val slidKeys = remember(conversation.id) { HashSet<String>() }
-    val dividerKey = remember(conversation.id, ui.unreadAtOpen, newestFirst.isNotEmpty()) {
-        unreadDividerKey(newestFirst, ui.unreadAtOpen, ui.currentUserId)
-    }
+    // Follows the rows until the server page lands, then stays put (Signal's "N unread messages").
+    var dividerKey by remember(conversation.id) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val atBottom by remember { androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex <= 1 } }
+    // Stick-to-bottom as of the last scroll: rows inserted at the newest end shift the
+    // index without scrolling, so they never flip it before the follow decision below.
+    var stickToBottom by remember(conversation.id) { mutableStateOf(true) }
+    var userScrolled by remember(conversation.id) { mutableStateOf(false) }
+    val stickSlopPx = with(androidx.compose.ui.platform.LocalDensity.current) { 24.dp.roundToPx() }
+    LaunchedEffect(listState, conversation.id) {
+        var wasScrolling = false
+        androidx.compose.runtime.snapshotFlow {
+            Triple(listState.isScrollInProgress, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+        }.collect { (scrolling, index, offset) ->
+            if (scrolling || wasScrolling) stickToBottom = isAtThreadBottom(index, offset, stickSlopPx)
+            wasScrolling = scrolling
+        }
+    }
+    LaunchedEffect(listState, conversation.id) {
+        listState.interactionSource.interactions.collect {
+            if (it is androidx.compose.foundation.interaction.DragInteraction.Start) userScrolled = true
+        }
+    }
     var unseen by remember(conversation.id) { mutableStateOf(0) }
     var viewingMediaId by remember { mutableStateOf<Long?>(null) }
     var pollOpen by remember { mutableStateOf(false) }
@@ -684,9 +720,45 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     val newestKey = newestFirst.firstOrNull()?.key
     val newestMine = (newestFirst.firstOrNull() as? ThreadItem.Message)?.message?.senderId == ui.currentUserId ||
         newestFirst.firstOrNull() is ThreadItem.Queued || newestFirst.firstOrNull() is ThreadItem.PendingUpload
+    // 0: not positioned, 1: on stored rows, 2: on the server page (see [initialThreadScroll]).
+    var positioned by remember(conversation.id) { mutableStateOf(0) }
+    var positionedUnread by remember(conversation.id) { mutableStateOf(-1) }
+    var lastNewestKey by remember(conversation.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(newestKey) {
-        if (newestKey == null) return@LaunchedEffect
-        if (atBottom || newestMine) { listState.animateScrollToItem(0); unseen = 0 } else unseen++
+        val previous = lastNewestKey
+        lastNewestKey = newestKey
+        // The open sequence below positions the thread until the server page has landed.
+        if (newestKey == null || previous == null || positioned < 2) return@LaunchedEffect
+        val added = addedAtNewest(newestFirst.map(ThreadItem::key), previous)
+        when (val action = scrollOnNewItems(stickToBottom, newestMine, added)) {
+            is ThreadScroll.ToNewest -> {
+                if (action.animate) listState.animateScrollToItem(0) else listState.scrollToItem(0)
+                stickToBottom = true
+                unseen = 0
+            }
+            else -> unseen += added
+        }
+    }
+    LaunchedEffect(conversation.id, newestFirst, itemsSettled, ui.unreadAtOpen) {
+        if (newestFirst.isEmpty()) return@LaunchedEffect
+        val phase = if (itemsSettled) 2 else 1
+        val unreadAtOpen = latestUi.unreadAtOpen
+        if (phase <= positioned && unreadAtOpen == positionedUnread) return@LaunchedEffect
+        positioned = maxOf(positioned, phase)
+        positionedUnread = unreadAtOpen
+        dividerKey = unreadDividerKey(newestFirst, unreadAtOpen, latestUi.currentUserId)
+        val target = initialThreadScroll(
+            newestFirst.map(ThreadItem::key), dividerKey,
+            jumpPending = latestUi.jumpToMessageId != null, userScrolled = userScrolled,
+        )
+        // Not tied to this effect: a later row change must not cancel the positioning half way.
+        scope.launch {
+            when (target) {
+                is ThreadScroll.ToUnread -> { listState.scrollToUnreadTop(target.index); stickToBottom = false }
+                is ThreadScroll.ToNewest -> { listState.scrollToItem(0); stickToBottom = true }
+                ThreadScroll.None -> Unit
+            }
+        }
     }
     LaunchedEffect(atBottom) { if (atBottom) unseen = 0 }
     // Prefetch older history about a screen before the top so scrolling never waits on it.
@@ -698,6 +770,15 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         }.collect { if (it > 0) viewModel.loadOlderMessages() }
     }
     val withCallPermissions = app.aino.mobile.core.call.rememberCallPermissions()
+    // Missed-call notification "Call back": place the call once this thread is open and the socket is up.
+    val callBack by app.aino.mobile.core.call.PendingCallBack.request.collectAsStateWithLifecycle()
+    LaunchedEffect(callBack, conversation.id) {
+        val request = app.aino.mobile.core.call.PendingCallBack.consume(conversation.id) ?: return@LaunchedEffect
+        kotlinx.coroutines.withTimeoutOrNull(10_000) {
+            while (!app.aino.mobile.core.call.CallRealtimeLink.connected.value) kotlinx.coroutines.delay(250)
+        } ?: return@LaunchedEffect
+        withCallPermissions(request.callType == "video") { viewModel.startCall(request.callType) }
+    }
     BackHandler(enabled = allMediaOpen) { allMediaOpen = false }
     if (ui.showInfo) {
         ConversationInfo(ui, viewModel, onOpenAllMedia = { allMediaOpen = true })
@@ -818,6 +899,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                                     if (url != null) viewOnceOpen = item.message.copy(fileUrl = url)
                                 }
                             },
+                            onStartCall = { type -> withCallPermissions(type == "video") { viewModel.startCall(type) } },
                         )
                         is ThreadItem.Queued -> QueuedBubble(item.message)
                         is ThreadItem.PendingUpload -> pendingById[item.localId]?.let { media ->
@@ -1069,18 +1151,30 @@ private fun CallRow(
         if (selectionEnabled && selected) {
             Checkbox(checked = true, onCheckedChange = { onToggleSelection() })
         }
-        Box(Modifier.size(46.dp).background(app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.surface, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(if (call.callType == "video") HeroIcons.VideoCamera else HeroIcons.Phone, null, tint = if (call.status == "missed") app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.danger else app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.primary)
+        val webColors = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current
+        val label = call.historyLabel(currentUserId)
+        val labelTint = if (label.danger) webColors.danger else webColors.textSecondary
+        Box(Modifier.size(46.dp).background(webColors.surface, CircleShape), contentAlignment = Alignment.Center) {
+            Icon(if (label.video) HeroIcons.VideoCamera else HeroIcons.Phone, null, tint = if (label.danger) webColors.danger else webColors.primary)
         }
         Column(Modifier.padding(start = 11.dp).weight(1f)) {
-            Text(call.title(currentUserId), fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(
-                listOf(call.status.replace('_', ' ').replaceFirstChar(Char::uppercase), call.callType.replaceFirstChar(Char::uppercase), call.duration?.let(::formatCallDuration)).filterNotNull().joinToString(" · "),
-                color = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.textSecondary,
-                fontSize = 12.sp,
-            )
+            Text(call.title(currentUserId), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (label.danger) webColors.danger else Color.Unspecified)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (label.outgoing) HeroIcons.ArrowUpRight else HeroIcons.ArrowDownLeft,
+                    if (label.outgoing) "Outgoing" else "Incoming",
+                    Modifier.size(13.dp),
+                    tint = labelTint,
+                )
+                Text(
+                    listOfNotNull(label.title, label.detail).joinToString(" · "),
+                    Modifier.padding(start = 4.dp),
+                    color = labelTint,
+                    fontSize = 12.sp,
+                )
+            }
         }
-        Text(timeAgo(call.createdAt), color = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.textSecondary, fontSize = 11.sp)
+        Text(timeAgo(call.createdAt), color = webColors.textSecondary, fontSize = 11.sp)
     }
 }
 
@@ -1319,7 +1413,29 @@ private fun InfoRow(icon: ImageVector, label: String, danger: Boolean = false, o
     }
 }
 
-private fun formatCallDuration(seconds: Int): String = "%d:%02d".format(seconds / 60, seconds % 60)
+/** Signal call-history chip: centred pill with the call icon, label and time; tap calls back. */
+@Composable
+private fun CallHistoryChip(label: CallHistoryLabel, time: String, onClick: () -> Unit) {
+    val signal = signalColors
+    val accent = if (label.danger) signal.danger else signal.text
+    Box(Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 8.dp), contentAlignment = Alignment.Center) {
+        Row(
+            Modifier.clip(RoundedCornerShape(18.dp)).background(signal.datePill).clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(if (label.video) HeroIcons.VideoCamera else HeroIcons.Phone, null, Modifier.size(18.dp), tint = accent)
+            Column(Modifier.padding(start = 10.dp)) {
+                Text(label.title, color = accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    listOfNotNull(label.detail, time.takeIf(String::isNotBlank)).joinToString(" · "),
+                    color = signal.textSecondary,
+                    fontSize = 12.sp,
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -1353,6 +1469,8 @@ private fun MessageBubble(
     viewOnceLoading: Boolean = false,
     onOpenViewOnce: () -> Unit = {},
     reactionAvatars: () -> Map<Long, String> = { emptyMap() },
+    /** Call-history chip tap: place the same call type again ("voice" / "video"). */
+    onStartCall: (String) -> Unit = {},
 ) {
     var actionsOpen by remember { mutableStateOf(false) }
     var reactionsOpen by remember { mutableStateOf(false) }
@@ -1363,6 +1481,10 @@ private fun MessageBubble(
     val meetingCode = (meetingMeta?.get("meetingCode") as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
     if (meetingMeta != null && meetingCode != null) {
         ChatMeetingCard(meetingMeta, meetingCode)
+        return
+    }
+    message.callHistoryLabel(currentUserId)?.let { label ->
+        CallHistoryChip(label, bubbleTime(message.createdAt)) { onStartCall(if (label.video) "video" else "voice") }
         return
     }
     if (message.formatType == "system") {

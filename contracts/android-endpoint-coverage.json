@@ -5,8 +5,8 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 464,
-    "covered": 237,
+    "platform": 467,
+    "covered": 240,
     "waived": 227,
     "missing": 0,
     "unmatched": 0
@@ -98,6 +98,11 @@
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
+      "method": "GET",
+      "path": "/api/chat/calls/:param",
+      "source": "app/src/main/java/app/aino/mobile/core/call/CallApi.kt"
+    },
+    {
       "method": "POST",
       "path": "/api/chat/calls/:param/accept",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
@@ -113,9 +118,19 @@
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
+      "method": "POST",
+      "path": "/api/chat/calls/:param/ringing",
+      "source": "app/src/main/java/app/aino/mobile/core/call/CallApi.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/chat/calls/active",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/calls/cancel",
+      "source": "app/src/main/java/app/aino/mobile/core/call/CallApi.kt"
     },
     {
       "method": "POST",

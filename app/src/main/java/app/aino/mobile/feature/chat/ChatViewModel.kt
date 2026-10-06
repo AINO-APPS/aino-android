@@ -194,6 +194,10 @@ class ChatViewModel(
     private val warm: ChatRepository? = null,
     /** Compression / transcoding before upload; defaults to the content-resolver implementation. */
     private val mediaPreparer: MediaPreparer? = null,
+    /** Drops a thread's warm (response-cache) page so a cleared/deleted chat never repaints from it. */
+    private val forgetWarmThread: (Long) -> Unit = {},
+    /** Conversations whose stored rows a push wake wrote (see [app.aino.mobile.core.push.PushSync]). */
+    private val storedThreadUpdates: kotlinx.coroutines.flow.Flow<Long> = app.aino.mobile.core.push.PushSync.threadUpdates,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ChatUiState())
     val ui: StateFlow<ChatUiState> = _ui.asStateFlow()
@@ -207,6 +211,12 @@ class ChatViewModel(
     private var threadSearchJob: Job? = null
     private var pendingJump: Pair<Long, Long>? = null
     private var pendingSettings: Long? = null
+    /** A thread opened by id before the account scope was known (cold-start notification tap). */
+    private var pendingOpen: OpenRequest? = null
+    /** Open thread painted from a hint while its real list row is unknown. */
+    private var placeholderId: Long? = null
+    /** Chats deleted for this user while open: their closing thread is not kept in memory. */
+    private val deletedThreads: MutableSet<Long> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private val mentionedIds = mutableSetOf<Long>()
     private var realtimeSend: (RealtimeEnvelope) -> Boolean = { false }
     private val markReadJobs = mutableMapOf<Long, Job>()
@@ -221,6 +231,8 @@ class ChatViewModel(
 
     private data class PrepKey(val uri: Uri, val quality: String?)
 
+    private data class OpenRequest(val conversationId: Long, val hint: ConversationHint?, val jumpTo: Long?)
+
     init {
         // A push swallowed for the on-screen thread: mark read and pull the message
         // in case the realtime socket missed it (Signal marks the visible thread read).
@@ -230,6 +242,25 @@ class ChatViewModel(
                     scheduleMarkRead(id)
                     scheduleRefresh()
                 }
+            }
+        }
+        // A push wake stored new rows: fold them into the open thread / its memory copy.
+        viewModelScope.launch {
+            storedThreadUpdates.collect { id -> mergeStoredThread(id) }
+        }
+    }
+
+    private fun mergeStoredThread(conversationId: Long) {
+        val scopedCache = cache ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val stored = runCatching { scopedCache.fullMessages(conversationId, limit = CACHED_THREAD_MESSAGES) }.getOrNull().orEmpty()
+            if (stored.isEmpty()) return@launch
+            _ui.update { st ->
+                if (st.selectedConversation?.id != conversationId || st.messages.isEmpty()) st
+                else st.copy(messages = mergeStoredRows(st.messages, stored))
+            }
+            if (!isOpen(conversationId)) {
+                threadCache.put(conversationId, mergeStoredRows(threadCache.get(conversationId)?.messages.orEmpty(), stored))
             }
         }
     }
@@ -307,6 +338,10 @@ class ChatViewModel(
             // Texts leased by a previous process never reached the server: let the durable worker send them.
             viewModelScope.launch(Dispatchers.IO) { runCatching { outbox.recover(next) } }
             refresh()
+            pendingOpen?.let { request ->
+                pendingOpen = null
+                openConversationById(request.conversationId, request.hint, request.jumpTo)
+            }
         }
     }
 
@@ -319,6 +354,7 @@ class ChatViewModel(
             if (_ui.value.conversations.isEmpty()) {
                 warm?.let { runCatching(it::loadConversations).getOrNull() }?.takeIf { it.isNotEmpty() }?.let { cached ->
                     if (_ui.value.conversations.isEmpty()) _ui.update { st -> st.copy(conversations = zeroUnread(cached, visibleConversationId())) }
+                    adoptListedConversation(cached)
                 }
             }
             runCatching(repository::loadConversations).fold(
@@ -333,6 +369,7 @@ class ChatViewModel(
                         fromCache = false,
                         syncedAtMs = startedAt,
                     ) }
+                    adoptListedConversation(conversations)
                     warmThreads(scopedCache, conversations)
                 },
                 onFailure = { error ->
@@ -425,6 +462,7 @@ class ChatViewModel(
                 // of sitting next to the persisted row until the thread reloads.
                 val incoming = decodeChatRealtime<ChatRealtimeMessage>(event.data)
                 incoming?.toChatMessage()?.let { received -> acknowledgeDelivery(listOf(received)) }
+                if (incoming != null && isCallHistoryMessage(incoming.formatType, incoming.metadata)) onCallActivity()
                 if (incoming != null && _ui.value.selectedConversation?.id == incoming.conversationId) {
                     val message = incoming.toChatMessage()
                     echoedPendingMedia(_ui.value.pendingMedia, message, scope?.userId)?.let {
@@ -444,6 +482,25 @@ class ChatViewModel(
                         scheduleMarkRead(incoming.conversationId)
                     }
                 }
+                incoming?.toChatMessage()?.let(::storeLiveMessage)
+            }
+            // Clear / delete are per-user and only reach this user's own devices.
+            RealtimeEvent.ChatCleared -> {
+                val cleared = decodeChatRealtime<ChatConversationEvent>(event.data) ?: return
+                viewModelScope.launch(Dispatchers.IO) {
+                    forgetThreadLocally(cleared.conversationId)
+                    if (isOpen(cleared.conversationId)) refreshThread()
+                    refresh()
+                }
+                return
+            }
+            RealtimeEvent.ChatConvDeleted -> {
+                val deleted = decodeChatRealtime<ChatConversationEvent>(event.data) ?: return
+                viewModelScope.launch(Dispatchers.IO) {
+                    forgetConversationLocally(deleted.conversationId)
+                    refresh()
+                }
+                return
             }
             else -> Unit
         }
@@ -554,6 +611,8 @@ class ChatViewModel(
         _ui.update { st -> st.copy(deletingConversations = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             val failed = ids.filter { id -> runCatching { repository.deleteConversation(id) }.isFailure }
+            // Deleted for this user only: its local rows, memory copy and notification go too.
+            ids.filterNot { it in failed }.forEach { forgetConversationLocally(it) }
             _ui.update { st -> st.copy(
                 deletingConversations = false,
                 selectedConversationIds = failed.toSet(),
@@ -570,8 +629,58 @@ class ChatViewModel(
         _ui.value.conversations.firstOrNull { it.id == conversationId }?.let(::openConversation)
     }
 
+    /**
+     * Opens a thread knowing only its id (notification tap, deep link) without
+     * waiting for the conversation list: the listed row when present, otherwise
+     * a placeholder from [hint] that the real row replaces once a list loads.
+     * Stored messages paint at once while the server page loads in parallel.
+     */
+    fun openConversationById(conversationId: Long, hint: ConversationHint? = null, jumpTo: Long? = null) {
+        if (conversationId <= 0) return
+        if (scope == null) {
+            pendingOpen = OpenRequest(conversationId, hint, jumpTo)
+            return
+        }
+        if (isOpen(conversationId)) {
+            jumpTo?.let { id -> _ui.update { st -> st.copy(jumpToMessageId = id) } }
+            return
+        }
+        jumpTo?.let { pendingJump = conversationId to it }
+        val listed = _ui.value.conversations.firstOrNull { it.id == conversationId }
+        if (listed != null) {
+            openConversation(listed)
+            return
+        }
+        openConversation(placeholderConversation(conversationId, hint))
+        placeholderId = conversationId
+        // The last list response knows the real row (name, group flag, unread) without the network.
+        viewModelScope.launch(Dispatchers.IO) {
+            warm?.let { runCatching(it::loadConversations).getOrNull() }?.let(::adoptListedConversation)
+        }
+        if (_ui.value.conversations.isEmpty()) refresh()
+    }
+
+    /** Swaps the open placeholder for its real list row, keeping the thread as painted. */
+    private fun adoptListedConversation(conversations: List<ChatConversation>) {
+        val id = placeholderId ?: return
+        val real = conversations.firstOrNull { it.id == id } ?: return
+        var adopted = false
+        _ui.update { st ->
+            if (st.selectedConversation?.id != id || placeholderId != id) return@update st
+            adopted = true
+            st.copy(
+                selectedConversation = real,
+                // The hint may predate later messages; the list knows the unread count at open.
+                unreadAtOpen = if (st.unreadAtOpen == 0) real.unreadCount.coerceAtLeast(0) else st.unreadAtOpen,
+            )
+        }
+        if (adopted) placeholderId = null
+    }
+
     fun openConversation(conversation: ChatConversation) {
         rememberOpenThread()
+        placeholderId = null
+        deletedThreads -= conversation.id
         val cached = threadCache.get(conversation.id)
         _ui.update { st -> st.copy(
             selectedConversation = conversation,
@@ -649,7 +758,72 @@ class ChatViewModel(
     private fun rememberOpenThread() {
         val state = _ui.value
         val id = state.selectedConversation?.id ?: return
+        if (id in deletedThreads) return
         if (!state.threadFromCache) threadCache.put(id, state.messages, state.receipts)
+    }
+
+    /** A live row joins the stored thread and its memory copy, so the next open is current even offline. */
+    private fun storeLiveMessage(message: ChatMessage) {
+        val conversationId = message.conversationId ?: return
+        val scopedCache = cache ?: return
+        if (!isOpen(conversationId)) {
+            threadCache.get(conversationId)?.let { threadCache.put(conversationId, mergeIncomingMessage(it.messages, message)) }
+        }
+        viewModelScope.launch(Dispatchers.IO) { runCatching { scopedCache.upsertMessages(conversationId, listOf(message)) } }
+    }
+
+    /**
+     * "Clear chat" for this user (all their devices): no layer may repaint the
+     * old history — memory copy, Room rows, warm page, hidden ids, notification.
+     */
+    private suspend fun forgetThreadLocally(conversationId: Long) {
+        threadCache.remove(conversationId)
+        saveHidden(conversationId, emptySet())
+        forgetWarmThread(conversationId)
+        context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversationId) }
+        _ui.update { st ->
+            val conversations = st.conversations.map {
+                if (it.id != conversationId) it
+                else it.copy(lastMessage = null, lastFileName = null, lastFileType = null, lastFormatType = null, lastDeleted = null, unreadCount = 0)
+            }
+            if (st.selectedConversation?.id != conversationId) st.copy(conversations = conversations)
+            else st.copy(
+                conversations = conversations,
+                messages = emptyList(),
+                pinnedMessages = emptyList(),
+                hiddenMessageIds = emptySet(),
+                selectedMessageIds = emptySet(),
+                infoContent = null,
+                unreadAtOpen = 0,
+                editingMessage = null,
+                replyingTo = null,
+                jumpToMessageId = null,
+                hasOlderMessages = false,
+                threadFromCache = false,
+                threadSearchMatches = emptyList(),
+                threadSearchIndex = -1,
+            )
+        }
+        runCatching { cache?.clearMessages(conversationId) }
+    }
+
+    /** "Delete chat" for this user: the row and everything stored for it; an open thread closes. */
+    private suspend fun forgetConversationLocally(conversationId: Long) {
+        deletedThreads += conversationId
+        threadCache.remove(conversationId)
+        saveHidden(conversationId, emptySet())
+        forgetWarmThread(conversationId)
+        context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversationId) }
+        _ui.update { st ->
+            val wasOpen = st.selectedConversation?.id == conversationId
+            st.copy(
+                conversations = st.conversations.filterNot { it.id == conversationId },
+                selectedConversationIds = st.selectedConversationIds - conversationId,
+                closeThread = wasOpen || st.closeThread,
+                showInfo = if (wasOpen) false else st.showInfo,
+            )
+        }
+        runCatching { cache?.deleteConversation(conversationId) }
     }
 
     /** Signal keeps recent conversations in memory: the top chats open without touching disk. */
@@ -1505,11 +1679,45 @@ class ChatViewModel(
     fun loadCalls() {
         if (_ui.value.callsLoading) return
         _ui.update { st -> st.copy(callsLoading = true, error = null) }
+        val loadingScope = scope
         viewModelScope.launch(Dispatchers.IO) {
             runCatching(repository::loadCalls).fold(
-                onSuccess = { _ui.update { st -> st.copy(callsLoading = false, calls = it) } },
+                onSuccess = {
+                    callsLoadedFor = loadingScope
+                    _ui.update { st -> st.copy(callsLoading = false, calls = it) }
+                },
                 onFailure = { _ui.update { st -> st.copy(callsLoading = false, error = it.message ?: "Could not load calls") } },
             )
+        }
+    }
+
+    /** The Calls tab was loaded for this account: live call events keep it current. */
+    @Volatile private var callsLoadedFor: CacheScope? = null
+    private var callsReload: Job? = null
+
+    /**
+     * A call ended or its history row arrived (`chat_message` system / call):
+     * refresh the Calls tab and the open conversation-info call history, once
+     * per burst, and only where that data was already loaded.
+     */
+    fun onCallActivity() {
+        callsReload?.cancel()
+        callsReload = viewModelScope.launch {
+            delay(CALLS_RELOAD_DEBOUNCE_MS)
+            val current = scope ?: return@launch
+            val infoConversation = _ui.value.selectedConversation?.takeIf { _ui.value.showInfo }
+            kotlinx.coroutines.withContext(Dispatchers.IO) {
+                if (callsLoadedFor == current) {
+                    runCatching(repository::loadCalls).onSuccess { calls ->
+                        if (scope == current) _ui.update { st -> st.copy(calls = calls) }
+                    }
+                }
+                if (infoConversation != null) {
+                    runCatching { repository.loadConversationCalls(infoConversation.id) }.onSuccess { calls ->
+                        _ui.update { st -> if (st.selectedConversation?.id == infoConversation.id) st.copy(conversationCalls = calls) else st }
+                    }
+                }
+            }
         }
     }
 
@@ -1713,15 +1921,8 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.deleteConversation(conversation.id) }.fold(
                 onSuccess = {
-                    _ui.update { state ->
-                        val wasOpen = state.selectedConversation?.id == conversation.id
-                        state.copy(
-                            conversations = state.conversations.filterNot { it.id == conversation.id },
-                            closeThread = wasOpen || state.closeThread,
-                            showInfo = if (wasOpen) false else state.showInfo,
-                        )
-                    }
-                    context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversation.id) }
+                    // Deleted for this user only (all their devices); others keep the chat.
+                    forgetConversationLocally(conversation.id)
                     refresh()
                 },
                 onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not delete chat") } },
@@ -1756,7 +1957,13 @@ class ChatViewModel(
         val current = _ui.value.selectedConversation ?: return
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.clearMessages(current.id) }.fold(
-                onSuccess = { _ui.update { st -> st.copy(messages = emptyList(), showInfo = false) }; refreshThread(); refresh() },
+                onSuccess = {
+                    // Cleared for this user only: drop every local copy, then read the (now empty) server view.
+                    forgetThreadLocally(current.id)
+                    _ui.update { st -> st.copy(showInfo = false) }
+                    refreshThread()
+                    refresh()
+                },
                 onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not clear chat") } },
             )
         }
@@ -1827,6 +2034,7 @@ class ChatViewModel(
                     { scope -> ChatCache(scope, ScopedCache(scope, dao)) },
                     outbox,
                     warm = ChatRepository(container.cachedApi),
+                    forgetWarmThread = { id -> app.aino.mobile.core.push.PushSync.forgetThread(context.applicationContext, id) },
                 ).also { it.context = context.applicationContext } as T
             }
         }

@@ -34,6 +34,15 @@ class CallRealtimeRouterTest {
     }
 
     @Test
+    fun decodesCallerSideRingingAck() {
+        val ringing = decode("call_ringing", """{"callId":41,"conversationId":7,"userId":9}""") as CallRealtimeEvent.Ringing
+        assertEquals(41L, ringing.callId)
+        assertEquals(7L, ringing.conversationId)
+        assertEquals(9L, ringing.userId)
+        assertNull(decode("call_ringing", """{"conversationId":7}"""))
+    }
+
+    @Test
     fun rejectsMalformedOrUnknownFrames() {
         assertNull(decode("call_incoming", """{"conversationId":7}"""))
         assertNull(decode("call_handled_elsewhere", """{"callId":4,"conversationId":7,"action":"other"}"""))

@@ -6,10 +6,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import app.aino.mobile.core.auth.KeystoreTokenStore
 import app.aino.mobile.core.call.CallRingService
 import app.aino.mobile.core.call.incomingCallServiceExtras
 import app.aino.mobile.core.call.IncomingCallDismissals
+
+/** How long a chat push may hold FCM's (serial) worker thread to store the thread delta. */
+private const val CHAT_SYNC_BUDGET_MS = 1_500L
 
 class AinoFirebaseMessagingService : FirebaseMessagingService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -40,7 +45,9 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
                 val shown = runCatching { ChatNotifications.show(applicationContext, validated) }
                     .onFailure { android.util.Log.w("AinoPush", "Conversation notification failed", it) }
                     .isSuccess
-                displayFallback = !shown
+                // The alert never waits on the network: post it (or the plain fallback) first.
+                if (!shown) PushNotifications.display(applicationContext, validated)
+                displayFallback = false
                 // Signal: a message that reached the device is "delivered" even if the app is closed.
                 validated.data["messageId"]?.toLongOrNull()?.let { id ->
                     scope.launch {
@@ -51,24 +58,54 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
                         }
                     }
                 }
+                // Signal keeps messages local before the tap: write the thread delta to Room
+                // while FCM still holds this (possibly cold) process. FCM handles pushes one at
+                // a time, so only the thread write is awaited, briefly, keeping call pushes prompt.
+                val threadStored = kotlinx.coroutines.CompletableDeferred<Unit>()
                 validated.data["conversationId"]?.toLongOrNull()?.let { conversationId ->
-                    scope.launch { runCatching { PushSync.prefetchChat(applicationContext, conversationId) } }
-                }
+                    scope.launch {
+                        try {
+                            runCatching { PushSync.prefetchChat(applicationContext, conversationId) { threadStored.complete(Unit) } }
+                                .onFailure { android.util.Log.w("AinoPush", "Chat push sync failed", it) }
+                        } finally {
+                            threadStored.complete(Unit)
+                        }
+                    }
+                } ?: threadStored.complete(Unit)
+                runBlocking { withTimeoutOrNull(CHAT_SYNC_BUDGET_MS) { threadStored.await() } }
             }
             PushKind.IncomingCall -> {
                 val extras = incomingCallServiceExtras(
                     validated.data,
                     KeystoreTokenStore(applicationContext).getToken(),
                 )
-                // Android 12+ may reject a background FGS start. The ordinary
-                // privacy-safe notification below remains the fallback surface.
-                displayFallback = !CallRingService.start(applicationContext, extras)
+                // Android 12+ may reject a background FGS start; PushNotifications.display
+                // then posts the same CallStyle full-screen-intent notification without it.
+                val ringing = CallRingService.start(applicationContext, extras) ||
+                    PushNotifications.display(applicationContext, validated)
+                displayFallback = false
+                // Tell the caller this phone is ringing ("Calling..." → "Ringing..."), only
+                // when a ring is actually on screen here.
+                if (ringing) app.aino.mobile.core.call.CallRingingAck.acknowledge(
+                    applicationContext,
+                    validated.data.getValue("callId").toLong(),
+                    validated.data.getValue("conversationId").toLong(),
+                    validated.data["meetingCode"],
+                )
             }
             PushKind.CallHandledElsewhere -> {
                 val callId = validated.data.getValue("callId").toLong()
                 // Accepting here also pushes "accepted" to this very device; only
                 // other (still ringing) devices should stop.
                 if (app.aino.mobile.core.call.CallSessionRuntime.get(applicationContext).acceptedHere(callId)) return
+                // `cancelled` / `ended` while ringing here leaves a missed call;
+                // `accepted` / `rejected` means another of my devices took it.
+                app.aino.mobile.core.call.MissedCalls.onRingEndedRemotely(
+                    applicationContext,
+                    callId,
+                    validated.data.getValue("conversationId").toLong(),
+                    validated.data["reason"],
+                )
                 CallRingService.stop(applicationContext)
                 IncomingCallDismissals.dismiss(callId)
             }

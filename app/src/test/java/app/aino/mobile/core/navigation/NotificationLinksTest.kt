@@ -19,6 +19,8 @@ class NotificationLinksTest {
         assertEquals("chat/42", pushTapRoute(tap("chat_message", conversationId = 42)))
         // A chat payload without a conversation falls through to the list.
         assertEquals("notifications", pushTapRoute(tap("chat_message")))
+        // A missed-call notification opens the conversation with the caller.
+        assertEquals("chat/42", pushTapRoute(tap("missed_call", conversationId = 42)))
     }
 
     @Test

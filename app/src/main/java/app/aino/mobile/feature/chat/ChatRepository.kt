@@ -294,6 +294,18 @@ class ChatCache(
             message.toEntity(scope, conversationId).copy(payloadJson = runCatching { json.encodeToString(message) }.getOrNull())
         })
 
+    /** Live rows (realtime) join the stored thread without dropping the rest of it. */
+    suspend fun upsertMessages(conversationId: Long, messages: List<ChatMessage>) {
+        if (messages.isEmpty()) return
+        cache.upsertMessages(messages.map { message ->
+            message.toEntity(scope, conversationId).copy(payloadJson = runCatching { json.encodeToString(message) }.getOrNull())
+        })
+    }
+
+    suspend fun clearMessages(conversationId: Long) = cache.clearMessages(conversationId)
+
+    suspend fun deleteConversation(conversationId: Long) = cache.deleteConversation(conversationId)
+
     suspend fun messageSnapshot(conversationId: Long): List<ChatMessage> =
         cache.messageSnapshot(conversationId).map { it.decodeMessage() ?: it.toCachedMessage() }
 

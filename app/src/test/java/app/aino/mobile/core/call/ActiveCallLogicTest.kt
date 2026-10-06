@@ -23,8 +23,11 @@ class ActiveCallLogicTest {
 
     @Test
     fun statusLineFollowsCallOverlayCopy() {
-        assertEquals("Ringing...", ActiveCallUi(visible = true).statusText)
+        // Signal/WhatsApp: "Calling..." until the callee's device acknowledges the ring.
+        assertEquals("Calling...", ActiveCallUi(visible = true).statusText)
+        assertEquals("Ringing...", ActiveCallUi(visible = true, remoteRinging = true).statusText)
         assertEquals("Connecting...", ActiveCallUi(visible = true, accepted = true).statusText)
+        assertEquals("Connecting...", ActiveCallUi(visible = true, accepted = true, remoteRinging = true).statusText)
         assertEquals("Connecting...", ActiveCallUi(visible = true, incoming = true).statusText)
         assertEquals("Reconnecting...", ActiveCallUi(visible = true, accepted = true, phase = CallPhase.Reconnecting).statusText)
         assertEquals("No answer", ActiveCallUi(visible = true, endMessage = "No answer").statusText)

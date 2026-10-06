@@ -87,6 +87,25 @@ fun ConversationEntity.toCachedConversation(): ChatConversation = ChatConversati
     unreadCount = unreadCount,
 )
 
+/** What a notification knows about its conversation: enough to paint the thread before the list loads. */
+data class ConversationHint(
+    val title: String? = null,
+    val avatar: String? = null,
+    val isGroup: Boolean = false,
+    val unreadCount: Int = 0,
+)
+
+/** Stand-in row for a thread opened by id; replaced by the real list row as soon as one is known. */
+fun placeholderConversation(conversationId: Long, hint: ConversationHint?): ChatConversation {
+    val title = hint?.title?.takeIf(String::isNotBlank)
+    val unread = hint?.unreadCount?.coerceAtLeast(0) ?: 0
+    return if (hint?.isGroup == true) {
+        ChatConversation(id = conversationId, isGroup = true, groupName = title, groupAvatar = hint.avatar, unreadCount = unread)
+    } else {
+        ChatConversation(id = conversationId, otherFullName = title, otherAvatar = hint?.avatar, unreadCount = unread)
+    }
+}
+
 /**
  * Signal-style attachment label ("📷 Photo", "🎥 Video", "🎤 Voice message",
  * "🎞 GIF", "📎 report.pdf"). A caption replaces the generic word, keeping the glyph.
@@ -253,6 +272,10 @@ data class ChatEditEvent(
 
 @Serializable
 data class ChatDeleteEvent(val messageId: Long, val conversationId: Long)
+
+/** `chat_cleared` / `chat_conv_deleted`: per-user, sent only to the requester's own devices. */
+@Serializable
+data class ChatConversationEvent(val conversationId: Long)
 
 @Serializable
 data class ChatPinEvent(

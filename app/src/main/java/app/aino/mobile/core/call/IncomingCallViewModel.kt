@@ -72,6 +72,7 @@ class IncomingCallViewModel(
     /** [withoutVideo]: Signal's "Answer without video" — accept a video call camera-off. */
     fun answer(withoutVideo: Boolean = false) {
         val route = _ui.value.route ?: return
+        MissedCallNotifier.markHandled(context, route.callId)
         val code = route.meetingCode
         if (code != null) {
             // Group call: the ring is only an invite; the huddle meeting carries the media.
@@ -85,6 +86,7 @@ class IncomingCallViewModel(
 
     fun decline() {
         val route = _ui.value.route ?: return
+        MissedCallNotifier.markHandled(context, route.callId)
         if (route.meetingCode != null) {
             realtimeSend(app.aino.mobile.core.call.webrtc.huddleDeclineEnvelope(route.meetingId ?: route.callId))
             finishRing()

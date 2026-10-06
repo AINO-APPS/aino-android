@@ -77,3 +77,45 @@ fun reduceCallPhase(current: CallPhase, event: CallEvent): CallPhase {
         CallEvent.Reset -> CallPhase.Idle
     }
 }
+
+/** Server ring timeout (authoritative: it sends `call_ended` reason `no_answer`); push `expiresAt` = now + this. */
+const val SERVER_RING_TIMEOUT_MS = 60_000L
+
+/** Caller fallback "No answer" when the server's `call_ended` never arrives. */
+const val OUTGOING_NO_ANSWER_MS = 63_000L
+
+data class CallReconcileAction(val event: CallEvent, val reason: String)
+
+/**
+ * Maps `GET chat/calls/:id` `status` onto a local terminal event for a call
+ * this device still thinks is live (after a reconnect / app foreground).
+ * `ringing` / `answered` keep the call, except that a call answered while this
+ * device was still ringing was picked up elsewhere.
+ */
+fun reconcileServerCallStatus(serverStatus: String?, localPhase: CallPhase, incoming: Boolean): CallReconcileAction? {
+    if (localPhase == CallPhase.Idle || localPhase.isTerminal()) return null
+    val ringingHere = incoming && localPhase == CallPhase.Ringing
+    return when (serverStatus) {
+        "declined" -> CallReconcileAction(CallEvent.RemoteRejected, "declined")
+        "missed" -> CallReconcileAction(CallEvent.RemoteEnded, "missed")
+        "ended" -> CallReconcileAction(CallEvent.RemoteEnded, if (ringingHere) "answered_elsewhere" else "ended")
+        "answered" -> if (ringingHere) CallReconcileAction(CallEvent.RemoteEnded, "answered_elsewhere") else null
+        else -> null
+    }
+}
+
+/** Reasons for a ring ending that mean "this device's user never picked up and nobody else of theirs did". */
+fun isMissedCallReason(reason: String?): Boolean = when (reason) {
+    "accepted", "rejected", "declined", "handled_accepted", "handled_rejected", "handled_elsewhere",
+    "answered_elsewhere", "local_end", "local_reject", "huddle",
+    -> false
+    else -> true
+}
+
+/**
+ * Callee missed-call decision: the call rang on this device, was neither
+ * answered nor declined here, and ended for a reason that is not "handled on
+ * another of my devices".
+ */
+fun shouldNotifyMissedCall(ringingHere: Boolean, handledHere: Boolean, reason: String?): Boolean =
+    ringingHere && !handledHere && isMissedCallReason(reason)

@@ -26,6 +26,8 @@ sealed interface CallRealtimeEvent {
     ) : CallRealtimeEvent
 
     data class Started(val callId: Long, override val conversationId: Long, val callType: String = "voice") : CallRealtimeEvent
+    /** Caller side: the callee's device is ringing ([userId] = callee). */
+    data class Ringing(val callId: Long, override val conversationId: Long, val userId: Long?) : CallRealtimeEvent
     data class Accepted(val callId: Long, override val conversationId: Long, val userId: Long?) : CallRealtimeEvent
     data class Rejected(val callId: Long, override val conversationId: Long) : CallRealtimeEvent
     data class Ended(val callId: Long?, override val conversationId: Long?, val reason: String?) : CallRealtimeEvent
@@ -60,6 +62,7 @@ object CallRealtimeRouter {
             "call_started" -> idPair(data)?.let {
                 CallRealtimeEvent.Started(it.first, it.second, if (data.string("callType") == "video") "video" else "voice")
             }
+            "call_ringing" -> idPair(data)?.let { CallRealtimeEvent.Ringing(it.first, it.second, data.positiveLong("userId")) }
             "call_accepted" -> idPair(data)?.let { CallRealtimeEvent.Accepted(it.first, it.second, data.positiveLong("userId")) }
             "call_rejected" -> idPair(data)?.let { CallRealtimeEvent.Rejected(it.first, it.second) }
             "call_ended" -> CallRealtimeEvent.Ended(data.positiveLong("callId"), data.positiveLong("conversationId"), data.string("reason"))

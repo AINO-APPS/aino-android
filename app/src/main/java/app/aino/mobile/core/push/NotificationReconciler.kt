@@ -15,6 +15,8 @@ object NotificationTags {
     const val CHAT = "aino_chat"
     const val ALERT = "aino_alert"
     const val CALL = "aino_call"
+    /** Locally posted "Missed voice call" notifications (id = call id hash). */
+    const val MISSED_CALL = "aino_missed_call"
 }
 
 /** What the tray currently shows, as far as reconciliation needs to know. */

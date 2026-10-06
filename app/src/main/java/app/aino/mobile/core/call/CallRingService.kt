@@ -1,14 +1,9 @@
 package app.aino.mobile.core.call
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Color
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -20,11 +15,7 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
-import androidx.core.app.NotificationCompat
-import androidx.core.app.Person as PersonCompat
-import app.aino.mobile.MainActivity
 import app.aino.mobile.core.media.resolveServerMediaUrl
-import app.aino.mobile.core.push.NotificationAvatars
 
 /**
  * CallRingService
@@ -61,7 +52,7 @@ class CallRingService : Service() {
   private var mediaPlayer: MediaPlayer? = null
   private var vibrator: Vibrator? = null
   private val timeoutHandler = Handler(Looper.getMainLooper())
-  private val timeoutStop = Runnable { stopEverything() }
+  private val timeoutStop = Runnable { onRingTimeout() }
 
   companion object {
     const val ACTION_START = "app.aino.mobile.core.call.START"
@@ -79,7 +70,7 @@ class CallRingService : Service() {
     const val EXTRA_CALLER_ID = "callerId"
     const val EXTRA_CALLER_NAME = "callerName"
     const val EXTRA_CALLER_AVATAR = "callerAvatar"
-    // Bearer auth token (the user's JWT). The caller avatar lives behind the
+    // Bearer token (the user's JWT). The caller avatar lives behind the
     // server's `/uploads` auth middleware, so AvatarLoader must send it as an
     // Authorization header or the fetch 401s and no photo is shown.
     const val EXTRA_TOKEN = "token"
@@ -89,11 +80,12 @@ class CallRingService : Service() {
     /** Group-call (huddle) rings: the meeting to join; the push `callId` is the meeting id. */
     const val EXTRA_MEETING_CODE = "meetingCode"
 
-    private const val CHANNEL_ID = "call_ringer_fgs_v2"
-    const val NOTIFICATION_ID = 909090
+    const val NOTIFICATION_ID = IncomingCallNotifications.NOTIFICATION_ID
 
-    // AINO brand green used to theme the CallStyle notification accent.
-    private val BRAND_COLOR = Color.parseColor("#22C55E")
+    private val EXTRA_KEYS = listOf(
+      EXTRA_TITLE, EXTRA_BODY, EXTRA_CALL_ID, EXTRA_CONVERSATION_ID, EXTRA_CALLER_ID, EXTRA_CALLER_NAME,
+      EXTRA_CALLER_AVATAR, EXTRA_CALL_TYPE, EXTRA_SCHEME, EXTRA_EXPIRES_AT, EXTRA_MEETING_CODE, EXTRA_TOKEN,
+    )
 
     /**
      * Start the incoming-call ring foreground service.
@@ -102,11 +94,10 @@ class CallRingService : Service() {
      * the OS, FALSE when it was REFUSED. On Android 12+ (API 31+) calling
      * startForegroundService() from a BACKGROUNDED-but-alive process throws
      * ForegroundServiceStartNotAllowedException (background FGS-start
-     * restriction). We surface that as `false` so the caller (notifeeService)
-     * can FALL BACK to the Notifee full-screen-intent call notification — which
-     * needs no foreground service — instead of leaving the incoming call with
-     * no surface at all (the "desktop→android calls silently dropped while the
-     * phone is backgrounded" regression).
+     * restriction). We surface that as `false` so the push path can FALL BACK
+     * to [IncomingCallNotifications.postWithoutService] — the same CallStyle
+     * full-screen-intent notification without a foreground service — instead
+     * of leaving the incoming call with no surface at all.
      */
     fun start(context: Context, extras: Map<String, String>): Boolean {
       val intent = Intent(context, CallRingService::class.java).apply {
@@ -122,13 +113,14 @@ class CallRingService : Service() {
         true
       } catch (_: Throwable) {
         // ForegroundServiceStartNotAllowedException (API 31+) when started from
-        // the background, or any OEM-specific refusal. Report failure so the
-        // caller can fall back to the Notifee full-screen-intent notification.
+        // the background, or any OEM-specific refusal.
         false
       }
     }
 
     fun stop(context: Context) {
+      // A service-less (push fallback) ring has no service to remove its notification.
+      IncomingCallNotifications.cancel(context)
       val intent = Intent(context, CallRingService::class.java).apply {
         action = ACTION_STOP
       }
@@ -144,14 +136,8 @@ class CallRingService : Service() {
 
   override fun onBind(intent: Intent?): IBinder? = null
 
-  private var meetingCode: String = ""
   private var ringingCallId: String = ""
-
-  private fun appendMeeting(sb: StringBuilder, callId: String) {
-    if (meetingCode.isBlank()) return
-    sb.append("&meetingCode=").append(Uri.encode(meetingCode))
-    sb.append("&meetingId=").append(Uri.encode(callId))
-  }
+  private var ringing: MissedCallInfo? = null
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     when (intent?.action) {
@@ -168,24 +154,15 @@ class CallRingService : Service() {
   }
 
   private fun startRinging(intent: Intent?) {
-    ensureChannel()
+    IncomingCallNotifications.ensureChannels(this)
 
-    val title = intent?.getStringExtra(EXTRA_TITLE) ?: "Incoming call"
-    val body = intent?.getStringExtra(EXTRA_BODY) ?: ""
+    val extras = EXTRA_KEYS.associateWith { intent?.getStringExtra(it) }
+    val spec = IncomingCallSpec.from(extras)
     val silent = intent?.getStringExtra(EXTRA_SILENT) == "1"
     val vibrate = intent?.getStringExtra(EXTRA_VIBRATE) != "0"
     val ringtoneRes = intent?.getStringExtra(EXTRA_RINGTONE_RES) ?: ""
-
-    val callId = intent?.getStringExtra(EXTRA_CALL_ID) ?: ""
-    val conversationId = intent?.getStringExtra(EXTRA_CONVERSATION_ID) ?: ""
-    val callerId = intent?.getStringExtra(EXTRA_CALLER_ID) ?: ""
-    val callerName = intent?.getStringExtra(EXTRA_CALLER_NAME) ?: title
-    val callerAvatar = intent?.getStringExtra(EXTRA_CALLER_AVATAR) ?: ""
     val token = intent?.getStringExtra(EXTRA_TOKEN) ?: ""
-    val callType = intent?.getStringExtra(EXTRA_CALL_TYPE) ?: "voice"
-    val scheme = intent?.getStringExtra(EXTRA_SCHEME) ?: "aino"
-    val expiresAt = intent?.getStringExtra(EXTRA_EXPIRES_AT)
-    meetingCode = intent?.getStringExtra(EXTRA_MEETING_CODE).orEmpty()
+    val expiresAt = intent?.getStringExtra(EXTRA_EXPIRES_AT)?.takeIf(String::isNotBlank)
 
     timeoutHandler.removeCallbacks(timeoutStop)
     val remaining = remainingRingMillis(expiresAt)
@@ -194,31 +171,17 @@ class CallRingService : Service() {
       return
     }
     timeoutHandler.postDelayed(timeoutStop, remaining)
-
-    // Signal-style initials avatar (rendered locally, no I/O) so the call
-    // notification always shows the caller's identity — even before / without
-    // the network photo. Same per-user key as chat notifications for a stable colour.
-    val fallbackAvatar = callerFallbackAvatar(callerName.ifEmpty { title }, callerId)
-    // The server sends the stored upload path (e.g. `/uploads/<tenant>/avatars/x.png`),
-    // not an absolute URL; HttpURLConnection cannot open a relative path, so resolve
-    // it against the server origin exactly like chat notifications / UserAvatar do.
-    val avatarUrl = callAvatarUrl(callerAvatar)
+    ringing = MissedCallInfo.of(spec)?.also { RingingCallStore.save(this, it, System.currentTimeMillis() + remaining) }
 
     // Post the foreground notification FIRST, with only the local initials
     // avatar (required within ~5s of startForegroundService or the OS throws — a
     // network avatar fetch must never block this). The photo is loaded
     // asynchronously below and the notification is re-posted once it lands.
-    val notification = buildCallNotification(
-      title = title,
-      body = body,
-      callId = callId,
-      conversationId = conversationId,
-      callerId = callerId,
-      callerName = callerName,
-      callerAvatar = callerAvatar,
-      callType = callType,
-      scheme = scheme,
-      avatarBitmap = fallbackAvatar,
+    val notification = IncomingCallNotifications.build(
+      this,
+      IncomingCallNotifications.SERVICE_CHANNEL,
+      spec,
+      IncomingCallNotifications.fallbackAvatar(spec),
     )
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -231,30 +194,22 @@ class CallRingService : Service() {
       startForeground(NOTIFICATION_ID, notification)
     }
 
-    // CALLER AVATAR (Signal-Android parity): load the caller's chat avatar off
-    // the main thread, then RE-POST the same notification id with the avatar set
-    // as the CallStyle Person icon + largeIcon. Best-effort: any failure just
-    // leaves the already-posted text/icon notification untouched. Skipped when
-    // no avatar URL was supplied.
+    // The server sends the stored upload path (e.g. `/uploads/<tenant>/avatars/x.png`),
+    // resolved against the server origin like chat notifications / UserAvatar do.
+    // Best-effort: any failure leaves the posted initials notification untouched.
+    val avatarUrl = callAvatarUrl(spec.callerAvatar)
     if (avatarUrl != null) {
       Thread {
         val bitmap = AvatarLoader.load(applicationContext, avatarUrl, token)
         if (bitmap != null) {
           try {
-            val withAvatar = buildCallNotification(
-              title = title,
-              body = body,
-              callId = callId,
-              conversationId = conversationId,
-              callerId = callerId,
-              callerName = callerName,
-              callerAvatar = callerAvatar,
-              callType = callType,
-              scheme = scheme,
-              avatarBitmap = bitmap,
+            val withAvatar = IncomingCallNotifications.build(
+              applicationContext,
+              IncomingCallNotifications.SERVICE_CHANNEL,
+              spec,
+              bitmap,
             )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager?.notify(NOTIFICATION_ID, withAvatar)
+            getSystemService(NotificationManager::class.java)?.notify(NOTIFICATION_ID, withAvatar)
           } catch (_: Throwable) {
             // Re-notify is best-effort; the original notification still shows.
           }
@@ -263,8 +218,8 @@ class CallRingService : Service() {
     }
 
     // The same call can arrive over the socket and as a push: keep ringing once.
-    if (callId.isNotEmpty() && callId == ringingCallId && mediaPlayer != null) return
-    ringingCallId = callId
+    if (spec.callId.isNotEmpty() && spec.callId == ringingCallId && mediaPlayer != null) return
+    ringingCallId = spec.callId
     // Start the ringtone (unless silent or muted in Notification Sounds).
     if (!silent && !app.aino.mobile.core.notifications.NotificationSoundPrefs.muteAll(this)) {
       startRingtone(ringtoneRes)
@@ -275,234 +230,11 @@ class CallRingService : Service() {
     }
   }
 
-  private fun callerFallbackAvatar(name: String, callerId: String): Bitmap? = try {
-    NotificationAvatars.fallback(name, if (callerId.isNotBlank()) "aino-user-$callerId" else name)
-  } catch (_: Throwable) {
-    null
-  }
-
-  /**
-   * Builds the incoming-call notification using the Android CallStyle template so
-   * the system renders the standard branded incoming-call UI with a green Answer
-   * button and a red Decline button. Falls back to a plain ongoing notification
-   * with explicit Answer/Decline actions on older platforms where CallStyle is
-   * unavailable.
-   */
-  private fun buildCallNotification(
-    title: String,
-    body: String,
-    callId: String,
-    conversationId: String,
-    callerId: String,
-    callerName: String,
-    callerAvatar: String,
-    callType: String,
-    scheme: String,
-    // Pre-loaded, circular caller avatar bitmap (or null on the first text-only
-    // pass / when no avatar is available). When present it is set as both the
-    // CallStyle Person icon AND the notification largeIcon so the caller's chat
-    // photo shows in the status-bar/lock-screen call UI (Signal-Android parity).
-    avatarBitmap: Bitmap?,
-  ): Notification {
-    // Content (body tap) + FULL-SCREEN intent → open the app's call screen in
-    // the RINGING (incoming) state WITHOUT auto-answering, so the user still
-    // chooses Accept/Decline when the FSI auto-launches over the lock screen.
-    val contentPending = openActivityPendingIntent(
-      callId, conversationId, callerId, callerName, callerAvatar, callType, scheme,
-      requestCode = 1000,
-    )
-
-    val answerPending = answerPendingIntent(
-      callId, conversationId, callerId, callerName, callerAvatar, callType, scheme,
-      requestCode = 1001,
-    )
-    val declinePending = declinePendingIntent(
-      callId, conversationId, callerId, callerName, callerAvatar, callType, scheme,
-      requestCode = 1002,
-    )
-
-    val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-      .setSmallIcon(applicationInfo.icon)
-      .setContentTitle(callerName.ifEmpty { title })
-      .setContentText(
-        body.ifEmpty {
-          if (callType == "video") "Incoming video call" else "Incoming voice call"
-        },
-      )
-      .setCategory(NotificationCompat.CATEGORY_CALL)
-      .setPriority(NotificationCompat.PRIORITY_MAX)
-      .setOngoing(true)
-      .setAutoCancel(false)
-      .setColor(BRAND_COLOR)
-      .setColorized(true)
-      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-      .setFullScreenIntent(contentPending, true)
-
-    // Caller's chat avatar as the notification largeIcon (collapsed/expanded
-    // contact photo). Only set when the bitmap has been loaded (the async
-    // re-notify pass) — the first text-only pass passes null so the foreground
-    // service starts within the OS deadline.
-    if (avatarBitmap != null) {
-      builder.setLargeIcon(avatarBitmap)
-    }
-
-    // Prefer the CallStyle template (API 23+ via NotificationCompat). It renders
-    // the system's branded green Answer / red Decline buttons.
-    try {
-      val personBuilder = PersonCompat.Builder()
-        .setName(callerName.ifEmpty { title })
-        .setImportant(true)
-      // Attach the caller's chat avatar to the Person so the CallStyle template
-      // shows the contact photo (Signal-Android CallNotificationBuilder parity).
-      if (avatarBitmap != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        try {
-          personBuilder.setIcon(
-            androidx.core.graphics.drawable.IconCompat.createWithBitmap(avatarBitmap),
-          )
-        } catch (_: Throwable) {
-          // Icon attach is best-effort; the name-only Person still renders.
-        }
-      }
-      val caller = personBuilder.build()
-      val callStyle = NotificationCompat.CallStyle.forIncomingCall(
-        caller,
-        declinePending,
-        answerPending,
-      )
-      builder.setStyle(callStyle)
-    } catch (_: Throwable) {
-      // Fallback: explicit action buttons so Answer/Decline still appear.
-      builder.setContentIntent(contentPending)
-      builder.addAction(0, "Decline", declinePending)
-      builder.addAction(0, "Answer", answerPending)
-    }
-
-    return builder.build()
-  }
-
-  /**
-   * Content / full-screen PendingIntent that opens the JS call screen in the
-   * RINGING (incoming) state WITHOUT auto-answering. Uses an ACTIVITY intent
-   * (full-screen intents must target an activity) via the app deep link.
-   */
-  private fun openActivityPendingIntent(
-    callId: String,
-    conversationId: String,
-    callerId: String,
-    callerName: String,
-    callerAvatar: String,
-    callType: String,
-    scheme: String,
-    requestCode: Int,
-  ): PendingIntent {
-    val sb = StringBuilder()
-    sb.append(scheme).append("://call/").append(conversationId)
-    sb.append("?mode=incoming")
-    sb.append("&callId=").append(Uri.encode(callId))
-    sb.append("&callType=").append(Uri.encode(callType))
-    sb.append("&peerId=").append(Uri.encode(callerId))
-    sb.append("&peerName=").append(Uri.encode(callerName))
-    sb.append("&peerAvatar=").append(Uri.encode(callerAvatar))
-    appendMeeting(sb, callId)
-
-    val viewIntent = Intent(this, MainActivity::class.java).apply {
-      setAction(Intent.ACTION_VIEW)
-      setData(Uri.parse(sb.toString()))
-      addFlags(
-        Intent.FLAG_ACTIVITY_NEW_TASK or
-          Intent.FLAG_ACTIVITY_SINGLE_TOP or
-          Intent.FLAG_ACTIVITY_CLEAR_TOP,
-      )
-    }
-    return PendingIntent.getActivity(
-      this,
-      requestCode,
-      viewIntent,
-      pendingIntentFlags(),
-    )
-  }
-
-  // Answer/Decline are backed by PendingIntent.getActivity() targeting the
-  // transparent CallActionActivity trampoline — NOT getBroadcast() to a
-  // BroadcastReceiver. A BroadcastReceiver cannot reliably startActivity() in
-  // the background on Android 10+ (BAL restrictions), which caused "Answer in
-  // the status bar stops the ring but never opens the call screen — I have to
-  // open the app manually". An Activity launched by a notification action is
-  // foreground-privileged and reliably brings the app forward in every state.
-  private fun answerPendingIntent(
-    callId: String,
-    conversationId: String,
-    callerId: String,
-    callerName: String,
-    callerAvatar: String,
-    callType: String,
-    scheme: String,
-    requestCode: Int,
-  ): PendingIntent {
-    val intent = Intent(this, CallActionActivity::class.java).apply {
-      action = CallActionActivity.ACTION_ANSWER
-      addFlags(
-        Intent.FLAG_ACTIVITY_NEW_TASK or
-          Intent.FLAG_ACTIVITY_SINGLE_TOP or
-          Intent.FLAG_ACTIVITY_CLEAR_TOP,
-      )
-      putExtra(CallActionActivity.EXTRA_MEETING_CODE, meetingCode)
-      putExtra(CallActionActivity.EXTRA_CALL_ID, callId)
-      putExtra(CallActionActivity.EXTRA_CONVERSATION_ID, conversationId)
-      putExtra(CallActionActivity.EXTRA_CALLER_ID, callerId)
-      putExtra(CallActionActivity.EXTRA_CALLER_NAME, callerName)
-      putExtra(CallActionActivity.EXTRA_CALLER_AVATAR, callerAvatar)
-      putExtra(CallActionActivity.EXTRA_CALL_TYPE, callType)
-      putExtra(CallActionActivity.EXTRA_SCHEME, scheme)
-    }
-    return PendingIntent.getActivity(
-      this,
-      requestCode,
-      intent,
-      pendingIntentFlags(),
-    )
-  }
-
-  private fun declinePendingIntent(
-    callId: String,
-    conversationId: String,
-    callerId: String,
-    callerName: String,
-    callerAvatar: String,
-    callType: String,
-    scheme: String,
-    requestCode: Int,
-  ): PendingIntent {
-    val intent = Intent(this, CallActionActivity::class.java).apply {
-      action = CallActionActivity.ACTION_DECLINE
-      addFlags(
-        Intent.FLAG_ACTIVITY_NEW_TASK or
-          Intent.FLAG_ACTIVITY_SINGLE_TOP or
-          Intent.FLAG_ACTIVITY_CLEAR_TOP,
-      )
-      putExtra(CallActionActivity.EXTRA_MEETING_CODE, meetingCode)
-      putExtra(CallActionActivity.EXTRA_CALL_ID, callId)
-      putExtra(CallActionActivity.EXTRA_CONVERSATION_ID, conversationId)
-      putExtra(CallActionActivity.EXTRA_CALLER_ID, callerId)
-      putExtra(CallActionActivity.EXTRA_CALLER_NAME, callerName)
-      putExtra(CallActionActivity.EXTRA_CALLER_AVATAR, callerAvatar)
-      putExtra(CallActionActivity.EXTRA_CALL_TYPE, callType)
-      putExtra(CallActionActivity.EXTRA_SCHEME, scheme)
-    }
-    return PendingIntent.getActivity(
-      this,
-      requestCode,
-      intent,
-      pendingIntentFlags(),
-    )
-  }
-
-  private fun pendingIntentFlags(): Int {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-    } else {
-      PendingIntent.FLAG_UPDATE_CURRENT
-    }
+  /** Nobody answered before `expiresAt`: expire the ringing session and leave a missed call. */
+  private fun onRingTimeout() {
+    val missed = ringing
+    stopEverything()
+    if (missed != null) MissedCalls.onLocalRingTimeout(applicationContext, missed)
   }
 
   private fun startRingtone(ringtoneRes: String) {
@@ -586,27 +318,6 @@ class CallRingService : Service() {
     }
   }
 
-  private fun ensureChannel() {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-    val manager = getSystemService(NotificationManager::class.java) ?: return
-    if (manager.getNotificationChannel(CHANNEL_ID) != null) return
-    // SILENT channel — the SOUND + VIBRATION are driven by the service's
-    // MediaPlayer/Vibrator, NOT the channel, so the channel itself must be
-    // silent to avoid a double-ring.
-    val channel = NotificationChannel(
-      CHANNEL_ID,
-      "Incoming call",
-      NotificationManager.IMPORTANCE_HIGH,
-    ).apply {
-      description = "Active incoming call ring"
-      setSound(null, null)
-      enableVibration(false)
-      setBypassDnd(true)
-      lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-    }
-    manager.createNotificationChannel(channel)
-  }
-
   private fun stopMediaPlayer() {
     try {
       mediaPlayer?.let {
@@ -631,6 +342,7 @@ class CallRingService : Service() {
   private fun stopEverything() {
     timeoutHandler.removeCallbacks(timeoutStop)
     ringingCallId = ""
+    ringing = null
     stopMediaPlayer()
     stopVibration()
     try {

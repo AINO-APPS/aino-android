@@ -51,6 +51,9 @@ interface AinoDao {
     @Query("DELETE FROM outbox WHERE tenantId = :tenantId AND userId = :userId AND clientMessageId = :clientMessageId")
     suspend fun deleteOutbox(tenantId: Long, userId: Long, clientMessageId: String)
 
+    @Query("DELETE FROM conversations WHERE tenantId = :tenantId AND userId = :userId AND conversationId = :conversationId")
+    suspend fun deleteConversation(tenantId: Long, userId: Long, conversationId: Long)
+
     @Query("DELETE FROM conversations WHERE tenantId = :tenantId AND userId = :userId")
     suspend fun clearConversations(tenantId: Long, userId: Long)
 

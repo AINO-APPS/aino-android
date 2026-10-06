@@ -144,6 +144,7 @@ class ChatListActionsTest {
         override suspend fun markOutboxFailed(tenantId: Long, userId: Long, clientMessageId: String) = Unit
         override suspend fun deleteOutbox(tenantId: Long, userId: Long, clientMessageId: String) = Unit
         override suspend fun clearConversations(tenantId: Long, userId: Long) = Unit
+        override suspend fun deleteConversation(tenantId: Long, userId: Long, conversationId: Long) = Unit
         override suspend fun clearMessages(tenantId: Long, userId: Long) = Unit
         override suspend fun clearOutbox(tenantId: Long, userId: Long) = Unit
     }

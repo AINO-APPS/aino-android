@@ -83,6 +83,15 @@ fun callCancelEnvelope(conversationId: Long, clientMsgId: String): RealtimeEnvel
     RealtimeEnvelope("call_cancel", JSON.encodeToJsonElement(CallCancelCommand(conversationId, clientMsgId)))
 
 @Serializable
+data class CallRingingCommand(val callId: Long, val conversationId: Long, val clientMsgId: String? = null)
+
+/** Callee ack: this device started ringing for [callId] (server forwards `call_ringing` to the caller). */
+fun callRingingEnvelope(callId: Long, conversationId: Long, clientMsgId: String? = null): RealtimeEnvelope {
+    require(callId > 0 && conversationId > 0)
+    return RealtimeEnvelope("call_ringing", JSON.encodeToJsonElement(CallRingingCommand(callId, conversationId, clientMsgId)))
+}
+
+@Serializable
 data class HuddleDeclineCommand(val meetingId: Long, val clientMsgId: String)
 
 /** Declining a group-call ring (`call_incoming` carrying a `meetingCode`). */

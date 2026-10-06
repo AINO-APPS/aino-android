@@ -110,6 +110,7 @@ class CallActionActivity : Activity() {
     }
 
     val isAnswer = action == ACTION_ANSWER
+    callId.toLongOrNull()?.let { MissedCallNotifier.markHandled(this, it) }
 
     // Record the user's CHOICE durably so a COLD-launched JS layer can apply it.
     // On a cold start app/index.tsx reads the SecureStore-PERSISTED pending-call

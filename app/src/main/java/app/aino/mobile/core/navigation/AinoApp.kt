@@ -106,6 +106,7 @@ import app.aino.mobile.core.call.CallSessionRuntime
 import app.aino.mobile.core.call.toRoute
 import app.aino.mobile.core.call.IncomingCallScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 
@@ -163,6 +164,22 @@ fun AinoApp(
         activeCall.send = realtime::send
         meetingSession.send = realtime::send
         incomingCall.realtimeSend = realtime::send
+        app.aino.mobile.core.call.CallRealtimeLink.send = realtime::send
+    }
+    // Calls: an open socket carries ring acks; a (re)connect or a return to the
+    // foreground asks the server whether a call still shown here already ended.
+    val callScope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(realtimeState, tenantAuthenticated) {
+        val connected = realtimeState == RealtimeState.Connected
+        app.aino.mobile.core.call.CallRealtimeLink.setConnected(connected)
+        if (connected && tenantAuthenticated) app.aino.mobile.core.call.CallReconciler.reconcile(appContext)
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { app.aino.mobile.core.call.CallRealtimeLink.setConnected(false) }
+    }
+    androidx.lifecycle.compose.LifecycleResumeEffect(tenantAuthenticated) {
+        if (tenantAuthenticated) callScope.launch { app.aino.mobile.core.call.CallReconciler.reconcile(appContext) }
+        onPauseOrDispose { }
     }
     // A new socket rebuilds the meeting mesh and replays its chat (web WS `open`).
     LaunchedEffect(realtimeState) { meetingSession.onRealtimeState(realtimeState == RealtimeState.Connected) }
@@ -259,9 +276,15 @@ fun AinoApp(
                             appContext,
                             app.aino.mobile.core.call.socketCallRingExtras(callEvent, app.aino.mobile.core.AppContainer.get(appContext).tokens.getToken()),
                         )
+                        // Tell the caller this phone is ringing (once per call, socket or push).
+                        app.aino.mobile.core.call.CallRingingAck.acknowledge(appContext, callEvent.callId, callEvent.conversationId, callEvent.meetingCode)
                     }
                     null -> Unit
-                    else -> activeCall.onEvent(callEvent)
+                    else -> {
+                        activeCall.onEvent(callEvent)
+                        // Call history (Calls tab / conversation info) gains a row when a call ends.
+                        if (callEvent is CallRealtimeEvent.Ended || callEvent is CallRealtimeEvent.Rejected) chat.onCallActivity()
+                    }
                 }
                 meetingSession.onRealtimeEvent(event)
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
@@ -383,6 +406,9 @@ fun AinoApp(
     app.aino.mobile.core.call.ActiveCallScreen(activeCall)
     if (incomingCallUi.route != null) {
         IncomingCallScreen(incomingCall) { incomingCall.clear() }
+    } else if (tenantAuthenticated) {
+        // Ask once for the settings that let calls ring visibly (call channel, full-screen intent).
+        app.aino.mobile.core.call.CallAlertSetupPrompt()
     }
     }
 }
@@ -477,6 +503,13 @@ private fun AuthenticatedShell(
     LaunchedEffect(pendingTap) {
         val tap = app.aino.mobile.core.push.PendingPushTap.consume() ?: return@LaunchedEffect
         val route = pushTapRoute(tap)
+        // Publish the thread before the transition: it opens from stored rows, never waiting on the list.
+        if (tap.conversationId != null && route == chatThreadRoute(tap.conversationId)) {
+            chat.openConversationById(
+                tap.conversationId,
+                app.aino.mobile.feature.chat.ConversationHint(tap.title, tap.avatar, tap.isGroup, tap.unreadCount),
+            )
+        }
         val routed = runCatching { nav.navigate(route) { launchSingleTop = true } }.isSuccess ||
             // A target this build/user cannot open still lands on the notifications list.
             (route != AinoDestination.Notifications.route &&

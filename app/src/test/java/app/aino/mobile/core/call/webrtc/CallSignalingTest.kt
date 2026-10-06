@@ -59,4 +59,17 @@ class CallSignalingTest {
         assertEquals("huddle_decline", decline.type)
         assertEquals("""{"meetingId":9,"clientMsgId":"hd-9-42"}""", decline.data.toString())
     }
+
+    @Test
+    fun buildsCalleeRingingAckFrame() {
+        val ack = callRingingEnvelope(41, 7, "m")
+        assertEquals("call_ringing", ack.type)
+        assertEquals("""{"callId":41,"conversationId":7,"clientMsgId":"m"}""", ack.data.toString())
+        assertEquals("""{"callId":41,"conversationId":7}""", callRingingEnvelope(41, 7).data.toString())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsRingingAckWithoutCallId() {
+        callRingingEnvelope(0, 7)
+    }
 }

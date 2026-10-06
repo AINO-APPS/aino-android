@@ -50,9 +50,11 @@ enum class RealtimeEvent(
     ChatGroupRemoved("chat_group_removed", RealtimeDomain.Chat, RealtimeReaction.Refetch),
     ChatGroupRoleChanged("chat_group_role_changed", RealtimeDomain.Chat, RealtimeReaction.Refetch),
 
-    // ── Calls (13) ───────────────────────────────────────────────────────
+    // ── Calls (14) ───────────────────────────────────────────────────────
     CallIncoming("call_incoming", RealtimeDomain.Call, RealtimeReaction.CallControl),
     CallStarted("call_started", RealtimeDomain.Call, RealtimeReaction.CallControl),
+    /** The callee's device started ringing (caller: "Calling..." → "Ringing..."). */
+    CallRinging("call_ringing", RealtimeDomain.Call, RealtimeReaction.CallControl),
     CallAccepted("call_accepted", RealtimeDomain.Call, RealtimeReaction.CallControl),
     CallRejected("call_rejected", RealtimeDomain.Call, RealtimeReaction.CallControl),
     CallEnded("call_ended", RealtimeDomain.Call, RealtimeReaction.CallControl),

@@ -18,6 +18,7 @@ object HeroIcons {
     val ArchiveBoxXMark: ImageVector by lazy { hero("ArchiveBoxXMark", "m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m6 4.125 2.25 2.25m0 0 2.25 2.25M12 13.875l2.25-2.25M12 13.875l-2.25 2.25M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z") }
     val ArrowDownCircle: ImageVector by lazy { hero("ArrowDownCircle", "m9 12.75 3 3m0 0 3-3m-3 3v-7.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z") }
     val ArrowDownTray: ImageVector by lazy { hero("ArrowDownTray", "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3") }
+    val ArrowDownLeft: ImageVector by lazy { hero("ArrowDownLeft", "m19.5 4.5-15 15m0 0h11.25m-11.25 0V8.25") }
     val ArrowLeft: ImageVector by lazy { hero("ArrowLeft", "M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18", mirrored = true) }
     val ArrowPath: ImageVector by lazy { hero("ArrowPath", "M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99") }
     val ArrowPathRoundedSquare: ImageVector by lazy { hero("ArrowPathRoundedSquare", "M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 0 0-3.7-3.7 48.678 48.678 0 0 0-7.324 0 4.006 4.006 0 0 0-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 0 0 3.7 3.7 48.656 48.656 0 0 0 7.324 0 4.006 4.006 0 0 0 3.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3-3 3") }
@@ -26,6 +27,7 @@ object HeroIcons {
     val ArrowTopRightOnSquare: ImageVector by lazy { hero("ArrowTopRightOnSquare", "M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25") }
     val ArrowTrendingUp: ImageVector by lazy { hero("ArrowTrendingUp", "M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941") }
     val ArrowTurnDownRight: ImageVector by lazy { hero("ArrowTurnDownRight", "m16.49 12 3.75 3.75m0 0-3.75 3.75m3.75-3.75H3.74V4.499", mirrored = true) }
+    val ArrowUpRight: ImageVector by lazy { hero("ArrowUpRight", "m4.5 19.5 15-15m0 0H8.25m11.25 0v11.25") }
     val ArrowUturnLeft: ImageVector by lazy { hero("ArrowUturnLeft", "M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3", mirrored = true) }
     val ArrowUturnRight: ImageVector by lazy { hero("ArrowUturnRight", "m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3", mirrored = true) }
     val ArrowsPointingIn: ImageVector by lazy { hero("ArrowsPointingIn", "M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25") }

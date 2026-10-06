@@ -40,6 +40,18 @@ class ScopedCache(private val scope: CacheScope, private val dao: AinoDao) {
         dao.replaceMessages(scope.tenantId, scope.userId, conversationId, values)
     }
 
+    suspend fun clearMessages(conversationId: Long) {
+        require(conversationId > 0)
+        dao.clearConversationMessages(scope.tenantId, scope.userId, conversationId)
+    }
+
+    /** "Delete for me": the row and its stored thread leave this user's cache only. */
+    suspend fun deleteConversation(conversationId: Long) {
+        require(conversationId > 0)
+        dao.clearConversationMessages(scope.tenantId, scope.userId, conversationId)
+        dao.deleteConversation(scope.tenantId, scope.userId, conversationId)
+    }
+
     suspend fun enqueue(value: OutboxEntity) {
         require(belongsToScope(value))
         require(value.clientMessageId.isNotBlank())

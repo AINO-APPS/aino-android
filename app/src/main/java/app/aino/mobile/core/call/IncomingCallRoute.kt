@@ -52,8 +52,9 @@ fun parseIncomingCallRoute(value: String?): IncomingCallRoute? {
     )
 }
 
+/** Time left on a ring: until `expiresAt` (push = now + 60 s), at most the server's 60 s ring timeout. */
 fun remainingRingMillis(expiresAt: String?, now: Instant = Instant.now()): Long {
     val expiry = runCatching { expiresAt?.let(Instant::parse) }.getOrNull()
-        ?: now.plusSeconds(30)
-    return (expiry.toEpochMilli() - now.toEpochMilli()).coerceIn(0L, 30_000L)
+        ?: now.plusMillis(SERVER_RING_TIMEOUT_MS)
+    return (expiry.toEpochMilli() - now.toEpochMilli()).coerceIn(0L, SERVER_RING_TIMEOUT_MS)
 }

@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -12,18 +13,23 @@ import androidx.core.content.ContextCompat
 /**
  * Asks for the microphone (and camera for video) at the point of use, then
  * runs the action either way — like the web's `getUserMedia` fallback, a
- * denied camera joins with video off and a denied mic joins muted.
+ * denied camera joins with video off and a denied mic joins muted. Once per
+ * problem it also offers the settings that let incoming calls ring
+ * (notifications, call channel, Android 14+ full-screen intent).
  */
 @Composable
 fun rememberCallPermissions(): (video: Boolean, action: () -> Unit) -> Unit {
     val context = LocalContext.current
     val pending = remember { arrayOfNulls<() -> Unit>(1) }
+    val alertIssue = remember { mutableStateOf<CallAlertIssue?>(null) }
+    alertIssue.value?.let { issue -> CallAlertSetupDialog(issue) { alertIssue.value = null } }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         pending[0]?.invoke()
         pending[0] = null
     }
     return remember(launcher) {
         { video, action ->
+            if (alertIssue.value == null) alertIssue.value = CallAlertReadiness.issueToPrompt(context)
             val needed = listOfNotNull(Manifest.permission.RECORD_AUDIO, Manifest.permission.CAMERA.takeIf { video })
                 .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
             if (needed.isEmpty()) {

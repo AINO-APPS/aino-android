@@ -281,7 +281,7 @@ internal fun PinnedMessageBar(
 @Composable
 internal fun ClearChatDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) = SignalConfirmDialog(
     title = "Clear chat?",
-    message = "All messages in this chat will be deleted for you. This can't be undone.",
+    message = "Messages will be removed for you on all your devices. Other people in the chat will still see them.",
     confirmLabel = "Clear chat",
     onConfirm = onConfirm,
     onDismiss = onDismiss,
@@ -317,8 +317,8 @@ internal fun LeaveGroupDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) = Si
 
 @Composable
 internal fun DeleteChatDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) = SignalConfirmDialog(
-    title = "Delete chat?",
-    message = "This chat will be removed from your chat list and its messages deleted for you.",
+    title = "Delete this chat for you?",
+    message = "It will be removed from your chat list on all your devices. Other people in the chat will still see it. It comes back if someone sends a new message.",
     confirmLabel = "Delete",
     onConfirm = onConfirm,
     onDismiss = onDismiss,
