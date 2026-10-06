@@ -54,8 +54,9 @@ data class IncomingCallSpec(
 }
 
 /**
- * The CallStyle incoming-call notification (green Answer / red Decline via
- * [CallActionActivity], full-screen intent over the lock screen). Posted by
+ * The CallStyle incoming-call notification (green Answer straight into
+ * [MainActivity], red Decline via [CallActionActivity], full-screen intent over
+ * the lock screen). Posted by
  * [CallRingService] as its foreground notification, and by the push path
  * directly when Android refuses the background foreground-service start.
  */
@@ -121,8 +122,8 @@ object IncomingCallNotifications {
         insistent: Boolean = false,
     ): Notification {
         val contentPending = openCallPendingIntent(context, spec, requestCode = 1000)
-        val answerPending = actionPendingIntent(context, spec, CallActionActivity.ACTION_ANSWER, requestCode = 1001)
-        val declinePending = actionPendingIntent(context, spec, CallActionActivity.ACTION_DECLINE, requestCode = 1002)
+        val answerPending = openCallPendingIntent(context, spec, requestCode = 1001, answer = true)
+        val declinePending = declinePendingIntent(context, spec, requestCode = 1002)
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(context.applicationInfo.icon)
             .setContentTitle(spec.callerName.ifEmpty { spec.title })
@@ -207,21 +208,25 @@ object IncomingCallNotifications {
     private fun canPost(context: Context): Boolean = Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
 
-    /** Body tap / full-screen intent: the in-app ringing screen, never an auto-answer. */
-    private fun openCallPendingIntent(context: Context, spec: IncomingCallSpec, requestCode: Int): PendingIntent {
+    /**
+     * Body tap / full-screen intent: the in-app ringing screen. With [answer] it is
+     * the Answer button: like Signal's `ANSWER_AUDIO`/`ANSWER_VIDEO` it opens the call
+     * screen directly (`autoAnswer=1`), which asks for mic/camera and then answers.
+     */
+    private fun openCallPendingIntent(context: Context, spec: IncomingCallSpec, requestCode: Int, answer: Boolean = false): PendingIntent {
         val viewIntent = Intent(context, MainActivity::class.java).apply {
             action = Intent.ACTION_VIEW
-            data = Uri.parse(incomingCallUri(spec))
+            data = Uri.parse(incomingCallUri(spec) + if (answer) "&autoAnswer=1" else "")
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         return PendingIntent.getActivity(context, requestCode, viewIntent, PENDING_FLAGS)
     }
 
-    // Answer / Decline go through an Activity trampoline: a background
+    // Decline goes through an Activity trampoline: a background
     // BroadcastReceiver may not start the call screen on Android 10+.
-    private fun actionPendingIntent(context: Context, spec: IncomingCallSpec, action: String, requestCode: Int): PendingIntent {
+    private fun declinePendingIntent(context: Context, spec: IncomingCallSpec, requestCode: Int): PendingIntent {
         val intent = Intent(context, CallActionActivity::class.java).apply {
-            this.action = action
+            this.action = CallActionActivity.ACTION_DECLINE
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(CallActionActivity.EXTRA_MEETING_CODE, spec.meetingCode)
             putExtra(CallActionActivity.EXTRA_CALL_ID, spec.callId)

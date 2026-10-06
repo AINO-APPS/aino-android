@@ -8,6 +8,7 @@ import app.aino.mobile.core.navigation.meetingRoomRoute
 import app.aino.mobile.core.navigation.webLinkToRoute
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,6 +32,17 @@ class ActiveCallLogicTest {
         assertEquals("Connecting...", ActiveCallUi(visible = true, incoming = true).statusText)
         assertEquals("Reconnecting...", ActiveCallUi(visible = true, accepted = true, phase = CallPhase.Reconnecting).statusText)
         assertEquals("No answer", ActiveCallUi(visible = true, endMessage = "No answer").statusText)
+    }
+
+    @Test
+    fun calleeReAnnouncesReadyUntilMediaConnects() {
+        val answered = ActiveCallUi(visible = true, incoming = true, accepted = true)
+        assertTrue(shouldAnnounceIncomingReady(answered))
+        assertFalse(shouldAnnounceIncomingReady(answered.copy(connectedAt = 1L)))
+        assertFalse(shouldAnnounceIncomingReady(answered.copy(endMessage = "Couldn't connect")))
+        assertFalse(shouldAnnounceIncomingReady(answered.copy(visible = false)))
+        // The caller re-offers on `call_peer_ready`; it never sends `call_ready` itself.
+        assertFalse(shouldAnnounceIncomingReady(ActiveCallUi(visible = true, accepted = true)))
     }
 
     @Test

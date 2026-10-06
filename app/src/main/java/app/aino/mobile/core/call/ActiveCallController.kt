@@ -105,6 +105,18 @@ class ActiveCallController(private val context: Context, private val session: Ca
 
     init {
         scope.launch { session.state.collect(::onSessionState) }
+        // Answering from the notification can run before the socket is up (cold
+        // start) or just before a stale socket is replaced; frames sent then are
+        // lost. Like Signal's call manager, re-announce once the socket is open so
+        // the server replays the buffered offer and the caller re-offers.
+        scope.launch { CallRealtimeLink.connected.collect { if (it) announceIncomingReady() } }
+    }
+
+    private fun announceIncomingReady() {
+        if (!shouldAnnounceIncomingReady(_ui.value)) return
+        val route = session.state.value.route ?: return
+        send(callSubscribeEnvelope(route.callId, route.conversationId))
+        send(callReadyEnvelope(route.callId, route.conversationId))
     }
 
     /** Returns an error message, or null when the ring started. */
@@ -155,8 +167,7 @@ class ActiveCallController(private val context: Context, private val session: Ca
             ),
             startVideoOff,
         )
-        send(callSubscribeEnvelope(route.callId, route.conversationId))
-        send(callReadyEnvelope(route.callId, route.conversationId))
+        announceIncomingReady()
         arm(30_000, "Couldn't connect")
         val early = earlySignals.toList()
         earlySignals.clear()
@@ -447,6 +458,10 @@ class ActiveCallController(private val context: Context, private val session: Ca
         ActiveCallService.stop(context, ActiveCallService.OWNER_CALL)
     }
 }
+
+/** The callee answered but media isn't up yet: (re)send `call_subscribe` + `call_ready`. */
+internal fun shouldAnnounceIncomingReady(ui: ActiveCallUi): Boolean =
+    ui.visible && ui.incoming && ui.accepted && ui.connectedAt == null && ui.endMessage == null
 
 /** `CallDuration.tsx` `formatDuration`: `mm:ss`, or `h:mm:ss` past an hour. */
 fun formatCallDuration(totalSeconds: Long): String {

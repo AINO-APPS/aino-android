@@ -25,6 +25,11 @@ data class IncomingCallUiState(
     val route: IncomingCallRoute? = null,
     val state: IncomingCallState = IncomingCallState.Ended,
     val error: String? = null,
+    /**
+     * Signal's `answeredFromNotification`: Answer was tapped on the notification, so
+     * the screen shows "Answering..." and answers once mic/camera were asked for.
+     */
+    val answeredFromNotification: Boolean = false,
 )
 
 @Serializable private data class CallActionRequest(val conversationId: Long)
@@ -61,12 +66,24 @@ class IncomingCallViewModel(
 
     fun route(route: IncomingCallRoute): Boolean {
         if (!callSession.incoming(route)) return false
-        _ui.value = IncomingCallUiState(route, IncomingCallState.Ringing)
+        // The same call re-delivered (e.g. Answer tapped while its screen is up) keeps its state.
+        if (_ui.value.route?.callId != route.callId) _ui.value = IncomingCallUiState(route, IncomingCallState.Ringing)
         when (route.action) {
-            "answer" -> answer()
+            "answer" -> answerFromNotification()
             "decline" -> decline()
         }
         return true
+    }
+
+    /**
+     * The notification's Answer: stop ringing and let [IncomingCallScreen] ask for
+     * mic/camera before [answer] (Signal `handleAnswerWithAudio/Video`).
+     */
+    fun answerFromNotification() {
+        val current = _ui.value
+        if (current.route == null || current.state != IncomingCallState.Ringing) return
+        CallRingService.stop(context)
+        _ui.value = current.copy(answeredFromNotification = true)
     }
 
     /** [withoutVideo]: Signal's "Answer without video" — accept a video call camera-off. */

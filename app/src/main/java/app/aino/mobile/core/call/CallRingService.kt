@@ -38,14 +38,11 @@ import app.aino.mobile.core.media.resolveServerMediaUrl
  * template (NotificationCompat.CallStyle.forIncomingCall) so the system renders
  * a branded incoming-call UI with a GREEN "Answer" button and a RED "Decline"
  * button, plus a full-screen intent that surfaces the call over the lock screen.
- * The action buttons fire PendingIntent.getActivity() PendingIntents handled by
- * CallActionActivity (a transparent trampoline), which stops the ring and deep-
- * links into the JS call screen (single accept/reject path). Routing through an
- * Activity — NOT a BroadcastReceiver — is what makes "Answer" reliably bring the
- * app forward (a background BroadcastReceiver cannot startActivity() on Android
- * 10+ due to background-activity-start restrictions). This is what fixes both
- * "no Answer/Decline buttons in the status bar" and "Answer stops the ring but
- * the call screen never opens — I have to open the app manually".
+ * Answer opens MainActivity directly with an `autoAnswer=1` call deep link (as
+ * Signal opens its call Activity with ANSWER_AUDIO/ANSWER_VIDEO); Decline goes
+ * through CallActionActivity (a transparent trampoline). Both are
+ * PendingIntent.getActivity(): a background BroadcastReceiver cannot
+ * startActivity() on Android 10+ (background-activity-start restrictions).
  */
 class CallRingService : Service() {
 

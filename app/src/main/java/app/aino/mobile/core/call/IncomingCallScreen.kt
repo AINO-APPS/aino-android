@@ -42,7 +42,12 @@ fun IncomingCallScreen(viewModel: IncomingCallViewModel, onClose: () -> Unit) {
         viewModel.expireIfRinging()
     }
     val video = route.callType == "video"
-    val busy = ui.state == IncomingCallState.Answering || ui.state == IncomingCallState.Declining
+    // Answered from the notification: ask for mic/camera here, then answer (Signal `processIntent`).
+    LaunchedEffect(route.callId, ui.answeredFromNotification) {
+        if (ui.answeredFromNotification && ui.state == IncomingCallState.Ringing) withCallPermissions(video) { viewModel.answer() }
+    }
+    val answering = ui.answeredFromNotification && ui.state == IncomingCallState.Ringing
+    val busy = answering || ui.state == IncomingCallState.Answering || ui.state == IncomingCallState.Declining
     Box(Modifier.fillMaxSize().blockTouches()) {
         BlurredAvatarBackdrop(route.callerAvatar)
         Column(
@@ -52,7 +57,11 @@ fun IncomingCallScreen(viewModel: IncomingCallViewModel, onClose: () -> Unit) {
             Spacer(Modifier.padding(top = 48.dp))
             Text(route.callerName.ifBlank { "Unknown" }, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
             Text(
-                if (video) "Incoming video call..." else "Incoming voice call...",
+                when {
+                    busy && ui.state != IncomingCallState.Declining -> "Answering..."
+                    video -> "Incoming video call..."
+                    else -> "Incoming voice call..."
+                },
                 Modifier.padding(top = 8.dp),
                 color = Color.White.copy(alpha = .8f),
                 fontSize = 16.sp,

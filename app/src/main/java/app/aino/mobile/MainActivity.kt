@@ -255,7 +255,7 @@ class MainActivity : FragmentActivity() {
         val current = incomingCallViewModel.ui.value.route ?: return
         if (pending["callId"] != current.callId.toString() || pending["conversationId"] != current.conversationId.toString()) return
         when (pending["action"]) {
-            "answer" -> incomingCallViewModel.answer()
+            "answer" -> incomingCallViewModel.answerFromNotification()
             "decline" -> incomingCallViewModel.decline()
         }
         PendingCallActionStore.clear(applicationContext)
