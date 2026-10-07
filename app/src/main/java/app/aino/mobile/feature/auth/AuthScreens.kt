@@ -23,6 +23,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.platform.LocalContext
+import app.aino.mobile.core.common.LegalLinks
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -85,9 +87,11 @@ fun LoginScreen(
             passwordVisible = showPassword, onTogglePassword = { showPassword = !showPassword },
             imeAction = ImeAction.Done, onDone = { if (canSubmit) onLogin(username, password) },
         )
+        // Password reset is web-only (Phase 10); open the web flow.
+        val context = LocalContext.current
         Text(
             "Forgot password?",
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().clickable { LegalLinks.open(context, "/forgot-password") }.padding(vertical = 4.dp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.End,
@@ -115,6 +119,21 @@ fun LoginScreen(
                 Icon(HeroIcons.FingerPrint, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                 Text("Sign in with biometrics", Modifier.padding(start = 8.dp), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
             }
+        }
+        LegalFooter()
+    }
+}
+
+@Composable
+private fun LegalFooter() {
+    val context = LocalContext.current
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { LegalLinks.open(context, LegalLinks.PRIVACY_PATH) }) {
+            Text("Privacy Policy", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text("·", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+        TextButton(onClick = { LegalLinks.open(context, LegalLinks.TERMS_PATH) }) {
+            Text("Terms", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

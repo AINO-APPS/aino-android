@@ -34,7 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import app.aino.mobile.core.navigation.AinoApp
 import app.aino.mobile.core.realtime.RealtimeViewModel
-import app.aino.mobile.core.update.UpdateViewModel
+import app.aino.mobile.core.update.createAppUpdater
 import app.aino.mobile.feature.home.DashboardViewModel
 import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.attendance.DeviceCredentialProof
@@ -60,7 +60,7 @@ class MainActivity : FragmentActivity() {
     private val pipController = PipController()
     private val lockScreenController = LockScreenController()
     private val authViewModel by viewModels<AuthViewModel> { AuthViewModel.factory(applicationContext) }
-    private val updateViewModel by viewModels<UpdateViewModel> { UpdateViewModel.Factory }
+    private val appUpdater by lazy { createAppUpdater() }
     private val realtimeViewModel by viewModels<RealtimeViewModel> { RealtimeViewModel.factory(applicationContext) }
     private val dashboardViewModel by viewModels<DashboardViewModel> { DashboardViewModel.factory(applicationContext) }
     private val attendanceViewModel by viewModels<AttendanceViewModel> { AttendanceViewModel.factory(applicationContext) }
@@ -95,6 +95,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        app.aino.mobile.core.common.CrashReporting.init(applicationContext)
         enableEdgeToEdge()
         PushNotifications.createChannels(applicationContext)
         // A ring left behind by a process that died is cleared once it expired.
@@ -108,7 +109,7 @@ class MainActivity : FragmentActivity() {
             WebTheme(darkTheme = isDark, accent = branding.accentColor) {
                 AinoApp(
                     authViewModel,
-                    updateViewModel,
+                    appUpdater,
                     realtimeViewModel,
                     dashboardViewModel,
                     attendanceViewModel,
@@ -232,6 +233,7 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         consumePendingCallAction()
         resumeAfterLocationEnabled()
+        appUpdater.check(this)
         Thread { runCatching { PushTokenRegistrar(applicationContext).syncCurrentToken() } }.start()
     }
 

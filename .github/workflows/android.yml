@@ -47,5 +47,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      # `play` is the store build and gets the full test + lint pass; `direct`
+      # (sideloaded pilots) only differs in the updater, so compile + unit test it.
       - name: Validate, test, lint, and assemble
-        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+        run: ./gradlew --no-daemon testPlayDebugUnitTest lintPlayDebug assemblePlayDebug testDirectDebugUnitTest assembleDirectDebug

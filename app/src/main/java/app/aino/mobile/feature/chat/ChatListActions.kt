@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 
 /** Signal mute durations (server accepts 1h | 8h | 1d | 1w | always). */
@@ -96,7 +97,8 @@ internal fun RecipientSheet(
     var muteOpen by remember { mutableStateOf(false) }
     var confirmBlock by remember { mutableStateOf(false) }
     val oneToOne = !conversation.isGroup && !conversation.isMeetingChat && !conversation.isSelfChat && conversation.otherUserId != null
-    val canCall = !conversation.isSelfChat && !conversation.isMeetingChat && !conversation.isBlocked
+    val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val canCall = ui.callsEnabled && !conversation.isSelfChat && !conversation.isMeetingChat && !conversation.isBlocked
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = signal.surface) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             ConversationAvatar(conversation, presence, 80.dp)

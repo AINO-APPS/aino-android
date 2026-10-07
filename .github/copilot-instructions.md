@@ -10,13 +10,14 @@ Prerequisites: JDK 21, Android SDK Platform 35, `ANDROID_HOME` or an untracked `
 
 **Always run the CI command before you finish:**
 ```
-./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+./gradlew --no-daemon testPlayDebugUnitTest lintPlayDebug assemblePlayDebug testDirectDebugUnitTest assembleDirectDebug
 ```
 - Time: about 5 minutes when compile and test are already cached. `lintAnalyzeDebug*` takes most of that. A cold run with dependency downloads takes longer, and the CI job timeout is 20 minutes. Use a long command timeout of 10 minutes or more. Do not cancel early.
-- After a source change, `./gradlew testDebugUnitTest` (incremental compile plus all unit tests) takes about 2 minutes.
-- To run one test class: `./gradlew testDebugUnitTest --tests "app.aino.mobile.core.common.LenientNumbersTest"` (about 30 seconds).
+- There are two product flavors: `play` (Google Play: Play In-App Updates and Crashlytics, no `REQUEST_INSTALL_PACKAGES`) and `direct` (sideloaded pilots: the R2 APK self-updater). Flavor-only code lives in `app/src/play/` and `app/src/direct/`; everything else is in `main`.
+- After a source change, `./gradlew testPlayDebugUnitTest` (incremental compile plus all unit tests) takes about 2 minutes.
+- To run one test class: `./gradlew testPlayDebugUnitTest --tests "app.aino.mobile.core.common.LenientNumbersTest"` (about 30 seconds).
 - Unit tests use JUnit 4, Robolectric, Turbine, MockWebServer and Compose UI test (`unitTests.isIncludeAndroidResources = true`). Instrumentation tests (`connectedDebugAndroidTest`, `app/src/androidTest/`) need a device or emulator and are **not** run in CI.
-- Lint uses AGP defaults. There is no `lint.xml` or baseline, so any lint *error* fails the build. Reports are written to `app/build/reports/lint-results-debug.html`.
+- Lint uses AGP defaults. There is no `lint.xml` or baseline, so any lint *error* fails the build. Reports are written to `app/build/reports/lint-results-playDebug.html`.
 - There is no ktlint or detekt. Follow the existing style (`kotlin.code.style=official`, 4-space indent, trailing commas).
 - If Gradle reports `PKIX path building failed` (corporate TLS), the fix belongs in `~/.gradle/gradle.properties`, **never** in the repo's `gradle.properties`, because it breaks CI on Linux.
 
@@ -45,7 +46,7 @@ What each one enforces:
 - `core/AppContainer.kt` holds the process-wide singletons (manual DI, no Hilt). It provides `api` (caching plus token-refreshing `ApiClient`), `rawApi`, `cachedApi`, `http`/`mediaHttp` (OkHttp), `imageLoader` and the stores. **Use the single `api` instance**, because a separate instance can race token refresh.
 - `core/network/` contains `ApiModels.kt` (`ApiClient`, `ApiRequest(method, path, body)`, `ApiError.Http`), `OkHttpApiClient`, `RefreshingApiClient`, `ResponseCache` and `NetworkConfig`. Paths are relative to `.../api`, for example `"notifications/$id/read"`.
 - `core/auth`: login, Keystore tokens, biometric credentials. `core/db`: Room `AinoDatabase`, DAO, tenant+user scoped cache, outbox worker. If you change entities, bump the version, add a migration and commit the new schema JSON in `app/schemas/`.
-- Other `core/` packages: `realtime` (WebSocket client, dispatcher, event registry), `navigation` (`AinoApp.kt` NavHost, `AinoDestination` enum, `MoreSheet`, notification deep links), `designsystem` (theme, web tokens, `HeroIcons`, shared components), `call` and `call/webrtc` (1:1 calls), `push` (FCM), `notifications`, `media`, `update` (in-app APK updater), `branding`, `common`.
+- Other `core/` packages: `realtime` (WebSocket client, dispatcher, event registry), `navigation` (`AinoApp.kt` NavHost, `AinoDestination` enum, `MoreSheet`, notification deep links), `designsystem` (theme, web tokens, `HeroIcons`, shared components), `call` and `call/webrtc` (1:1 calls), `push` (FCM), `notifications`, `media`, `update` (`AppUpdater` contract and banner; implementations are per flavor), `branding`, `common`.
 - `feature/<name>/` holds one package per product area: attendance, auth, calendar, chat, debug, home, manager, meeting, notes, notifications, organization, profile, search, tasks, and others. Each package usually follows the pattern `XModels.kt` (`@Serializable` DTOs, `Json { ignoreUnknownKeys = true }`), `XRepository.kt` (takes `ApiClient` and makes blocking calls, which ViewModels wrap in `withContext(Dispatchers.IO)`), `XViewModel.kt` and `XScreen.kt` (Compose).
 - Tests in `app/src/test/java/app/aino/mobile/...` mirror the main package structure. Add tests for repositories and logic next to similar existing tests.
 - Other paths: `docs/` (parity plans, contracts, provenance policy), `contracts/` (platform API and realtime snapshots), `scripts/` (guardrails, plus Python icon generators), `app/proguard-rules.pro` (R8 rules for the release build; keep `@Serializable` models intact).

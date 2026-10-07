@@ -75,7 +75,7 @@ import app.aino.mobile.feature.profile.ProfileScreen
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.feature.chat.ChatScreen
 import app.aino.mobile.feature.chat.ChatViewModel
-import app.aino.mobile.core.update.UpdateViewModel
+import app.aino.mobile.core.update.AppUpdater
 import app.aino.mobile.core.realtime.RealtimeState
 import app.aino.mobile.core.realtime.RealtimeDomain
 import app.aino.mobile.core.realtime.RealtimeViewModel
@@ -113,7 +113,7 @@ import app.aino.mobile.core.designsystem.icons.HeroIcons
 @Composable
 fun AinoApp(
     auth: AuthViewModel,
-    updates: UpdateViewModel,
+    updates: AppUpdater,
     realtime: RealtimeViewModel,
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
@@ -246,6 +246,9 @@ fun AinoApp(
     LaunchedEffect(tenantAuthenticated, authenticatedUser?.id) {
         val id = authenticatedUser?.id
         if (tenantAuthenticated && id != null) profile.start(id) { dark -> setDark(dark) } else profile.stop()
+    }
+    LaunchedEffect(authenticatedUser?.tenantFeatures?.get("calls")) {
+        chat.setCallsEnabled(authenticatedUser?.tenantFeatures?.get("calls") == true)
     }
     LaunchedEffect(authenticatedUser?.tenantId, authenticatedUser?.id) {
         chat.setScope(authenticatedUser?.tenantId, authenticatedUser?.id)
@@ -422,7 +425,7 @@ private fun AuthenticatedShell(
     hasReports: Boolean,
     user: app.aino.mobile.core.auth.AinoUser,
     featuresDegraded: Boolean,
-    updates: UpdateViewModel,
+    updates: AppUpdater,
     realtimeState: RealtimeState,
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
@@ -602,6 +605,15 @@ private fun AuthenticatedShell(
                         onRetryFeatures()
                     },
                     onDismiss = { bannerDismissed = true },
+                )
+            }
+            val updateUi by updates.ui.collectAsStateWithLifecycle()
+            val activity = androidx.activity.compose.LocalActivity.current
+            if (!fullScreen) {
+                app.aino.mobile.core.update.UpdateBanner(
+                    state = updateUi,
+                    onInstall = { activity?.let(updates::install) },
+                    onDismiss = updates::dismiss,
                 )
             }
         NavHost(nav, startDestination = AinoDestination.Dashboard.route, modifier = Modifier.fillMaxSize()) {

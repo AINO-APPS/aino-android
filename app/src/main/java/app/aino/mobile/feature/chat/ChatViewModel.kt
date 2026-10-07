@@ -112,6 +112,10 @@ data class PendingAttachment(val uri: Uri, val mimeType: String, val fileName: S
 
 data class ChatUiState(
     val currentUserId: Long? = null,
+    /** Tenant plan `calls` (1:1 and group calls); web hides the call buttons when off. */
+    val callsEnabled: Boolean = false,
+    /** Loaded poll tallies by poll id, refreshed on `chat_poll_vote`. */
+    val polls: Map<Long, ChatPoll> = emptyMap(),
     val loading: Boolean = false,
     val conversations: List<ChatConversation> = emptyList(),
     val presence: Map<Long, ChatPresence> = emptyMap(),
@@ -297,12 +301,17 @@ class ChatViewModel(
         startCall(_ui.value.selectedConversation ?: return, callType)
     }
 
+    fun setCallsEnabled(enabled: Boolean) {
+        if (_ui.value.callsEnabled != enabled) _ui.update { it.copy(callsEnabled = enabled) }
+    }
+
     fun startCall(conversation: ChatConversation, callType: String) {
-        val appContext = context ?: return
+        if (!_ui.value.callsEnabled) return
         if (conversation.isGroup) {
             startGroupCall(conversation, callType)
             return
         }
+        val appContext = context ?: return
         app.aino.mobile.core.call.ActiveCallRuntime.get(appContext).startOutgoing(
             conversationId = conversation.id,
             callType = callType,
@@ -446,6 +455,18 @@ class ChatViewModel(
                 if (_ui.value.selectedConversation?.id == viewed.conversationId) {
                     _ui.update { st -> st.copy(messages = applyViewOnce(st.messages, viewed)) }
                 }
+                return
+            }
+            RealtimeEvent.ChatMediaJob -> {
+                val job = decodeChatRealtime<ChatMediaJobEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id == job.conversationId) {
+                    _ui.update { st -> st.copy(messages = applyRealtimeMediaJob(st.messages, job)) }
+                }
+                return
+            }
+            RealtimeEvent.ChatPollVote -> {
+                val vote = decodeChatRealtime<ChatPollVoteEvent>(event.data) ?: return
+                if (_ui.value.selectedConversation?.id == vote.conversationId) loadPoll(vote.pollId)
                 return
             }
             RealtimeEvent.ChatPin -> {
@@ -1262,11 +1283,20 @@ class ChatViewModel(
         }
     }
 
+    /** Web `PollDisplay`: the bubble shows the live tally from `GET /chat/polls/:id`. */
+    fun loadPoll(pollId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.loadPoll(pollId) }.onSuccess { poll ->
+                _ui.update { st -> st.copy(polls = st.polls + (pollId to poll)) }
+            }
+        }
+    }
+
     fun votePoll(message: ChatMessage, optionIndex: Int) {
-        val pollId = message.metadata?.jsonObject?.get("pollId")?.jsonPrimitive?.longOrNull ?: return
+        val pollId = message.pollId() ?: return
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.votePoll(pollId, optionIndex) }.fold(
-                onSuccess = { refreshThread() },
+                onSuccess = { loadPoll(pollId) },
                 onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update poll") } },
             )
         }

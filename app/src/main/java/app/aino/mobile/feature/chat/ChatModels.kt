@@ -273,6 +273,22 @@ data class ChatEditEvent(
 @Serializable
 data class ChatDeleteEvent(val messageId: Long, val conversationId: Long)
 
+/** `chat_media_job`: server media pipeline progress (web `applyRealtimeMediaJob`). */
+@Serializable
+data class ChatMediaJobEvent(
+    val messageId: Long,
+    val conversationId: Long,
+    val mediaJobId: Long? = null,
+    val status: String? = null,
+    val stage: String? = null,
+    val progress: Int? = null,
+    val failureReason: String? = null,
+)
+
+/** `chat_poll_vote`: someone voted; the poll card refetches its tally. */
+@Serializable
+data class ChatPollVoteEvent(val pollId: Long, val conversationId: Long)
+
 /** `chat_cleared` / `chat_conv_deleted`: per-user, sent only to the requester's own devices. */
 @Serializable
 data class ChatConversationEvent(val conversationId: Long)
@@ -322,6 +338,41 @@ fun applyRealtimeEdit(messages: List<ChatMessage>, event: ChatEditEvent): List<C
             message.copy(content = event.content, editedAt = event.editedAt)
         } else message
     }
+
+fun applyRealtimeMediaJob(messages: List<ChatMessage>, event: ChatMediaJobEvent): List<ChatMessage> =
+    messages.map { message ->
+        if (message.id == event.messageId) {
+            message.copy(
+                mediaJobId = event.mediaJobId ?: message.mediaJobId,
+                mediaState = event.status ?: message.mediaState,
+                mediaStage = event.stage ?: message.mediaStage,
+                mediaProgress = event.progress ?: message.mediaProgress,
+                mediaFailureReason = event.failureReason,
+            )
+        } else message
+    }
+
+data class PollOptionTally(val count: Int, val percent: Int, val mine: Boolean)
+data class PollTally(val total: Int, val options: List<PollOptionTally>)
+
+/** Web `PollDisplay` arithmetic: per-option count, rounded share of all votes, and the user's own picks. */
+fun pollTally(poll: ChatPoll?, optionCount: Int, currentUserId: Long?): PollTally {
+    val votes = poll?.votes.orEmpty()
+    val total = votes.values.sumOf { it.size }
+    val options = (0 until optionCount).map { index ->
+        val voters = votes[index].orEmpty()
+        PollOptionTally(
+            count = voters.size,
+            percent = if (total > 0) Math.round(voters.size * 100f / total) else 0,
+            mine = currentUserId != null && voters.any { it.userId == currentUserId },
+        )
+    }
+    return PollTally(total, options)
+}
+
+fun ChatMessage.pollId(): Long? =
+    (metadata as? kotlinx.serialization.json.JsonObject)?.get("pollId")
+        ?.let { (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.toLongOrNull() }
 
 fun applyRealtimeDelete(
     messages: List<ChatMessage>,

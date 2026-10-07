@@ -880,6 +880,8 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             onCancel = { viewModel.cancelMedia(item.message) },
                             onRetry = { viewModel.retryMedia(item.message) },
                             onVote = { option -> viewModel.votePoll(item.message, option) },
+                            poll = item.message.pollId()?.let(ui.polls::get),
+                            onLoadPoll = viewModel::loadPoll,
                             onOpenMedia = { viewingMediaId = it.id },
                             selectionActive = ui.selectedMessageIds.isNotEmpty(),
                             selected = item.message.id in ui.selectedMessageIds,
@@ -1236,7 +1238,7 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                     }
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (!conversation.isSelfChat) {
+                            if (!conversation.isSelfChat && ui.callsEnabled) {
                                 InfoAction(HeroIcons.Phone, "Call", Modifier.weight(1f)) { withCallPermissions(false) { viewModel.closeInfo(); viewModel.startCall("voice") } }
                                 InfoAction(HeroIcons.VideoCamera, "Video", Modifier.weight(1f)) { withCallPermissions(true) { viewModel.closeInfo(); viewModel.startCall("video") } }
                             }
@@ -1471,6 +1473,8 @@ private fun MessageBubble(
     reactionAvatars: () -> Map<Long, String> = { emptyMap() },
     /** Call-history chip tap: place the same call type again ("voice" / "video"). */
     onStartCall: (String) -> Unit = {},
+    poll: ChatPoll? = null,
+    onLoadPoll: (Long) -> Unit = {},
 ) {
     var actionsOpen by remember { mutableStateOf(false) }
     var reactionsOpen by remember { mutableStateOf(false) }
@@ -1605,21 +1609,39 @@ private fun MessageBubble(
                                 footer(false)
                             }
                             message.formatType == "poll" -> {
-                                val options = message.metadata?.jsonObject?.get("options")?.jsonArray
+                                val pollId = message.pollId()
+                                LaunchedEffect(pollId) { if (pollId != null && poll == null) onLoadPoll(pollId) }
+                                val labels = poll?.options
+                                    ?: message.metadata?.jsonObject?.get("options")?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                                    .orEmpty()
+                                val tally = pollTally(poll, labels.size, currentUserId)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Icon(HeroIcons.ChartBar, null, Modifier.size(18.dp), tint = fg)
-                                    Text(message.body(), Modifier.padding(start = 7.dp), color = fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(poll?.question ?: message.body(), Modifier.padding(start = 7.dp), color = fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                                 }
-                                options?.forEachIndexed { index, element ->
-                                    val label = element.jsonPrimitive.contentOrNull ?: return@forEachIndexed
+                                labels.forEachIndexed { index, label ->
+                                    val option = tally.options[index]
+                                    val shape = RoundedCornerShape(10.dp)
+                                    Box(
+                                        Modifier.fillMaxWidth().clip(shape)
+                                            .border(if (option.mine) 2.dp else 1.dp, fg.copy(alpha = if (option.mine) .9f else .35f), shape)
+                                            .clickable(enabled = poll?.closedAt == null) { onVote(index) },
+                                    ) {
+                                        Box(Modifier.matchParentSize().fillMaxWidth(option.percent / 100f).background(fg.copy(alpha = .14f)))
+                                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text(label, Modifier.weight(1f), color = fg, fontSize = 15.sp)
+                                            if (option.count > 0) Text("${option.count} (${option.percent}%)", color = fg.copy(alpha = .8f), fontSize = 13.sp)
+                                            if (option.mine) Text(" ✓", color = fg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        label,
-                                        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).border(1.dp, fg.copy(alpha = .35f), RoundedCornerShape(10.dp))
-                                            .clickable { onVote(index) }.padding(horizontal = 12.dp, vertical = 9.dp),
-                                        color = fg, fontSize = 15.sp,
+                                        "${tally.total} vote${if (tally.total == 1) "" else "s"}" + if (poll?.multiSelect == true) " · Multiple choice" else "",
+                                        Modifier.weight(1f), color = fg.copy(alpha = .7f), fontSize = 12.sp,
                                     )
+                                    footer(false)
                                 }
-                                Box(Modifier.align(Alignment.End)) { footer(false) }
                             }
                             mediaOnly -> Box {
                                 ChatMediaPreview(
@@ -2646,8 +2668,10 @@ private fun ThreadHeader(
                 if (subtitle.isNotBlank()) Text(subtitle, color = signal.textSecondary, fontSize = 13.sp, maxLines = 1)
             }
         }
-        Icon(HeroIcons.VideoCamera, "Video call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(true) { viewModel.startCall("video") } }.padding(12.dp), tint = signal.text)
-        Icon(HeroIcons.Phone, "Voice call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(false) { viewModel.startCall("voice") } }.padding(12.dp), tint = signal.text)
+        if (ui.callsEnabled) {
+            Icon(HeroIcons.VideoCamera, "Video call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(true) { viewModel.startCall("video") } }.padding(12.dp), tint = signal.text)
+            Icon(HeroIcons.Phone, "Voice call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(false) { viewModel.startCall("voice") } }.padding(12.dp), tint = signal.text)
+        }
         Box {
             Icon(HeroIcons.EllipsisVertical, "More options", Modifier.size(48.dp).clip(CircleShape).clickable { menuOpen = true }.padding(12.dp), tint = signal.text)
             // Signal ConversationOptionsMenu order, limited to what the server supports.

@@ -9,8 +9,11 @@ plugins {
 // CI writes this secret file before configuration. Local builds deliberately
 // omit it; Firebase APIs fail closed at runtime while the rest of the app still
 // builds and remains testable.
-if (file("google-services.json").exists()) {
+val hasFirebaseConfig = file("google-services.json").exists()
+if (hasFirebaseConfig) {
     apply(plugin = "com.google.gms.google-services")
+    // Uploads R8 mapping files so Play-build crash stacks are readable.
+    apply(plugin = "com.google.firebase.crashlytics")
 }
 
 fun String.asBuildConfigString(): String =
@@ -68,8 +71,8 @@ android {
         // version: X.Y.Z -> X*1_000_000 + Y*1_000 + Z (each part 0..999).
         // `android-release.yml` re-derives this from the tag and fails on a mismatch.
         // Written without digit separators so the release workflow can parse it.
-        versionCode = 17001 // 0.17.1
-        versionName = "0.17.1"
+        versionCode = 18000 // 0.18.0
+        versionName = "0.18.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())
@@ -107,6 +110,25 @@ android {
                 // debug-signed build that Android would refuse to update later.
                 null
             }
+        }
+    }
+
+    // `play`: Google Play build. Updates come from Play (In-App Updates API), no
+    // REQUEST_INSTALL_PACKAGES, crash reporting on.
+    // `direct`: sideloaded pilot build. Keeps the R2 APK self-updater.
+    // Same applicationId so a pilot can move to the Play build without a reinstall
+    // of a differently-named app (Play still requires the same signing key).
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("boolean", "SELF_UPDATE", "false")
+            buildConfigField("boolean", "CRASH_REPORTING", "true")
+        }
+        create("direct") {
+            dimension = "distribution"
+            buildConfigField("boolean", "SELF_UPDATE", "true")
+            buildConfigField("boolean", "CRASH_REPORTING", "false")
         }
     }
 
@@ -161,6 +183,8 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
+    "playImplementation"(libs.firebase.crashlytics)
+    "playImplementation"(libs.play.app.update.ktx)
     implementation(libs.webrtc.android)
     implementation(libs.play.services.location)
     implementation(libs.androidx.profileinstaller)

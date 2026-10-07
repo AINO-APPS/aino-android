@@ -1,6 +1,6 @@
 name: Android Release
 
-# Builds a production-signed APK and AAB and publishes them to the Cloudflare R2
+# Builds a production-signed `direct` APK and `play` AAB and publishes them to the Cloudflare R2
 # `android/` prefix plus a GitHub release.
 #
 # Triggered by `android-v*` tags so it can never collide with the platform's
@@ -159,19 +159,40 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew --no-daemon assembleRelease bundleRelease
+        # `direct` APK: sideloaded pilots + the R2 self-update channel.
+        # `play` AAB: uploaded to the Play Console (no self-updater).
+        run: ./gradlew --no-daemon assembleDirectRelease bundlePlayRelease assemblePlayRelease
 
       - name: Stage artifacts with versioned names
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          APK="app/build/outputs/apk/release/app-release.apk"
-          AAB="app/build/outputs/bundle/release/app-release.aab"
+          APK="app/build/outputs/apk/direct/release/app-direct-release.apk"
+          AAB="app/build/outputs/bundle/playRelease/app-play-release.aab"
           test -f "$APK" || { echo "::error::Missing $APK"; find app/build/outputs -name '*.apk' || true; exit 1; }
           test -f "$AAB" || { echo "::error::Missing $AAB"; find app/build/outputs -name '*.aab' || true; exit 1; }
           cp "$APK" "release-assets/AINO-${VERSION}.apk"
-          cp "$AAB" "release-assets/AINO-${VERSION}.aab"
+          cp "$AAB" "release-assets/AINO-${VERSION}-play.aab"
           ls -la release-assets/
+
+      # Google Play rejects REQUEST_INSTALL_PACKAGES for this app category; the
+      # self-updater must only ship in the `direct` flavor.
+      - name: Verify Play build policy
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          PLAY_APK="app/build/outputs/apk/play/release/app-play-release.apk"
+          PERMS=$("$BUILD_TOOLS/aapt" dump permissions "$PLAY_APK")
+          if echo "$PERMS" | grep -q REQUEST_INSTALL_PACKAGES; then
+            echo "::error::play build requests REQUEST_INSTALL_PACKAGES"
+            exit 1
+          fi
+          DIRECT_PERMS=$("$BUILD_TOOLS/aapt" dump permissions "release-assets/AINO-${VERSION}.apk")
+          echo "$DIRECT_PERMS" | grep -q REQUEST_INSTALL_PACKAGES || { echo "::error::direct build lost the self-updater permission"; exit 1; }
+          # 16 KB page size (required by Play for targetSdk 35+): ZIP alignment of
+          # uncompressed native libraries.
+          "$BUILD_TOOLS/zipalign" -c -P 16 4 "$PLAY_APK"
+          echo "Play policy checks passed"
 
       # Guard against silently shipping a DEBUG-signed artifact: if the signing
       # config fails to apply, Gradle falls back to the debug keystore.
@@ -298,7 +319,8 @@ jobs:
             echo
             echo "### Install"
             echo
-            echo "Download \`AINO-${VERSION}.apk\` and install it on an Android 8.0+ device."
+            echo "Pilots: download \`AINO-${VERSION}.apk\` and install it on an Android 8.0+ device."
+            echo "Google Play: upload \`AINO-${VERSION}-play.aab\` in the Play Console."
             echo "You may need to allow installs from unknown sources."
             echo
             echo "### Checksums"
@@ -315,7 +337,7 @@ jobs:
           if gh release view "android-v${VERSION}" >/dev/null 2>&1; then
             gh release upload "android-v${VERSION}" \
               "release-assets/AINO-${VERSION}.apk" \
-              "release-assets/AINO-${VERSION}.aab" \
+              "release-assets/AINO-${VERSION}-play.aab" \
               release-assets/checksums.txt \
               --clobber
             gh release edit "android-v${VERSION}" \
@@ -324,7 +346,7 @@ jobs:
           else
             gh release create "android-v${VERSION}" \
               "release-assets/AINO-${VERSION}.apk" \
-              "release-assets/AINO-${VERSION}.aab" \
+              "release-assets/AINO-${VERSION}-play.aab" \
               release-assets/checksums.txt \
               --title "AINO Android v${VERSION}" \
               --notes-file release-notes.md

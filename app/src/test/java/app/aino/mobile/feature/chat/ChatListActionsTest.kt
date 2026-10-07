@@ -122,6 +122,22 @@ class ChatListActionsTest {
         assertEquals(1, captured.count { it.path == "chat/conversations/2/read" })
     }
 
+    @Test fun `group call is not started when the calls feature is off`() {
+        val vm = viewModel()
+        val group = vm.row(1).copy(isGroup = true, groupName = "Team")
+        vm.startCall(group, "voice")
+        Thread.sleep(100)
+        assertFalse(captured.any { it.path == "meetings" })
+    }
+
+    @Test fun `group call starts a huddle when the calls feature is on`() {
+        val vm = viewModel()
+        vm.setCallsEnabled(true)
+        val group = vm.row(1).copy(isGroup = true, groupName = "Team")
+        vm.startCall(group, "voice")
+        await { captured.any { it.method == "POST" && it.path == "meetings" } }
+    }
+
     private fun await(timeoutMs: Long = 3_000, condition: () -> Boolean) {
         val end = System.currentTimeMillis() + timeoutMs
         while (!condition()) {

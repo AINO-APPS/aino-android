@@ -1,5 +1,6 @@
 package app.aino.mobile.feature.profile
 
+import app.aino.mobile.core.common.LegalLinks
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -133,8 +134,19 @@ fun ProfileScreen(
             ProfileRow(if (isDark) HeroIcons.Sun else HeroIcons.Moon, if (isDark) "Light Mode" else "Dark Mode", onToggleTheme)
         }
         ProfileSection {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            ProfileRow(HeroIcons.ShieldCheck, "Privacy Policy", { LegalLinks.open(context, LegalLinks.PRIVACY_PATH) })
+            RowDivider()
+            ProfileRow(HeroIcons.DocumentText, "Terms of Service", { LegalLinks.open(context, LegalLinks.TERMS_PATH) })
+        }
+        ProfileSection {
             ProfileRow(HeroIcons.ArrowRightStartOnRectangle, "Sign Out", { viewModel.askSignOut(true) }, tint = colors.danger)
         }
+        Text(
+            "AINO ${app.aino.mobile.BuildConfig.VERSION_NAME}",
+            Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp),
+            color = colors.textMuted, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
     }
 
     if (ui.signOutConfirming) {
