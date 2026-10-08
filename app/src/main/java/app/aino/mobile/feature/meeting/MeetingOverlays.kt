@@ -105,8 +105,9 @@ fun MeetingPipWidget(state: MeetingState, session: MeetingSession, onOpen: () ->
         ) {
             PipButton(if (state.muted) HeroIcons.MicrophoneSlash else HeroIcons.Microphone, if (state.muted) "Unmute" else "Mute", state.muted, onClick = session::toggleMute)
             PipButton(if (state.videoOff) HeroIcons.VideoCameraSlash else HeroIcons.VideoCamera, if (state.videoOff) "Start video" else "Stop video", state.videoOff, onClick = session::toggleVideo)
+            val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
             Box(
-                Modifier.size(30.dp).clip(CircleShape).background(MrDanger).clickable(onClickLabel = "Leave meeting", onClick = session::leave),
+                Modifier.size(30.dp).clip(CircleShape).background(MrDanger).clickable(onClickLabel = "Leave meeting") { haptics.reject(); session.leave() },
                 contentAlignment = Alignment.Center,
             ) { Icon(HeroIcons.PhoneXMark, "Leave meeting", Modifier.size(15.dp), tint = Color.White) }
         }
@@ -115,8 +116,9 @@ fun MeetingPipWidget(state: MeetingState, session: MeetingSession, onOpen: () ->
 
 @Composable
 private fun PipButton(icon: ImageVector, label: String, off: Boolean, onClick: () -> Unit) {
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Box(
-        Modifier.size(30.dp).clip(CircleShape).background(if (off) MrDanger.copy(alpha = .2f) else Color.White.copy(alpha = .08f)).clickable(onClickLabel = label, onClick = onClick),
+        Modifier.size(30.dp).clip(CircleShape).background(if (off) MrDanger.copy(alpha = .2f) else Color.White.copy(alpha = .08f)).clickable(onClickLabel = label) { haptics.toggle(); onClick() },
         contentAlignment = Alignment.Center,
     ) { Icon(icon, label, Modifier.size(15.dp), tint = if (off) Color(0xFFFCA5A5) else Color.White) }
 }

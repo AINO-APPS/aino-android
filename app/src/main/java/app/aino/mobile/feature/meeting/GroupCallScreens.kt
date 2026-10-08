@@ -191,6 +191,7 @@ fun GroupCallLobbyScreen(
     }
 
     val members = state.members.map { GroupAvatarMember(it.display(), it.avatar) }
+    val lobbyHaptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Box(Modifier.fillMaxSize().background(CallBg)) {
         if (!videoOff && preview?.videoTrack != null) {
             VideoRenderer(preview.videoTrack, Modifier.fillMaxSize(), mirror = true)
@@ -240,7 +241,7 @@ fun GroupCallLobbyScreen(
                 lobbyPrimaryLabel(state.active),
                 Modifier.padding(24.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp))
                     .background(if (state.starting || state.loading) CallJoinGreen.copy(alpha = .5f) else CallJoinGreen)
-                    .clickable(enabled = !state.starting && !state.loading) { withPermissions(!videoOff) { go() } }
+                    .clickable(enabled = !state.starting && !state.loading) { lobbyHaptics.confirm(); withPermissions(!videoOff) { go() } }
                     .padding(vertical = 16.dp),
                 color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
             )
@@ -274,9 +275,10 @@ private fun BlurredBackdrop(url: String) {
 
 @Composable
 private fun ToggleButton(icon: ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            Modifier.size(56.dp).clip(CircleShape).background(if (on) Color.White else CallSurface).clickable(onClickLabel = label, onClick = onClick),
+            Modifier.size(56.dp).clip(CircleShape).background(if (on) Color.White else CallSurface).clickable(onClickLabel = label) { haptics.toggle(); onClick() },
             contentAlignment = Alignment.Center,
         ) { Icon(icon, label, Modifier.size(26.dp), tint = if (on) Color.Black else Color.White) }
         Text(label, Modifier.padding(top = 6.dp), color = CallText, fontSize = 12.sp)
@@ -285,8 +287,9 @@ private fun ToggleButton(icon: ImageVector, label: String, on: Boolean, onClick:
 
 @Composable
 private fun RoundIcon(icon: ImageVector, label: String, background: Color, size: androidx.compose.ui.unit.Dp = 44.dp, tint: Color = Color.White, onClick: () -> Unit) {
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Box(
-        Modifier.size(size).clip(CircleShape).background(background).clickable(onClickLabel = label, onClick = onClick),
+        Modifier.size(size).clip(CircleShape).background(background).clickable(onClickLabel = label) { haptics.tap(); onClick() },
         contentAlignment = Alignment.Center,
     ) { Icon(icon, label, Modifier.size(size * .5f), tint = tint) }
 }
@@ -349,6 +352,9 @@ fun GroupCallScreen(code: String, user: AinoUser, online: Boolean, onMinimize: (
         if (anyVideo && !participantsOpen && !reactionsOpen) { delay(5_000); controlsVisible = false }
     }
     val now by produceTicker()
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
+    // Someone joining or leaving gives a light tick, like Signal's group-call cues.
+    LaunchedEffect(current.peers.size) { haptics.tick() }
     Box(
         Modifier.fillMaxSize().background(CallBg)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { lastTouch = System.currentTimeMillis() },
@@ -363,7 +369,7 @@ fun GroupCallScreen(code: String, user: AinoUser, online: Boolean, onMinimize: (
         }
     }
     if (participantsOpen) ParticipantsSheet(current, session, user) { participantsOpen = false }
-    if (reactionsOpen) ReactionPicker(onPick = { session.sendReaction(it); reactionsOpen = false }) { reactionsOpen = false }
+    if (reactionsOpen) ReactionPicker(onPick = { haptics.confirm(); session.sendReaction(it); reactionsOpen = false }) { reactionsOpen = false }
 }
 
 @Composable
@@ -525,6 +531,7 @@ private fun FloatingSelfView(state: MeetingState) {
 @Composable
 private fun ControlTray(state: MeetingState, session: MeetingSession, onReactions: () -> Unit) {
     val withPermissions = rememberCallPermissions()
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Column(
         Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .75f))))
             .navigationBarsPadding().padding(top = 24.dp, bottom = 16.dp),
@@ -540,7 +547,7 @@ private fun ControlTray(state: MeetingState, session: MeetingSession, onReaction
                 withPermissions(false) { session.toggleMute() }
             }
             Box(
-                Modifier.size(60.dp).clip(CircleShape).background(CallEndRed).clickable(onClickLabel = "Leave call", onClick = session::leave),
+                Modifier.size(60.dp).clip(CircleShape).background(CallEndRed).clickable(onClickLabel = "Leave call") { haptics.reject(); session.leave() },
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Outlined.CallEnd, "Leave call", Modifier.size(28.dp), tint = Color.White) }
         }
@@ -553,16 +560,18 @@ private fun ControlTray(state: MeetingState, session: MeetingSession, onReaction
 
 @Composable
 private fun TrayButton(icon: ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Box(
-        Modifier.size(52.dp).clip(CircleShape).background(if (on) Color.White else CallSurface).clickable(onClickLabel = label, onClick = onClick),
+        Modifier.size(52.dp).clip(CircleShape).background(if (on) Color.White else CallSurface).clickable(onClickLabel = label) { haptics.toggle(); onClick() },
         contentAlignment = Alignment.Center,
     ) { Icon(icon, label, Modifier.size(24.dp), tint = if (on) Color.Black else Color.White) }
 }
 
 @Composable
 private fun PillButton(icon: ImageVector, label: String, active: Boolean, onClick: () -> Unit) {
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Row(
-        Modifier.clip(RoundedCornerShape(20.dp)).background(if (active) Color(0xFFFFC107) else CallSurface).clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+        Modifier.clip(RoundedCornerShape(20.dp)).background(if (active) Color(0xFFFFC107) else CallSurface).clickable { haptics.tap(); onClick() }.padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, Modifier.size(18.dp), tint = if (active) Color.Black else Color.White)

@@ -177,8 +177,9 @@ private fun PreviewArea(
 
 @Composable
 private fun LobbyButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, off: Boolean, onClick: () -> Unit) {
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Box(
-        Modifier.size(44.dp).clip(CircleShape).background(if (off) Color(0xCCEF4444) else Color(0x99000000)).clickable(onClickLabel = label, onClick = onClick),
+        Modifier.size(44.dp).clip(CircleShape).background(if (off) Color(0xCCEF4444) else Color(0x99000000)).clickable(onClickLabel = label) { haptics.toggle(); onClick() },
         contentAlignment = Alignment.Center,
     ) { Icon(icon, label, Modifier.size(20.dp), tint = Color.White) }
 }
@@ -226,6 +227,7 @@ fun networkColor(rttMs: Long): Color = when {
 @Composable
 private fun MeetingInfo(meeting: Meeting, code: String, onJoin: () -> Unit) {
     val clipboard = LocalClipboardManager.current
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(copied) {
         if (copied) {
@@ -243,6 +245,7 @@ private fun MeetingInfo(meeting: Meeting, code: String, onJoin: () -> Unit) {
                 "Copy code",
                 Modifier.size(22.dp).clip(RoundedCornerShape(4.dp)).clickable {
                     clipboard.setText(AnnotatedString(code))
+                    haptics.confirm()
                     copied = true
                 }.padding(3.dp),
                 tint = Color(0xFF888888),
@@ -250,7 +253,7 @@ private fun MeetingInfo(meeting: Meeting, code: String, onJoin: () -> Unit) {
         }
         meeting.organizerName?.let { Text("Hosted by $it", color = Muted, fontSize = 13.3.sp) }
         Box(
-            Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).background(Sky).clickable(onClick = onJoin).padding(10.4.dp),
+            Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(8.dp)).background(Sky).clickable { haptics.confirm(); onJoin() }.padding(10.4.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(if (meeting.isEnded()) "Rejoin meeting" else "Join now", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)

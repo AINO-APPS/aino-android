@@ -177,7 +177,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                                     val moved = dragging?.let { d -> viewModel.ui.value.tasks.firstOrNull { it.id == d.id } ?: d }
                                                     dragging = null
                                                     if (moved != null && target != null) {
-                                                        states.firstOrNull { it.key == target }?.let { viewModel.moveTask(moved, it) }
+                                                        states.firstOrNull { it.key == target }?.let { haptics.performHapticFeedback(HapticFeedbackType.LongPress); viewModel.moveTask(moved, it) }
                                                     }
                                                 },
                                                 onDragCancel = { dragging = null },
@@ -414,6 +414,7 @@ private fun SprintLifecycleControls(ui: TaskUiState, sprint: AvailableSprint, vi
 internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewModel, onOpen: () -> Unit, onDismiss: () -> Unit) {
     val colors = LocalWebColors.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     TaskSheetScaffold(task.displayKey, onDismiss) {
         Text(task.title, color = colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp))
         if (task.sprintId != null && canChangeStatus(task, ui.userId, ui.role)) {
@@ -425,7 +426,7 @@ internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewMo
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (current) colors.primary.copy(alpha = 0.08f) else androidx.compose.ui.graphics.Color.Transparent)
-                        .clickable(enabled = !current) { onDismiss(); viewModel.moveTask(task, state) }
+                        .clickable(enabled = !current) { haptics.confirm(); onDismiss(); viewModel.moveTask(task, state) }
                         .padding(horizontal = 10.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

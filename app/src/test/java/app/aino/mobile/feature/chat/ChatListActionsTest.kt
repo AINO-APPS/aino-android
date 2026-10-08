@@ -28,6 +28,7 @@ import org.junit.Before
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@org.junit.runner.RunWith(org.robolectric.RobolectricTestRunner::class)
 class ChatListActionsTest {
     private val captured = CopyOnWriteArrayList<ApiRequest>()
     @Volatile private var failMutations = false
@@ -42,10 +43,17 @@ class ChatListActionsTest {
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
     @After fun tearDown() { VisibleThread.clear(); Dispatchers.resetMain() }
 
-    private fun viewModel(): ChatViewModel {
+    @Volatile private var failAvatar = false
+
+    private fun viewModel(
+        prepareAvatar: (android.net.Uri) -> app.aino.mobile.core.media.PreparedAvatar? = { null },
+    ): ChatViewModel {
         val api = ApiClient { request ->
             captured += request
             if (request.method != "GET") hold?.await(3, java.util.concurrent.TimeUnit.SECONDS)
+            if (failAvatar && request.path.endsWith("/avatar")) {
+                throw ApiError.Http(500, """{"error":"Upload failed"}""", request.method, request.path)
+            }
             if (failMutations && request.method != "GET") {
                 throw ApiError.Http(500, """{"error":"Server said no"}""", request.method, request.path)
             }
@@ -53,6 +61,7 @@ class ChatListActionsTest {
                 request.path == "chat/conversations" -> conversationsJson
                 request.path.startsWith("chat/search") -> """[{"id":1,"full_name":"Me"},{"id":8,"full_name":"Asha K"}]"""
                 request.path == "chat/conversations/group" -> """{"conversationId":42}"""
+                request.path.endsWith("/avatar") -> """{"avatar":"/uploads/g.jpg"}"""
                 request.path.endsWith("/pin") -> """{"pinned":true}"""
                 request.path.endsWith("/mute") -> """{"muted":true}"""
                 request.path.endsWith("/archive") -> """{"archived":true}"""
@@ -65,6 +74,7 @@ class ChatListActionsTest {
             ChatRepository(api),
             { scope -> ChatCache(scope, ScopedCache(scope, EmptyDao)) },
             app.aino.mobile.core.db.ChatOutbox.None,
+            prepareGroupAvatar = prepareAvatar,
         ).also { vm ->
             vm.setScope(1, 1)
             await { vm.ui.value.conversations.size == 2 && !vm.ui.value.loading }
@@ -174,6 +184,27 @@ class ChatListActionsTest {
         await { captured.any { it.method == "POST" && it.path == "chat/conversations/group" } }
         val body = captured.first { it.path == "chat/conversations/group" }.body!!.decodeToString()
         assertEquals("""{"name":"Team","userIds":[8,9]}""", body)
+        await { vm.ui.value.openConversationId == 42L && !vm.ui.value.creatingGroup }
+    }
+
+    @Test fun `a picked group photo is uploaded to the new group`() {
+        val photo = app.aino.mobile.core.media.PreparedAvatar("g.jpg", "image/jpeg", byteArrayOf(1, 2, 3))
+        val vm = viewModel(prepareAvatar = { photo })
+        vm.createGroup("Team", listOf(8L), avatar = android.net.Uri.EMPTY)
+        await { vm.ui.value.openConversationId == 42L }
+        assertTrue(captured.any { it.method == "POST" && it.path == "chat/conversations/42/avatar" })
+        assertFalse(vm.ui.value.creatingGroup)
+        assertNull(vm.ui.value.error)
+    }
+
+    @Test fun `a failed photo upload still opens the new group with a notice`() {
+        val photo = app.aino.mobile.core.media.PreparedAvatar("g.jpg", "image/jpeg", byteArrayOf(1))
+        val vm = viewModel(prepareAvatar = { photo })
+        failAvatar = true
+        vm.createGroup("Team", listOf(8L), avatar = android.net.Uri.EMPTY)
+        await { vm.ui.value.openConversationId == 42L }
+        assertEquals("Group created, but the photo couldn't be uploaded", vm.ui.value.message)
+        assertFalse(vm.ui.value.creatingGroup)
     }
 
     @Test fun `calls stay enabled when the shell sets the account scope afterwards`() {

@@ -127,8 +127,12 @@ fun AttendanceScreen(
     // ---- Success messages -> snackbar ---------------------------------------
     val snackbar = remember { SnackbarHostState() }
     val notice = ui.message ?: ui.leaveSuccess
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
+    val verifyError = ui.verifySession?.submitError
+    LaunchedEffect(verifyError) { if (verifyError != null) haptics.reject() }
     LaunchedEffect(notice) {
         if (notice != null) {
+            haptics.confirm()
             scope.launch { snackbar.showSnackbar(notice) }
             viewModel.consumeMessage()
         }
@@ -211,8 +215,8 @@ fun AttendanceScreen(
                     TodayHeroCard(
                         ui = ui,
                         onWorkMode = viewModel::setWorkMode,
-                        onClock = { action -> viewModel.prepare(action, onLocationPermission) },
-                        onBreak = viewModel::breakAction,
+                        onClock = { action -> haptics.tap(); viewModel.prepare(action, onLocationPermission) },
+                        onBreak = { action -> haptics.toggle(); viewModel.breakAction(action) },
                         timer = timer,
                         onRequestModeChange = viewModel::openModeChange,
                     )

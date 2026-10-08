@@ -116,6 +116,7 @@ fun AinoNavigationBar(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = rememberAinoHaptics()
     NavigationBar(
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -124,7 +125,7 @@ fun AinoNavigationBar(
         items.forEach { item ->
             NavigationBarItem(
                 selected = item.key == selectedKey,
-                onClick = { onSelect(item.key) },
+                onClick = { haptics.tap(); onSelect(item.key) },
                 icon = {
                     BadgedBox(
                         badge = {

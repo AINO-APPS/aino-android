@@ -58,6 +58,7 @@ fun ConversationSnippet(
     secondaryColor: Color,
     background: Color,
     modifier: Modifier = Modifier,
+    maxLines: Int = 2,
 ) {
     val snippet = conversation.previewSnippet()
     val mine = conversation.lastIsMine(currentUserId)
@@ -89,7 +90,7 @@ fun ConversationSnippet(
         text,
         modifier,
         inlineContent = inline,
-        maxLines = 2,
+        maxLines = maxLines,
         overflow = TextOverflow.Ellipsis,
         color = color,
         fontSize = 15.sp,

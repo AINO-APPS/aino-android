@@ -195,6 +195,8 @@ data class ChatUiState(
     val messageResults: List<ChatMessage> = emptyList(),
     /** Just-archived chat offered for Undo (Signal "Chat archived" snackbar). */
     val archiveUndo: ChatConversation? = null,
+    /** New-group flow: the create request (and optional photo upload) is in flight. */
+    val creatingGroup: Boolean = false,
     /** The open group's running call (Join banner), or null. */
     val activeGroupCall: ActiveGroupCall? = null,
     /** A group invite link being previewed / joined. */
@@ -221,6 +223,8 @@ class ChatViewModel(
     private val forgetWarmThread: (Long) -> Unit = {},
     /** Conversations whose stored rows a push wake wrote (see [app.aino.mobile.core.push.PushSync]). */
     private val storedThreadUpdates: kotlinx.coroutines.flow.Flow<Long> = app.aino.mobile.core.push.PushSync.threadUpdates,
+    /** Square-crops a picked group photo for upload; null when the image can't be used. */
+    private val prepareGroupAvatar: (Uri) -> app.aino.mobile.core.media.PreparedAvatar? = { null },
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ChatUiState())
     val ui: StateFlow<ChatUiState> = _ui.asStateFlow()
@@ -2188,15 +2192,34 @@ class ChatViewModel(
 
     fun dismissInvite() = _ui.update { st -> st.copy(invite = null) }
 
-    fun createGroup(name: String, userIds: List<Long>) {
+    /**
+     * Signal new-group flow: creates the group, then uploads the optional [avatar].
+     * A failed photo upload never loses the group; it opens with a notice instead.
+     */
+    fun createGroup(name: String, userIds: List<Long>, avatar: Uri? = null) {
         if (name.isBlank() || userIds.isEmpty()) {
             _ui.update { st -> st.copy(error = "Add a group name and at least one member") }
             return
         }
+        if (_ui.value.creatingGroup) return
+        _ui.update { st -> st.copy(creatingGroup = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.createGroup(name.trim(), userIds) }.fold(
-                onSuccess = { created -> refresh(); _ui.update { st -> st.copy(openConversationId = created.conversationId) } },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not create group") } },
+                onSuccess = { created ->
+                    val photoFailed = avatar != null && runCatching {
+                        val prepared = prepareGroupAvatar(avatar) ?: throw IllegalStateException("That image can't be used")
+                        repository.uploadGroupAvatar(created.conversationId, prepared.fileName, prepared.mimeType, prepared.bytes)
+                    }.isFailure
+                    refresh()
+                    _ui.update { st ->
+                        st.copy(
+                            creatingGroup = false,
+                            openConversationId = created.conversationId,
+                            message = if (photoFailed) "Group created, but the photo couldn't be uploaded" else st.message,
+                        )
+                    }
+                },
+                onFailure = { _ui.update { st -> st.copy(creatingGroup = false, error = it.message ?: "Could not create group") } },
             )
         }
     }
@@ -2229,6 +2252,7 @@ class ChatViewModel(
                     outbox,
                     warm = ChatRepository(container.cachedApi),
                     forgetWarmThread = { id -> app.aino.mobile.core.push.PushSync.forgetThread(context.applicationContext, id) },
+                    prepareGroupAvatar = { uri -> app.aino.mobile.core.media.prepareSquareAvatar(context.applicationContext, uri) },
                 ).also { it.context = context.applicationContext } as T
             }
         }

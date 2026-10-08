@@ -446,6 +446,7 @@ private fun PipTile(state: MeetingState) {
 @Composable
 private fun BottomBar(state: MeetingState, session: MeetingSession, chatOpen: Boolean, onChat: () -> Unit, onParticipants: () -> Unit) {
     val withPermissions = rememberCallPermissions()
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     var moreOpen by remember { mutableStateOf(false) }
     val hands = state.peers.count { it.handRaised } + if (state.handRaised) 1 else 0
     Column(Modifier.fillMaxWidth().background(MrBgDark)) {
@@ -487,12 +488,12 @@ private fun BottomBar(state: MeetingState, session: MeetingSession, chatOpen: Bo
                 }
             }
             Box(
-                Modifier.height(36.dp).clip(RoundedCornerShape(8.dp)).background(MrDanger).clickable(onClickLabel = "Leave meeting", onClick = session::leave).padding(horizontal = 10.dp),
+                Modifier.height(36.dp).clip(RoundedCornerShape(8.dp)).background(MrDanger).clickable(onClickLabel = "Leave meeting") { haptics.reject(); session.leave() }.padding(horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(HeroIcons.PhoneXMark, "Leave meeting", Modifier.size(18.dp), tint = Color.White) }
             if (state.isHost) {
                 Box(
-                    Modifier.height(32.dp).clip(RoundedCornerShape(8.dp)).background(MrDanger).clickable(onClickLabel = "End meeting for all", onClick = session::endForAll).padding(horizontal = 8.dp),
+                    Modifier.height(32.dp).clip(RoundedCornerShape(8.dp)).background(MrDanger).clickable(onClickLabel = "End meeting for all") { haptics.reject(); session.endForAll() }.padding(horizontal = 8.dp),
                     contentAlignment = Alignment.Center,
                 ) { Text("End All", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
             }
@@ -511,9 +512,10 @@ private fun MoreItem(icon: ImageVector, label: String, onClick: () -> Unit) {
 
 @Composable
 private fun BarButton(icon: ImageVector, label: String, background: Color, badge: Int? = null, badgeColor: Color = MrAccent, size: Dp = 36.dp, onClick: () -> Unit) {
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Box {
         Box(
-            Modifier.size(size).clip(CircleShape).background(background).clickable(onClickLabel = label, onClick = onClick),
+            Modifier.size(size).clip(CircleShape).background(background).clickable(onClickLabel = label) { haptics.toggle(); onClick() },
             contentAlignment = Alignment.Center,
         ) { Icon(icon, label, Modifier.size(18.dp), tint = Color.White) }
         badge?.let {

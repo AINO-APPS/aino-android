@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.aino.mobile.core.AppContainer
+import app.aino.mobile.core.designsystem.rememberAinoHaptics
 import app.aino.mobile.core.media.resolveServerMediaUrl
 import coil3.compose.AsyncImage
 
@@ -52,9 +53,17 @@ internal fun BoxScope.BlurredAvatarBackdrop(avatar: String?) {
 /** A round Signal call button with its label underneath (incoming screen). */
 @Composable
 internal fun LabeledCallButton(icon: ImageVector, label: String, background: Color, onClick: () -> Unit, size: Dp = 64.dp) {
+    val haptics = rememberAinoHaptics()
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(
-            Modifier.size(size).clip(CircleShape).background(background).clickable(onClickLabel = label, onClick = onClick),
+            Modifier.size(size).clip(CircleShape).background(background).clickable(onClickLabel = label) {
+                when (background) {
+                    CallRed -> haptics.reject()
+                    CallGreen -> haptics.confirm()
+                    else -> haptics.tap()
+                }
+                onClick()
+            },
             contentAlignment = Alignment.Center,
         ) { Icon(icon, label, Modifier.size(28.dp), tint = Color.White) }
         Text(label, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
@@ -67,10 +76,11 @@ internal fun LabeledCallButton(icon: ImageVector, label: String, background: Col
  */
 @Composable
 internal fun CallToggle(icon: ImageVector, label: String, checked: Boolean, onClick: () -> Unit) {
+    val haptics = rememberAinoHaptics()
     Box(
         Modifier.size(56.dp).clip(CircleShape)
             .background(if (checked) Color.White else Color.White.copy(alpha = .16f))
-            .clickable(onClickLabel = label, onClick = onClick),
+            .clickable(onClickLabel = label) { haptics.toggle(); onClick() },
         contentAlignment = Alignment.Center,
     ) { Icon(icon, label, Modifier.size(26.dp), tint = if (checked) CallBackground else Color.White) }
 }

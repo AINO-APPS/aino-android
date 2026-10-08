@@ -70,6 +70,9 @@ fun ActiveCallScreen(controller: ActiveCallController) {
     var swapped by remember { mutableStateOf(false) }
     var chromeVisible by remember { mutableStateOf(true) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
+    // A short buzz when the peer picks up, like Signal's "connected" cue.
+    LaunchedEffect(ui.connectedAt != null) { if (ui.connectedAt != null) haptics.confirm() }
     LaunchedEffect(connected) {
         while (connected) {
             now = System.currentTimeMillis()
@@ -132,7 +135,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
                     Icon(
                         HeroIcons.ChevronDown,
                         "Picture-in-picture",
-                        Modifier.size(44.dp).clip(CircleShape).clickable(enabled = connected, onClick = minimise).padding(8.dp),
+                        Modifier.size(44.dp).clip(CircleShape).clickable(enabled = connected) { haptics.tap(); minimise() }.padding(8.dp),
                         tint = Color.White.copy(alpha = if (connected) 1f else .4f),
                     )
                     Column(Modifier.weight(1f).padding(start = 4.dp, top = 4.dp)) {
@@ -162,7 +165,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
                     }
                     CallToggle(HeroIcons.MicrophoneSlash, if (ui.muted) "Unmute (M)" else "Mute (M)", ui.muted, controller::toggleMute)
                     Box(
-                        Modifier.size(56.dp).clip(CircleShape).background(CallRed).clickable(onClickLabel = "End call (E)", onClick = controller::hangUp),
+                        Modifier.size(56.dp).clip(CircleShape).background(CallRed).clickable(onClickLabel = "End call (E)") { haptics.reject(); controller.hangUp() },
                         contentAlignment = Alignment.Center,
                     ) { Icon(HeroIcons.PhoneXMark, "End call (E)", Modifier.size(26.dp), tint = Color.White) }
                 }
@@ -179,6 +182,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
 @Composable
 private fun SelfPreview(ui: ActiveCallUi, swapped: Boolean, onSwap: () -> Unit, onFlip: () -> Unit, maxWidthPx: Int, maxHeightPx: Int) {
     val density = LocalDensity.current
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     val widthPx = with(density) { 96.dp.toPx() }
     val heightPx = with(density) { 160.dp.toPx() }
     val marginX = with(density) { 16.dp.toPx() }
@@ -198,6 +202,7 @@ private fun SelfPreview(ui: ActiveCallUi, swapped: Boolean, onSwap: () -> Unit, 
             .pointerInput(maxWidthPx, maxHeightPx) {
                 detectDragGestures(
                     onDragEnd = {
+                        haptics.tick()
                         right = baseX + drag.x + widthPx / 2 > maxWidthPx / 2
                         atTop = baseY + drag.y + heightPx / 2 < maxHeightPx / 2
                         drag = Offset.Zero
@@ -207,7 +212,7 @@ private fun SelfPreview(ui: ActiveCallUi, swapped: Boolean, onSwap: () -> Unit, 
                     drag += amount
                 }
             }
-            .clickable(onClickLabel = "Swap video", onClick = onSwap),
+            .clickable(onClickLabel = "Swap video") { haptics.tap(); onSwap() },
     ) {
         val showRemote = swapped && ui.remoteVideo != null
         VideoRenderer(if (showRemote) ui.remoteVideo else ui.localVideo, Modifier.fillMaxSize(), mirror = !showRemote, overlay = true)
@@ -216,7 +221,7 @@ private fun SelfPreview(ui: ActiveCallUi, swapped: Boolean, onSwap: () -> Unit, 
                 HeroIcons.ArrowPathRoundedSquare,
                 "Switch camera",
                 Modifier.align(Alignment.BottomEnd).padding(6.dp).size(32.dp).clip(CircleShape)
-                    .background(Color.Black.copy(alpha = .45f)).clickable(onClick = onFlip).padding(6.dp),
+                    .background(Color.Black.copy(alpha = .45f)).clickable { haptics.toggle(); onFlip() }.padding(6.dp),
                 tint = Color.White,
             )
         }

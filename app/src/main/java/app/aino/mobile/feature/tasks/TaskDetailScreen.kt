@@ -185,12 +185,13 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
 
     if (statusSheet) {
         val current = stateOf(task, ui.agile)
+        val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
         SelectSheet(
             "Status",
             ui.agile.workflowStates.map { SelectOption(it.key, stateLabel(it), color = hexColor(it.color, colors.textMuted)) },
             setOf(current?.key ?: task.status),
             onDismiss = { statusSheet = false },
-            onSelect = { keys -> ui.agile.workflowStates.firstOrNull { it.key == keys.firstOrNull() }?.let { viewModel.setStatus(task, it) } },
+            onSelect = { keys -> ui.agile.workflowStates.firstOrNull { it.key == keys.firstOrNull() }?.let { haptics.confirm(); viewModel.setStatus(task, it) } },
             icon = HeroIcons.CheckCircle,
         )
     }

@@ -85,8 +85,9 @@ private fun androidx.compose.foundation.layout.RowScope.TabItem(
     onClick: () -> Unit,
 ) {
     val tint by animateColorAsState(if (active) colors.primary else colors.textMuted, tween(150), label = "tabTint")
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     Column(
-        Modifier.weight(1f).clickable(onClick = onClick).padding(vertical = 6.dp),
+        Modifier.weight(1f).clickable { haptics.tap(); onClick() }.padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
     ) {

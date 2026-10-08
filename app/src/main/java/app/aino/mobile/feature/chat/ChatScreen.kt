@@ -1,4 +1,4 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package app.aino.mobile.feature.chat
 
@@ -110,7 +110,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 
-private enum class ChatListTab { Chat, Meet, Calls }
+internal enum class ChatListTab { Chat, Meet, Calls }
 
 @Composable
 fun ChatScreen(
@@ -191,6 +191,32 @@ fun ChatScreen(
         if (onOpenConversation != null) onOpenConversation(conversation.id) else viewModel.openConversation(conversation)
     }
 
+    val listState = rememberLazyListState()
+    // The hero (large title + search pill) is item 0; once it scrolls away the toolbar shows the title.
+    val heroGone by remember { androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 0 } }
+    val listScrolled by remember {
+        androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 }
+    }
+    val showHero = !searchOpen && !archivedOpen
+    val listTitle = when (activeTab) { ChatListTab.Chat -> "Chats"; ChatListTab.Meet -> "Meetings"; ChatListTab.Calls -> "Calls" }
+    val tabs = buildList {
+        add(
+            ChatListTabItem(
+                ChatListTab.Chat, "Chats", HeroIcons.ChatBubbleOvalLeft,
+                ui.conversations.sumOf { if (it.isMuted || it.isArchived || it.isMeetingChat) 0 else it.unreadCount.coerceAtLeast(0) },
+            ),
+        )
+        if (meetingsEnabled) add(
+            ChatListTabItem(
+                ChatListTab.Meet, "Meet", HeroIcons.VideoCamera,
+                ui.conversations.filter(ChatConversation::isMeetingChat).sumOf { it.unreadCount.coerceAtLeast(0) },
+            ),
+        )
+        add(ChatListTabItem(ChatListTab.Calls, "Calls", HeroIcons.Phone, 0))
+    }
+    val selecting = ui.selectedConversationIds.isNotEmpty()
+    val rowHaptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
+
     Box(Modifier.fillMaxSize().background(signal.background)) {
         Column(Modifier.fillMaxSize()) {
             if (ui.selectedCallIds.isNotEmpty()) {
@@ -213,7 +239,9 @@ fun ChatScreen(
                 )
             } else {
                 ChatHeader(
-                    activeTab = activeTab,
+                    title = listTitle,
+                    showTitle = !showHero || heroGone,
+                    elevated = listScrolled,
                     searchOpen = searchOpen,
                     query = ui.userSearch,
                     onQuery = viewModel::updateUserSearch,
@@ -223,24 +251,35 @@ fun ChatScreen(
                     },
                     onNewGroup = { newGroupOpen = true },
                 )
-                if (!searchOpen) ChatFilterChips(
-                    activeTab = activeTab,
-                    unread = ui.conversations.sumOf {
-                        if (it.isMuted || it.isArchived || it.isMeetingChat) 0 else it.unreadCount.coerceAtLeast(0)
-                    },
-                    meetingUnread = ui.conversations.filter(ChatConversation::isMeetingChat).sumOf { it.unreadCount.coerceAtLeast(0) },
-                    meetingsEnabled = meetingsEnabled,
-                    onTab = { tab -> activeTab = tab; if (tab == ChatListTab.Calls) viewModel.loadCalls() },
-                )
             }
-            if (newGroupOpen) NewGroupDialog(ui, viewModel) { newGroupOpen = false }
+            if (newGroupOpen) NewGroupFlow(ui, viewModel) { newGroupOpen = false }
 
             app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox(
                 loading = if (activeTab == ChatListTab.Calls) ui.callsLoading else ui.loading,
                 onRefresh = { if (activeTab == ChatListTab.Calls) viewModel.loadCalls() else viewModel.refresh() },
                 modifier = Modifier.fillMaxSize(),
             ) {
-            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 96.dp)) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 96.dp)) {
+                if (showHero) {
+                    item(key = "hero") { ChatListHero(listTitle) { searchOpen = true } }
+                    if (tabs.size > 1) stickyHeader(key = "tabs") {
+                        Box(Modifier.fillMaxWidth().background(signal.background).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            ChatListTabs(tabs, activeTab) { tab -> activeTab = tab; if (tab == ChatListTab.Calls) viewModel.loadCalls() }
+                        }
+                    }
+                }
+                if (searchOpen && !searching) item(key = "new-group") {
+                    // Signal's compose screen leads with "New group".
+                    Row(
+                        Modifier.fillMaxWidth().clickable { rowHaptics.tap(); newGroupOpen = true }.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.size(SignalDimens.listAvatar).background(signal.primary.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(HeroIcons.UserGroup, null, Modifier.size(24.dp), tint = signal.primary)
+                        }
+                        Text("New group", Modifier.padding(start = 16.dp), color = signal.text, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
                 if (ui.error != null || ui.message != null) item(key = "notice") {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         ui.error?.let { AinoAlert(it, AlertTone.Error) }
@@ -275,7 +314,9 @@ fun ChatScreen(
                     ChatListTab.Calls -> {
                         when {
                             ui.callsLoading && ui.calls.isEmpty() -> item(key = "calls-loading") { app.aino.mobile.core.designsystem.component.FirstLoadSpinner(Modifier.height(160.dp)) }
-                            ui.calls.isEmpty() -> item(key = "calls-empty") { HonestEmpty(HeroIcons.Phone, "No calls yet") }
+                            ui.calls.isEmpty() -> item(key = "calls-empty") {
+                                ChatListEmpty(HeroIcons.Phone, "No calls yet", "Voice and video calls you make or receive show up here.")
+                            }
                             else -> items(ui.calls, key = { "call-${it.id}" }) { call ->
                                 CallRow(
                                     call = call,
@@ -289,8 +330,10 @@ fun ChatScreen(
                     }
                     ChatListTab.Meet -> {
                         if (visibleConversations.isEmpty()) item(key = "meet-empty") {
-                            HonestEmpty(HeroIcons.VideoCamera, "No meeting chats yet")
-                        } else items(visibleConversations, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation, currentUserId = ui.currentUserId) }
+                            ChatListEmpty(HeroIcons.VideoCamera, "No meeting chats yet", "Chats from meetings you join appear here.")
+                        } else items(visibleConversations, key = { it.id }) {
+                            ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation, currentUserId = ui.currentUserId)
+                        }
                     }
                     ChatListTab.Chat -> {
                         // Signal: pinned chats float to the top, then everything by recency (no section chrome).
@@ -300,26 +343,36 @@ fun ChatScreen(
                         if (archivedOpen) item(key = "archived-header") { ArchivedHeader { archivedOpen = false } }
                         if (visibleConversations.isEmpty()) item(key = "chat-empty") {
                             if (ui.loading) app.aino.mobile.core.designsystem.component.FirstLoadSpinner(Modifier.height(160.dp))
-                            else HonestEmpty(HeroIcons.ChatBubbleOvalLeft, if (archivedOpen) "No archived chats" else "No conversations yet")
+                            else if (archivedOpen) ChatListEmpty(HeroIcons.ArchiveBox, "No archived chats", "Swipe a chat left to archive it.")
+                            else ChatListEmpty(
+                                HeroIcons.ChatBubbleOvalLeft, "No conversations yet", "Start a chat with a colleague or create a group.",
+                                actionLabel = "Start a chat", onAction = { searchOpen = true },
+                            )
                         }
-                        items(ordered, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation, currentUserId = ui.currentUserId) }
+                        items(ordered, key = { it.id }) { conversation ->
+                            SwipeableConversation(
+                                conversation = conversation,
+                                enabled = !selecting,
+                                onPin = { viewModel.togglePin(conversation) },
+                                onArchive = { viewModel.toggleArchive(conversation, undoable = true) },
+                            ) {
+                                ConversationRow(conversation, ui.presence[conversation.otherUserId], conversation.id in ui.selectedConversationIds, viewModel, onOpenConversation, currentUserId = ui.currentUserId)
+                            }
+                        }
                         val archivedCount = ui.conversations.count { it.isArchived && !it.isMeetingChat }
-                        if (archivedCount > 0 && !archivedOpen) item(key = "archived") { ArchivedRow(archivedCount) { archivedOpen = true } }
+                        if (archivedCount > 0 && !archivedOpen) item(key = "archived") { ArchivedChatsRow(archivedCount) { archivedOpen = true } }
                     }
                 }
             }
             }
         }
-        // Signal compose FAB (new chat → people search).
-        if (!searchOpen && activeTab != ChatListTab.Calls && ui.selectedConversationIds.isEmpty()) {
-            androidx.compose.material3.FloatingActionButton(
-                onClick = { searchOpen = true },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-                shape = RoundedCornerShape(18.dp),
-                containerColor = if (signal.isDark) Color(0xFF2B3A5A) else Color(0xFFD2DFFB),
-                contentColor = signal.text,
-            ) { Icon(HeroIcons.PencilSquare, "New chat") }
-        }
+        // Signal compose FAB (new chat → people search, with "New group" on top).
+        NewChatFab(
+            expanded = !listScrolled,
+            visible = !searchOpen && activeTab != ChatListTab.Calls && !selecting,
+            onClick = { searchOpen = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+        )
         // Signal "Chat archived" snackbar with Undo.
         ui.archiveUndo?.let { archived ->
             LaunchedEffect(archived.id) { kotlinx.coroutines.delay(4_000); viewModel.dismissArchiveUndo() }
@@ -331,14 +384,17 @@ fun ChatScreen(
     }
 }
 
-/** Signal list toolbar: title + search + overflow; search swaps in a field. */
+/** Signal list toolbar: compact title (once the large title scrolls away) + search + overflow; search swaps in a field. */
 @Composable
 private fun ChatHeader(
-    activeTab: ChatListTab, searchOpen: Boolean, query: String,
+    title: String, showTitle: Boolean, elevated: Boolean, searchOpen: Boolean, query: String,
     onQuery: (String) -> Unit, onSearchOpen: (Boolean) -> Unit, onNewGroup: () -> Unit,
 ) {
     val signal = signalColors
     var menuOpen by remember { mutableStateOf(false) }
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
+    val divider by androidx.compose.animation.animateColorAsState(if (elevated) signal.divider else Color.Transparent, label = "toolbarDivider")
+    Column {
     Row(
         Modifier.fillMaxWidth().height(SignalDimens.toolbarHeight).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -351,13 +407,14 @@ private fun ChatHeader(
                 Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(22.dp)).background(signal.searchPill).padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Icon(HeroIcons.MagnifyingGlass, null, Modifier.padding(end = 8.dp).size(18.dp), tint = signal.textSecondary)
                 BasicTextField(
                     value = query, onValueChange = onQuery, modifier = Modifier.weight(1f).focusRequester(focus), singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(color = signal.text, fontSize = 17.sp),
                     cursorBrush = androidx.compose.ui.graphics.SolidColor(signal.primary),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     decorationBox = { inner -> Box(contentAlignment = Alignment.CenterStart) {
-                        if (query.isEmpty()) Text("Search", color = signal.textSecondary, fontSize = 17.sp)
+                        if (query.isEmpty()) Text("Search people, chats and messages", color = signal.textSecondary, fontSize = 16.sp, maxLines = 1)
                         inner()
                     } },
                 )
@@ -365,51 +422,32 @@ private fun ChatHeader(
             }
             Spacer(Modifier.width(8.dp))
         } else {
-            Text(
-                when (activeTab) { ChatListTab.Chat -> "Chats"; ChatListTab.Meet -> "Meetings"; ChatListTab.Calls -> "Calls" },
-                Modifier.weight(1f).padding(start = 12.dp),
-                color = signal.text, fontSize = 22.sp, fontWeight = FontWeight.Medium,
-            )
+            Box(Modifier.weight(1f).padding(start = 12.dp)) {
+                androidx.compose.animation.AnimatedVisibility(
+                    showTitle,
+                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 },
+                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it / 2 },
+                ) {
+                    Text(title, color = signal.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
             Icon(HeroIcons.MagnifyingGlass, "Search", Modifier.size(48.dp).clip(CircleShape).clickable { onSearchOpen(true) }.padding(12.dp), tint = signal.text)
             Box {
                 Icon(HeroIcons.EllipsisVertical, "More options", Modifier.size(48.dp).clip(CircleShape).clickable { menuOpen = true }.padding(12.dp), tint = signal.text)
-                androidx.compose.material3.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }, containerColor = signal.surface) {
+                androidx.compose.material3.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     androidx.compose.material3.DropdownMenuItem(
                         text = { Text("New group", color = signal.text) },
                         leadingIcon = { Icon(HeroIcons.UserPlus, null, tint = signal.text) },
-                        onClick = { menuOpen = false; onNewGroup() },
+                        onClick = { haptics.tap(); menuOpen = false; onNewGroup() },
                     )
                 }
             }
         }
     }
-}
-
-/** Signal-style filter chips standing in for the Chats / Meet / Calls tabs. */
-@Composable
-private fun ChatFilterChips(activeTab: ChatListTab, unread: Int, meetingUnread: Int, meetingsEnabled: Boolean, onTab: (ChatListTab) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Segment("Chats", HeroIcons.ChatBubbleOvalLeft, activeTab == ChatListTab.Chat, unread) { onTab(ChatListTab.Chat) }
-        if (meetingsEnabled) Segment("Meet", HeroIcons.VideoCamera, activeTab == ChatListTab.Meet, meetingUnread) { onTab(ChatListTab.Meet) }
-        Segment("Calls", HeroIcons.Phone, activeTab == ChatListTab.Calls, 0) { onTab(ChatListTab.Calls) }
+    Box(Modifier.fillMaxWidth().height(1.dp).background(divider))
     }
 }
 
-@Composable
-private fun Segment(label: String, icon: ImageVector, active: Boolean, badge: Int, onClick: () -> Unit) {
-    val signal = signalColors
-    Row(
-        Modifier.height(32.dp).clip(RoundedCornerShape(16.dp))
-            .background(if (active) signal.primary.copy(alpha = .16f) else Color.Transparent)
-            .border(1.dp, if (active) Color.Transparent else signal.divider, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick).padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Icon(icon, null, Modifier.size(16.dp), tint = if (active) signal.primary else signal.textSecondary)
-        Text(label, color = if (active) signal.primary else signal.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-        if (badge > 0) SignalUnreadBadge(badge, modifier = Modifier.height(18.dp))
-    }
-}
 @Composable
 private fun SelectionHeader(
     selected: Int,
@@ -455,22 +493,30 @@ private fun ConversationRow(
     val open = {
         if (onOpenConversation != null) onOpenConversation(conversation.id) else viewModel.openConversation(conversation)
     }
-    Box {
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
+    val highlightBg by androidx.compose.animation.animateColorAsState(
+        if (selected || menuOpen) signal.primary.copy(alpha = .14f) else Color.Transparent, label = "rowHighlight",
+    )
+    // Opaque base so swipe actions only show where the row has slid away.
+    Box(Modifier.background(signal.background)) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 72.dp)
-            .background(if (selected || menuOpen) signal.primary.copy(alpha = .14f) else Color.Transparent)
+        Modifier.fillMaxWidth().heightIn(min = 76.dp)
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(highlightBg)
             .combinedClickable(
                 onClick = {
-                    if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) viewModel.toggleConversationSelection(conversation.id)
+                    if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) { haptics.toggle(); viewModel.toggleConversationSelection(conversation.id) }
                     else open()
                 },
                 // Signal: long-press opens the context menu; while selecting it keeps toggling.
                 onLongClick = {
+                    haptics.longPress()
                     if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) viewModel.toggleConversationSelection(conversation.id)
                     else menuOpen = true
                 },
             )
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 8.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -479,40 +525,48 @@ private fun ConversationRow(
                 else sheetOpen = true
             },
         ) {
-            ConversationAvatar(conversation, presence, SignalDimens.listAvatar)
-            if (selected) Box(
-                Modifier.align(Alignment.BottomEnd).size(20.dp).background(signal.primary, CircleShape).border(2.dp, signal.background, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) { Icon(HeroIcons.Check, null, Modifier.size(12.dp), tint = Color.White) }
+            ConversationAvatar(conversation, presence, 52.dp)
+            androidx.compose.animation.AnimatedVisibility(
+                selected,
+                Modifier.align(Alignment.BottomEnd),
+                enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut(),
+            ) {
+                Box(
+                    Modifier.size(22.dp).background(signal.primary, CircleShape).border(2.dp, signal.background, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(HeroIcons.Check, null, Modifier.size(12.dp), tint = Color.White) }
+            }
         }
-        Spacer(Modifier.width(16.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     highlightTerm(conversation.title(), highlight, signal.highlight),
-                    Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = signal.text, fontSize = 17.sp, fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
+                    Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    color = signal.text, fontSize = 16.sp, fontWeight = if (unread) FontWeight.Bold else FontWeight.SemiBold,
                 )
-                if (conversation.isMuted) { Icon(HeroIcons.BellSlash, "Muted", Modifier.padding(start = 4.dp).size(14.dp), tint = signal.textSecondary) }
+                if (conversation.isMuted) Icon(HeroIcons.BellSlash, "Muted", Modifier.padding(start = 4.dp).size(14.dp), tint = signal.textSecondary)
+                if (conversation.isPinned) Icon(HeroIcons.PushPin, "Pinned", Modifier.padding(start = 4.dp).size(14.dp), tint = signal.textSecondary)
+                if (conversation.isFavourite) Icon(HeroIcons.Star, "Favourite", Modifier.padding(start = 4.dp).size(14.dp), tint = Color(0xFFCB912F))
+                Spacer(Modifier.weight(1f).widthIn(min = 6.dp))
                 Text(
                     listTime(conversation.lastMessageAt ?: conversation.updatedAt),
-                    Modifier.padding(start = 6.dp),
-                    color = if (unread) signal.primary else signal.textSecondary, fontSize = 13.sp,
+                    color = if (unread) signal.primary else signal.textSecondary, fontSize = 12.sp,
                     fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
-            Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                 ConversationSnippet(
                     conversation, currentUserId, unread,
                     textColor = signal.text, secondaryColor = signal.textSecondary,
                     background = signal.background,
                     modifier = Modifier.weight(1f),
+                    maxLines = 1,
                 )
-                if (conversation.isPinned) Icon(HeroIcons.PushPin, "Pinned", Modifier.padding(start = 6.dp).size(16.dp), tint = signal.textSecondary)
-                if (conversation.isFavourite) Icon(HeroIcons.Star, "Favourite", Modifier.padding(start = 6.dp).size(16.dp), tint = Color(0xFFCB912F))
                 if (unread) {
                     Spacer(Modifier.width(8.dp))
-                    Box(Modifier.clip(CircleShape).clickable { viewModel.markRead(conversation) }) { SignalUnreadBadge(conversation.unreadCount, muted = conversation.isMuted) }
+                    Box(Modifier.clip(CircleShape).clickable { haptics.tap(); viewModel.markRead(conversation) }) { SignalUnreadBadge(conversation.unreadCount, muted = conversation.isMuted) }
                 }
             }
         }
@@ -988,6 +1042,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
             onOpenGallery = openGallery,
         )
         sendItems?.let { items ->
+            val mediaHaptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
             DisposableEffect(Unit) { onDispose { viewModel.discardPrewarmedMedia() } }
             app.aino.mobile.feature.chat.media.MediaSendScreen(
                 initial = items,
@@ -995,6 +1050,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 onAddMore = openGallery,
                 onClose = { sendItems = null },
                 onSend = { finalItems, caption, viewOnce, highQuality ->
+                    mediaHaptics.confirm()
                     sendItems = null
                     viewModel.sendMedia(finalItems.map { MediaUploadSpec(it.uri, it.mimeType, it.width, it.height) }, caption, viewOnce, highQuality)
                 },
@@ -1072,84 +1128,6 @@ private fun UnreadDivider(count: Int) {
         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )
 }
-/** Web sidebar "New group": name + people search + multi-select, then open the new chat. */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun NewGroupDialog(ui: ChatUiState, viewModel: ChatViewModel, onClose: () -> Unit) {
-    val colors = LocalWebColors.current
-    var name by remember { mutableStateOf("") }
-    val picked = remember { androidx.compose.runtime.mutableStateMapOf<Long, ChatUser>() }
-    val candidates by viewModel.groupCandidates.collectAsStateWithLifecycle()
-    DisposableEffect(Unit) { onDispose { viewModel.clearGroupCandidates() } }
-    AlertDialog(
-        onDismissRequest = onClose,
-        containerColor = signalColors.surface,
-        titleContentColor = signalColors.text,
-        title = { Text("New group") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                BasicTextField(
-                    name, { name = it.take(100) },
-                    Modifier.fillMaxWidth().background(colors.inputBg, RoundedCornerShape(8.dp)).padding(12.dp), singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
-                    decorationBox = { inner -> if (name.isEmpty()) Text("Group name", color = colors.textMuted); inner() },
-                )
-                // Typing searches as you go (debounced in the VM), like the web GroupModal.
-                BasicTextField(
-                    candidates.query, { viewModel.searchGroupCandidates(it) },
-                    Modifier.fillMaxWidth().background(colors.inputBg, RoundedCornerShape(8.dp)).padding(12.dp), singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { viewModel.searchGroupCandidates(candidates.query, debounceMs = 0) }),
-                    decorationBox = { inner -> if (candidates.query.isEmpty()) Text("Search people by name or email", color = colors.textMuted); inner() },
-                )
-                if (picked.isNotEmpty()) {
-                    androidx.compose.foundation.layout.FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        picked.values.forEach { user ->
-                            Row(
-                                Modifier.clip(RoundedCornerShape(16.dp)).background(colors.primaryGlow)
-                                    .clickable(onClickLabel = "Remove ${user.display()}") { picked.remove(user.id) }
-                                    .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(user.display(), color = colors.text, fontSize = 13.sp)
-                                Icon(HeroIcons.XMark, "Remove", Modifier.padding(start = 4.dp).size(14.dp), tint = colors.textSecondary)
-                            }
-                        }
-                    }
-                }
-                when {
-                    candidates.searching -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    candidates.error != null -> Text(candidates.error.orEmpty(), color = colors.danger, fontSize = 12.sp)
-                    candidates.query.trim().length in 1..1 -> Text("Type at least 2 characters", color = colors.textMuted, fontSize = 12.sp)
-                    candidates.query.trim().length >= 2 && candidates.results.isEmpty() -> Text("No people found", color = colors.textMuted, fontSize = 12.sp)
-                }
-                LazyColumn(Modifier.heightIn(max = 260.dp)) {
-                    items(candidates.results, key = { "pick-${it.id}" }) { user ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable { if (user.id in picked) picked.remove(user.id) else picked[user.id] = user },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(user.id in picked, { if (it) picked[user.id] = user else picked.remove(user.id) })
-                            Column {
-                                Text(user.display(), color = colors.text, fontSize = 14.sp)
-                                user.username?.let { Text("@$it", color = colors.textMuted, fontSize = 11.sp) }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { viewModel.createGroup(name, picked.keys.toList()); onClose() }, enabled = name.isNotBlank() && picked.isNotEmpty()) { Text("Create") }
-        },
-        dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } },
-    )
-}
-
 @Composable
 private fun ScrollToBottomButton(unseen: Int, onClick: () -> Unit) {
     Box {
@@ -2383,14 +2361,15 @@ private fun MessageComposer(
             val sendMode = phase == VoicePhase.Locked || phase == VoicePhase.Paused || phase == VoicePhase.Draft ||
                 value.isNotBlank() || editingMessage != null
             val rotation by androidx.compose.animation.core.animateFloatAsState(if (panel == ComposerPanel.Attach && !sendMode) 45f else 0f, label = "plus")
+            val sendHaptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
             Box(
                 Modifier.size(SignalDimens.composeHeight).clip(CircleShape)
                     .background(if (sendMode) signal.primary else signal.searchPill)
                     .clickable(enabled = !uploading && phase != VoicePhase.Holding) {
                         when {
-                            recordingActive -> dispatch(VoiceEvent.Send)
-                            sendMode -> onSend()
-                            else -> toggle(ComposerPanel.Attach)
+                            recordingActive -> { sendHaptics.confirm(); dispatch(VoiceEvent.Send) }
+                            sendMode -> { sendHaptics.confirm(); onSend() }
+                            else -> { sendHaptics.tap(); toggle(ComposerPanel.Attach) }
                         }
                     },
                 contentAlignment = Alignment.Center,
@@ -2540,17 +2519,6 @@ private fun SearchHint(text: String, progress: Boolean) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         if (progress) { CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = signal.primary); Spacer(Modifier.width(8.dp)) }
         Text(text, color = signal.textSecondary, fontSize = 15.sp)
-    }
-}
-
-@Composable
-private fun ArchivedRow(count: Int, onClick: () -> Unit) {
-    val signal = signalColors
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(SignalDimens.listAvatar), contentAlignment = Alignment.Center) {
-            Icon(HeroIcons.ArchiveBox, null, Modifier.size(24.dp), tint = signal.textSecondary)
-        }
-        Text("Archived chats ($count)", Modifier.padding(start = 16.dp), color = signal.text, fontSize = 17.sp, fontWeight = FontWeight.Medium)
     }
 }
 

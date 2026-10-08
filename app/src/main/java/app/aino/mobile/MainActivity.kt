@@ -49,6 +49,7 @@ import app.aino.mobile.core.call.IncomingCallViewModel
 import app.aino.mobile.core.call.parseIncomingCallRoute
 import app.aino.mobile.core.call.PendingCallActionStore
 import app.aino.mobile.core.call.LockScreenController
+import app.aino.mobile.core.call.CallScreenAwake
 import app.aino.mobile.core.call.IncomingCallState
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -169,9 +170,19 @@ class MainActivity : FragmentActivity() {
                         .distinctUntilChanged()
                         .collectLatest { waiting -> if (waiting) locationProviderChanges().collect { resumeAfterLocationEnabled() } }
                 }
-                // Leaving the app during a connected call or a meeting enters system PiP.
                 val activeCall = app.aino.mobile.core.call.ActiveCallRuntime.get(applicationContext).ui
                 val meeting = app.aino.mobile.feature.meeting.MeetingRuntime.get(applicationContext).state
+                // Keep the display on for the whole call / meeting, not only while it rings.
+                launch {
+                    kotlinx.coroutines.flow.combine(activeCall, meeting, incomingCallViewModel.ui) { call, live, incoming ->
+                        CallScreenAwake.shouldKeepScreenOn(
+                            call = call,
+                            meetingActive = live != null,
+                            incomingRinging = incoming.route != null && incoming.state != IncomingCallState.Ended,
+                        )
+                    }.distinctUntilChanged().collect { keepOn -> CallScreenAwake.apply(this@MainActivity, keepOn) }
+                }
+                // Leaving the app during a connected call or a meeting enters system PiP.
                 kotlinx.coroutines.flow.combine(activeCall, meeting) { call, live ->
                     when {
                         call.visible && call.connectedAt != null -> if (call.isVideo) 9 to 16 else 1 to 1

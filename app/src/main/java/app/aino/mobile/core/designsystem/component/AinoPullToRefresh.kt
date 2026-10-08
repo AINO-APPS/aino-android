@@ -40,9 +40,10 @@ fun AinoPullToRefreshBox(
         else if (sawLoading) { pulled = false; sawLoading = false }
         else { delay(PULL_START_GRACE_MS); if (!sawLoading) pulled = false }
     }
+    val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     PullToRefreshBox(
         isRefreshing = pulled && loading,
-        onRefresh = { pulled = true; sawLoading = loading; onRefresh() },
+        onRefresh = { haptics.tick(); pulled = true; sawLoading = loading; onRefresh() },
         modifier = modifier,
         content = content,
     )
