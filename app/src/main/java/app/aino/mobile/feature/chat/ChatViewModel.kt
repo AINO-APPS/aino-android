@@ -787,6 +787,7 @@ class ChatViewModel(
     private fun storeLiveMessage(message: ChatMessage) {
         val conversationId = message.conversationId ?: return
         val scopedCache = cache ?: return
+        if (conversationId in deletedThreads) return
         if (!isOpen(conversationId)) {
             threadCache.get(conversationId)?.let { threadCache.put(conversationId, mergeIncomingMessage(it.messages, message)) }
         }
@@ -901,6 +902,9 @@ class ChatViewModel(
                             threadFromCache = false,
                         )
                     }
+                    // A load that was in flight when the chat was deleted for this user
+                    // must not write the thread back to memory or Room.
+                    if (id in deletedThreads) return@fold
                     val merged = if (next.selectedConversation?.id == id) next.messages
                     else mergeLatestPage(threadCache.get(id)?.messages.orEmpty(), latest)
                     threadCache.put(id, merged)
