@@ -13,6 +13,8 @@ commit as the work, and write the commit SHA in the Done column.
 2. Deploy the web app so `/privacy`, `/terms` and `/account-deletion` are live, then create the Play Console listing with [PLAY_CONSOLE_SUBMISSION.md](PLAY_CONSOLE_SUBMISSION.md) (owner).
 3. P2.1: TOTP MFA for admin roles.
 
+**Test release:** [android-v0.18.0](https://github.com/AINO-APPS/aino-android/releases/tag/android-v0.18.0). `AINO-0.18.0.apk` is the `direct` build (pilots; also served by the R2 update channel). `AINO-0.18.0-play.aab` is for the Play Console internal-testing track.
+
 ## Decisions (confirmed 2026-10-07)
 
 | Topic | Decision |
@@ -47,25 +49,25 @@ commit as the work, and write the commit SHA in the Done column.
 
 | ID | Item | Repo | Status | Done |
 |---|---|---|---|---|
-| P0.1 | Full CI green: Android (`play` + `direct` tests, lint, debug and release builds, 5 guardrails), platform server Jest (1,309) and web Vitest (285) + typecheck | both | ✅ | 2026-10-08 |
+| P0.1 | Full CI green: Android (`play` + `direct` tests, lint, debug and release builds, 5 guardrails), platform server Jest (1,309) and web Vitest (285) + typecheck | both | ✅ | 2026-10-08 · android-v0.18.0 |
 | P0.2 | 16 KB page-size check (`zipalign -c -P 16`, ELF `LOAD` alignment of every `.so`). CameraX 1.3.4 `libimage_processing_util_jni.so` was 4 KB aligned; fixed by P1.7 | android | ✅ | 2026-10-07 |
 | P0.3 | Release-build smoke test on a device: login, clock-in with location and face, chat media, polls, 1:1 call from a killed app, huddle, notification deep links, update banner | android | ⏳ Needs a physical device; use the 0.18.0 test release | |
 | P0.4 | `calls` vs `meetings` plan semantics. Decided: `calls` (Pro) = 1:1 and group calls / huddles; `meetings` (Enterprise) = scheduled meetings, lobby, HLS. Server: creating or reading a huddle needs `calls`, everything else needs `meetings`. Web and Android hide the call buttons without `calls`; Android `startCall` refuses too | both | ✅ | 2026-10-07 |
-| P0.5 | `chat_media_job` / `chat_poll_vote` impact. Confirmed: media-processing progress and other users' poll votes only showed after a reload. Fixed in P4.1 | android | ✅ | 2026-10-08 |
-| P0.6 | Branch / location model. Confirmed: organization → departments → teams, with **one** office geofence and Wi-Fi list per organization. No branches or multi-site attendance; added as P5.0 | platform | ✅ | 2026-10-08 |
+| P0.5 | `chat_media_job` / `chat_poll_vote` impact. Confirmed: media-processing progress and other users' poll votes only showed after a reload. Fixed in P4.1 | android | ✅ | 2026-10-08 · android-v0.18.0 |
+| P0.6 | Branch / location model. Confirmed: organization → departments → teams, with **one** office geofence and Wi-Fi list per organization. No branches or multi-site attendance; added as P5.0 | platform | ✅ | 2026-10-08 · android-v0.18.0 |
 
 ## Phase 1: Google Play blockers
 
 | ID | Item | Repo | Status | Done |
 |---|---|---|---|---|
-| P1.1 | `play` / `direct` flavors. `play` uses Play In-App Updates (flexible) and has no `REQUEST_INSTALL_PACKAGES`; `direct` keeps the R2 APK updater. The update banner is wired again (it had been unwired since 0.4.0). CI tests both flavors; the release workflow ships the `direct` APK + `play` AAB and fails if the permission leaks into `play` | android | ✅ | 2026-10-08 |
-| P1.2 | `allowBackup=false`, `fullBackupContent=false`, and `data_extraction_rules.xml` excluding every domain from cloud backup and device transfer | android | ✅ | 2026-10-08 |
-| P1.3 | Public `/privacy` and `/terms` pages on the web (draft based on the data the apps actually collect; **legal review pending**). Android links them on the login screen and the Profile page; "Forgot password?" opens the web reset flow | both | ✅ (legal review ⏳) | 2026-10-08 |
-| P1.4 | Public `/account-deletion` page: the in-app steps, an email fallback, and what is deleted vs kept | platform | ✅ | 2026-10-08 |
-| P1.5 | Data Safety answers in [PLAY_CONSOLE_SUBMISSION.md](PLAY_CONSOLE_SUBMISSION.md) | android | ✅ | 2026-10-08 |
-| P1.6 | Play declarations and justification text (full-screen intent, foreground services, photo/video) in [PLAY_CONSOLE_SUBMISSION.md](PLAY_CONSOLE_SUBMISSION.md). Submitting them in the Console is an owner task | android | ✅ | 2026-10-08 |
+| P1.1 | `play` / `direct` flavors. `play` uses Play In-App Updates (flexible) and has no `REQUEST_INSTALL_PACKAGES`; `direct` keeps the R2 APK updater. The update banner is wired again (it had been unwired since 0.4.0). CI tests both flavors; the release workflow ships the `direct` APK + `play` AAB and fails if the permission leaks into `play` | android | ✅ | 2026-10-08 · android-v0.18.0 |
+| P1.2 | `allowBackup=false`, `fullBackupContent=false`, and `data_extraction_rules.xml` excluding every domain from cloud backup and device transfer | android | ✅ | 2026-10-08 · android-v0.18.0 |
+| P1.3 | Public `/privacy` and `/terms` pages on the web (draft based on the data the apps actually collect; **legal review pending**). Android links them on the login screen and the Profile page; "Forgot password?" opens the web reset flow | both | ✅ (legal review ⏳) | 2026-10-08 · android-v0.18.0, platform b62083e6 |
+| P1.4 | Public `/account-deletion` page: the in-app steps, an email fallback, and what is deleted vs kept | platform | ✅ | 2026-10-08 · android-v0.18.0 |
+| P1.5 | Data Safety answers in [PLAY_CONSOLE_SUBMISSION.md](PLAY_CONSOLE_SUBMISSION.md) | android | ✅ | 2026-10-08 · android-v0.18.0 |
+| P1.6 | Play declarations and justification text (full-screen intent, foreground services, photo/video) in [PLAY_CONSOLE_SUBMISSION.md](PLAY_CONSOLE_SUBMISSION.md). Submitting them in the Console is an owner task | android | ✅ | 2026-10-08 · android-v0.18.0 |
 | P1.7 | Fix 16 KB alignment: CameraX 1.3.4 → 1.4.2. All arm64-v8a / x86_64 libraries now align to 2**14 and zipalign `-P 16` passes | android | ✅ | 2026-10-07 |
-| P1.8 | Firebase Crashlytics in the `play` flavor only: release builds, no user identifiers, auto-collection off until `CrashReporting.init`; mapping upload via the Crashlytics Gradle plugin | android | ✅ | 2026-10-08 |
+| P1.8 | Firebase Crashlytics in the `play` flavor only: release builds, no user identifiers, auto-collection off until `CrashReporting.init`; mapping upload via the Crashlytics Gradle plugin | android | ✅ | 2026-10-08 · android-v0.18.0 |
 
 ## Phase 2: security hardening
 
@@ -94,7 +96,7 @@ commit as the work, and write the commit SHA in the Done column.
 
 | ID | Item | Repo | Status | Done |
 |---|---|---|---|---|
-| P4.1 | `chat_media_job` patches media progress live. Poll bubbles now show the web `PollDisplay` tally (counts, %, your vote, total, multiple choice) and refresh on `chat_poll_vote` | android | ✅ | 2026-10-08 |
+| P4.1 | `chat_media_job` patches media progress live. Poll bubbles now show the web `PollDisplay` tally (counts, %, your vote, total, multiple choice) and refresh on `chat_poll_vote` | android | ✅ | 2026-10-08 · android-v0.18.0 |
 | P4.2 | Verified App Links (`autoVerify`) for meeting, huddle and notification URLs | both | ⏳ | |
 | P4.3 | Move Android strings into `strings.xml` (English). Hindi follows | android | ⏳ | |
 | P4.4 | Native face enrollment on Android. Needs a descriptor format the server accepts | both | ⏳ | |
