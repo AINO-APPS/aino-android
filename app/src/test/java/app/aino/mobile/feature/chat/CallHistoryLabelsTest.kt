@@ -12,6 +12,15 @@ class CallHistoryLabelsTest {
     private val peer = 2L
 
     @Test
+    fun peerAvatarPicksTheOtherSide() {
+        val base = CallLog(id = 1, conversationId = 5, callerId = me, status = "ended", callerAvatar = "me.png", otherAvatar = "peer.png")
+        assertEquals("peer.png", base.peerAvatar(me))
+        assertEquals("me.png", base.copy(callerId = peer).peerAvatar(me))
+        assertNull(base.copy(otherAvatar = " ").peerAvatar(me))
+        assertNull(base.copy(isGroup = true).peerAvatar(me))
+    }
+
+    @Test
     fun outgoingLabels() {
         assertEquals(CallHistoryLabel("Outgoing voice call", "3:05", outgoing = true, video = false, danger = false), callHistoryLabel("voice", "ended", 185, me, me))
         assertEquals(CallHistoryLabel("Outgoing voice call", "No answer", outgoing = true, video = false, danger = false), callHistoryLabel("voice", "missed", null, me, me))

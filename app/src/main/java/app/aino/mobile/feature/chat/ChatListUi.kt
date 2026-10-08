@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,7 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -42,7 +41,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -53,28 +51,6 @@ import app.aino.mobile.core.designsystem.rememberAinoHaptics
 
 internal data class ChatListTabItem(val tab: ChatListTab, val label: String, val icon: ImageVector, val badge: Int)
 
-/** Large title and search pill; scrolls away with the list while the toolbar takes over the title. */
-@Composable
-internal fun ChatListHero(title: String, onSearch: () -> Unit) {
-    val signal = signalColors
-    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) {
-        Text(
-            title,
-            Modifier.semantics { heading() },
-            color = signal.text, fontSize = 32.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp,
-        )
-        Spacer(Modifier.height(12.dp))
-        Row(
-            Modifier.fillMaxWidth().height(44.dp).clip(RoundedCornerShape(22.dp)).background(signal.searchPill)
-                .clickable(onClickLabel = "Search chats", role = Role.Button, onClick = onSearch).padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(HeroIcons.MagnifyingGlass, null, Modifier.size(20.dp), tint = signal.textSecondary)
-            Text("Search", Modifier.padding(start = 10.dp), color = signal.textSecondary, fontSize = 16.sp)
-        }
-    }
-}
-
 /** A segmented track with a sliding "thumb" behind the active tab. */
 @Composable
 internal fun ChatListTabs(tabs: List<ChatListTabItem>, activeTab: ChatListTab, onTab: (ChatListTab) -> Unit) {
@@ -82,32 +58,31 @@ internal fun ChatListTabs(tabs: List<ChatListTabItem>, activeTab: ChatListTab, o
     val haptics = rememberAinoHaptics()
     val index = tabs.indexOfFirst { it.tab == activeTab }.coerceAtLeast(0)
     BoxWithConstraints(
-        Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(20.dp)).background(signal.searchPill).padding(3.dp),
+        Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(18.dp)).background(signal.searchPill).padding(3.dp),
     ) {
         val segment = maxWidth / tabs.size
         val thumbX by animateDpAsState(segment * index, spring(dampingRatio = .8f, stiffness = 500f), label = "tabThumb")
         Box(
             Modifier.offset { androidx.compose.ui.unit.IntOffset(thumbX.roundToPx(), 0) }.width(segment).fillMaxSize()
-                .shadow(if (signal.isDark) 0.dp else 1.dp, RoundedCornerShape(17.dp))
-                .background(if (signal.isDark) Color(0xFF3A3B3E) else Color.White, RoundedCornerShape(17.dp)),
+                .shadow(if (signal.isDark) 0.dp else 1.dp, RoundedCornerShape(15.dp))
+                .background(if (signal.isDark) Color(0xFF3A3B3E) else Color.White, RoundedCornerShape(15.dp)),
         )
         Row(Modifier.fillMaxSize()) {
             tabs.forEach { item ->
                 val active = item.tab == activeTab
                 val tint by animateColorAsState(if (active) signal.text else signal.textSecondary, label = "tabTint")
                 Row(
-                    Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(17.dp))
+                    Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(15.dp))
                         .semantics { selected = active }
                         .clickable(role = Role.Tab) { if (!active) { haptics.tick(); onTab(item.tab) } },
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    Icon(item.icon, null, Modifier.size(16.dp), tint = tint)
                     Text(
-                        item.label, Modifier.padding(start = 6.dp), color = tint, fontSize = 14.sp,
+                        item.label, color = tint, fontSize = 14.sp,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1,
                     )
-                    if (item.badge > 0) SignalUnreadBadge(item.badge, modifier = Modifier.padding(start = 6.dp).height(18.dp))
+                    if (item.badge > 0) SignalUnreadBadge(item.badge, modifier = Modifier.padding(start = 4.dp).height(16.dp))
                 }
             }
         }
@@ -226,20 +201,17 @@ internal fun ArchivedChatsRow(count: Int, onClick: () -> Unit) {
     }
 }
 
-/** Extended "New chat" FAB that shrinks to its icon while the list is scrolled. */
+/** Round icon-only compose FAB (new chat → people search). */
 @Composable
-internal fun NewChatFab(expanded: Boolean, visible: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun NewChatFab(visible: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val signal = signalColors
     val haptics = rememberAinoHaptics()
     AnimatedVisibility(visible, modifier, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut()) {
-        ExtendedFloatingActionButton(
-            text = { Text("New chat", fontWeight = FontWeight.SemiBold) },
-            icon = { Icon(HeroIcons.PencilSquare, null) },
+        FloatingActionButton(
             onClick = { haptics.tap(); onClick() },
-            expanded = expanded,
             shape = RoundedCornerShape(18.dp),
             containerColor = signal.primary,
             contentColor = Color.White,
-        )
+        ) { Icon(HeroIcons.PencilSquare, "New chat") }
     }
 }

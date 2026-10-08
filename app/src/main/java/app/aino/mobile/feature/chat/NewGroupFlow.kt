@@ -1,6 +1,7 @@
 package app.aino.mobile.feature.chat
 
 import android.net.Uri
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -25,16 +26,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -64,6 +66,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +77,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.AppContainer
 import app.aino.mobile.core.designsystem.component.UserAvatar
@@ -123,8 +128,20 @@ internal fun NewGroupFlow(ui: ChatUiState, viewModel: ChatViewModel, onClose: ()
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false),
     ) {
         BackHandler(onBack = back)
+        // Make the dialog window truly full-screen and edge-to-edge so Compose insets
+        // (status bar, nav bar, keyboard) are applied once and the bottom actions stay visible.
+        val dialogView = LocalView.current
+        DisposableEffect(dialogView) {
+            (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
+                window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                @Suppress("DEPRECATION")
+                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            }
+            onDispose { }
+        }
         val signal = signalColors
-        Box(Modifier.fillMaxSize().background(signal.background).statusBarsPadding().navigationBarsPadding().imePadding()) {
+        Box(Modifier.fillMaxSize().background(signal.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
             AnimatedContent(
                 targetState = step,
                 transitionSpec = {
@@ -349,28 +366,32 @@ private fun GroupDetailsStep(
         LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
             item(key = "header") {
                 Column(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        Modifier.size(112.dp).clip(CircleShape)
-                            .clickable(enabled = !creating, onClickLabel = if (photo == null) "Add group photo" else "Change group photo") {
-                                haptics.tap()
-                                pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            },
-                    ) {
-                        if (photo != null) {
-                            AsyncImage(
-                                model = photo,
-                                imageLoader = AppContainer.get(context).imageLoader,
-                                contentDescription = "Group photo",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize().clip(CircleShape),
-                            )
-                        } else {
-                            Box(Modifier.fillMaxSize().background(signal.primary.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) {
+                    // The camera badge overlaps the circle's edge, so only the photo circle is clipped.
+                    Box(Modifier.size(112.dp)) {
+                        Box(
+                            Modifier.fillMaxSize().clip(CircleShape).background(signal.primary.copy(alpha = .14f))
+                                .clickable(enabled = !creating, onClickLabel = if (photo == null) "Add group photo" else "Change group photo") {
+                                    haptics.tap()
+                                    pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (photo != null) {
+                                AsyncImage(
+                                    model = photo,
+                                    imageLoader = AppContainer.get(context).imageLoader,
+                                    contentDescription = "Group photo",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            } else {
                                 Icon(HeroIcons.UserGroup, null, Modifier.size(48.dp), tint = signal.primary)
                             }
                         }
                         Box(
-                            Modifier.align(Alignment.BottomEnd).size(36.dp).background(signal.primary, CircleShape).border(3.dp, signal.background, CircleShape),
+                            Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp).size(38.dp)
+                                .clip(CircleShape).background(signal.background).padding(3.dp)
+                                .clip(CircleShape).background(signal.primary),
                             contentAlignment = Alignment.Center,
                         ) { Icon(HeroIcons.Camera, null, Modifier.size(18.dp), tint = Color.White) }
                     }

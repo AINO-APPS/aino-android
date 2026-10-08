@@ -192,13 +192,9 @@ fun ChatScreen(
     }
 
     val listState = rememberLazyListState()
-    // The hero (large title + search pill) is item 0; once it scrolls away the toolbar shows the title.
-    val heroGone by remember { androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 0 } }
     val listScrolled by remember {
         androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 }
     }
-    val showHero = !searchOpen && !archivedOpen
-    val listTitle = when (activeTab) { ChatListTab.Chat -> "Chats"; ChatListTab.Meet -> "Meetings"; ChatListTab.Calls -> "Calls" }
     val tabs = buildList {
         add(
             ChatListTabItem(
@@ -239,8 +235,9 @@ fun ChatScreen(
                 )
             } else {
                 ChatHeader(
-                    title = listTitle,
-                    showTitle = !showHero || heroGone,
+                    tabs = if (archivedOpen) emptyList() else tabs,
+                    activeTab = activeTab,
+                    onTab = { tab -> activeTab = tab; if (tab == ChatListTab.Calls) viewModel.loadCalls() },
                     elevated = listScrolled,
                     searchOpen = searchOpen,
                     query = ui.userSearch,
@@ -260,14 +257,6 @@ fun ChatScreen(
                 modifier = Modifier.fillMaxSize(),
             ) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 96.dp)) {
-                if (showHero) {
-                    item(key = "hero") { ChatListHero(listTitle) { searchOpen = true } }
-                    if (tabs.size > 1) stickyHeader(key = "tabs") {
-                        Box(Modifier.fillMaxWidth().background(signal.background).padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            ChatListTabs(tabs, activeTab) { tab -> activeTab = tab; if (tab == ChatListTab.Calls) viewModel.loadCalls() }
-                        }
-                    }
-                }
                 if (searchOpen && !searching) item(key = "new-group") {
                     // Signal's compose screen leads with "New group".
                     Row(
@@ -320,6 +309,7 @@ fun ChatScreen(
                             else -> items(ui.calls, key = { "call-${it.id}" }) { call ->
                                 CallRow(
                                     call = call,
+                                    conversation = ui.conversations.firstOrNull { it.id == call.conversationId },
                                     currentUserId = ui.currentUserId,
                                     selected = call.id in ui.selectedCallIds,
                                     selectionEnabled = true,
@@ -368,7 +358,6 @@ fun ChatScreen(
         }
         // Signal compose FAB (new chat → people search, with "New group" on top).
         NewChatFab(
-            expanded = !listScrolled,
             visible = !searchOpen && activeTab != ChatListTab.Calls && !selecting,
             onClick = { searchOpen = true },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
@@ -384,10 +373,11 @@ fun ChatScreen(
     }
 }
 
-/** Signal list toolbar: compact title (once the large title scrolls away) + search + overflow; search swaps in a field. */
+/** List toolbar: Chats/Meet/Calls tabs + search + overflow in one row; search swaps in a field. */
 @Composable
 private fun ChatHeader(
-    title: String, showTitle: Boolean, elevated: Boolean, searchOpen: Boolean, query: String,
+    tabs: List<ChatListTabItem>, activeTab: ChatListTab, onTab: (ChatListTab) -> Unit,
+    elevated: Boolean, searchOpen: Boolean, query: String,
     onQuery: (String) -> Unit, onSearchOpen: (Boolean) -> Unit, onNewGroup: () -> Unit,
 ) {
     val signal = signalColors
@@ -423,13 +413,7 @@ private fun ChatHeader(
             Spacer(Modifier.width(8.dp))
         } else {
             Box(Modifier.weight(1f).padding(start = 12.dp)) {
-                androidx.compose.animation.AnimatedVisibility(
-                    showTitle,
-                    enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 },
-                    exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it / 2 },
-                ) {
-                    Text(title, color = signal.text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                }
+                if (tabs.size > 1) ChatListTabs(tabs, activeTab, onTab)
             }
             Icon(HeroIcons.MagnifyingGlass, "Search", Modifier.size(48.dp).clip(CircleShape).clickable { onSearchOpen(true) }.padding(12.dp), tint = signal.text)
             Box {
@@ -1144,6 +1128,7 @@ private fun ScrollToBottomButton(unseen: Int, onClick: () -> Unit) {
 @OptIn(ExperimentalFoundationApi::class)
 private fun CallRow(
     call: CallLog,
+    conversation: ChatConversation?,
     currentUserId: Long?,
     selected: Boolean = false,
     selectionEnabled: Boolean = false,
@@ -1166,11 +1151,14 @@ private fun CallRow(
         val webColors = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current
         val label = call.historyLabel(currentUserId)
         val labelTint = if (label.danger) webColors.danger else webColors.textSecondary
-        Box(Modifier.size(46.dp).background(webColors.surface, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(if (label.video) HeroIcons.VideoCamera else HeroIcons.Phone, null, tint = if (label.danger) webColors.danger else webColors.primary)
+        val title = call.title(currentUserId)
+        when {
+            conversation != null && (conversation.isGroup || conversation.isMeetingChat) -> ConversationAvatar(conversation, null, 46.dp)
+            call.isGroup -> app.aino.mobile.core.designsystem.component.GroupAvatar(title, null, emptyList(), "group-${call.conversationId}", 46.dp)
+            else -> app.aino.mobile.core.designsystem.component.UserAvatar(title, call.peerAvatar(currentUserId) ?: conversation?.otherAvatar, 46.dp)
         }
         Column(Modifier.padding(start = 11.dp).weight(1f)) {
-            Text(call.title(currentUserId), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (label.danger) webColors.danger else Color.Unspecified)
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = if (label.danger) webColors.danger else Color.Unspecified)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     if (label.outgoing) HeroIcons.ArrowUpRight else HeroIcons.ArrowDownLeft,
@@ -1186,7 +1174,15 @@ private fun CallRow(
                 )
             }
         }
-        Text(timeAgo(call.createdAt), color = webColors.textSecondary, fontSize = 11.sp)
+        Column(horizontalAlignment = Alignment.End) {
+            Text(timeAgo(call.createdAt), color = webColors.textSecondary, fontSize = 11.sp)
+            Icon(
+                if (label.video) HeroIcons.VideoCamera else HeroIcons.Phone,
+                if (label.video) "Video call" else "Voice call",
+                Modifier.padding(top = 4.dp).size(18.dp),
+                tint = if (label.danger) webColors.danger else webColors.primary,
+            )
+        }
     }
 }
 
@@ -1299,7 +1295,7 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                     item { InfoRow(HeroIcons.Trash, "Clear chat", danger = true) { confirmClear = true } }
                     if (ui.conversationCalls.isNotEmpty()) {
                         item { SectionHeader("Call history", HeroIcons.Phone) }
-                        items(ui.conversationCalls, key = { "info-call-${it.id}" }) { CallRow(it, ui.currentUserId) }
+                        items(ui.conversationCalls, key = { "info-call-${it.id}" }) { CallRow(it, conversation, ui.currentUserId) }
                     }
                 }
                 InfoPage.Search -> Column(Modifier.fillMaxSize()) {

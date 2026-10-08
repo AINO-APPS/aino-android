@@ -576,6 +576,13 @@ data class CallLog(
         callerId == currentUserId -> otherName ?: "Outgoing call"
         else -> callerName ?: "Incoming call"
     }
+
+    /** The other side's photo for a 1:1 call (null for groups). */
+    fun peerAvatar(currentUserId: Long?): String? = when {
+        isGroup -> null
+        callerId == currentUserId -> otherAvatar
+        else -> callerAvatar
+    }?.takeIf(String::isNotBlank)
 }
 
 @Serializable data class TogglePinResponse(val pinned: Boolean)
