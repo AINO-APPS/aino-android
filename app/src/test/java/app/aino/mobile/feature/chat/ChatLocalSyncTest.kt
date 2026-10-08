@@ -197,7 +197,8 @@ class ChatLocalSyncTest {
         await { vm.ui.value.closeThread && storedIds(6).isEmpty() && forgotten.contains(6L) }
     }
 
-    private fun await(timeoutMs: Long = 3_000, condition: () -> Boolean) {
+    // Room + Robolectric on a busy 2-core CI runner (two flavors' tests back to back) can exceed 3 s.
+    private fun await(timeoutMs: Long = 10_000, condition: () -> Boolean) {
         val end = System.currentTimeMillis() + timeoutMs
         while (!condition()) {
             if (System.currentTimeMillis() > end) throw AssertionError("Timed out waiting for condition")
