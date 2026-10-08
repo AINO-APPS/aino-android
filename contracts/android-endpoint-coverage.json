@@ -5,8 +5,8 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 467,
-    "covered": 240,
+    "platform": 468,
+    "covered": 241,
     "waived": 227,
     "missing": 0,
     "unmatched": 0
@@ -1210,6 +1210,11 @@
     {
       "method": "GET",
       "path": "/api/tracker/widgets",
+      "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tracker/work-mode-request",
       "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
     }
   ],

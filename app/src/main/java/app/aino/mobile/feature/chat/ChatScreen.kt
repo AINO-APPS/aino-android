@@ -1066,12 +1066,14 @@ private fun UnreadDivider(count: Int) {
     )
 }
 /** Web sidebar "New group": name + people search + multi-select, then open the new chat. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun NewGroupDialog(ui: ChatUiState, viewModel: ChatViewModel, onClose: () -> Unit) {
     val colors = LocalWebColors.current
     var name by remember { mutableStateOf("") }
     val picked = remember { androidx.compose.runtime.mutableStateMapOf<Long, ChatUser>() }
-    DisposableEffect(Unit) { onDispose { viewModel.updateUserSearch("") } }
+    val candidates by viewModel.groupCandidates.collectAsStateWithLifecycle()
+    DisposableEffect(Unit) { onDispose { viewModel.clearGroupCandidates() } }
     AlertDialog(
         onDismissRequest = onClose,
         containerColor = signalColors.surface,
@@ -1085,18 +1087,41 @@ private fun NewGroupDialog(ui: ChatUiState, viewModel: ChatViewModel, onClose: (
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
                     decorationBox = { inner -> if (name.isEmpty()) Text("Group name", color = colors.textMuted); inner() },
                 )
+                // Typing searches as you go (debounced in the VM), like the web GroupModal.
                 BasicTextField(
-                    ui.userSearch, viewModel::updateUserSearch,
+                    candidates.query, { viewModel.searchGroupCandidates(it) },
                     Modifier.fillMaxWidth().background(colors.inputBg, RoundedCornerShape(8.dp)).padding(12.dp), singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { viewModel.searchUsers() }),
-                    decorationBox = { inner -> if (ui.userSearch.isEmpty()) Text("Search people...", color = colors.textMuted); inner() },
+                    keyboardActions = KeyboardActions(onSearch = { viewModel.searchGroupCandidates(candidates.query, debounceMs = 0) }),
+                    decorationBox = { inner -> if (candidates.query.isEmpty()) Text("Search people by name or email", color = colors.textMuted); inner() },
                 )
-                if (picked.isNotEmpty()) Text(picked.values.joinToString { it.display() }, color = colors.primary, fontSize = 12.sp)
-                if (ui.searching) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                if (picked.isNotEmpty()) {
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        picked.values.forEach { user ->
+                            Row(
+                                Modifier.clip(RoundedCornerShape(16.dp)).background(colors.primaryGlow)
+                                    .clickable(onClickLabel = "Remove ${user.display()}") { picked.remove(user.id) }
+                                    .padding(start = 10.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(user.display(), color = colors.text, fontSize = 13.sp)
+                                Icon(HeroIcons.XMark, "Remove", Modifier.padding(start = 4.dp).size(14.dp), tint = colors.textSecondary)
+                            }
+                        }
+                    }
+                }
+                when {
+                    candidates.searching -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    candidates.error != null -> Text(candidates.error.orEmpty(), color = colors.danger, fontSize = 12.sp)
+                    candidates.query.trim().length in 1..1 -> Text("Type at least 2 characters", color = colors.textMuted, fontSize = 12.sp)
+                    candidates.query.trim().length >= 2 && candidates.results.isEmpty() -> Text("No people found", color = colors.textMuted, fontSize = 12.sp)
+                }
                 LazyColumn(Modifier.heightIn(max = 260.dp)) {
-                    items(ui.userResults.filter { it.id != ui.currentUserId }, key = { "pick-${it.id}" }) { user ->
+                    items(candidates.results, key = { "pick-${it.id}" }) { user ->
                         Row(
                             Modifier.fillMaxWidth().clickable { if (user.id in picked) picked.remove(user.id) else picked[user.id] = user },
                             verticalAlignment = Alignment.CenterVertically,

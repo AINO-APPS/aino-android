@@ -8,6 +8,7 @@ import app.aino.mobile.core.auth.KeystoreTokenStore
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
 import app.aino.mobile.core.common.TrackerStatus
+import app.aino.mobile.core.common.preferredWorkMode
 import app.aino.mobile.core.common.reanchor
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -167,6 +168,8 @@ data class AttendanceUiState(
      */
     val policyDegraded: Boolean = false,
     val workMode: WorkMode = WorkMode.Office,
+    /** Clock-in refused because today's first clock-in fixed another mode (`409 WORK_MODE_LOCKED`). */
+    val modeChange: ModeChangeDraft? = null,
     val pendingAction: AttendanceAction? = null,
     val verifySession: VerifySession? = null,
     /** A clock-in/out or break request is in flight (web `actionLoading`); independent of page loads. */
@@ -340,11 +343,10 @@ class AttendanceViewModel(
             // A clock action that finished while this load was in flight owns
             // the newer status; never overwrite it with the pre-action snapshot.
             val statusFresh = _ui.value.statusVersion == startVersion
-            _ui.value = _ui.value.copy(
+            _ui.value = withStatus(_ui.value, if (statusFresh) status.getOrNull() else null).copy(
                 loading = false,
                 policy = loadedPolicy,
                 policyDegraded = policy.isFailure,
-                status = if (statusFresh) status.getOrNull() ?: _ui.value.status else _ui.value.status,
                 history = history,
                 historyMonth = loadMonth,
                 leaves = leaves,
@@ -366,6 +368,51 @@ class AttendanceViewModel(
         Regex("^([01]\\d|2[0-3]):[0-5]\\d$").matches(value)
 
     fun setWorkMode(mode: WorkMode) { _ui.value = _ui.value.copy(workMode = mode, error = null) }
+
+    /** Opens the "Request mode change" sheet for the selected mode (also used after a lock refusal). */
+    fun openModeChange(requested: WorkMode = _ui.value.workMode) {
+        val locked = _ui.value.status?.lockedWorkMode?.let(::workModeOf) ?: return
+        if (locked == requested) return
+        _ui.value = _ui.value.copy(modeChange = ModeChangeDraft(locked, requested), error = null)
+    }
+
+    fun updateModeChangeReason(reason: String) {
+        val draft = _ui.value.modeChange ?: return
+        _ui.value = _ui.value.copy(modeChange = draft.copy(reason = reason.take(500), error = null))
+    }
+
+    fun dismissModeChange() { _ui.value = _ui.value.copy(modeChange = null) }
+
+    fun submitModeChange() {
+        val draft = _ui.value.modeChange ?: return
+        if (draft.sending || draft.sent) return
+        if (draft.reason.isBlank()) {
+            _ui.value = _ui.value.copy(modeChange = draft.copy(error = "Please add a reason for your manager."))
+            return
+        }
+        _ui.value = _ui.value.copy(modeChange = draft.copy(sending = true, error = null))
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.requestWorkModeChange(draft.requested, draft.reason) }.fold(
+                onSuccess = {
+                    _ui.value = _ui.value.copy(modeChange = _ui.value.modeChange?.copy(sending = false, sent = true))
+                    resyncStatus()
+                },
+                onFailure = { error ->
+                    _ui.value = _ui.value.copy(modeChange = _ui.value.modeChange?.copy(
+                        sending = false,
+                        error = error.message ?: "Could not send the request. Please try again.",
+                    ))
+                },
+            )
+        }
+    }
+
+    /** A status arrived: keep the selected mode on what the next clock-in may use. */
+    private fun withStatus(state: AttendanceUiState, status: TrackerStatus?): AttendanceUiState {
+        if (status == null) return state
+        val preferred = workModeOf(status.preferredWorkMode()) ?: state.workMode
+        return state.copy(status = status, workMode = if (status.state == "logged_out") preferred else state.workMode)
+    }
 
     /**
      * Tab switching (P3.1/P3.8): first visit lazily loads the tab's data —
@@ -1057,8 +1104,8 @@ class AttendanceViewModel(
             }.fold(
                 onSuccess = { result ->
                     val status = runCatching { repository.loadStatus() }.getOrNull()
-                    _ui.value = _ui.value.copy(
-                        clockBusy = false, status = status ?: _ui.value.status, pendingAction = null,
+                    _ui.value = withStatus(_ui.value, status).copy(
+                        clockBusy = false, pendingAction = null,
                         statusVersion = _ui.value.statusVersion + 1,
                         verifySession = null, message = result.message,
                     )
@@ -1067,7 +1114,15 @@ class AttendanceViewModel(
                     val failure = error as? AttendanceFailure
                     val message = error.message ?: "Attendance action failed"
                     val current = _ui.value.verifySession
-                    if (current != null) {
+                    if (failure?.code == WORK_MODE_LOCKED) {
+                        // Today's first clock-in fixed the mode: offer the approval request instead.
+                        val locked = failure.lockedMode?.let(::workModeOf) ?: _ui.value.status?.lockedWorkMode?.let(::workModeOf)
+                        _ui.value = _ui.value.copy(
+                            clockBusy = false, pendingAction = null, verifySession = null,
+                            modeChange = locked?.let { ModeChangeDraft(it, mode) },
+                            error = if (locked == null) message else null,
+                        )
+                    } else if (current != null) {
                         _ui.value = _ui.value.copy(
                             clockBusy = false,
                             verifySession = current.copy(
@@ -1088,7 +1143,7 @@ class AttendanceViewModel(
     private fun resyncStatus() {
         viewModelScope.launch(Dispatchers.IO) {
             val status = runCatching { repository.loadStatus() }.getOrNull() ?: return@launch
-            _ui.value = _ui.value.copy(status = status, statusVersion = _ui.value.statusVersion + 1)
+            _ui.value = withStatus(_ui.value, status).copy(statusVersion = _ui.value.statusVersion + 1)
         }
     }
 
@@ -1112,8 +1167,11 @@ class AttendanceViewModel(
      * the requests lists and calendar (both reloaded by [refresh]) and, once
      * opened, the Leaves tab.
      */
-    fun onRemoteApprovalChange() =
+    fun onRemoteApprovalChange() {
+        // A work-mode change decision changes what the next clock-in may use.
+        if (!_ui.value.clockBusy) resyncStatus()
         scheduleRemoteRefresh(RemoteRefresh.Calendar, RemoteRefresh.Leaves, RemoteRefresh.Analytics)
+    }
 
     /** HR changed holidays / leave policies / balances (`leave_policy_changed { scope }`). */
     fun onRemoteLeavePolicyChange(scope: String?) = when (scope) {

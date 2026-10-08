@@ -460,3 +460,42 @@ fun distanceMeters(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Doub
         cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLng / 2) * sin(dLng / 2)
     return 2 * earthRadius * asin(sqrt(a))
 }
+@Serializable
+data class WorkModeChangePayload(
+    @SerialName("work_mode") val workMode: String,
+    val reason: String,
+)
+
+/** Server code for a clock-in refused because today's first clock-in fixed another mode. */
+const val WORK_MODE_LOCKED = "WORK_MODE_LOCKED"
+
+fun workModeOf(value: String?): WorkMode? = WorkMode.entries.firstOrNull { it.name.equals(value?.trim(), ignoreCase = true) }
+
+/** "Request mode change" sheet state. */
+data class ModeChangeDraft(
+    val locked: WorkMode,
+    val requested: WorkMode,
+    val reason: String = "",
+    val sending: Boolean = false,
+    val sent: Boolean = false,
+    val error: String? = null,
+)
+/** What the Today card shows for the selected mode under the work-mode lock. */
+data class WorkModeLock(val hint: String?, val needsRequest: Boolean, val pending: Boolean = false)
+
+fun workModeLock(status: app.aino.mobile.core.common.TrackerStatus?, selected: WorkMode): WorkModeLock {
+    val locked = workModeOf(status?.lockedWorkMode) ?: return WorkModeLock(null, needsRequest = false)
+    val request = status?.workModeRequest?.takeIf { workModeOf(it.workMode) == selected }
+    val lockedName = locked.name
+    return when {
+        selected == locked -> WorkModeLock("Today: $lockedName.", needsRequest = false)
+        request?.status == "approved" -> WorkModeLock("${selected.name} approved for the rest of today.", needsRequest = false)
+        request?.status == "pending" -> WorkModeLock("Today: $lockedName. ${selected.name} requested, waiting for approval.", needsRequest = true, pending = true)
+        request?.status == "rejected" -> WorkModeLock(
+            "Today: $lockedName. Your ${selected.name.lowercase()} request was rejected" +
+                (request.rejectReason?.takeIf(String::isNotBlank)?.let { ": $it" } ?: "."),
+            needsRequest = true,
+        )
+        else -> WorkModeLock("Today: $lockedName. Working ${selected.name.lowercase()} needs your manager's approval.", needsRequest = true)
+    }
+}

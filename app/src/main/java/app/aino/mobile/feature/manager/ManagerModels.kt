@@ -20,6 +20,8 @@ data class RequestMetadata(
     @SerialName("clock_in") val clockIn: String? = null,
     @SerialName("clock_out") val clockOut: String? = null,
     @SerialName("work_mode") val workMode: String? = null,
+    /** `work_mode_change`: the mode today's first clock-in fixed. */
+    @SerialName("from_mode") val fromMode: String? = null,
     /** Overtime stores a JSON number (`{ date, hours: 2.5 }`); older rows may hold a string. */
     @Serializable(with = LenientTextSerializer::class) val hours: String? = null,
     val edit: Boolean? = null,

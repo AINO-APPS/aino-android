@@ -61,6 +61,8 @@ fun TodayHeroCard(
     onClock: (AttendanceAction) -> Unit,
     onBreak: (start: Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    /** The selected mode differs from today's locked mode: ask the manager. */
+    onRequestModeChange: (WorkMode) -> Unit = {},
     /** [AttendanceViewModel.timer]: the live anchor survives recomposition, refreshes and tab switches. */
     timer: TimerAnchor? = null,
 ) {
@@ -162,13 +164,25 @@ fun TodayHeroCard(
                 firstLoad -> FirstLoadSpinner(Modifier.height(48.dp))
                 today.canClockIn -> {
                     WorkModeSelector(ui.workMode, onWorkMode)
-                    ActionButton(
-                        label = if (ui.clockBusy) "Clocking in…" else "Clock in",
-                        icon = HeroIcons.Play,
-                        container = colors.success,
-                        busy = ui.clockBusy,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { onClock(AttendanceAction.ClockIn) }
+                    val lock = workModeLock(status, ui.workMode)
+                    lock.hint?.let { Text(it, color = colors.textSecondary, fontSize = 0.74.rem) }
+                    if (lock.needsRequest) {
+                        ActionButton(
+                            label = if (lock.pending) "Change requested" else "Request ${ui.workMode.name.lowercase()} for today",
+                            icon = HeroIcons.ArrowsRightLeft,
+                            container = colors.primary,
+                            busy = false,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { if (!lock.pending) onRequestModeChange(ui.workMode) }
+                    } else {
+                        ActionButton(
+                            label = if (ui.clockBusy) "Clocking in…" else "Clock in",
+                            icon = HeroIcons.Play,
+                            container = colors.success,
+                            busy = ui.clockBusy,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { onClock(AttendanceAction.ClockIn) }
+                    }
                 }
                 today.phase == TodayPhase.Working -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     SecondaryAction("Start break", HeroIcons.Cup, !ui.clockBusy, Modifier.weight(1f)) { onBreak(true) }

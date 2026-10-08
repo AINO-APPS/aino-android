@@ -50,6 +50,8 @@ class ChatListActionsTest {
             }
             val body = when {
                 request.path == "chat/conversations" -> conversationsJson
+                request.path.startsWith("chat/search") -> """[{"id":1,"full_name":"Me"},{"id":8,"full_name":"Asha K"}]"""
+                request.path == "chat/conversations/group" -> """{"conversationId":42}"""
                 request.path.endsWith("/pin") -> """{"pinned":true}"""
                 request.path.endsWith("/mute") -> """{"muted":true}"""
                 request.path.endsWith("/archive") -> """{"archived":true}"""
@@ -136,6 +138,37 @@ class ChatListActionsTest {
         val group = vm.row(1).copy(isGroup = true, groupName = "Team")
         vm.startCall(group, "voice")
         await { captured.any { it.method == "POST" && it.path == "meetings" } }
+    }
+
+    @Test fun `new group search finds people as you type and excludes me`() {
+        val vm = viewModel()
+        vm.searchGroupCandidates("a", debounceMs = 0)
+        Thread.sleep(50)
+        assertFalse(captured.any { it.path.startsWith("chat/search") })
+        vm.searchGroupCandidates("as", debounceMs = 0)
+        await { vm.groupCandidates.value.results.isNotEmpty() }
+        assertTrue(captured.any { it.path == "chat/search?q=as" })
+        assertFalse(vm.groupCandidates.value.results.any { it.id == 1L })
+    }
+
+    @Test fun `creating a group posts the name and picked members`() {
+        val vm = viewModel()
+        vm.createGroup("  Team  ", listOf(8L, 9L))
+        await { captured.any { it.method == "POST" && it.path == "chat/conversations/group" } }
+        val body = captured.first { it.path == "chat/conversations/group" }.body!!.decodeToString()
+        assertEquals("""{"name":"Team","userIds":[8,9]}""", body)
+    }
+
+    @Test fun `calls stay enabled when the shell sets the account scope afterwards`() {
+        val vm = ChatViewModel(
+            ChatRepository(ApiClient { ApiResponse(200, emptyMap(), "[]".toByteArray()) }),
+            { scope -> ChatCache(scope, ScopedCache(scope, EmptyDao)) },
+            app.aino.mobile.core.db.ChatOutbox.None,
+        )
+        // AinoApp applies the plan flag first, then the tenant/user scope.
+        vm.setCallsEnabled(true)
+        vm.setScope(1, 1)
+        assertTrue(vm.ui.value.callsEnabled)
     }
 
     private fun await(timeoutMs: Long = 3_000, condition: () -> Boolean) {

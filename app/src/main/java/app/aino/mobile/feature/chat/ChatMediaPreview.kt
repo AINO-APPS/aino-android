@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.aino.mobile.core.AppContainer
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.network.NetworkConfig
@@ -106,6 +107,7 @@ fun ChatMediaPreview(
                     onRetry = { onRetryProcessing(message) },
                     modifier = Modifier.matchParentSize().clip(shape),
                 )
+                if (message.mediaInFlight()) MediaProcessingBadge(message, Modifier.align(Alignment.TopStart).padding(8.dp))
             }
             message.fileType?.startsWith("audio/") == true -> ChatVoicePlayer(local ?: url, Modifier.fillMaxWidth(), outgoing = outgoing, waveSeed = message.fileName ?: url)
             else -> AttachmentCard(message, url, onLongPress)
@@ -302,10 +304,36 @@ private fun AttachmentCard(message: ChatMessage, url: String, onLongPress: () ->
     }
 }
 
+/** "Processing 40%" while the server pipeline runs (live via `chat_media_job`). */
+fun mediaProcessingLabel(message: ChatMessage): String? {
+    if (!message.mediaInFlight()) return null
+    val stage = (message.mediaStage ?: message.mediaState).orEmpty().lowercase()
+    val verb = if (stage == "queued") "Queued" else "Processing"
+    return message.mediaProgress?.takeIf { it in 1..99 }?.let { "$verb $it%" } ?: verb
+}
+
+@Composable
+private fun MediaProcessingBadge(message: ChatMessage, modifier: Modifier = Modifier) {
+    val label = mediaProcessingLabel(message) ?: return
+    Row(
+        modifier.clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = .6f))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val progress = message.mediaProgress?.takeIf { it in 1..99 }?.div(100f)
+        if (progress == null) CircularProgressIndicator(Modifier.size(12.dp), color = Color.White, strokeWidth = 1.5.dp)
+        else CircularProgressIndicator(progress = { progress }, modifier = Modifier.size(12.dp), color = Color.White, strokeWidth = 1.5.dp, trackColor = Color.White.copy(alpha = .3f))
+        Text(label, Modifier.padding(start = 6.dp), color = Color.White, fontSize = 11.sp)
+    }
+}
+
 @Composable
 fun MediaProcessingState(message: ChatMessage, onCancel: (ChatMessage) -> Unit, onRetry: (ChatMessage) -> Unit, modifier: Modifier = Modifier) {
     val state = message.mediaState?.lowercase() ?: return
-    // The file is already servable while the job runs; only a failure needs UI.
+    if (message.mediaInFlight()) {
+        mediaProcessingLabel(message)?.let { Text(it, modifier, style = MaterialTheme.typography.labelSmall) }
+        return
+    }
     if (state !in setOf("failed", "cancelled")) return
     val label = if (state == "failed") "Couldn't send" else "Cancelled"
     Column(modifier.fillMaxWidth()) {

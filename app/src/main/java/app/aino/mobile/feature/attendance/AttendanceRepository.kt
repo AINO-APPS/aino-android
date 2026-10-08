@@ -112,6 +112,10 @@ class AttendanceRepository(
     fun submitOvertime(payload: OvertimePayload): AttendanceMutationResponse =
         mutate<OvertimePayload, AttendanceMutationResponse>("tracker/overtime-request", payload)
 
+    /** Today's mode is fixed by the first clock-in; switching needs the manager's approval. */
+    fun requestWorkModeChange(mode: WorkMode, reason: String): AttendanceMutationResponse =
+        mutate<WorkModeChangePayload, AttendanceMutationResponse>("tracker/work-mode-request", WorkModeChangePayload(mode.name.lowercase(), reason.trim()))
+
     /**
      * `credential` is the device credential unlocked by the fingerprint / PIN
      * prompt; the server verifies it (bcrypt, owner, not revoked). Null when
@@ -164,7 +168,8 @@ class AttendanceRepository(
             // The verification sheet classifies failures by the server's `code`
             // (OUTSIDE_GEOFENCE, FACE_MISMATCH, …) exactly like the web modal.
             val code = parsed?.get("code")?.jsonPrimitive?.content
-            throw AttendanceFailure(message, error.statusCode, error, code)
+            val lockedMode = parsed?.get("locked_mode")?.jsonPrimitive?.content
+            throw AttendanceFailure(message, error.statusCode, error, code, lockedMode)
         }
     }
 
@@ -177,4 +182,6 @@ class AttendanceFailure(
     val statusCode: Int,
     cause: Throwable,
     val code: String? = null,
+    /** `WORK_MODE_LOCKED`: the mode today's first clock-in fixed. */
+    val lockedMode: String? = null,
 ) : Exception(message, cause)

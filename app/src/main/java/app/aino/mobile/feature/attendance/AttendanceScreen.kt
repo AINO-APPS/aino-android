@@ -214,7 +214,16 @@ fun AttendanceScreen(
                         onClock = { action -> viewModel.prepare(action, onLocationPermission) },
                         onBreak = viewModel::breakAction,
                         timer = timer,
+                        onRequestModeChange = viewModel::openModeChange,
                     )
+                    ui.modeChange?.let { draft ->
+                        ModeChangeDialog(
+                            draft = draft,
+                            onReason = viewModel::updateModeChangeReason,
+                            onSubmit = viewModel::submitModeChange,
+                            onDismiss = viewModel::dismissModeChange,
+                        )
+                    }
                     AnimatedVisibility(visible = ui.error != null && !formSheetOpen) {
                         ErrorNotice(
                             ui.error.orEmpty(),

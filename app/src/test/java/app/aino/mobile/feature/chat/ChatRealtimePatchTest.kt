@@ -33,6 +33,14 @@ class ChatRealtimePatchTest {
         assertEquals("ready", ready[0].mediaState)
     }
 
+    @Test fun `processing label follows the live media job`() {
+        assertEquals("Queued", mediaProcessingLabel(message))
+        val running = applyRealtimeMediaJob(listOf(message), ChatMediaJobEvent(10, 5, status = "processing", stage = "transform", progress = 40))[0]
+        assertEquals("Processing 40%", mediaProcessingLabel(running))
+        val done = applyRealtimeMediaJob(listOf(running), ChatMediaJobEvent(10, 5, status = "ready", progress = 100))[0]
+        assertNull(mediaProcessingLabel(done))
+    }
+
     @Test fun `poll id is read from message metadata`() {
         val poll = message.copy(formatType = "poll", metadata = buildJsonObject { put("pollId", 42) })
         assertEquals(42L, poll.pollId())

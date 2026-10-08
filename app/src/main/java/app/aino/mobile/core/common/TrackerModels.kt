@@ -15,6 +15,24 @@ data class TimeEntryDto(
 )
 
 @Serializable
+data class WorkModeRequestState(
+    val id: Long = 0,
+    val status: String = "pending",
+    val workMode: String = "",
+    val rejectReason: String? = null,
+)
+
+/**
+ * Mode to preselect for the next clock-in: while logged out, an approved switch
+ * or today's locked mode, so the clock-in is not refused (web `preferredWorkMode`).
+ */
+fun TrackerStatus.preferredWorkMode(): String {
+    if (state != "logged_out") return workMode
+    val approved = workModeRequest?.takeIf { it.status == "approved" }?.workMode?.takeIf(String::isNotBlank)
+    return approved ?: lockedWorkMode ?: workMode
+}
+
+@Serializable
 data class TrackerStatus(
     val state: String = "logged_out",
     val floorMinutes: Int = 0,
@@ -28,6 +46,9 @@ data class TrackerStatus(
     val targetMinutes: Int = 480,
     val dailyTargetMet: Boolean = false,
     val autoLoggedOut: Boolean = false,
+    /** Mode of today's first clock-in; another mode needs an approved request. */
+    val lockedWorkMode: String? = null,
+    val workModeRequest: WorkModeRequestState? = null,
     /**
      * Wall-clock time this body was originally received from the server (for a
      * cached body: when it was fetched, not when it was painted); 0 = unknown.

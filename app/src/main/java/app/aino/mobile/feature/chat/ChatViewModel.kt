@@ -110,6 +110,13 @@ data class PendingAttachment(val uri: Uri, val mimeType: String, val fileName: S
     val isVideo get() = mimeType.startsWith("video/")
 }
 
+data class GroupCandidates(
+    val query: String = "",
+    val results: List<ChatUser> = emptyList(),
+    val searching: Boolean = false,
+    val error: String? = null,
+)
+
 data class ChatUiState(
     val currentUserId: Long? = null,
     /** Tenant plan `calls` (1:1 and group calls); web hides the call buttons when off. */
@@ -342,7 +349,8 @@ class ChatViewModel(
         cache = next?.let(cacheFactory)
         threadCache.clear()
         discardPrewarmedMedia()
-        _ui.value = ChatUiState(currentUserId = next?.userId)
+        // Session flags set by the shell (plan features) survive the account reset.
+        _ui.value = ChatUiState(currentUserId = next?.userId, callsEnabled = _ui.value.callsEnabled)
         if (next != null) {
             // Texts leased by a previous process never reached the server: let the durable worker send them.
             viewModelScope.launch(Dispatchers.IO) { runCatching { outbox.recover(next) } }
@@ -571,6 +579,41 @@ class ChatViewModel(
                 onFailure = { _ui.update { st -> st.copy(searching = false, error = it.message ?: "User search failed") } },
             )
         }
+    }
+
+    private val _groupCandidates = kotlinx.coroutines.flow.MutableStateFlow(GroupCandidates())
+    /** New-group people search; separate from the chat-list search (web `GroupModal`). */
+    val groupCandidates: kotlinx.coroutines.flow.StateFlow<GroupCandidates> = _groupCandidates
+    private var groupSearchJob: kotlinx.coroutines.Job? = null
+
+    fun searchGroupCandidates(query: String, debounceMs: Long = 300) {
+        groupSearchJob?.cancel()
+        val term = query.trim()
+        if (term.length < 2) {
+            _groupCandidates.value = GroupCandidates(query = query)
+            return
+        }
+        _groupCandidates.value = _groupCandidates.value.copy(query = query, searching = true, error = null)
+        groupSearchJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(debounceMs)
+            runCatching { repository.searchUsers(term) }.fold(
+                onSuccess = { users ->
+                    val me = scope?.userId
+                    if (_groupCandidates.value.query.trim() == term) {
+                        _groupCandidates.value = GroupCandidates(query = query, results = users.filter { it.id != me })
+                    }
+                },
+                onFailure = { error ->
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    _groupCandidates.value = _groupCandidates.value.copy(searching = false, error = error.message ?: "User search failed")
+                },
+            )
+        }
+    }
+
+    fun clearGroupCandidates() {
+        groupSearchJob?.cancel()
+        _groupCandidates.value = GroupCandidates()
     }
 
     fun startDirect(user: ChatUser) {

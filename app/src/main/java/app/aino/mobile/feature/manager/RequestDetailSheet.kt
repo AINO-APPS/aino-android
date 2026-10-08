@@ -43,6 +43,7 @@ internal fun requestTypeLabel(type: String?, edit: Boolean = false): String = wh
     "leave_withdraw" -> "Leave withdrawal"
     "manual_entry" -> if (edit) "Correction" else "Manual entry"
     "overtime" -> "Overtime"
+    "work_mode_change" -> "Work mode change"
     null, "" -> "Request"
     else -> humanize(type)
 }

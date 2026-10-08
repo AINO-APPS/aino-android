@@ -240,6 +240,11 @@ internal fun RequestDetails(row: ApprovalRow) {
                 Spacer(Modifier.width(4.dp))
                 Text("${meta.date} • ${meta.hours}h", color = colors.text, fontSize = 0.82.rem)
             }
+            "work_mode_change" -> {
+                Icon(HeroIcons.ArrowsRightLeft, null, Modifier.size(13.dp), tint = colors.textSecondary)
+                Spacer(Modifier.width(4.dp))
+                Text("${meta.date} • ${meta.fromMode ?: "?"} → ${meta.workMode}", color = colors.text, fontSize = 0.82.rem)
+            }
             else -> Text("—", color = colors.textSecondary, fontSize = 0.82.rem)
         }
     }
