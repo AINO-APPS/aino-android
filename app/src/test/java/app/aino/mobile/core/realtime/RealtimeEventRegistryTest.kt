@@ -18,8 +18,9 @@ class RealtimeEventRegistryTest {
     @Test
     fun routesTheCompleteServerSurface() {
         // 80 = 69 sendToUser types (incl. attendance_update, chat_message_delivered, call_ringing) + 6 tenant-wide broadcast types
-        // + task_assigned + team_attendance_update, leave_policy_changed, task_updated, notifications_changed.
-        assertEquals(80, RealtimeEvent.entries.size)
+        // + task_assigned + team_attendance_update, leave_policy_changed, task_updated, notifications_changed
+        // + chat_group_join_request, group_call_updated, meeting_reaction (group links and group calls).
+        assertEquals(83, RealtimeEvent.entries.size)
         assertEquals(RealtimeEvent.AttendanceUpdate, RealtimeEvent.from("attendance_update"))
     }
 
@@ -63,7 +64,7 @@ class RealtimeEventRegistryTest {
     @Test
     fun meetingEventsAreRoutedButMediaIsSeparable() {
         val meeting = RealtimeEvent.inDomain(RealtimeDomain.Meeting)
-        assertEquals(22, meeting.size)
+        assertEquals(23, meeting.size)
         // Media negotiation is distinguishable so it can stay inert until A-082
         // without suppressing meeting state updates.
         val media = meeting.filter { it.reaction == RealtimeReaction.MeetingMedia }
@@ -93,7 +94,7 @@ class RealtimeEventRegistryTest {
         // was the pre-A-100 defect where chat_typing forced a list refresh.
         val ephemeral = RealtimeEvent.entries.filter { it.reaction == RealtimeReaction.Ephemeral }
         assertEquals(
-            listOf("call_reaction", "chat_typing", "meeting_audio_level"),
+            listOf("call_reaction", "chat_typing", "meeting_audio_level", "meeting_reaction"),
             ephemeral.map(RealtimeEvent::type).sorted(),
         )
     }

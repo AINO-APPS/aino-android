@@ -250,6 +250,11 @@ class MainActivity : FragmentActivity() {
 
     private fun consumeCallIntent(intent: android.content.Intent?) {
         parseIncomingCallRoute(intent?.data)?.let(incomingCallViewModel::route)
+        app.aino.mobile.core.navigation.groupInviteTokenFrom(intent?.data)?.let { token ->
+            app.aino.mobile.core.navigation.PendingGroupInvite.set(token)
+            // Keep NavHost from treating the invite as a thread deep link on recreation.
+            intent?.data = null
+        }
     }
 
     private fun consumePendingCallAction() {

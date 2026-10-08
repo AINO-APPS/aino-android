@@ -19,6 +19,36 @@ code must use AINO names and contracts and be independently designed.
 Every migration checkpoint that consults external source records the repository,
 paths inspected, date, behaviors derived, and how the AINO implementation differs.
 
+### Consultation log
+
+**2026-10-08: group settings, group links, chat-list receipts, group calls (0.18.x)**
+
+- Repository: `signalapp/Signal-Android`. We used the public app's screens and
+  documented behavior only. No source files, resources, strings, drawables,
+  colors or dimension values were copied, and none are vendored.
+- Behaviors derived:
+  - Group settings layout: large avatar and title, quick-action row, members
+    list with "Add members", tapping a member opens a sheet with "Make group
+    admin" / "Remove as admin" / "Remove from group".
+  - Group-link page: on/off switch, share, copy, reset, "Approve new members".
+  - Requests & invites, and the Permissions page ("Add members", "Send
+    messages", "Edit group info").
+  - Join-by-link preview sheet.
+  - A delivery tick before the last outgoing message in the chat list.
+  - Group-call lobby with a ring toggle; in-call grid and speaker view with a
+    floating self view, participants sheet, raise hand and reactions.
+- How AINO differs:
+  - All code is newly written Compose against AINO contracts (`/api/chat/...`
+    group, invite-link, join-request, avatar and active-call routes; the
+    `meeting_*` mesh, not RingRTC).
+  - Permissions mirror AINO's server rules (owner/admin/member plus
+    `post_policy`/`add_policy`), not Signal's group model.
+  - Group links work only inside the user's own tenant, with no cryptographic
+    group credentials.
+  - The automatic group avatar is AINO's own design: a member-photo collage on
+    an AINO palette.
+  - Icons come from HeroIcons and Material Symbols (Apache-2.0).
+
 ## Runtime dependencies
 
 Dependencies are declared in `gradle/libs.versions.toml` and resolved from Google
@@ -26,6 +56,16 @@ Maven or Maven Central. New runtime dependencies require review of license,
 maintenance status, necessity, and transitive impact. Required upstream notices
 must remain in packaged artifacts; do not add blanket packaging exclusions that
 discard dependency notices.
+
+Reviewed additions:
+
+- `androidx.compose.material:material-icons-extended` (2026-10-08). Google,
+  Apache-2.0, actively maintained.
+  - Version: taken from the Compose BOM, so it adds no transitive dependencies
+    beyond Compose itself.
+  - Size: R8 strips unused icons from release builds.
+  - Purpose: Material icons for chat-list media previews, group settings and
+    the group-call controls.
 
 ## Repository license
 

@@ -495,8 +495,18 @@ private fun AuthenticatedShell(
     }
     /** Notification / search / note links carry web routes; unknown or ungated ones are ignored. */
     fun openWebLink(link: String) {
+        webGroupInviteToken(link)?.let { PendingGroupInvite.set(it); return }
         val route = webLinkToRoute(link) ?: return
         runCatching { nav.navigate(route) { launchSingleTop = true } }
+    }
+    // A group invite link (deep link or tapped web link): show the join preview over the chat list.
+    val pendingInvite by PendingGroupInvite.token.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingInvite) {
+        val token = PendingGroupInvite.consume() ?: return@LaunchedEffect
+        if (current != AinoDestination.Chat.route && current != AinoDestination.ChatThread.route) {
+            runCatching { nav.navigate(AinoDestination.Chat.route) { launchSingleTop = true } }
+        }
+        chat.loadInvite(token)
     }
     // A tapped system notification: chat messages open their thread; other
     // alerts follow the server link / linked task / type fallback (see
@@ -816,12 +826,43 @@ private fun AuthenticatedShell(
                     user = user,
                     // Replace, not push: Back must leave the call cleanly.
                     onJoined = { joined ->
-                        nav.navigate(meetingRoomRoute(joined)) {
+                        nav.navigate(groupCallRoomRoute(joined)) {
                             launchSingleTop = true
                             popUpTo(HUDDLE_ROUTE) { inclusive = true }
                         }
                     },
                     onBackToChat = { nav.navigate(AinoDestination.Chat.route) { launchSingleTop = true; popUpTo(AinoDestination.Dashboard.route) } },
+                )
+            }
+            composable(
+                GROUP_CALL_LOBBY_ROUTE,
+                arguments = listOf(
+                    navArgument("conversationId") { type = NavType.LongType },
+                    navArgument("type") { type = NavType.StringType; defaultValue = "voice" },
+                ),
+            ) { backStackEntry ->
+                val conversationId = backStackEntry.arguments?.getLong("conversationId") ?: return@composable
+                app.aino.mobile.feature.meeting.GroupCallLobbyScreen(
+                    conversationId = conversationId,
+                    callType = backStackEntry.arguments?.getString("type") ?: "voice",
+                    user = user,
+                    onJoined = { code ->
+                        nav.navigate(groupCallRoomRoute(code)) {
+                            launchSingleTop = true
+                            popUpTo(GROUP_CALL_LOBBY_ROUTE) { inclusive = true }
+                        }
+                    },
+                    onBack = { nav.popBackStack() },
+                )
+            }
+            composable(GROUP_CALL_ROOM_ROUTE) { backStackEntry ->
+                val code = backStackEntry.arguments?.getString("code").orEmpty()
+                app.aino.mobile.feature.meeting.GroupCallScreen(
+                    code = code,
+                    user = user,
+                    online = realtimeState == RealtimeState.Connected,
+                    onMinimize = { if (!nav.popBackStack()) nav.navigate(AinoDestination.Chat.route) { launchSingleTop = true } },
+                    onLeft = { if (!nav.popBackStack()) nav.navigate(AinoDestination.Chat.route) { launchSingleTop = true } },
                 )
             }
             // Profile is a full page (product decision 2026-09-25) with sub-pages
@@ -1079,11 +1120,12 @@ private fun AuthenticatedShell(
     val meeting by meetingSession.state.collectAsStateWithLifecycle()
     val inPip by app.aino.mobile.core.call.PipState.inPip.collectAsStateWithLifecycle()
     meeting?.let { live ->
-        if (current != MEETING_ROOM_ROUTE && !inPip) {
+        val isGroupCall = live.meeting.isHuddle == true
+        if (current != MEETING_ROOM_ROUTE && current != GROUP_CALL_ROOM_ROUTE && !inPip) {
             app.aino.mobile.feature.meeting.MeetingPipWidget(
                 live,
                 meetingSession,
-                onOpen = { nav.navigate(meetingRoomRoute(live.code)) { launchSingleTop = true } },
+                onOpen = { nav.navigate(if (isGroupCall) groupCallRoomRoute(live.code) else meetingRoomRoute(live.code)) { launchSingleTop = true } },
                 modifier = Modifier.align(Alignment.BottomEnd).windowInsetsPadding(WindowInsets.navigationBars).padding(end = 24.dp, bottom = 24.dp + if (fullScreen) 0.dp else 64.dp),
             )
         }

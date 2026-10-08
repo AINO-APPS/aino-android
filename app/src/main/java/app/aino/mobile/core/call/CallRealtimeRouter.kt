@@ -23,6 +23,8 @@ sealed interface CallRealtimeEvent {
         /** Group-call (huddle) rings carry the meeting to join instead of a 1:1 call. */
         val meetingCode: String? = null,
         val meetingId: Long? = null,
+        val groupName: String? = null,
+        val groupAvatar: String? = null,
     ) : CallRealtimeEvent
 
     data class Started(val callId: Long, override val conversationId: Long, val callType: String = "voice") : CallRealtimeEvent
@@ -58,6 +60,8 @@ object CallRealtimeRouter {
                 isGroup = data.boolean("isGroup") ?: false,
                 meetingCode = data.string("meetingCode"),
                 meetingId = data.positiveLong("meetingId"),
+                groupName = data.string("groupName"),
+                groupAvatar = data.string("groupAvatar"),
             )
             "call_started" -> idPair(data)?.let {
                 CallRealtimeEvent.Started(it.first, it.second, if (data.string("callType") == "video") "video" else "voice")

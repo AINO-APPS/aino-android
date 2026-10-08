@@ -18,7 +18,12 @@ data class IncomingCallRoute(
     /** Set for group-call (huddle) rings: answering joins `/huddle/:code`. */
     val meetingCode: String? = null,
     val meetingId: Long? = null,
-)
+    /** Group-call rings show the group (name/photo) with "<caller> is calling the group". */
+    val groupName: String? = null,
+    val groupAvatar: String? = null,
+) {
+    val isGroupCall: Boolean get() = meetingCode != null && !groupName.isNullOrBlank()
+}
 
 fun parseIncomingCallRoute(uri: Uri?): IncomingCallRoute? = parseIncomingCallRoute(uri?.toString())
 
@@ -49,6 +54,8 @@ fun parseIncomingCallRoute(value: String?): IncomingCallRoute? {
         expiresAt = query["expiresAt"],
         meetingCode = query["meetingCode"]?.takeIf(String::isNotBlank),
         meetingId = query["meetingId"]?.toLongOrNull()?.takeIf { it > 0 },
+        groupName = query["groupName"]?.takeIf(String::isNotBlank),
+        groupAvatar = query["groupAvatar"]?.takeIf(String::isNotBlank),
     )
 }
 

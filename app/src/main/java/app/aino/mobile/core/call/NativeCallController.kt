@@ -35,6 +35,7 @@ fun incomingCallServiceExtras(data: Map<String, String>, bearerToken: String?): 
     CallRingService.EXTRA_SCHEME to "aino",
     CallRingService.EXTRA_EXPIRES_AT to data["expiresAt"].orEmpty(),
     CallRingService.EXTRA_MEETING_CODE to data["meetingCode"].orEmpty(),
+    CallRingService.EXTRA_GROUP_NAME to (if (data["isGroup"] == "true") data["groupName"].orEmpty() else ""),
 )
 
 /**
@@ -57,5 +58,7 @@ fun socketCallRingExtras(event: CallRealtimeEvent.Incoming, bearerToken: String?
         CallRingService.EXTRA_SCHEME to "aino",
         CallRingService.EXTRA_EXPIRES_AT to "",
         CallRingService.EXTRA_MEETING_CODE to event.meetingCode.orEmpty(),
+        CallRingService.EXTRA_GROUP_NAME to (if (event.isGroup) event.groupName.orEmpty() else ""),
+        CallRingService.EXTRA_GROUP_AVATAR to (if (event.isGroup) event.groupAvatar.orEmpty() else ""),
     )
 }

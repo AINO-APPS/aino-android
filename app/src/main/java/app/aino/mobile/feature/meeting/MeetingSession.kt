@@ -35,6 +35,16 @@ import org.webrtc.VideoTrack
 
 enum class MeetingStatus { Joining, Joined, Failed }
 
+/** One emoji reaction shown over the call; [id] keys the animation. */
+data class CallReactionBurst(val id: Long, val userId: Long, val name: String, val emoji: String, val atMs: Long)
+
+/** How long a reaction stays on screen. */
+const val CALL_REACTION_MS = 4_000L
+
+/** Adds [burst], drops expired ones and keeps the most recent [max]. */
+fun addReaction(current: List<CallReactionBurst>, burst: CallReactionBurst, nowMs: Long, max: Int = 6): List<CallReactionBurst> =
+    (current.filter { nowMs - it.atMs < CALL_REACTION_MS } + burst).takeLast(max)
+
 enum class PeerLink { Connecting, Connected, Reconnecting, Failed }
 
 data class MeetingPeer(
@@ -71,6 +81,8 @@ data class MeetingState(
     val messages: List<MeetingChatMessage> = emptyList(),
     val unread: Int = 0,
     val chatOpen: Boolean = false,
+    /** Floating emoji reactions still on screen (newest last). */
+    val reactions: List<CallReactionBurst> = emptyList(),
 ) {
     val isHost: Boolean get() = meeting.isHost(selfId)
     val presenter: MeetingPeer? get() = peers.firstOrNull { it.screenSharing && it.screen != null }
@@ -280,7 +292,34 @@ class MeetingSession(context: Context) {
                 val level = data.float("level") ?: return
                 updatePeer(userId) { it.copy(level = level, levelAt = System.currentTimeMillis()) }
             }
+            "meeting_reaction" -> {
+                val userId = data.long("userId") ?: return
+                val emoji = data.string("emoji")?.takeIf { it.isNotBlank() && it.length <= 16 } ?: return
+                // Our own reaction was shown optimistically when sent.
+                if (userId == s.selfId) return
+                val name = data.string("name") ?: s.peers.firstOrNull { it.userId == userId }?.name ?: "Someone"
+                showReaction(userId, name, emoji)
+            }
         }
+    }
+
+    private var reactionSeq = 0L
+
+    private fun showReaction(userId: Long, name: String, emoji: String) {
+        val now = System.currentTimeMillis()
+        val burst = CallReactionBurst(++reactionSeq, userId, name, emoji, now)
+        _state.update { it?.copy(reactions = addReaction(it.reactions, burst, now)) }
+        scope.launch {
+            delay(CALL_REACTION_MS)
+            _state.update { st -> st?.copy(reactions = st.reactions.filterNot { it.id == burst.id }) }
+        }
+    }
+
+    /** Sends a short emoji reaction to everyone in the call and shows it locally at once. */
+    fun sendReaction(emoji: String) {
+        val s = _state.value ?: return
+        showReaction(s.selfId, "You", emoji)
+        send(meetingFrame("meeting_reaction", s.meeting.id) { put("emoji", emoji) })
     }
 
     private fun onParticipantJoined(data: JsonObject) {

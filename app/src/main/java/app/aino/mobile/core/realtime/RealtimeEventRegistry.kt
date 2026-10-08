@@ -27,7 +27,7 @@ enum class RealtimeEvent(
      */
     val reaction: RealtimeReaction,
 ) {
-    // ── Chat (21) ────────────────────────────────────────────────────────
+    // ── Chat (22) ────────────────────────────────────────────────────────
     ChatMessage("chat_message", RealtimeDomain.Chat, RealtimeReaction.PatchThenReconcile),
     ChatTyping("chat_typing", RealtimeDomain.Chat, RealtimeReaction.Ephemeral),
     ChatReaction("chat_reaction", RealtimeDomain.Chat, RealtimeReaction.PatchThenReconcile),
@@ -49,8 +49,10 @@ enum class RealtimeEvent(
     ChatGroupAdded("chat_group_added", RealtimeDomain.Chat, RealtimeReaction.Refetch),
     ChatGroupRemoved("chat_group_removed", RealtimeDomain.Chat, RealtimeReaction.Refetch),
     ChatGroupRoleChanged("chat_group_role_changed", RealtimeDomain.Chat, RealtimeReaction.Refetch),
+    /** Admins only: someone asked to join through an approval-required group link. */
+    ChatGroupJoinRequest("chat_group_join_request", RealtimeDomain.Chat, RealtimeReaction.Refetch),
 
-    // ── Calls (14) ───────────────────────────────────────────────────────
+    // ── Calls (15) ───────────────────────────────────────────────────────
     CallIncoming("call_incoming", RealtimeDomain.Call, RealtimeReaction.CallControl),
     CallStarted("call_started", RealtimeDomain.Call, RealtimeReaction.CallControl),
     /** The callee's device started ringing (caller: "Calling..." → "Ringing..."). */
@@ -66,8 +68,10 @@ enum class RealtimeEvent(
     CallReaction("call_reaction", RealtimeDomain.Call, RealtimeReaction.Ephemeral),
     CallHandledElsewhere("call_handled_elsewhere", RealtimeDomain.Call, RealtimeReaction.CallControl),
     HuddleDeclined("huddle_declined", RealtimeDomain.Call, RealtimeReaction.CallControl),
+    /** A group's call roster changed (`{ conversationId, meetingCode, active, participantCount }`): drives the Join banner. */
+    GroupCallUpdated("group_call_updated", RealtimeDomain.Chat, RealtimeReaction.Patch),
 
-    // ── Meetings (22) — handled by MeetingSession (P9) ───────────────────
+    // ── Meetings (23) — handled by MeetingSession (P9) ───────────────────
     MeetingStarted("meeting_started", RealtimeDomain.Meeting, RealtimeReaction.MeetingState),
     MeetingEnded("meeting_ended", RealtimeDomain.Meeting, RealtimeReaction.MeetingState),
     MeetingUpdated("meeting_updated", RealtimeDomain.Meeting, RealtimeReaction.Refetch),
@@ -88,6 +92,7 @@ enum class RealtimeEvent(
     MeetingSignal("meeting_signal", RealtimeDomain.Meeting, RealtimeReaction.MeetingMedia),
     MeetingMuted("meeting_muted", RealtimeDomain.Meeting, RealtimeReaction.MeetingState),
     MeetingHandRaised("meeting_hand_raised", RealtimeDomain.Meeting, RealtimeReaction.MeetingState),
+    MeetingReaction("meeting_reaction", RealtimeDomain.Meeting, RealtimeReaction.Ephemeral),
     MeetingAudioLevel("meeting_audio_level", RealtimeDomain.Meeting, RealtimeReaction.Ephemeral),
     MeetingTrackState("meeting_track_state", RealtimeDomain.Meeting, RealtimeReaction.MeetingState),
     MeetingScreenTrackId(
@@ -231,6 +236,8 @@ enum class ChatSystemMessageType(val type: String) {
     GroupInfoUpdated("group_info_updated"),
     OwnerTransferred("owner_transferred"),
     RoleChanged("role_changed"),
+    MemberJoinedViaLink("member_joined_via_link"),
+    GroupCallStarted("group_call_started"),
     ;
 
     companion object {

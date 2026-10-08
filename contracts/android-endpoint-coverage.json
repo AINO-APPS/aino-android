@@ -5,8 +5,8 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 468,
-    "covered": 241,
+    "platform": 479,
+    "covered": 252,
     "waived": 227,
     "missing": 0,
     "unmatched": 0
@@ -140,11 +140,26 @@
     {
       "method": "GET",
       "path": "/api/chat/conversations",
-      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/GroupCallModels.kt"
     },
     {
       "method": "POST",
       "path": "/api/chat/conversations",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:id/avatar",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:id/join-requests/:userId/approve",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:id/join-requests/:userId/deny",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
@@ -156,6 +171,11 @@
       "method": "DELETE",
       "path": "/api/chat/conversations/:param",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversations/:param/active-call",
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/GroupCallModels.kt"
     },
     {
       "method": "POST",
@@ -188,6 +208,26 @@
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
+      "method": "GET",
+      "path": "/api/chat/conversations/:param/invite-link",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/chat/conversations/:param/invite-link",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/conversations/:param/invite-link/reset",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/conversations/:param/join-requests",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
       "method": "POST",
       "path": "/api/chat/conversations/:param/leave",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
@@ -195,7 +235,7 @@
     {
       "method": "GET",
       "path": "/api/chat/conversations/:param/members",
-      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/GroupCallModels.kt"
     },
     {
       "method": "DELETE",
@@ -261,6 +301,21 @@
       "method": "GET",
       "path": "/api/chat/ice-config",
       "source": "app/src/main/java/app/aino/mobile/core/call/webrtc/IceConfigRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/chat/invite/:token",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/invite/:token/join",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/chat/invite/:token/request",
+      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
     },
     {
       "method": "GET",
@@ -525,7 +580,7 @@
     {
       "method": "POST",
       "path": "/api/meetings",
-      "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/meeting/GroupCallModels.kt"
     },
     {
       "method": "GET",

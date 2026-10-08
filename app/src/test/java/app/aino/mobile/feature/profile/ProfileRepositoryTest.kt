@@ -5,6 +5,7 @@ import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.ApiRequest
 import app.aino.mobile.core.network.ApiResponse
 import app.aino.mobile.core.network.TokenStore
+import app.aino.mobile.core.network.buildAvatarMultipart
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals

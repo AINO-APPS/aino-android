@@ -225,7 +225,10 @@ fun LinkPreviewCard(preview: LinkPreview, modifier: Modifier = Modifier, onRemov
     Row(
         modifier.widthIn(max = 340.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = .12f))
             .clickable {
-                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(preview.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                // A shared group link opens the in-app join preview instead of the browser.
+                val invite = app.aino.mobile.core.navigation.webGroupInviteToken(preview.url)
+                if (invite != null) app.aino.mobile.core.navigation.PendingGroupInvite.set(invite)
+                else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(preview.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {

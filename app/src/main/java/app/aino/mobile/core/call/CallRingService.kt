@@ -76,12 +76,16 @@ class CallRingService : Service() {
     const val EXTRA_EXPIRES_AT = "expiresAt"
     /** Group-call (huddle) rings: the meeting to join; the push `callId` is the meeting id. */
     const val EXTRA_MEETING_CODE = "meetingCode"
+    /** Group-call rings: the group's name and photo (the ring shows the group, not just the caller). */
+    const val EXTRA_GROUP_NAME = "groupName"
+    const val EXTRA_GROUP_AVATAR = "groupAvatar"
 
     const val NOTIFICATION_ID = IncomingCallNotifications.NOTIFICATION_ID
 
     private val EXTRA_KEYS = listOf(
       EXTRA_TITLE, EXTRA_BODY, EXTRA_CALL_ID, EXTRA_CONVERSATION_ID, EXTRA_CALLER_ID, EXTRA_CALLER_NAME,
       EXTRA_CALLER_AVATAR, EXTRA_CALL_TYPE, EXTRA_SCHEME, EXTRA_EXPIRES_AT, EXTRA_MEETING_CODE, EXTRA_TOKEN,
+      EXTRA_GROUP_NAME, EXTRA_GROUP_AVATAR,
     )
 
     /**
@@ -194,7 +198,8 @@ class CallRingService : Service() {
     // The server sends the stored upload path (e.g. `/uploads/<tenant>/avatars/x.png`),
     // resolved against the server origin like chat notifications / UserAvatar do.
     // Best-effort: any failure leaves the posted initials notification untouched.
-    val avatarUrl = callAvatarUrl(spec.callerAvatar)
+    // A group ring shows the group's photo; without one the group initials stay.
+    val avatarUrl = callAvatarUrl(if (spec.isGroupCall) spec.groupAvatar else spec.callerAvatar)
     if (avatarUrl != null) {
       Thread {
         val bitmap = AvatarLoader.load(applicationContext, avatarUrl, token)

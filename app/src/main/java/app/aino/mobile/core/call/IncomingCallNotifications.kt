@@ -32,7 +32,11 @@ data class IncomingCallSpec(
     val callType: String,
     val scheme: String = "aino",
     val meetingCode: String = "",
+    val groupName: String = "",
+    val groupAvatar: String = "",
 ) {
+    val isGroupCall: Boolean get() = meetingCode.isNotBlank() && groupName.isNotBlank()
+
     companion object {
         /** From [incomingCallServiceExtras] / [socketCallRingExtras] keys. */
         fun from(extras: Map<String, String?>): IncomingCallSpec {
@@ -48,6 +52,8 @@ data class IncomingCallSpec(
                 callType = extras[CallRingService.EXTRA_CALL_TYPE] ?: "voice",
                 scheme = extras[CallRingService.EXTRA_SCHEME] ?: "aino",
                 meetingCode = extras[CallRingService.EXTRA_MEETING_CODE].orEmpty(),
+                groupName = extras[CallRingService.EXTRA_GROUP_NAME].orEmpty(),
+                groupAvatar = extras[CallRingService.EXTRA_GROUP_AVATAR].orEmpty(),
             )
         }
     }
@@ -109,7 +115,8 @@ object IncomingCallNotifications {
 
     /** Signal-style initials avatar rendered locally, so the caller is identifiable before the photo loads. */
     fun fallbackAvatar(spec: IncomingCallSpec): Bitmap? = runCatching {
-        NotificationAvatars.fallback(spec.callerName.ifEmpty { spec.title }, if (spec.callerId.isNotBlank()) "aino-user-${spec.callerId}" else spec.callerName)
+        if (spec.isGroupCall) NotificationAvatars.fallback(spec.groupName, "conv-${spec.conversationId}")
+        else NotificationAvatars.fallback(spec.callerName.ifEmpty { spec.title }, if (spec.callerId.isNotBlank()) "aino-user-${spec.callerId}" else spec.callerName)
     }.getOrNull()
 
     fun build(
@@ -126,8 +133,11 @@ object IncomingCallNotifications {
         val declinePending = declinePendingIntent(context, spec, requestCode = 1002)
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(context.applicationInfo.icon)
-            .setContentTitle(spec.callerName.ifEmpty { spec.title })
-            .setContentText(spec.body.ifEmpty { if (spec.callType == "video") "Incoming video call" else "Incoming voice call" })
+            .setContentTitle(if (spec.isGroupCall) spec.groupName else spec.callerName.ifEmpty { spec.title })
+            .setContentText(
+                if (spec.isGroupCall) "${spec.callerName.ifBlank { "Someone" }} is calling the group"
+                else spec.body.ifEmpty { if (spec.callType == "video") "Incoming video call" else "Incoming voice call" },
+            )
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)
@@ -251,6 +261,8 @@ object IncomingCallNotifications {
         if (spec.meetingCode.isNotBlank()) {
             append("&meetingCode=").append(Uri.encode(spec.meetingCode))
             append("&meetingId=").append(Uri.encode(spec.callId))
+            if (spec.groupName.isNotBlank()) append("&groupName=").append(Uri.encode(spec.groupName))
+            if (spec.groupAvatar.isNotBlank()) append("&groupAvatar=").append(Uri.encode(spec.groupAvatar))
         }
     }
 

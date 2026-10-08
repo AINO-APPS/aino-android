@@ -14,6 +14,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -132,12 +133,28 @@ class ChatListActionsTest {
         assertFalse(captured.any { it.path == "meetings" })
     }
 
-    @Test fun `group call starts a huddle when the calls feature is on`() {
+    @Test fun `group call opens the group-call lobby when the calls feature is on`() {
         val vm = viewModel()
         vm.setCallsEnabled(true)
         val group = vm.row(1).copy(isGroup = true, groupName = "Team")
-        vm.startCall(group, "voice")
-        await { captured.any { it.method == "POST" && it.path == "meetings" } }
+        vm.startCall(group, "video")
+        val route = kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.withTimeout(2_000) { app.aino.mobile.core.navigation.RouteRequests.routes.first() }
+        }
+        assertEquals(app.aino.mobile.core.navigation.groupCallLobbyRoute(group.id, "video"), route)
+        // The lobby (not the chat) creates the huddle, after the ring choice.
+        assertFalse(captured.any { it.path == "meetings" })
+    }
+
+    @Test fun `leaving closes the thread once even when the removal frame arrives first`() {
+        val vm = viewModel()
+        vm.openConversation(vm.row(1))
+        // Server order: `chat_group_removed` to the leaver, then the HTTP response.
+        vm.onLeftGroup(1)
+        assertTrue(vm.ui.value.closeThread)
+        vm.consumeNavigation()
+        vm.onLeftGroup(1)
+        assertFalse("a second close would pop the chat list too", vm.ui.value.closeThread)
     }
 
     @Test fun `new group search finds people as you type and excludes me`() {

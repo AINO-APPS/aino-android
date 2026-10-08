@@ -6,7 +6,7 @@
     "path": "server/**/*.ts"
   },
   "totals": {
-    "events": 80
+    "events": 83
   },
   "events": [
     "approval_update",
@@ -34,6 +34,7 @@
     "chat_edit",
     "chat_group_added",
     "chat_group_created",
+    "chat_group_join_request",
     "chat_group_removed",
     "chat_group_role_changed",
     "chat_media_job",
@@ -47,6 +48,7 @@
     "chat_typing",
     "chat_user_blocked",
     "chat_view_once",
+    "group_call_updated",
     "huddle_declined",
     "leave_policy_changed",
     "leave_update",
@@ -65,6 +67,7 @@
     "meeting_participant_joined",
     "meeting_participant_left",
     "meeting_peer_ready",
+    "meeting_reaction",
     "meeting_removed",
     "meeting_request_quality",
     "meeting_screen_track_id",

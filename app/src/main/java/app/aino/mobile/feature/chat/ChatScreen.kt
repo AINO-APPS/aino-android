@@ -148,6 +148,8 @@ fun ChatScreen(
         }
     }
     BackHandler(enabled = ui.selectedCallIds.isNotEmpty()) { viewModel.cancelCallSelection() }
+    // A group invite link (aino://chat/join/<token> or the web link) previews the group over any chat screen.
+    ui.invite?.let { JoinGroupSheet(it, viewModel) }
     val visibleConversations = remember(ui.conversations, activeTab, query, archivedOpen) {
         ui.conversations.filter { conversation ->
             val inTab = when (activeTab) {
@@ -250,7 +252,7 @@ fun ChatScreen(
                     if (visibleConversations.isNotEmpty()) {
                         item(key = "s-chats") { SectionHeader("Chats") }
                         items(visibleConversations, key = { "s-chat-${it.id}" }) {
-                            ConversationRow(it, ui.presence[it.otherUserId], false, viewModel, onOpenConversation, highlight = query)
+                            ConversationRow(it, ui.presence[it.otherUserId], false, viewModel, onOpenConversation, highlight = query, currentUserId = ui.currentUserId)
                         }
                     }
                     val contacts = ui.userResults.filter { it.id != ui.currentUserId }
@@ -288,7 +290,7 @@ fun ChatScreen(
                     ChatListTab.Meet -> {
                         if (visibleConversations.isEmpty()) item(key = "meet-empty") {
                             HonestEmpty(HeroIcons.VideoCamera, "No meeting chats yet")
-                        } else items(visibleConversations, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation) }
+                        } else items(visibleConversations, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation, currentUserId = ui.currentUserId) }
                     }
                     ChatListTab.Chat -> {
                         // Signal: pinned chats float to the top, then everything by recency (no section chrome).
@@ -300,7 +302,7 @@ fun ChatScreen(
                             if (ui.loading) app.aino.mobile.core.designsystem.component.FirstLoadSpinner(Modifier.height(160.dp))
                             else HonestEmpty(HeroIcons.ChatBubbleOvalLeft, if (archivedOpen) "No archived chats" else "No conversations yet")
                         }
-                        items(ordered, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation) }
+                        items(ordered, key = { it.id }) { ConversationRow(it, ui.presence[it.otherUserId], it.id in ui.selectedConversationIds, viewModel, onOpenConversation, currentUserId = ui.currentUserId) }
                         val archivedCount = ui.conversations.count { it.isArchived && !it.isMeetingChat }
                         if (archivedCount > 0 && !archivedOpen) item(key = "archived") { ArchivedRow(archivedCount) { archivedOpen = true } }
                     }
@@ -442,6 +444,7 @@ private fun ConversationRow(
     viewModel: ChatViewModel,
     onOpenConversation: ((Long) -> Unit)?,
     highlight: String? = null,
+    currentUserId: Long? = null,
 ) {
     val signal = signalColors
     val unread = conversation.unreadCount > 0
@@ -499,12 +502,11 @@ private fun ConversationRow(
                 )
             }
             Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                val sender = conversation.lastSenderName?.takeIf { conversation.isGroup && it.isNotBlank() && conversation.lastDeleted == null }
-                Text(
-                    buildString { if (sender != null) append(sender.substringBefore(' ')).append(": "); append(conversation.preview()) },
-                    Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    color = if (unread) signal.text else signal.textSecondary, fontSize = 15.sp, lineHeight = 20.sp,
-                    fontStyle = if (conversation.lastDeleted != null) androidx.compose.ui.text.font.FontStyle.Italic else null,
+                ConversationSnippet(
+                    conversation, currentUserId, unread,
+                    textColor = signal.text, secondaryColor = signal.textSecondary,
+                    background = signal.background,
+                    modifier = Modifier.weight(1f),
                 )
                 if (conversation.isPinned) Icon(HeroIcons.PushPin, "Pinned", Modifier.padding(start = 6.dp).size(16.dp), tint = signal.textSecondary)
                 if (conversation.isFavourite) Icon(HeroIcons.Star, "Favourite", Modifier.padding(start = 6.dp).size(16.dp), tint = Color(0xFFCB912F))
@@ -831,6 +833,9 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                     )
                 }
             }
+            if (conversation.isGroup && ui.selectedMessageIds.isEmpty() && !ui.threadSearchOpen) {
+                ui.activeGroupCall?.let { call -> GroupCallBanner(call, ui.callsEnabled) { withCallPermissions(call.callType == "video") { viewModel.joinActiveGroupCall() } } }
+            }
             if (ui.threadFromCache) AinoAlert("Offline · showing cached messages", AlertTone.Warning, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
             ui.error?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -950,6 +955,8 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                     onNewer = { viewModel.stepThreadSearch(-1) },
                 )
                 Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)))
+            } else if (conversation.isGroup && !GroupPermissions.of(conversation, ui.members, ui.currentUserId).canSend) {
+                AdminsOnlyComposerNotice()
             } else MessageComposer(
                 value = ui.composer,
                 uploading = ui.uploading,
@@ -1205,7 +1212,7 @@ private fun CallRow(
     }
 }
 
-private enum class InfoPage(val title: String) {
+internal enum class InfoPage(val title: String) {
     Main("Conversation info"), Search("Search"), Shared("Shared media, files & links"),
     Pinned("Pinned messages"), Saved("Saved messages"), Group("Group settings & members"),
 }
@@ -1233,6 +1240,11 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
         }
     }
     val withCallPermissions = app.aino.mobile.core.call.rememberCallPermissions()
+    // Groups get the Signal-style settings screen; its media/pinned/saved/search rows reuse the pages below.
+    if (conversation.isGroup && !conversation.isMeetingChat && (page == InfoPage.Main || page == InfoPage.Group)) {
+        GroupSettingsScreen(ui, viewModel, onOpenAllMedia = onOpenAllMedia, onOpenInfoPage = ::open)
+        return
+    }
     Box(Modifier.fillMaxSize().background(colors.bg)) {
         Column(Modifier.fillMaxSize()) {
             Row(
@@ -1350,7 +1362,7 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                         }
                     }
                 }
-                InfoPage.Group -> GroupSettings(ui, viewModel)
+                InfoPage.Group -> Unit
             }
         }
     }
@@ -1377,47 +1389,6 @@ private fun InfoMessageList(ui: ChatUiState, emptyText: String, onOpen: (ChatMes
             }
         }
     }
-}
-
-@Composable
-private fun GroupSettings(ui: ChatUiState, viewModel: ChatViewModel) {
-    val conversation = ui.selectedConversation ?: return
-    val colors = LocalWebColors.current
-    var name by remember(conversation.id) { mutableStateOf(conversation.groupName.orEmpty()) }
-    var confirmLeave by remember { mutableStateOf(false) }
-    val myRole = ui.members.firstOrNull { it.id == ui.currentUserId }?.role
-    val canManage = myRole == "owner" || myRole == "admin"
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (canManage) item {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BasicTextField(
-                    name, { name = it.take(100) },
-                    Modifier.weight(1f).background(colors.inputBg, RoundedCornerShape(10.dp)).padding(12.dp), singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.text),
-                    decorationBox = { inner -> if (name.isEmpty()) Text("Group name", color = colors.textMuted); inner() },
-                )
-                TextButton(onClick = { viewModel.updateGroup(GroupUpdateRequest(name = name.trim())) }, enabled = name.isNotBlank() && name != conversation.groupName) { Text("Save") }
-            }
-        }
-        item { SectionHeader("Members", HeroIcons.Users) }
-        items(ui.members, key = { "member-${it.id}" }) { member ->
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                app.aino.mobile.core.designsystem.component.UserAvatar(member.display(), member.avatar, 38.dp)
-                Column(Modifier.padding(start = 10.dp).weight(1f)) {
-                    Text(member.display() + if (member.id == ui.currentUserId) " (You)" else "", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                    Text("@${member.username.orEmpty()}", color = colors.textSecondary, fontSize = 11.sp)
-                }
-                Text(member.role.replaceFirstChar(Char::uppercase), color = colors.textSecondary, fontSize = 11.sp)
-                if (canManage && member.id != ui.currentUserId && member.role != "owner") {
-                    Icon(HeroIcons.XMark, "Remove ${member.display()}", Modifier.padding(start = 8.dp).size(20.dp).clickable {
-                        viewModel.updateGroup(GroupUpdateRequest(removeUserIds = listOf(member.id)))
-                    }, tint = colors.danger)
-                }
-            }
-        }
-        item { InfoRow(HeroIcons.ArrowRightStartOnRectangle, "Leave group", danger = true) { confirmLeave = true } }
-    }
-    if (confirmLeave) LeaveGroupDialog(onConfirm = viewModel::leaveGroup) { confirmLeave = false }
 }
 
 @Composable
@@ -1517,11 +1488,14 @@ private fun MessageBubble(
         return
     }
     if (message.formatType == "system") {
-        val text = message.metadata?.jsonObject?.get("text")?.jsonPrimitive?.contentOrNull ?: message.body()
+        val meta = message.metadata?.jsonObject
+        val text = meta?.get("text")?.jsonPrimitive?.contentOrNull ?: message.body()
+        val callCode = meta?.takeIf { it["type"]?.jsonPrimitive?.contentOrNull == "group_call_started" }?.get("meetingCode")?.jsonPrimitive?.contentOrNull
         Text(
-            text,
-            Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 8.dp),
-            color = signal.textSecondary, fontSize = 13.sp,
+            if (callCode != null) "$text · Join" else text,
+            Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 8.dp)
+                .let { if (callCode != null) it.clickable { app.aino.mobile.core.navigation.RouteRequests.open(app.aino.mobile.core.navigation.huddleRoute(callCode)) } else it },
+            color = if (callCode != null) signal.primary else signal.textSecondary, fontSize = 13.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
         return
@@ -2501,16 +2475,21 @@ internal fun dropLastGrapheme(text: String): String {
     return text.substring(0, it.previous().coerceAtLeast(0))
 }
 @Composable
-internal fun ConversationAvatar(conversation: ChatConversation, presence: ChatPresence?, size: androidx.compose.ui.unit.Dp = 48.dp) {
+internal fun ConversationAvatar(
+    conversation: ChatConversation,
+    presence: ChatPresence?,
+    size: androidx.compose.ui.unit.Dp = 48.dp,
+    members: List<ConversationMember> = emptyList(),
+) {
     val signal = signalColors
     Box(Modifier.size(size)) {
         when {
             conversation.isMeetingChat -> Box(Modifier.fillMaxSize().background(signal.primary, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(HeroIcons.VideoCamera, null, Modifier.size(size * .46f), tint = Color.White)
             }
-            conversation.isGroup && conversation.groupAvatar.isNullOrBlank() -> Box(Modifier.fillMaxSize().background(signal.primary.copy(alpha = .2f), CircleShape), contentAlignment = Alignment.Center) {
-                Icon(HeroIcons.UserGroup, null, Modifier.size(size * .5f), tint = signal.primary)
-            }
+            conversation.isGroup -> app.aino.mobile.core.designsystem.component.GroupAvatar(
+                conversation.title(), conversation.groupAvatar, conversation.avatarMembers(members), "conv-${conversation.id}", size,
+            )
             else -> app.aino.mobile.core.designsystem.component.UserAvatar(conversation.title(), conversation.avatar(), size)
         }
         if (!conversation.isGroup && !conversation.isMeetingChat && presence?.presence == "online") Box(

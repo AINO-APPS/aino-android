@@ -48,17 +48,22 @@ fun IncomingCallScreen(viewModel: IncomingCallViewModel, onClose: () -> Unit) {
     }
     val answering = ui.answeredFromNotification && ui.state == IncomingCallState.Ringing
     val busy = answering || ui.state == IncomingCallState.Answering || ui.state == IncomingCallState.Declining
+    val group = route.isGroupCall
     Box(Modifier.fillMaxSize().blockTouches()) {
-        BlurredAvatarBackdrop(route.callerAvatar)
+        BlurredAvatarBackdrop(if (group) route.groupAvatar else route.callerAvatar)
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(Modifier.padding(top = 48.dp))
-            Text(route.callerName.ifBlank { "Unknown" }, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+            Text(
+                if (group) route.groupName.orEmpty() else route.callerName.ifBlank { "Unknown" },
+                color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+            )
             Text(
                 when {
                     busy && ui.state != IncomingCallState.Declining -> "Answering..."
+                    group -> "${route.callerName.ifBlank { "Someone" }} is calling the group" + if (video) " (video)" else ""
                     video -> "Incoming video call..."
                     else -> "Incoming voice call..."
                 },
@@ -68,7 +73,16 @@ fun IncomingCallScreen(viewModel: IncomingCallViewModel, onClose: () -> Unit) {
             )
             ui.error?.let { Text(it, Modifier.padding(top = 12.dp), color = Color(0xFFFCA5A5), fontSize = 14.sp, textAlign = TextAlign.Center) }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                UserAvatar(route.callerName.ifBlank { "?" }, route.callerAvatar, 112.dp, background = Color(0xFF3A3A3A))
+                if (group) {
+                    // The group's photo, else its automatic avatar with the caller's face in it.
+                    app.aino.mobile.core.designsystem.component.GroupAvatar(
+                        route.groupName, route.groupAvatar,
+                        listOf(app.aino.mobile.core.designsystem.component.GroupAvatarMember(route.callerName, route.callerAvatar)),
+                        "conv-${route.conversationId}", 112.dp,
+                    )
+                } else {
+                    UserAvatar(route.callerName.ifBlank { "?" }, route.callerAvatar, 112.dp, background = Color(0xFF3A3A3A))
+                }
             }
             if (busy) {
                 CircularProgressIndicator(Modifier.padding(bottom = 64.dp), color = Color.White)

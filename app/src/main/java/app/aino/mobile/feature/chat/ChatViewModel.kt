@@ -117,6 +117,14 @@ data class GroupCandidates(
     val error: String? = null,
 )
 
+data class InviteSheetState(
+    val token: String,
+    val loading: Boolean = false,
+    val preview: InvitePreview? = null,
+    val joining: Boolean = false,
+    val error: String? = null,
+)
+
 data class ChatUiState(
     val currentUserId: Long? = null,
     /** Tenant plan `calls` (1:1 and group calls); web hides the call buttons when off. */
@@ -187,6 +195,10 @@ data class ChatUiState(
     val messageResults: List<ChatMessage> = emptyList(),
     /** Just-archived chat offered for Undo (Signal "Chat archived" snackbar). */
     val archiveUndo: ChatConversation? = null,
+    /** The open group's running call (Join banner), or null. */
+    val activeGroupCall: ActiveGroupCall? = null,
+    /** A group invite link being previewed / joined. */
+    val invite: InviteSheetState? = null,
     val error: String? = null,
     val message: String? = null,
 ) {
@@ -328,14 +340,9 @@ class ChatViewModel(
         )?.let { _ui.update { st -> st.copy(error = it) } }
     }
 
-    /** Web `startGroupCall`: a huddle meeting, then `/huddle/:code` (members are rung by the server). */
+    /** Group calls open the lobby (preview, who's in, ring toggle); it starts the huddle or joins the running one. */
     private fun startGroupCall(conversation: ChatConversation, callType: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.startGroupCall(conversation.id, conversation.groupName, callType) }.fold(
-                onSuccess = { app.aino.mobile.core.navigation.RouteRequests.open(app.aino.mobile.core.navigation.huddleRoute(it.meetingCode)) },
-                onFailure = { _ui.update { st -> st.copy(error = "Could not start the group call. Please try again.") } },
-            )
-        }
+        app.aino.mobile.core.navigation.RouteRequests.open(app.aino.mobile.core.navigation.groupCallLobbyRoute(conversation.id, callType))
     }
 
     fun setScope(tenantId: Long?, userId: Long?) {
@@ -421,6 +428,7 @@ class ChatViewModel(
             }
             RealtimeEvent.ChatReadReceipt -> {
                 val receipt = decodeChatRealtime<ChatReadReceiptEvent>(event.data) ?: return
+                _ui.update { st -> st.copy(conversations = applyListRead(st.conversations, receipt, scope?.userId)) }
                 if (_ui.value.selectedConversation?.id == receipt.conversationId) {
                     _ui.update { st -> st.copy(receipts = applyRealtimeReceipt(st.receipts, receipt)) }
                 }
@@ -453,6 +461,7 @@ class ChatViewModel(
             }
             RealtimeEvent.ChatMessageDelivered -> {
                 val delivered = decodeChatRealtime<ChatDeliveredEvent>(event.data) ?: return
+                _ui.update { st -> st.copy(conversations = applyListDelivered(st.conversations, delivered, scope?.userId)) }
                 if (_ui.value.selectedConversation?.id == delivered.conversationId) {
                     _ui.update { st -> st.copy(messages = applyDelivered(st.messages, delivered)) }
                 }
@@ -490,6 +499,9 @@ class ChatViewModel(
                 // clientMsgId, so the optimistic bubble is swapped in place instead
                 // of sitting next to the persisted row until the thread reloads.
                 val incoming = decodeChatRealtime<ChatRealtimeMessage>(event.data)
+                if (incoming != null && incoming.formatType != "system") {
+                    _ui.update { st -> st.copy(conversations = applyListLastMessage(st.conversations, incoming)) }
+                }
                 incoming?.toChatMessage()?.let { received -> acknowledgeDelivery(listOf(received)) }
                 if (incoming != null && isCallHistoryMessage(incoming.formatType, incoming.metadata)) onCallActivity()
                 if (incoming != null && _ui.value.selectedConversation?.id == incoming.conversationId) {
@@ -522,6 +534,24 @@ class ChatViewModel(
                     refresh()
                 }
                 return
+            }
+            RealtimeEvent.GroupCallUpdated -> {
+                val update = decodeChatRealtime<GroupCallUpdatedEvent>(event.data) ?: return
+                if (isOpen(update.conversationId)) {
+                    if (!update.active) _ui.update { st -> st.copy(activeGroupCall = null) } else refreshActiveCall(update.conversationId)
+                }
+                return
+            }
+            RealtimeEvent.ChatGroupRoleChanged, RealtimeEvent.ChatGroupAdded -> {
+                val changed = decodeChatRealtime<ChatConversationEvent>(event.data)
+                if (changed != null && isOpen(changed.conversationId)) onGroupChanged()
+            }
+            RealtimeEvent.ChatGroupRemoved -> {
+                val removed = decodeChatRealtime<ChatConversationEvent>(event.data)
+                if (removed != null && isOpen(removed.conversationId)) {
+                    onLeftGroup(removed.conversationId)
+                    return
+                }
             }
             RealtimeEvent.ChatConvDeleted -> {
                 val deleted = decodeChatRealtime<ChatConversationEvent>(event.data) ?: return
@@ -782,6 +812,7 @@ class ChatViewModel(
             delay(THREAD_SETTLE_MS)
             if (!isOpen(conversation.id)) return@launch
             refreshPinned(conversation.id)
+            if (conversation.isGroup) refreshActiveCall(conversation.id)
             // Members feed @mention suggestions (web MentionInput uses convMembers).
             val members = runCatching { repository.loadMembers(conversation.id) }.getOrNull() ?: return@launch
             if (isOpen(conversation.id)) _ui.update { st -> st.copy(members = members) }
@@ -2050,7 +2081,7 @@ class ChatViewModel(
         val current = _ui.value.selectedConversation ?: return
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.leaveGroup(current.id) }.fold(
-                onSuccess = { closeConversation(); refresh(); _ui.update { st -> st.copy(closeThread = true) } },
+                onSuccess = { onLeftGroup(current.id) },
                 onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not leave group") } },
             )
         }
@@ -2070,6 +2101,92 @@ class ChatViewModel(
             )
         }
     }
+
+    /** Group settings changed something (members, roles, info, photo, policies): re-read the row and members. */
+    fun onGroupChanged() {
+        val current = _ui.value.selectedConversation ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val members = runCatching { repository.loadMembers(current.id) }.getOrNull()
+            if (members != null && isOpen(current.id)) _ui.update { st -> st.copy(members = members) }
+            refresh()
+        }
+    }
+
+    /**
+     * Left (or removed from) the open group: close its thread once. The server's
+     * `chat_group_removed` frame usually arrives before the leave response, so a
+     * second call for a thread that is no longer open must not navigate back again.
+     */
+    fun onLeftGroup(conversationId: Long? = _ui.value.selectedConversation?.id) {
+        val wasOpen = conversationId != null && isOpen(conversationId)
+        if (wasOpen) {
+            closeConversation()
+            _ui.update { st -> st.copy(closeThread = true, showInfo = false) }
+        }
+        viewModelScope.launch(Dispatchers.IO) { refresh() }
+    }
+
+    // ---- Group call banner (group_call_updated / active-call) ----
+
+    private fun refreshActiveCall(conversationId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val call = runCatching { repository.activeGroupCall(conversationId) }.getOrNull()
+            if (isOpen(conversationId)) _ui.update { st -> st.copy(activeGroupCall = call) }
+        }
+    }
+
+    /** Join the group's running call through the lobby (it never rings when joining). */
+    fun joinActiveGroupCall() {
+        val conversation = _ui.value.selectedConversation ?: return
+        val call = _ui.value.activeGroupCall ?: return
+        app.aino.mobile.core.navigation.RouteRequests.open(app.aino.mobile.core.navigation.groupCallLobbyRoute(conversation.id, call.callType))
+    }
+
+    // ---- Group invite links (join side) ----
+
+    fun loadInvite(token: String) {
+        _ui.update { st -> st.copy(invite = InviteSheetState(token = token, loading = true)) }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.invitePreview(token) }.fold(
+                onSuccess = { preview -> _ui.update { st -> st.copy(invite = st.invite?.takeIf { it.token == token }?.copy(loading = false, preview = preview)) } },
+                onFailure = { error -> _ui.update { st -> st.copy(invite = st.invite?.takeIf { it.token == token }?.copy(loading = false, error = error.message ?: "This group link is no longer valid")) } },
+            )
+        }
+    }
+
+    fun joinInvite() {
+        val invite = _ui.value.invite ?: return
+        _ui.update { st -> st.copy(invite = invite.copy(joining = true, error = null)) }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.joinByInvite(invite.token) }.fold(
+                onSuccess = { result ->
+                    if (result.pending) {
+                        _ui.update { st -> st.copy(invite = st.invite?.copy(joining = false, preview = st.invite.preview?.copy(pending = true))) }
+                    } else {
+                        refresh()
+                        _ui.update { st -> st.copy(invite = null, openConversationId = result.conversationId) }
+                    }
+                },
+                onFailure = { error -> _ui.update { st -> st.copy(invite = st.invite?.copy(joining = false, error = error.message ?: "Couldn't join this group")) } },
+            )
+        }
+    }
+
+    fun cancelJoinRequest() {
+        val invite = _ui.value.invite ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repository.cancelJoinRequest(invite.token) }.onSuccess {
+                _ui.update { st -> st.copy(invite = st.invite?.copy(preview = st.invite.preview?.copy(pending = false))) }
+            }
+        }
+    }
+
+    fun openInviteConversation() {
+        val id = _ui.value.invite?.preview?.conversationId ?: return
+        _ui.update { st -> st.copy(invite = null, openConversationId = id) }
+    }
+
+    fun dismissInvite() = _ui.update { st -> st.copy(invite = null) }
 
     fun createGroup(name: String, userIds: List<Long>) {
         if (name.isBlank() || userIds.isEmpty()) {

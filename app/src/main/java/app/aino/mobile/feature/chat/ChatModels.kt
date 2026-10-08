@@ -46,6 +46,21 @@ data class ChatConversation(
     @SerialName("is_blocked") val isBlocked: Boolean = false,
     @SerialName("is_meeting_chat") val isMeetingChat: Boolean = false,
     @SerialName("meeting_code") val meetingCode: String? = null,
+    @SerialName("group_description") val groupDescription: String? = null,
+    /** The caller's role in a group: `owner` / `admin` / `member`. */
+    @SerialName("my_role") val myRole: String? = null,
+    /** Who may send messages: `all` or `admins`. */
+    @SerialName("post_policy") val postPolicy: String? = null,
+    /** Who may add members: `all` or `admins`. */
+    @SerialName("add_policy") val addPolicy: String? = null,
+    /** Up to 4 member photos (lowest user ids first) for the automatic group avatar. */
+    @SerialName("group_member_avatars") val groupMemberAvatars: List<String>? = null,
+    /** Up to 4 members (photos first) with names, so the collage can fall back to initials. */
+    @SerialName("group_member_previews") val groupMemberPreviews: List<GroupMemberPreview>? = null,
+    @SerialName("last_sender_id") val lastSenderId: Long? = null,
+    /** Someone other than the sender has read the last message (reciprocal read receipts). */
+    @SerialName("last_message_read") val lastMessageRead: Boolean = false,
+    @SerialName("last_message_delivered") val lastMessageDelivered: Boolean = false,
 ) {
     fun title(): String = when {
         isGroup -> groupName?.takeIf(String::isNotBlank) ?: "Group"
@@ -56,14 +71,23 @@ data class ChatConversation(
     }
 
     /** Signal list snippet: media rows read "📷 Photo" etc., never the raw upload file name. */
-    fun preview(): String = when {
-        lastDeleted != null -> "Message deleted"
-        lastFormatType == "poll" -> "📊 ${lastMessage?.takeIf(String::isNotBlank) ?: "Poll"}"
-        !lastFileName.isNullOrBlank() || !lastFileType.isNullOrBlank() ->
-            attachmentSnippet(lastFileType, lastFileName, lastMessage)
-        !lastMessage.isNullOrBlank() -> lastMessage
-        else -> "No messages yet"
+    fun preview(): String = previewSnippet().let { snippet ->
+        snippet.kind?.takeIf { it != PreviewKind.Deleted }?.let { "${it.glyph} ${snippet.text}" } ?: snippet.text
     }
+
+    /** The list row's snippet split into a kind (drawn as an icon) and its text. */
+    fun previewSnippet(): PreviewSnippet = when {
+        lastDeleted != null -> PreviewSnippet(PreviewKind.Deleted, "Message deleted")
+        lastFormatType == "poll" -> PreviewSnippet(PreviewKind.Poll, lastMessage?.takeIf(String::isNotBlank) ?: "Poll")
+        !lastFileName.isNullOrBlank() || !lastFileType.isNullOrBlank() ->
+            attachmentPreview(lastFileType, lastFileName, lastMessage)
+        !lastMessage.isNullOrBlank() -> PreviewSnippet(null, lastMessage)
+        else -> PreviewSnippet(null, "No messages yet")
+    }
+
+    /** The last message is the current user's, so the row shows its delivery tick. */
+    fun lastIsMine(currentUserId: Long?): Boolean =
+        currentUserId != null && lastSenderId == currentUserId && lastDeleted == null && !lastMessageAt.isNullOrBlank()
 
     fun avatar(): String? = if (isGroup) groupAvatar else otherAvatar
 
@@ -86,6 +110,15 @@ fun ConversationEntity.toCachedConversation(): ChatConversation = ChatConversati
     groupAvatar = avatarUrl,
     unreadCount = unreadCount,
 )
+
+@Serializable data class GroupMemberPreview(val name: String? = null, val avatar: String? = null)
+
+/** Collage members for the automatic group avatar, from the richest data available. */
+fun ChatConversation.avatarMembers(members: List<ConversationMember> = emptyList()): List<app.aino.mobile.core.designsystem.component.GroupAvatarMember> = when {
+    members.isNotEmpty() -> members.map { app.aino.mobile.core.designsystem.component.GroupAvatarMember(it.display(), it.avatar) }
+    !groupMemberPreviews.isNullOrEmpty() -> groupMemberPreviews.map { app.aino.mobile.core.designsystem.component.GroupAvatarMember(it.name, it.avatar) }
+    else -> groupMemberAvatars.orEmpty().map { app.aino.mobile.core.designsystem.component.GroupAvatarMember(null, it) }
+}
 
 /** What a notification knows about its conversation: enough to paint the thread before the list loads. */
 data class ConversationHint(
@@ -110,17 +143,32 @@ fun placeholderConversation(conversationId: Long, hint: ConversationHint?): Chat
  * Signal-style attachment label ("📷 Photo", "🎥 Video", "🎤 Voice message",
  * "🎞 GIF", "📎 report.pdf"). A caption replaces the generic word, keeping the glyph.
  */
-fun attachmentSnippet(fileType: String?, fileName: String?, caption: String?): String {
+fun attachmentSnippet(fileType: String?, fileName: String?, caption: String?): String =
+    attachmentPreview(fileType, fileName, caption).let { "${it.kind!!.glyph} ${it.text}" }
+
+/** What a list-row snippet is about; the chat list draws [PreviewKind] as a Material icon, notifications as [glyph]. */
+enum class PreviewKind(val glyph: String) { Photo("📷"), Video("🎥"), Voice("🎤"), Gif("🎞"), File("📎"), Poll("📊"), Deleted("🚫") }
+
+data class PreviewSnippet(val kind: PreviewKind?, val text: String)
+
+fun attachmentPreview(fileType: String?, fileName: String?, caption: String?): PreviewSnippet {
     val type = fileType.orEmpty().lowercase()
-    val (glyph, label) = when {
-        type == "image/gif" -> "🎞" to "GIF"
-        type.startsWith("image/") -> "📷" to "Photo"
-        type.startsWith("video/") -> "🎥" to "Video"
-        type.startsWith("audio/") -> "🎤" to "Voice message"
-        else -> "📎" to (fileName?.takeIf(String::isNotBlank) ?: "File")
+    val (kind, label) = when {
+        type == "image/gif" -> PreviewKind.Gif to "GIF"
+        type.startsWith("image/") -> PreviewKind.Photo to "Photo"
+        type.startsWith("video/") -> PreviewKind.Video to "Video"
+        type.startsWith("audio/") -> PreviewKind.Voice to "Voice message"
+        else -> PreviewKind.File to (fileName?.takeIf(String::isNotBlank) ?: "File")
     }
-    val text = caption?.trim()?.takeIf(String::isNotEmpty) ?: label
-    return "$glyph $text"
+    return PreviewSnippet(kind, caption?.trim()?.takeIf(String::isNotEmpty) ?: label)
+}
+
+/** Chat-list tick for the current user's last message: read beats delivered beats sent. */
+internal fun listDeliveryTick(conversation: ChatConversation, pending: Boolean = false): DeliveryTick = when {
+    pending -> DeliveryTick.Sending
+    conversation.lastMessageRead -> DeliveryTick.Read
+    conversation.lastMessageDelivered -> DeliveryTick.Delivered
+    else -> DeliveryTick.Sent
 }
 
 private fun parseEpoch(value: String?): Long = runCatching {
@@ -548,7 +596,63 @@ data class CallLog(
     val addUserIds: List<Long>? = null,
     val removeUserIds: List<Long>? = null,
 )
+/** `PUT chat/conversations/:id/group` `{"avatar":null}` removes the group photo (no default, so the null is encoded). */
+@Serializable data class RemoveGroupAvatarRequest(val avatar: String?)
 @Serializable data class SetParticipantRoleRequest(val role: String)
+
+/** `GET/PUT chat/conversations/:id/invite-link` (owner/admin). [token] is null while the link is off. */
+@Serializable data class InviteLinkState(
+    val enabled: Boolean = false,
+    val token: String? = null,
+    val requiresApproval: Boolean = false,
+    val pendingRequests: Int = 0,
+)
+@Serializable data class InviteLinkUpdate(val enabled: Boolean? = null, val requiresApproval: Boolean? = null)
+
+/** `GET chat/invite/:token`: what a joiner sees before joining. */
+@Serializable data class InvitePreview(
+    val conversationId: Long,
+    val name: String? = null,
+    val description: String? = null,
+    val avatar: String? = null,
+    val memberCount: Int = 0,
+    val memberAvatars: List<String> = emptyList(),
+    val requiresApproval: Boolean = false,
+    val alreadyMember: Boolean = false,
+    val pending: Boolean = false,
+)
+@Serializable data class JoinInviteResult(val conversationId: Long, val pending: Boolean = false)
+@Serializable data class JoinRequest(
+    val id: Long,
+    val username: String? = null,
+    @SerialName("full_name") val fullName: String? = null,
+    val avatar: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+) {
+    fun display(): String = fullName?.takeIf(String::isNotBlank) ?: username.orEmpty()
+}
+@Serializable data class ResolveJoinResult(val ok: Boolean = true, val added: Boolean = false)
+@Serializable data class GroupAvatarResponse(val avatar: String? = null)
+
+/** `GET chat/conversations/:id/active-call` (204 when none) and the `group_call_updated` event. */
+@Serializable data class ActiveGroupCall(
+    val meetingId: Long,
+    val meetingCode: String,
+    val callType: String = "voice",
+    val startedBy: Long? = null,
+    val participants: List<ActiveCallParticipant> = emptyList(),
+)
+@Serializable data class ActiveCallParticipant(val id: Long, val fullName: String? = null, val avatar: String? = null)
+@Serializable data class GroupCallUpdatedEvent(
+    val conversationId: Long,
+    val meetingId: Long,
+    val meetingCode: String,
+    val active: Boolean,
+    val participantCount: Int = 0,
+)
+
+/** Builds the share URL for a group link; the web origin and `aino://chat/join/` both route to the join sheet. */
+fun groupInviteUrl(webOrigin: String, token: String): String = webOrigin.trimEnd('/') + "/chat/join/" + token
 @Serializable data class TransferOwnerRequest(val userId: Long)
 @Serializable data class RoleResponse(val ok: Boolean = true, val role: String)
 @Serializable data class UnreadResponse(val ok: Boolean = true, val unread: Boolean)
@@ -934,17 +1038,3 @@ fun mergeIncomingMessage(messages: List<ChatMessage>, incoming: ChatMessage): Li
     }
     return (messages + incoming).sortedWith(compareBy<ChatMessage> { parseEpoch(it.createdAt) }.thenBy { it.id })
 }
-/** `POST /meetings` body for a group call (fields are explicit: chat JSON omits defaults). */
-@Serializable
-data class GroupCallRequest(
-    val title: String,
-    @SerialName("conversation_id") val conversationId: Long,
-    val huddle: Boolean,
-    val settings: GroupCallSettings,
-)
-
-@Serializable
-data class GroupCallSettings(val allowScreenShare: Boolean, val callType: String)
-
-@Serializable
-data class CreatedGroupCall(val id: Long, @SerialName("meeting_code") val meetingCode: String)

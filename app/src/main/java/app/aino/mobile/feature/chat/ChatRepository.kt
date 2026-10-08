@@ -37,6 +37,17 @@ class ChatRepository(
     // @api POST chat/conversations/:id/transfer-owner
     // @api POST chat/conversations/:id/unread
     // @api POST chat/conversations/group
+    // @api POST chat/conversations/:id/avatar
+    // @api GET chat/conversations/:id/invite-link
+    // @api PUT chat/conversations/:id/invite-link
+    // @api POST chat/conversations/:id/invite-link/reset
+    // @api GET chat/conversations/:id/join-requests
+    // @api POST chat/conversations/:id/join-requests/:userId/approve
+    // @api POST chat/conversations/:id/join-requests/:userId/deny
+    // @api GET chat/conversations/:id/active-call
+    // @api GET chat/invite/:token
+    // @api POST chat/invite/:token/join
+    // @api DELETE chat/invite/:token/request
     // @api GET chat/link-preview
     // @api POST chat/messages/:id/delivered
     // @api POST chat/messages/:id/view
@@ -197,10 +208,6 @@ class ChatRepository(
     fun loadConversationCalls(conversationId: Long): List<CallLog> =
         decode(api.execute(ApiRequest(path = "chat/conversations/$conversationId/calls")))
 
-    /** Web `startGroupCall` (`useCallActions.ts`): a huddle meeting bound to the group; the server rings members. */
-    fun startGroupCall(conversationId: Long, groupName: String?, callType: String): CreatedGroupCall =
-        mutate("meetings", GroupCallRequest(groupName?.takeIf(String::isNotBlank) ?: "Group call", conversationId, huddle = true, settings = GroupCallSettings(allowScreenShare = true, callType = callType)))
-
     fun loadMembers(conversationId: Long): List<ConversationMember> =
         decode(api.execute(ApiRequest(path = "chat/conversations/$conversationId/members")))
 
@@ -219,6 +226,52 @@ class ChatRepository(
 
     fun transferOwner(conversationId: Long, userId: Long): ChatOk =
         mutate("chat/conversations/$conversationId/transfer-owner", TransferOwnerRequest(userId))
+
+    fun addMembers(conversationId: Long, userIds: List<Long>): ChatOk =
+        updateGroup(conversationId, GroupUpdateRequest(addUserIds = userIds.distinct()))
+
+    fun removeMember(conversationId: Long, userId: Long): ChatOk =
+        updateGroup(conversationId, GroupUpdateRequest(removeUserIds = listOf(userId)))
+
+    /** `upload.single("avatar")` on the group (owner/admin); returns the new photo URL. */
+    fun uploadGroupAvatar(conversationId: Long, fileName: String, mimeType: String, bytes: ByteArray): GroupAvatarResponse {
+        val multipart = app.aino.mobile.core.network.buildAvatarMultipart(fileName, mimeType, bytes, "aino-${UUID.randomUUID()}")
+        return send("chat/conversations/$conversationId/avatar", multipart.first, multipart.second)
+    }
+
+    fun removeGroupAvatar(conversationId: Long): ChatOk =
+        mutate("chat/conversations/$conversationId/group", RemoveGroupAvatarRequest(null), method = "PUT")
+
+    fun inviteLink(conversationId: Long): InviteLinkState =
+        decode(api.execute(ApiRequest(path = "chat/conversations/$conversationId/invite-link")))
+
+    fun updateInviteLink(conversationId: Long, update: InviteLinkUpdate): InviteLinkState =
+        mutate("chat/conversations/$conversationId/invite-link", update, method = "PUT")
+
+    fun resetInviteLink(conversationId: Long): InviteLinkState =
+        mutate("chat/conversations/$conversationId/invite-link/reset", Unit)
+
+    fun invitePreview(token: String): InvitePreview = try {
+        decode(api.execute(ApiRequest(path = "chat/invite/${encode(token)}")))
+    } catch (error: ApiError.Http) {
+        throw ChatFailure(serverError(error) ?: "This group link is no longer valid", error.statusCode, error)
+    }
+
+    fun joinByInvite(token: String): JoinInviteResult = mutate("chat/invite/${encode(token)}/join", Unit)
+
+    fun cancelJoinRequest(token: String): ChatOk = mutate("chat/invite/${encode(token)}/request", Unit, method = "DELETE")
+
+    fun joinRequests(conversationId: Long): List<JoinRequest> =
+        decode(api.execute(ApiRequest(path = "chat/conversations/$conversationId/join-requests")))
+
+    fun resolveJoinRequest(conversationId: Long, userId: Long, approve: Boolean): ResolveJoinResult =
+        mutate("chat/conversations/$conversationId/join-requests/$userId/${if (approve) "approve" else "deny"}", Unit)
+
+    /** The group's running call, or null (server 204). */
+    fun activeGroupCall(conversationId: Long): ActiveGroupCall? {
+        val body = api.execute(ApiRequest(path = "chat/conversations/$conversationId/active-call")).bodyAsString()
+        return body.takeIf(String::isNotBlank)?.let { json.decodeFromString<ActiveGroupCall>(it) }
+    }
 
     fun markUnread(conversationId: Long): UnreadResponse =
         mutate("chat/conversations/$conversationId/unread", Unit)
@@ -267,12 +320,19 @@ class ChatRepository(
             val bytes = if (body is Unit) null else json.encodeToString(body).toByteArray()
             return decode(api.execute(ApiRequest(method, path, body = bytes)))
         } catch (error: ApiError.Http) {
-            val message = runCatching {
-                json.parseToJsonElement(error.responseBody).jsonObject["error"]?.jsonPrimitive?.content
-            }.getOrNull() ?: "Chat action failed"
-            throw ChatFailure(message, error.statusCode, error)
+            throw ChatFailure(serverError(error) ?: "Chat action failed", error.statusCode, error)
         }
     }
+
+    private inline fun <reified R> send(path: String, contentType: String, body: ByteArray): R = try {
+        decode(api.execute(ApiRequest("POST", path, headers = mapOf("Content-Type" to contentType), body = body)))
+    } catch (error: ApiError.Http) {
+        throw ChatFailure(serverError(error) ?: "Upload failed", error.statusCode, error)
+    }
+
+    private fun serverError(error: ApiError.Http): String? = runCatching {
+        json.parseToJsonElement(error.responseBody).jsonObject["error"]?.jsonPrimitive?.content
+    }.getOrNull()
 
     private inline fun <reified T> decode(response: ApiResponse): T =
         json.decodeFromString(response.bodyAsString())

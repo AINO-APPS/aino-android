@@ -57,6 +57,15 @@ fun meetingRoomRoute(code: String): String = meetingRoute(code) + "/room"
 const val HUDDLE_ROUTE = "huddle/{code}"
 fun huddleRoute(code: String): String = "huddle/" + java.net.URLEncoder.encode(code, "UTF-8")
 
+/** Group-call lobby for a group chat: preview, who's in, ring toggle, then Start / Join. */
+const val GROUP_CALL_LOBBY_ROUTE = "group-call/{conversationId}?type={type}"
+fun groupCallLobbyRoute(conversationId: Long, callType: String): String =
+    "group-call/$conversationId?type=" + (if (callType == "video") "video" else "voice")
+
+/** The in-call screen for a group call (huddle); scheduled meetings use [MEETING_ROOM_ROUTE]. */
+const val GROUP_CALL_ROOM_ROUTE = "group-call-room/{code}"
+fun groupCallRoomRoute(code: String): String = "group-call-room/" + java.net.URLEncoder.encode(code, "UTF-8")
+
 /** The calendar's New / Edit Event form (shares the Calendar route's ViewModel). */
 const val CALENDAR_EVENT_ROUTE = "calendar/event"
 
@@ -93,6 +102,8 @@ private val FULL_SCREEN_ROUTES = setOf(
     MEETING_ROUTE,
     MEETING_ROOM_ROUTE,
     HUDDLE_ROUTE,
+    GROUP_CALL_LOBBY_ROUTE,
+    GROUP_CALL_ROOM_ROUTE,
     CALENDAR_EVENT_ROUTE,
     TASK_DETAIL_ROUTE,
     SEARCH_ROUTE,
