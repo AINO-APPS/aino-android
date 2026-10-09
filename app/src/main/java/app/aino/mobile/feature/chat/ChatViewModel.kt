@@ -12,6 +12,7 @@ import app.aino.mobile.core.db.CacheScope
 import app.aino.mobile.core.db.ScopedCache
 import app.aino.mobile.core.db.ChatOutbox
 import app.aino.mobile.core.db.OutboxCoordinator
+import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
 import app.aino.mobile.core.network.userFacingMessage
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
@@ -125,6 +127,15 @@ data class InviteSheetState(
     val error: String? = null,
 )
 
+data class OlderMessagesFailure(val before: Long, val message: String)
+
+private fun messageLoadFailure(error: Throwable, fallback: String): String = when (error) {
+    is CancellationException -> throw error
+    is ApiError -> userFacingMessage(error, fallback)
+    is SerializationException -> "The server returned an unexpected message format. Try again."
+    else -> fallback
+}
+
 data class ChatUiState(
     val currentUserId: Long? = null,
     /** Tenant plan `calls` (1:1 and group calls); web hides the call buttons when off. */
@@ -153,6 +164,8 @@ data class ChatUiState(
     val typingUserId: Long? = null,
     val threadLoading: Boolean = false,
     val threadFromCache: Boolean = false,
+    val threadRefreshError: String? = null,
+    val olderMessagesError: OlderMessagesFailure? = null,
     val composer: String = "",
     val editingMessage: ChatMessage? = null,
     val replyingTo: ChatMessage? = null,
@@ -785,6 +798,8 @@ class ChatViewModel(
             messages = cached?.messages.orEmpty(),
             receipts = cached?.receipts.orEmpty(),
             threadFromCache = false,
+            threadRefreshError = null,
+            olderMessagesError = null,
             loadingOlder = false,
             composer = loadDraft(conversation.id),
             composerLinkPreview = null,
@@ -848,6 +863,8 @@ class ChatViewModel(
             forwardTargets = emptySet(),
             forwarding = false,
             threadFromCache = false,
+            threadRefreshError = null,
+            olderMessagesError = null,
             loadingOlder = false,
         ) }
     }
@@ -900,6 +917,8 @@ class ChatViewModel(
                 jumpToMessageId = null,
                 hasOlderMessages = false,
                 threadFromCache = false,
+                threadRefreshError = null,
+                olderMessagesError = null,
                 threadSearchMatches = emptyList(),
                 threadSearchIndex = -1,
             )
@@ -978,6 +997,8 @@ class ChatViewModel(
                             // queued bubble when a single echo appears.
                             queuedMessages = reconcileQueuedMessages(state.queuedMessages, merged, scope?.userId),
                             threadFromCache = false,
+                            threadRefreshError = null,
+                            olderMessagesError = state.olderMessagesError?.takeIf { canMergeOlderPage(merged, it.before) },
                         )
                     }
                     // A load that was in flight when the chat was deleted for this user
@@ -991,8 +1012,9 @@ class ChatViewModel(
                     acknowledgeDelivery(latest.takeLast(THREAD_PAGE_SIZE))
                 },
                 onFailure = { error ->
+                    val failure = messageLoadFailure(error, "Could not refresh messages. Try again.")
                     if (!isOpen(id)) return@fold
-                    // Offline: keep what is already painted; otherwise fall back to the stored rows.
+                    // A failed refresh does not establish that the device is offline.
                     val shown = _ui.value.messages
                     val cached = shown.ifEmpty { runCatching { scopedCache.messageSnapshot(id) }.getOrDefault(emptyList()) }
                     _ui.update {
@@ -1000,7 +1022,7 @@ class ChatViewModel(
                             threadLoading = false,
                             messages = if (it.messages.isEmpty()) cached else it.messages,
                             threadFromCache = cached.isNotEmpty(),
-                            error = if (cached.isEmpty()) error.message ?: "Could not load messages" else null,
+                            threadRefreshError = failure,
                         )
                     }
                 },
@@ -1018,17 +1040,18 @@ class ChatViewModel(
 
     fun loadOlderMessages() {
         val conversation = _ui.value.selectedConversation ?: return
-        val oldestId = _ui.value.messages.minOfOrNull(ChatMessage::id) ?: return
+        // Retry the failed window even if stored rows have moved the oldest visible id.
+        val oldestId = _ui.value.olderMessagesError?.before ?: _ui.value.messages.minOfOrNull(ChatMessage::id) ?: return
         if (_ui.value.loadingOlder || !_ui.value.hasOlderMessages) return
         val id = conversation.id
         _ui.update { st -> st.copy(loadingOlder = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             // Older rows already on disk paint first; the server page then revalidates them in place.
             val stored = runCatching { cache?.fullMessages(id, before = oldestId, limit = THREAD_PAGE_SIZE) }.getOrNull().orEmpty()
-            var storedApplied = false
             if (stored.isNotEmpty()) _ui.update {
-                storedApplied = it.selectedConversation?.id == id && canMergeOlderPage(it.messages, oldestId)
-                if (storedApplied) it.copy(messages = stored + it.messages.filter { message -> message.id >= oldestId }) else it
+                if (it.selectedConversation?.id == id && canMergeOlderPage(it.messages, oldestId)) {
+                    it.copy(messages = stored + it.messages.filter { message -> message.id >= oldestId })
+                } else it
             }
             runCatching { repository.loadMessages(id, oldestId) }.fold(
                 onSuccess = { older ->
@@ -1041,6 +1064,7 @@ class ChatViewModel(
                             !applied -> it.copy(loadingOlder = false)
                             else -> it.copy(
                                 loadingOlder = false,
+                                olderMessagesError = null,
                                 messages = mergeOlderPage(it.messages, older, oldestId),
                                 hasOlderMessages = older.size >= THREAD_PAGE_SIZE && older.any { message -> message.id < oldestId },
                             )
@@ -1049,11 +1073,11 @@ class ChatViewModel(
                     if (applied && next.selectedConversation?.id == id) cache?.replaceMessages(id, next.messages)
                 },
                 onFailure = { error ->
+                    val failure = messageLoadFailure(error, "Could not load older messages. Try again.")
                     _ui.update {
                         if (it.selectedConversation?.id != id) it else it.copy(
                             loadingOlder = false,
-                            threadFromCache = it.threadFromCache || storedApplied,
-                            error = if (!storedApplied) error.message ?: "Could not load older messages" else null,
+                            olderMessagesError = if (canMergeOlderPage(it.messages, oldestId)) OlderMessagesFailure(oldestId, failure) else null,
                         )
                     }
                 },

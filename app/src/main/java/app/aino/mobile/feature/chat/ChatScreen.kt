@@ -643,6 +643,17 @@ private fun Modifier.arrivalSlide(): Modifier {
 }
 
 @Composable
+private fun ThreadLoadWarning(text: String, retryLabel: String, loading: Boolean, onRetry: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AinoAlert(text, AlertTone.Warning, Modifier.weight(1f))
+        TextButton(onClick = onRetry, enabled = !loading) { Text(retryLabel) }
+    }
+}
+
+@Composable
 private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument: () -> Unit, onNavigateBack: (() -> Unit)?) {
     val conversation = ui.selectedConversation ?: return
     val signal = signalColors
@@ -873,7 +884,22 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
             if (conversation.isGroup && ui.selectedMessageIds.isEmpty() && !ui.threadSearchOpen) {
                 ui.activeGroupCall?.let { call -> GroupCallBanner(call, ui.callsEnabled) { withCallPermissions(call.callType == "video") { viewModel.joinActiveGroupCall() } } }
             }
-            if (ui.threadFromCache) AinoAlert("Offline · showing cached messages", AlertTone.Warning, Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+            ui.threadRefreshError?.let { failure ->
+                ThreadLoadWarning(
+                    text = if (ui.threadFromCache) "$failure\nShowing saved messages." else failure,
+                    retryLabel = "Retry",
+                    loading = ui.threadLoading,
+                    onRetry = viewModel::refreshThread,
+                )
+            }
+            ui.olderMessagesError?.let { failure ->
+                ThreadLoadWarning(
+                    text = "Couldn't refresh older messages.\n${failure.message}",
+                    retryLabel = "Retry older messages",
+                    loading = ui.loadingOlder,
+                    onRetry = viewModel::loadOlderMessages,
+                )
+            }
             ui.error?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
             Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
@@ -885,6 +911,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 if (threadItems.isEmpty() && !ui.threadLoading) {
                     item(contentType = "empty") { HonestEmpty(HeroIcons.ChatBubbleOvalLeft, "No messages yet") }
                 }
+
                 items(newestFirst, key = ThreadItem::key, contentType = { it.contentType(ui.currentUserId) }) { item ->
                     // Signal item animator: only rows that arrive live slide up + fade in (and fade out
                     // on the pending → sent swap); the first page and older pages appear in place.
