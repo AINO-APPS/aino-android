@@ -1,7 +1,6 @@
 package app.aino.mobile.feature.chat
 
 import android.net.Uri
-import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -27,13 +26,17 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -66,7 +69,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -75,10 +77,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.AppContainer
 import app.aino.mobile.core.designsystem.component.UserAvatar
@@ -99,12 +97,15 @@ internal fun recentGroupContacts(conversations: List<ChatConversation>, currentU
         .toList()
 
 /**
- * Signal's new-group flow as a full-screen surface: step 1 picks members
+ * Signal's new-group flow as its own full-screen route: step 1 picks members
  * (recent chats + search, chips of the picked), step 2 names the group and
- * sets an optional photo, then creates it.
+ * sets an optional photo, then creates it. Being a regular screen in the
+ * edge-to-edge activity (not a dialog window), the bottom actions pad for the
+ * nav bar and keyboard exactly like the chat composer.
  */
 @Composable
-internal fun NewGroupFlow(ui: ChatUiState, viewModel: ChatViewModel, onClose: () -> Unit) {
+internal fun NewGroupScreen(viewModel: ChatViewModel, onClose: () -> Unit, onCreated: (Long) -> Unit) {
+    val ui by viewModel.ui.collectAsStateWithLifecycle()
     val picked = remember { mutableStateMapOf<Long, ChatUser>() }
     var order by remember { mutableStateOf(listOf<Long>()) }
     var step by remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -112,71 +113,57 @@ internal fun NewGroupFlow(ui: ChatUiState, viewModel: ChatViewModel, onClose: ()
     var photo by remember { mutableStateOf<Uri?>(null) }
     var submitted by remember { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { viewModel.clearGroupCandidates() } }
-    // Close once the create call finishes cleanly; on failure stay on the details step with the error.
-    LaunchedEffect(ui.creatingGroup, submitted) {
-        if (submitted && !ui.creatingGroup) {
-            if (ui.error == null) onClose() else submitted = false
+    // Open the new group once created; on failure stay on the details step with the error.
+    LaunchedEffect(ui.openConversationId, ui.creatingGroup, submitted) {
+        val created = ui.openConversationId
+        when {
+            !submitted || ui.creatingGroup -> Unit
+            created != null -> { viewModel.consumeNavigation(); onCreated(created) }
+            ui.error != null -> submitted = false
         }
     }
     val toggle: (ChatUser) -> Unit = { user ->
         if (user.id in picked) { picked.remove(user.id); order = order - user.id }
         else { picked[user.id] = user; order = order + user.id }
     }
-    val back = { if (step == 1 && !ui.creatingGroup) step = 0 else if (step == 0) onClose() }
-    Dialog(
-        onDismissRequest = back,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false, dismissOnClickOutside = false),
-    ) {
-        BackHandler(onBack = back)
-        // Make the dialog window truly full-screen and edge-to-edge so Compose insets
-        // (status bar, nav bar, keyboard) are applied once and the bottom actions stay visible.
-        val dialogView = LocalView.current
-        DisposableEffect(dialogView) {
-            (dialogView.parent as? DialogWindowProvider)?.window?.let { window ->
-                window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT)
-                WindowCompat.setDecorFitsSystemWindows(window, false)
-                @Suppress("DEPRECATION")
-                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-            }
-            onDispose { }
-        }
-        val signal = signalColors
-        Box(Modifier.fillMaxSize().background(signal.background).windowInsetsPadding(WindowInsets.safeDrawing)) {
-            AnimatedContent(
-                targetState = step,
-                transitionSpec = {
-                    val forward = targetState > initialState
-                    (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn()) togetherWith
-                        (slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut())
-                },
-                label = "newGroupStep",
-            ) { current ->
-                if (current == 0) {
-                    MemberPickStep(
-                        ui = ui,
-                        viewModel = viewModel,
-                        picked = order.mapNotNull { picked[it] },
-                        isPicked = { it in picked },
-                        onToggle = toggle,
-                        onBack = onClose,
-                        onNext = { step = 1 },
-                    )
-                } else {
-                    GroupDetailsStep(
-                        members = order.mapNotNull { picked[it] },
-                        name = name,
-                        onName = { name = it.take(GROUP_NAME_MAX) },
-                        photo = photo,
-                        onPhoto = { photo = it },
-                        creating = ui.creatingGroup,
-                        error = ui.error.takeIf { !ui.creatingGroup && step == 1 },
-                        onBack = { step = 0 },
-                        onCreate = {
-                            submitted = true
-                            viewModel.createGroup(name, order.filter { it in picked }, photo)
-                        },
-                    )
-                }
+    // Step 1 back returns to the picker; on the picker the NavHost owns back (predictive gesture).
+    BackHandler(enabled = step == 1) { if (!ui.creatingGroup) step = 0 }
+    val signal = signalColors
+    Box(Modifier.fillMaxSize().background(signal.background).statusBarsPadding()) {
+        AnimatedContent(
+            targetState = step,
+            transitionSpec = {
+                val forward = targetState > initialState
+                (slideInHorizontally { if (forward) it / 3 else -it / 3 } + fadeIn()) togetherWith
+                    (slideOutHorizontally { if (forward) -it / 3 else it / 3 } + fadeOut())
+            },
+            label = "newGroupStep",
+        ) { current ->
+            if (current == 0) {
+                MemberPickStep(
+                    ui = ui,
+                    viewModel = viewModel,
+                    picked = order.mapNotNull { picked[it] },
+                    isPicked = { it in picked },
+                    onToggle = toggle,
+                    onBack = onClose,
+                    onNext = { step = 1 },
+                )
+            } else {
+                GroupDetailsStep(
+                    members = order.mapNotNull { picked[it] },
+                    name = name,
+                    onName = { name = it.take(GROUP_NAME_MAX) },
+                    photo = photo,
+                    onPhoto = { photo = it },
+                    creating = ui.creatingGroup,
+                    error = ui.error.takeIf { !ui.creatingGroup && step == 1 },
+                    onBack = { step = 0 },
+                    onCreate = {
+                        submitted = true
+                        viewModel.createGroup(name, order.filter { it in picked }, photo)
+                    },
+                )
             }
         }
     }
@@ -263,7 +250,12 @@ private fun MemberPickStep(
                     }
                 }
             }
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(bottom = 96.dp)) {
+            LazyColumn(
+                Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = WindowInsets.navigationBars.union(WindowInsets.ime).asPaddingValues().let {
+                    PaddingValues(bottom = it.calculateBottomPadding() + 96.dp)
+                },
+            ) {
                 val rows = if (searching) candidates.results.filter { it.id != ui.currentUserId } else recents
                 item(key = "section") {
                     Text(
@@ -292,7 +284,9 @@ private fun MemberPickStep(
         // Signal's round "Next" arrow once someone is picked.
         AnimatedVisibility(
             picked.isNotEmpty(),
-            Modifier.align(Alignment.BottomEnd).padding(20.dp),
+            Modifier.align(Alignment.BottomEnd)
+                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                .padding(16.dp),
             enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut(),
         ) {
             Box(
@@ -361,113 +355,118 @@ private fun GroupDetailsStep(
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     LaunchedEffect(error) { if (error != null) haptics.reject() }
-    Column(Modifier.fillMaxSize()) {
-        FlowTopBar(title = "Name this group", subtitle = null, onBack = onBack, enabled = !creating)
-        LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
-            item(key = "header") {
-                Column(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    // The camera badge overlaps the circle's edge, so only the photo circle is clipped.
-                    Box(Modifier.size(112.dp)) {
-                        Box(
-                            Modifier.fillMaxSize().clip(CircleShape).background(signal.primary.copy(alpha = .14f))
-                                .clickable(enabled = !creating, onClickLabel = if (photo == null) "Add group photo" else "Change group photo") {
-                                    haptics.tap()
-                                    pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (photo != null) {
-                                AsyncImage(
-                                    model = photo,
-                                    imageLoader = AppContainer.get(context).imageLoader,
-                                    contentDescription = "Group photo",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            } else {
-                                Icon(HeroIcons.UserGroup, null, Modifier.size(48.dp), tint = signal.primary)
+    val bottomInset = WindowInsets.navigationBars.union(WindowInsets.ime).asPaddingValues().calculateBottomPadding()
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            FlowTopBar(title = "Name this group", subtitle = null, onBack = onBack, enabled = !creating)
+            LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(bottom = bottomInset + 80.dp)) {
+                item(key = "header") {
+                    Column(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        // The camera badge overlaps the circle's edge, so only the photo circle is clipped.
+                        Box(Modifier.size(112.dp)) {
+                            Box(
+                                Modifier.fillMaxSize().clip(CircleShape).background(signal.primary.copy(alpha = .14f))
+                                    .clickable(enabled = !creating, onClickLabel = if (photo == null) "Add group photo" else "Change group photo") {
+                                        haptics.tap()
+                                        pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (photo != null) {
+                                    AsyncImage(
+                                        model = photo,
+                                        imageLoader = AppContainer.get(context).imageLoader,
+                                        contentDescription = "Group photo",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize(),
+                                    )
+                                } else {
+                                    Icon(HeroIcons.UserGroup, null, Modifier.size(48.dp), tint = signal.primary)
+                                }
                             }
+                            Box(
+                                Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp).size(38.dp)
+                                    .clip(CircleShape).background(signal.background).padding(3.dp)
+                                    .clip(CircleShape).background(signal.primary),
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(HeroIcons.Camera, null, Modifier.size(18.dp), tint = Color.White) }
                         }
-                        Box(
-                            Modifier.align(Alignment.BottomEnd).offset(x = 2.dp, y = 2.dp).size(38.dp)
-                                .clip(CircleShape).background(signal.background).padding(3.dp)
-                                .clip(CircleShape).background(signal.primary),
-                            contentAlignment = Alignment.Center,
-                        ) { Icon(HeroIcons.Camera, null, Modifier.size(18.dp), tint = Color.White) }
-                    }
-                    if (photo != null) {
-                        Text(
-                            "Remove photo",
-                            Modifier.padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = !creating) { haptics.tap(); onPhoto(null) }
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                            color = signal.primary, fontSize = 14.sp, fontWeight = FontWeight.Medium,
-                        )
-                    }
-                    // Group name field.
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp)) {
-                        Row(
-                            Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(14.dp)).background(signal.searchPill).padding(horizontal = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            BasicTextField(
-                                name, onName,
-                                Modifier.weight(1f).focusRequester(focus), singleLine = true, enabled = !creating,
-                                textStyle = TextStyle(color = signal.text, fontSize = 17.sp),
-                                cursorBrush = SolidColor(signal.primary),
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(onDone = { if (canCreate) { haptics.confirm(); onCreate() } }),
-                                decorationBox = { inner ->
-                                    Box(contentAlignment = Alignment.CenterStart) {
-                                        if (name.isEmpty()) Text("Group name (required)", color = signal.textSecondary, fontSize = 17.sp)
-                                        inner()
-                                    }
-                                },
+                        if (photo != null) {
+                            Text(
+                                "Remove photo",
+                                Modifier.padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).clickable(enabled = !creating) { haptics.tap(); onPhoto(null) }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                                color = signal.primary, fontSize = 14.sp, fontWeight = FontWeight.Medium,
                             )
                         }
-                        Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp)) {
-                            error?.let { Text(it, Modifier.weight(1f), color = signal.danger, fontSize = 13.sp) } ?: Spacer(Modifier.weight(1f))
-                            Text("${name.length}/$GROUP_NAME_MAX", color = signal.textSecondary, fontSize = 12.sp)
+                        // Group name field.
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(14.dp)).background(signal.searchPill).padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                BasicTextField(
+                                    name, onName,
+                                    Modifier.weight(1f).focusRequester(focus), singleLine = true, enabled = !creating,
+                                    textStyle = TextStyle(color = signal.text, fontSize = 17.sp),
+                                    cursorBrush = SolidColor(signal.primary),
+                                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
+                                    keyboardActions = KeyboardActions(onDone = { if (canCreate) { haptics.confirm(); onCreate() } }),
+                                    decorationBox = { inner ->
+                                        Box(contentAlignment = Alignment.CenterStart) {
+                                            if (name.isEmpty()) Text("Group name (required)", color = signal.textSecondary, fontSize = 17.sp)
+                                            inner()
+                                        }
+                                    },
+                                )
+                            }
+                            Row(Modifier.fillMaxWidth().padding(top = 6.dp, start = 4.dp, end = 4.dp)) {
+                                error?.let { Text(it, Modifier.weight(1f), color = signal.danger, fontSize = 13.sp) } ?: Spacer(Modifier.weight(1f))
+                                Text("${name.length}/$GROUP_NAME_MAX", color = signal.textSecondary, fontSize = 12.sp)
+                            }
                         }
                     }
                 }
-            }
-            item(key = "members-title") {
-                Text(
-                    "Members · ${members.size + 1}",
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
-                    color = signal.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
-                )
-            }
-            item(key = "me") {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(40.dp).background(signal.searchPill, CircleShape), contentAlignment = Alignment.Center) {
-                        Icon(HeroIcons.User, null, Modifier.size(20.dp), tint = signal.textSecondary)
-                    }
-                    Text("You", Modifier.padding(start = 14.dp), color = signal.text, fontSize = 16.sp)
-                }
-            }
-            items(members, key = { "member-${it.id}" }) { user ->
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    UserAvatar(user.display(), user.avatar, 40.dp)
+                item(key = "members-title") {
                     Text(
-                        user.display().ifBlank { "Unknown user" }, Modifier.padding(start = 14.dp),
-                        color = signal.text, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        "Members · ${members.size + 1}",
+                        Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+                        color = signal.textSecondary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                     )
+                }
+                item(key = "me") {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(40.dp).background(signal.searchPill, CircleShape), contentAlignment = Alignment.Center) {
+                            Icon(HeroIcons.User, null, Modifier.size(20.dp), tint = signal.textSecondary)
+                        }
+                        Text("You", Modifier.padding(start = 14.dp), color = signal.text, fontSize = 16.sp)
+                    }
+                }
+                items(members, key = { "member-${it.id}" }) { user ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        UserAvatar(user.display(), user.avatar, 40.dp)
+                        Text(
+                            user.display().ifBlank { "Unknown user" }, Modifier.padding(start = 14.dp),
+                            color = signal.text, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
-        // Create button.
+        // Signal's bottom-end "Create" pill: sits above the keyboard (name is focused) or the nav bar.
         val bg by animateColorAsState(if (canCreate || creating) signal.primary else signal.primary.copy(alpha = .4f), label = "createBg")
         Box(
-            Modifier.fillMaxWidth().padding(16.dp).height(52.dp).clip(RoundedCornerShape(26.dp)).background(bg)
-                .clickable(enabled = canCreate, role = Role.Button, onClickLabel = "Create group") { haptics.confirm(); onCreate() },
+            Modifier.align(Alignment.BottomEnd)
+                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
+                .padding(16.dp)
+                .height(48.dp).widthIn(min = 104.dp)
+                .clip(RoundedCornerShape(24.dp)).background(bg)
+                .clickable(enabled = canCreate, role = Role.Button, onClickLabel = "Create group") { haptics.confirm(); onCreate() }
+                .padding(horizontal = 24.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (creating) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
-                    Text("Creating…", Modifier.padding(start = 10.dp), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                }
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.White)
             } else {
                 Text("Create", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
             }

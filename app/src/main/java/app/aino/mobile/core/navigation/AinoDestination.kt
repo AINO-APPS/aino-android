@@ -40,6 +40,9 @@ fun destinationFor(value: String): AinoDestination? =
 const val CHAT_CONVERSATION_ARGUMENT = "conversationId"
 const val CHAT_DEEP_LINK_PATTERN = "aino://chat/{$CHAT_CONVERSATION_ARGUMENT}"
 
+/** Full-screen new-group flow (pick members, then name and create). */
+const val CHAT_NEW_GROUP_ROUTE = "chat-new-group"
+
 /** Profile sub-pages (the web's Edit Profile / Notification Sounds modals and `/profile/face`). */
 const val PROFILE_EDIT_ROUTE = "profile/edit"
 const val PROFILE_SOUNDS_ROUTE = "profile/sounds"
@@ -96,6 +99,7 @@ fun managerRoute(tab: String?, request: String?): String =
 
 private val FULL_SCREEN_ROUTES = setOf(
     AinoDestination.ChatThread.route,
+    CHAT_NEW_GROUP_ROUTE,
     AinoDestination.Profile.route,
     AinoDestination.Notifications.route,
     PROFILE_EDIT_ROUTE, PROFILE_SOUNDS_ROUTE, PROFILE_FACE_ROUTE,
@@ -166,7 +170,7 @@ fun chatThreadRoute(conversationId: Long): String {
 
 /** Maps detail routes to their owning tab so a chat thread keeps Chat selected. */
 fun bottomBarRoute(route: String?): String? = when (route) {
-    AinoDestination.ChatThread.route -> AinoDestination.Chat.route
+    AinoDestination.ChatThread.route, CHAT_NEW_GROUP_ROUTE -> AinoDestination.Chat.route
     ATTENDANCE_ROUTE_PATTERN -> AinoDestination.Attendance.route
     TASK_LINK_ROUTE -> AinoDestination.Tasks.route
     SPRINT_INSIGHTS_ROUTE -> AinoDestination.Tasks.route

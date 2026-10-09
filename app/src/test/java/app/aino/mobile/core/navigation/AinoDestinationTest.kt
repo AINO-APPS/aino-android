@@ -37,6 +37,12 @@ class AinoDestinationTest {
     }
 
     @Test
+    fun newGroupIsFullScreenUnderTheChatTab() {
+        assertTrue(isFullScreenRoute(CHAT_NEW_GROUP_ROUTE))
+        assertEquals(AinoDestination.Chat.route, bottomBarRoute(CHAT_NEW_GROUP_ROUTE))
+    }
+
+    @Test
     fun bottomBarIsHomeAttendanceTasksChatMore() {
         // Mobile decision (2026-10-01): Attendance takes the web's Calendar slot.
         assertEquals(

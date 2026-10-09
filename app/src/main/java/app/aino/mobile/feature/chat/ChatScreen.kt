@@ -120,12 +120,12 @@ fun ChatScreen(
     meetingsEnabled: Boolean = false,
     onOpenConversation: ((Long) -> Unit)? = null,
     onNavigateBack: (() -> Unit)? = null,
+    onNewGroup: () -> Unit = {},
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = LocalWebColors.current
     var activeTab by remember { mutableStateOf(ChatListTab.Chat) }
     var searchOpen by remember { mutableStateOf(false) }
-    var newGroupOpen by remember { mutableStateOf(false) }
     var archivedOpen by remember { mutableStateOf(false) }
     val query = ui.userSearch.trim()
     // Deep links and notification taps open by id at once (placeholder header, stored rows)
@@ -246,10 +246,9 @@ fun ChatScreen(
                         searchOpen = open
                         if (!open) viewModel.updateUserSearch("")
                     },
-                    onNewGroup = { newGroupOpen = true },
+                    onNewGroup = onNewGroup,
                 )
             }
-            if (newGroupOpen) NewGroupFlow(ui, viewModel) { newGroupOpen = false }
 
             app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox(
                 loading = if (activeTab == ChatListTab.Calls) ui.callsLoading else ui.loading,
@@ -260,7 +259,7 @@ fun ChatScreen(
                 if (searchOpen && !searching) item(key = "new-group") {
                     // Signal's compose screen leads with "New group".
                     Row(
-                        Modifier.fillMaxWidth().clickable { rowHaptics.tap(); newGroupOpen = true }.padding(horizontal = 16.dp, vertical = 10.dp),
+                        Modifier.fillMaxWidth().clickable { rowHaptics.tap(); onNewGroup() }.padding(horizontal = 16.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(Modifier.size(SignalDimens.listAvatar).background(signal.primary.copy(alpha = .14f), CircleShape), contentAlignment = Alignment.Center) {

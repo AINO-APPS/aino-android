@@ -37,7 +37,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -51,7 +50,7 @@ import app.aino.mobile.core.designsystem.rememberAinoHaptics
 
 internal data class ChatListTabItem(val tab: ChatListTab, val label: String, val icon: ImageVector, val badge: Int)
 
-/** A segmented track with a sliding "thumb" behind the active tab. */
+/** A segmented track with a sliding, lightly org-tinted "thumb" behind the active tab. */
 @Composable
 internal fun ChatListTabs(tabs: List<ChatListTabItem>, activeTab: ChatListTab, onTab: (ChatListTab) -> Unit) {
     val signal = signalColors
@@ -64,13 +63,12 @@ internal fun ChatListTabs(tabs: List<ChatListTabItem>, activeTab: ChatListTab, o
         val thumbX by animateDpAsState(segment * index, spring(dampingRatio = .8f, stiffness = 500f), label = "tabThumb")
         Box(
             Modifier.offset { androidx.compose.ui.unit.IntOffset(thumbX.roundToPx(), 0) }.width(segment).fillMaxSize()
-                .shadow(if (signal.isDark) 0.dp else 1.dp, RoundedCornerShape(15.dp))
-                .background(if (signal.isDark) Color(0xFF3A3B3E) else Color.White, RoundedCornerShape(15.dp)),
+                .background(signal.primary.copy(alpha = if (signal.isDark) .18f else .12f), RoundedCornerShape(15.dp)),
         )
         Row(Modifier.fillMaxSize()) {
             tabs.forEach { item ->
                 val active = item.tab == activeTab
-                val tint by animateColorAsState(if (active) signal.text else signal.textSecondary, label = "tabTint")
+                val tint by animateColorAsState(if (active) signal.primary else signal.textSecondary, label = "tabTint")
                 Row(
                     Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(15.dp))
                         .semantics { selected = active }
@@ -78,9 +76,11 @@ internal fun ChatListTabs(tabs: List<ChatListTabItem>, activeTab: ChatListTab, o
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
                 ) {
+                    Icon(item.icon, null, Modifier.size(16.dp), tint = tint)
                     Text(
-                        item.label, color = tint, fontSize = 14.sp,
+                        item.label, Modifier.padding(start = 5.dp).weight(1f, fill = false), color = tint, fontSize = 14.sp,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                     )
                     if (item.badge > 0) SignalUnreadBadge(item.badge, modifier = Modifier.padding(start = 4.dp).height(16.dp))
                 }

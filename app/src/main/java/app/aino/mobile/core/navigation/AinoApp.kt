@@ -685,11 +685,11 @@ private fun AuthenticatedShell(
                 AinoDestination.Chat.route,
                 // Chat list side of the Signal transition (the thread supplies the slide).
                 exitTransition = {
-                    if (targetState.destination.route == AinoDestination.ChatThread.route) signalFadeScaleOut()
+                    if (targetState.destination.route in CHAT_PUSHED_ROUTES) signalFadeScaleOut()
                     else androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200))
                 },
                 popEnterTransition = {
-                    if (initialState.destination.route == AinoDestination.ChatThread.route) signalFadeScaleIn()
+                    if (initialState.destination.route in CHAT_PUSHED_ROUTES) signalFadeScaleIn()
                     else androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200))
                 },
             ) {
@@ -703,6 +703,7 @@ private fun AuthenticatedShell(
                         nav.navigate(chatThreadRoute(conversationId)) { launchSingleTop = true }
                     },
                     onNavigateBack = { nav.popBackStack() },
+                    onNewGroup = { nav.navigate(CHAT_NEW_GROUP_ROUTE) { launchSingleTop = true } },
                 )
             }
             composable(
@@ -748,6 +749,27 @@ private fun AuthenticatedShell(
                         nav.navigate(chatThreadRoute(nextConversationId)) { launchSingleTop = true }
                     },
                     onNavigateBack = navigateBack,
+                    onNewGroup = { nav.navigate(CHAT_NEW_GROUP_ROUTE) { launchSingleTop = true } },
+                )
+            }
+            composable(
+                CHAT_NEW_GROUP_ROUTE,
+                enterTransition = { signalSlideFromEnd() },
+                exitTransition = { signalFadeScaleOut() },
+                popEnterTransition = { signalFadeScaleIn() },
+                popExitTransition = { signalSlideToEnd() },
+            ) {
+                app.aino.mobile.feature.chat.NewGroupScreen(
+                    viewModel = chat,
+                    onClose = { nav.popBackStack() },
+                    onCreated = { conversationId ->
+                        chat.prepareConversation(conversationId)
+                        // The new group replaces this screen, so back from it lands on the chat list.
+                        nav.navigate(chatThreadRoute(conversationId)) {
+                            launchSingleTop = true
+                            popUpTo(CHAT_NEW_GROUP_ROUTE) { inclusive = true }
+                        }
+                    },
                 )
             }
             // P7.1: the web Calendar page (day / week / month + event form).
