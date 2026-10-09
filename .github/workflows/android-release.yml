@@ -159,6 +159,8 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # P2.5 TLS pins (current + backup SPKI). Unset = pinning off; see docs/CERT_PINNING_RUNBOOK.md.
+          AINO_CERT_PINS: ${{ vars.AINO_CERT_PINS }}
         # `direct` APK: sideloaded pilots + the R2 self-update channel.
         # `play` AAB: uploaded to the Play Console (no self-updater).
         run: ./gradlew --no-daemon assembleDirectRelease bundlePlayRelease assemblePlayRelease

@@ -400,6 +400,7 @@ private fun CallTopBar(state: MeetingState, now: Long, online: Boolean, onMinimi
                 !online -> "Reconnecting…"
                 state.status == MeetingStatus.Joining -> "Connecting…"
                 state.status == MeetingStatus.Failed -> "Couldn't connect"
+                state.status == MeetingStatus.Full -> "Call is full ($MESH_PARTICIPANT_CAP people max)"
                 state.peers.isEmpty() -> "Waiting for others · ${callElapsed(state.joinedAt, now)}"
                 else -> callElapsed(state.joinedAt, now)
             }
@@ -410,7 +411,7 @@ private fun CallTopBar(state: MeetingState, now: Long, online: Boolean, onMinimi
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(Icons.Outlined.Group, null, Modifier.size(20.dp), tint = CallText)
-            Text(" ${state.peers.size + 1}", color = CallText, fontSize = 14.sp)
+            Text(" ${state.peers.size + 1}/$MESH_PARTICIPANT_CAP", color = CallText, fontSize = 14.sp)
         }
     }
 }
@@ -620,7 +621,7 @@ private fun ParticipantsSheet(state: MeetingState, session: MeetingSession, user
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = CallSurface) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("In this call · ${state.peers.size + 1}", Modifier.weight(1f), color = CallText, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                Text("In this call · ${state.peers.size + 1} of $MESH_PARTICIPANT_CAP", Modifier.weight(1f), color = CallText, fontSize = 18.sp, fontWeight = FontWeight.Medium)
                 TextButton(onClick = { adding = true }) {
                     Icon(Icons.Outlined.PersonAdd, null, Modifier.size(18.dp), tint = CallText)
                     Text(" Add", color = CallText)

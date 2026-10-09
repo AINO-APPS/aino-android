@@ -72,7 +72,17 @@ fun interface TokenProvider {
 
 interface TokenStore : TokenProvider {
     fun saveToken(token: String)
+
+    /** Drops the access token and the refresh token: the session is over on this device. */
     fun clearToken()
+
+    /**
+     * P2.7 rotating refresh token (`<tenantId>.<sid>.<secret>`), swapped for a
+     * new one on every `sessions/token` call. Null for sessions created before
+     * rotation, which keep refreshing the long-lived token via `auth/refresh`.
+     */
+    fun saveRefreshToken(token: String) {}
+    fun getRefreshToken(): String? = null
 
     /**
      * Last-known-good serialized `tenant_features` map, persisted alongside the

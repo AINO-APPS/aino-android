@@ -35,6 +35,11 @@ val ainoWsUrl = providers.gradleProperty("AINO_WS_URL")
 val ainoOtaBaseUrl = providers.gradleProperty("AINO_OTA_BASE_URL")
     .orElse(providers.environmentVariable("AINO_OTA_BASE_URL"))
     .getOrElse("https://cdn.aino.org.in")
+// P2.5 TLS pins: `;`-separated `sha256/<SPKI hash>` (current + backup). Empty = pinning off.
+// Compute and rotate them with docs/CERT_PINNING_RUNBOOK.md; never commit a guess.
+val ainoCertPins = providers.gradleProperty("AINO_CERT_PINS")
+    .orElse(providers.environmentVariable("AINO_CERT_PINS"))
+    .getOrElse("")
 val ainoContractVersion = providers.gradleProperty("AINO_CONTRACT_VERSION")
     .orElse(providers.environmentVariable("AINO_CONTRACT_VERSION"))
     .getOrElse("0.1.0")
@@ -71,14 +76,15 @@ android {
         // version: X.Y.Z -> X*1_000_000 + Y*1_000 + Z (each part 0..999).
         // `android-release.yml` re-derives this from the tag and fails on a mismatch.
         // Written without digit separators so the release workflow can parse it.
-        versionCode = 20003 // 0.20.3
-        versionName = "0.20.3"
+        versionCode = 21000 // 0.21.0
+        versionName = "0.21.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())
         buildConfigField("String", "AINO_WS_URL", ainoWsUrl.asBuildConfigString())
         buildConfigField("String", "AINO_OTA_BASE_URL", ainoOtaBaseUrl.asBuildConfigString())
         buildConfigField("String", "AINO_CONTRACT_VERSION", ainoContractVersion.asBuildConfigString())
+        buildConfigField("String", "AINO_CERT_PINS", ainoCertPins.asBuildConfigString())
     }
 
     signingConfigs {

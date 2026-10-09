@@ -195,6 +195,11 @@ fun MeetingRoomScreen(code: String, user: AinoUser, online: Boolean, onMinimize:
                         }
                     }
                 }
+                MeetingStatus.Full -> Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .7f)), contentAlignment = Alignment.Center) {
+                    StatusCard("Meeting is full", "Up to $MESH_PARTICIPANT_CAP people can join at once. Try again when someone leaves.", spinner = false) {
+                        SmallButton("Go back", MrTile) { session.leave() }
+                    }
+                }
                 MeetingStatus.Joined -> Unit
             }
         }
@@ -468,7 +473,7 @@ private fun BottomBar(state: MeetingState, session: MeetingSession, chatOpen: Bo
                 Box {
                     BarButton(HeroIcons.EllipsisHorizontal, "More actions", if (moreOpen) MrAccent else MrTile) { moreOpen = true }
                     DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }, containerColor = MrBg) {
-                        MoreItem(HeroIcons.Users, "Participants (${state.peers.size + 1})") {
+                        MoreItem(HeroIcons.Users, "Participants (${state.peers.size + 1} / $MESH_PARTICIPANT_CAP)") {
                             moreOpen = false
                             onParticipants()
                         }
@@ -678,7 +683,7 @@ private fun ParticipantsPanel(state: MeetingState, session: MeetingSession) {
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Participants (${state.peers.size})", Modifier.weight(1f), color = MrText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("Participants (${state.peers.size + 1} / $MESH_PARTICIPANT_CAP)", Modifier.weight(1f), color = MrText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             if (state.isHost) {
                 Row(
                     Modifier.clip(RoundedCornerShape(6.dp)).background(MrTile).clickable(onClickLabel = "Mute all participants", onClick = session::muteAll).padding(horizontal = 8.dp, vertical = 4.dp),

@@ -31,7 +31,8 @@ class AppContainer private constructor(private val context: Context) {
 
     val tokens = KeystoreTokenStore(context)
 
-    val http: OkHttpClient = OkHttpClient.Builder()
+    /** Every AINO request (API, media, realtime) shares these TLS pins (P2.5). */
+    val http: OkHttpClient = app.aino.mobile.core.network.CertificatePinning.apply(OkHttpClient.Builder())
         .connectTimeout(60, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -42,7 +43,20 @@ class AppContainer private constructor(private val context: Context) {
 
     /** Last successful GET bodies of the signed-in user (scope set by AuthViewModel). */
     val responses = app.aino.mobile.core.network.ResponseCache(context.cacheDir.resolve("api-cache"))
-    val api: ApiClient = app.aino.mobile.core.network.CachingApiClient(RefreshingApiClient(rawApi, tokens), responses)
+    private val refreshing = RefreshingApiClient(rawApi, tokens)
+    val api: ApiClient = app.aino.mobile.core.network.CachingApiClient(refreshing, responses)
+
+    /** For clients outside [api] (media, realtime): a valid token, refreshed when the 15-minute one was refused. */
+    fun refreshedToken(staleToken: String?): String? = refreshing.refreshFor(staleToken)
+
+    /**
+     * Token for the realtime socket: refreshed first when it expires within a
+     * minute (a 15-minute app token). Called off the main thread by RealtimeClient.
+     */
+    val freshTokens: app.aino.mobile.core.network.TokenProvider = app.aino.mobile.core.network.TokenProvider {
+        val current = tokens.getToken()
+        if (current != null && app.aino.mobile.core.network.jwtExpiresWithin(current, 60)) refreshedToken(current) else current
+    }
 
     /** Serves GETs from [responses] only: repositories rebuild the last state instantly with it. */
     val cachedApi: ApiClient = app.aino.mobile.core.network.CacheOnlyApiClient(responses)
@@ -61,6 +75,13 @@ class AppContainer private constructor(private val context: Context) {
             val headers = standardHeaders(tokens.getToken(), timezoneOffsetMinutes(TimeZone.getDefault(), System.currentTimeMillis()))
             val request = original.newBuilder().apply { headers.forEach(::header) }.build()
             chain.proceed(request)
+        }
+        // P2.7: an expired 15-minute token is refreshed (shared lock) and the fetch retried once.
+        .authenticator { _, response ->
+            if (!response.request.url.host.equals(apiHost, ignoreCase = true) || response.priorResponse != null) return@authenticator null
+            val stale = response.request.header("Authorization")?.removePrefix("Bearer ")
+            val fresh = refreshedToken(stale)?.takeIf { it != stale } ?: return@authenticator null
+            response.request.newBuilder().header("Authorization", "Bearer $fresh").build()
         }
         .build()
 

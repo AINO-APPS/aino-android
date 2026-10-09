@@ -2,6 +2,7 @@ package app.aino.mobile.core.push
 
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -75,6 +76,37 @@ class PushPayloadTest {
         assertTrue(validatePushPayload(chat() + ("link" to "/chat/456"), fixtureTime).isFailure)
         assertTrue(validatePushPayload(cancel() + ("linkTaskId" to "3"), fixtureTime).isFailure)
     }
+
+    @Test
+    fun sessionRevokedPushIsValidatedStrictly() {
+        val push = validatePushPayload(revoked(), fixtureTime).getOrThrow()
+        assertEquals(PushKind.SessionRevoked, push.kind)
+        assertEquals(NotificationTags.ALERT, notificationTag(push))
+        assertTrue(validatePushPayload(revoked() + ("reason" to "other"), fixtureTime).isFailure)
+        assertTrue(validatePushPayload(revoked() + ("dedupeKey" to "notif:1"), fixtureTime).isFailure)
+        assertTrue(validatePushPayload(revoked() + ("extra" to "x"), fixtureTime).isFailure)
+    }
+
+    @Test
+    fun sessionRevokedOnlySignsOutAnOlderCredentialOfTheSameTenant() {
+        val push = validatePushPayload(revoked(), fixtureTime).getOrThrow()
+        val sentAt = Instant.parse("2026-10-09T11:30:00Z").epochSecond
+        assertTrue(sessionRevocationApplies(jwt("""{"id":5,"tenant_id":1,"iat":${sentAt - 60}}"""), push))
+        // Signed in again after the push was sent (delivered late): keep the new session.
+        assertFalse(sessionRevocationApplies(jwt("""{"id":5,"tenant_id":1,"iat":${sentAt + 5}}"""), push))
+        assertFalse(sessionRevocationApplies(jwt("""{"id":5,"tenant_id":2,"iat":${sentAt - 60}}"""), push))
+        assertFalse(sessionRevocationApplies(jwt("""{"id":5,"tenant_id":1}"""), validatePushPayload(general(), fixtureTime).getOrThrow()))
+    }
+
+    private fun jwt(payload: String): String {
+        val encoder = java.util.Base64.getUrlEncoder().withoutPadding()
+        return "${encoder.encodeToString("{}".toByteArray())}.${encoder.encodeToString(payload.toByteArray())}.sig"
+    }
+
+    private fun revoked() = mapOf(
+        "type" to "session_revoked", "reason" to "signed_in_elsewhere", "dedupeKey" to "session_revoked:1791545400000",
+        "tenantId" to "1", "sentAt" to "2026-10-09T11:30:00.000Z",
+    )
 
     @Test
     fun genericAlertsPickTheirChannelByType() {

@@ -15,38 +15,22 @@ class KeystoreTokenStore(context: Context) : TokenStore {
     private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
     @Synchronized
-    override fun saveToken(token: String) {
-        require(token.isNotBlank()) { "Token must not be blank" }
-        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-            init(Cipher.ENCRYPT_MODE, getOrCreateKey())
-        }
-        val encrypted = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
-        preferences.edit()
-            .putString(IV, encode(cipher.iv))
-            .putString(CIPHERTEXT, encode(encrypted))
-            .apply()
-    }
+    override fun saveToken(token: String) = save(token, IV, CIPHERTEXT)
 
     @Synchronized
-    override fun getToken(): String? {
-        val encodedIv = preferences.getString(IV, null) ?: return null
-        val encodedCiphertext = preferences.getString(CIPHERTEXT, null) ?: return null
-        return try {
-            val cipher = Cipher.getInstance(TRANSFORMATION).apply {
-                init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, decode(encodedIv)))
-            }
-            cipher.doFinal(decode(encodedCiphertext)).toString(Charsets.UTF_8)
-        } catch (_: Exception) {
-            // Corrupt, restored, or invalidated ciphertext must not leave a partially usable credential.
-            clearToken()
-            null
-        }
-    }
+    override fun getToken(): String? = read(IV, CIPHERTEXT)
 
+    /** Ends the session on this device: both the access and the refresh token go. */
     @Synchronized
     override fun clearToken() {
-        preferences.edit().remove(IV).remove(CIPHERTEXT).apply()
+        preferences.edit().remove(IV).remove(CIPHERTEXT).remove(REFRESH_IV).remove(REFRESH_CIPHERTEXT).apply()
     }
+
+    @Synchronized
+    override fun saveRefreshToken(token: String) = save(token, REFRESH_IV, REFRESH_CIPHERTEXT)
+
+    @Synchronized
+    override fun getRefreshToken(): String? = read(REFRESH_IV, REFRESH_CIPHERTEXT)
 
     // Feature gates are stored unencrypted: they are booleans (non-sensitive)
     // and must survive even if the Keystore key is invalidated, so a cold start
@@ -62,6 +46,33 @@ class KeystoreTokenStore(context: Context) : TokenStore {
     @Synchronized
     override fun clearFeatures() {
         preferences.edit().remove(FEATURES).apply()
+    }
+
+    private fun save(value: String, ivKey: String, ciphertextKey: String) {
+        require(value.isNotBlank()) { "Token must not be blank" }
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
+            init(Cipher.ENCRYPT_MODE, getOrCreateKey())
+        }
+        val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        preferences.edit()
+            .putString(ivKey, encode(cipher.iv))
+            .putString(ciphertextKey, encode(encrypted))
+            .apply()
+    }
+
+    private fun read(ivKey: String, ciphertextKey: String): String? {
+        val encodedIv = preferences.getString(ivKey, null) ?: return null
+        val encodedCiphertext = preferences.getString(ciphertextKey, null) ?: return null
+        return try {
+            val cipher = Cipher.getInstance(TRANSFORMATION).apply {
+                init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, decode(encodedIv)))
+            }
+            cipher.doFinal(decode(encodedCiphertext)).toString(Charsets.UTF_8)
+        } catch (_: Exception) {
+            // Corrupt, restored, or invalidated ciphertext must not leave a partially usable credential.
+            clearToken()
+            null
+        }
     }
 
     private fun getOrCreateKey(): SecretKey {
@@ -95,6 +106,8 @@ class KeystoreTokenStore(context: Context) : TokenStore {
         const val PREFERENCES = "aino_secure_credentials"
         const val IV = "token_iv"
         const val CIPHERTEXT = "token_ciphertext"
+        const val REFRESH_IV = "refresh_iv"
+        const val REFRESH_CIPHERTEXT = "refresh_ciphertext"
         const val FEATURES = "tenant_features_cache"
     }
 }

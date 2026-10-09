@@ -5,9 +5,9 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 479,
-    "covered": 252,
-    "waived": 227,
+    "platform": 488,
+    "covered": 255,
+    "waived": 233,
     "missing": 0,
     "unmatched": 0
   },
@@ -941,6 +941,21 @@
       "method": "DELETE",
       "path": "/api/service-desk/tickets/:id",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/ServiceDeskModels.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/SignedInDevices.kt"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/sessions/:id",
+      "source": "app/src/main/java/app/aino/mobile/feature/profile/SignedInDevices.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/sessions/token",
+      "source": "app/src/main/java/app/aino/mobile/core/network/RefreshingApiClient.kt"
     },
     {
       "method": "GET",

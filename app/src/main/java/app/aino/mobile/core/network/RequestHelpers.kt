@@ -15,12 +15,17 @@ object RequestHeaders {
 
     /** Stable install id: the server keeps one session per device (see [DeviceId]). */
     const val DEVICE_ID = "X-AINO-Device-Id"
+
+    /** P2.7: ask for a 15-minute access token plus a rotating refresh token at sign-in. */
+    const val TOKEN_REFRESH = "X-AINO-Token-Refresh"
+    const val ROTATE = "rotate"
 }
 
 /**
- * This install's id, set once by `AppContainer`. Signing in again on this
- * device replaces only this device's server session; other devices (web,
- * desktop, other phones) stay signed in.
+ * This install's id, set once by `AppContainer`. The server keeps one session
+ * per client class: signing in here ends the account's session on any other
+ * phone (which gets a `session_revoked` push); web and desktop stay signed in.
+ * The id also tags this install's push token so that push reaches the right phone.
  */
 object DeviceId {
     @Volatile var value: String? = null
@@ -43,6 +48,7 @@ fun standardHeaders(
 ): Map<String, String> = buildMap {
     put(RequestHeaders.REQUESTED_WITH, RequestHeaders.AINO)
     put(RequestHeaders.CLIENT, RequestHeaders.ANDROID)
+    put(RequestHeaders.TOKEN_REFRESH, RequestHeaders.ROTATE)
     put(RequestHeaders.TIMEZONE_OFFSET, timezoneOffsetMinutes.toString())
     DeviceId.value?.let { put(RequestHeaders.DEVICE_ID, it) }
     token?.trim()?.takeIf(String::isNotEmpty)?.let {

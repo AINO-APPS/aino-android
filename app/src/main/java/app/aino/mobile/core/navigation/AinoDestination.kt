@@ -47,6 +47,7 @@ const val CHAT_NEW_GROUP_ROUTE = "chat-new-group"
 const val PROFILE_EDIT_ROUTE = "profile/edit"
 const val PROFILE_SOUNDS_ROUTE = "profile/sounds"
 const val PROFILE_FACE_ROUTE = "profile/face"
+const val PROFILE_DEVICES_ROUTE = "profile/devices"
 
 /** Web `/meeting/:code` — the MeetingJoin lobby. */
 const val MEETING_ROUTE = "meeting/{code}"

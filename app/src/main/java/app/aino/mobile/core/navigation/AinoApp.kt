@@ -148,6 +148,11 @@ fun AinoApp(
     LaunchedEffect(realtimeState) {
         val stopped = realtimeState as? RealtimeState.Stopped ?: return@LaunchedEffect
         if (!tenantAuthenticated) return@LaunchedEffect
+        // A sign-in on another phone ended this session: sign out now, no API round trip.
+        if (stopped.code == 4001 && stopped.reason == app.aino.mobile.core.auth.SessionRevocation.SIGNED_IN_ELSEWHERE_REASON) {
+            auth.onSessionRevoked(stopped.reason)
+            return@LaunchedEffect
+        }
         // 4001 with a live session = the socket's token aged out; the API check refreshed it.
         if (auth.verifySessionStillActive() && stopped.code == 4001) {
             kotlinx.coroutines.delay(5_000)
@@ -900,6 +905,7 @@ private fun AuthenticatedShell(
                     onEditProfile = { nav.navigate(PROFILE_EDIT_ROUTE) { launchSingleTop = true } },
                     onNotificationSounds = { nav.navigate(PROFILE_SOUNDS_ROUTE) { launchSingleTop = true } },
                     onFaceEnrollment = { nav.navigate(PROFILE_FACE_ROUTE) { launchSingleTop = true } },
+                    onSignedInDevices = { nav.navigate(PROFILE_DEVICES_ROUTE) { launchSingleTop = true } },
                     onToggleTheme = onToggleTheme,
                     onAvatarChanged = { avatar -> auth.updateUser { it.copy(avatar = avatar) } },
                     onSignOut = onSignOut,
@@ -929,6 +935,12 @@ private fun AuthenticatedShell(
             }
             composable(PROFILE_FACE_ROUTE) {
                 FaceEnrollmentScreen(profile, onBack = { nav.popBackStack() })
+            }
+            composable(PROFILE_DEVICES_ROUTE) {
+                val devices = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.profile.SignedInDevicesViewModel>(
+                    factory = app.aino.mobile.feature.profile.SignedInDevicesViewModel.factory(LocalContext.current.applicationContext),
+                )
+                app.aino.mobile.feature.profile.SignedInDevicesScreen(devices, onBack = { nav.popBackStack() })
             }
             // P3.1/P3.8: the Attendance page hosts its tabs; `?tab=` carries the
             // web hash deep links (#leaves, #manual-entry, #analytics).

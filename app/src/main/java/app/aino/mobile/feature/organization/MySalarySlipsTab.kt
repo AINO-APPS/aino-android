@@ -29,6 +29,8 @@ import app.aino.mobile.core.designsystem.icons.HeroIcons
 internal fun MySalarySlipsTab(ui: OrganizationUiState, viewModel: OrganizationViewModel) {
     val colors = LocalWebColors.current
     val section = ui.salary
+    // Pay, bank details and slips must not leak into screenshots or the recents thumbnail.
+    app.aino.mobile.core.designsystem.SecureScreen()
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("My Salary Slips", color = colors.text, fontSize = 1.1.rem, fontWeight = FontWeight.Bold)
         ui.notices[NoticeSlot.Salary]?.let { OrgNoticeBanner(it) }

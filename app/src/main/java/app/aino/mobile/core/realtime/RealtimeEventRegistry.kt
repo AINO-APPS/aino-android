@@ -110,6 +110,8 @@ enum class RealtimeEvent(
     MeetingMessage("meeting_message", RealtimeDomain.Meeting, RealtimeReaction.PatchThenReconcile),
     MeetingMessageAck("meeting_message_ack", RealtimeDomain.Meeting, RealtimeReaction.Patch),
     MeetingMessageError("meeting_message_error", RealtimeDomain.Meeting, RealtimeReaction.Patch),
+    /** The mesh cap refused this device's join (`{ meetingId, cap, participantCount }`). */
+    MeetingFull("meeting_full", RealtimeDomain.Meeting, RealtimeReaction.MeetingState),
     MeetingChatReplayDone(
         "meeting_chat_replay_done",
         RealtimeDomain.Meeting,

@@ -24,10 +24,11 @@ data class AinoUser(
 )
 
 @Serializable
-data class AuthResponse(val user: AinoUser, val token: String)
+/** [refreshToken]: P2.7 rotating refresh token, present when the server issued one. */
+data class AuthResponse(val user: AinoUser, val token: String, val refreshToken: String? = null)
 
 @Serializable
-data class TokenResponse(val token: String)
+data class TokenResponse(val token: String, val refreshToken: String? = null)
 
 @Serializable
 data class LoginRequest(val username: String, val password: String)

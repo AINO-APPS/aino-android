@@ -12,7 +12,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 class UpdateRepository(
-    private val client: OkHttpClient = OkHttpClient(),
+    private val client: OkHttpClient = app.aino.mobile.core.network.CertificatePinning.apply(OkHttpClient.Builder()).build(),
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val baseUrl: String = BuildConfig.AINO_OTA_BASE_URL,
 ) {

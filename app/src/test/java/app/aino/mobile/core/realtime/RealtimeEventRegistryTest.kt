@@ -19,8 +19,10 @@ class RealtimeEventRegistryTest {
     fun routesTheCompleteServerSurface() {
         // 80 = 69 sendToUser types (incl. attendance_update, chat_message_delivered, call_ringing) + 6 tenant-wide broadcast types
         // + task_assigned + team_attendance_update, leave_policy_changed, task_updated, notifications_changed
-        // + chat_group_join_request, group_call_updated, meeting_reaction (group links and group calls).
-        assertEquals(83, RealtimeEvent.entries.size)
+        // + chat_group_join_request, group_call_updated, meeting_reaction (group links and group calls)
+        // + meeting_full (the mesh participant cap).
+        assertEquals(84, RealtimeEvent.entries.size)
+        assertEquals(RealtimeDomain.Meeting, RealtimeEvent.from("meeting_full")?.domain)
         assertEquals(RealtimeEvent.AttendanceUpdate, RealtimeEvent.from("attendance_update"))
     }
 
@@ -64,7 +66,7 @@ class RealtimeEventRegistryTest {
     @Test
     fun meetingEventsAreRoutedButMediaIsSeparable() {
         val meeting = RealtimeEvent.inDomain(RealtimeDomain.Meeting)
-        assertEquals(23, meeting.size)
+        assertEquals(24, meeting.size)
         // Media negotiation is distinguishable so it can stay inert until A-082
         // without suppressing meeting state updates.
         val media = meeting.filter { it.reaction == RealtimeReaction.MeetingMedia }

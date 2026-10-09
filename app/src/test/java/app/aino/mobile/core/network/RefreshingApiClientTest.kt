@@ -62,6 +62,39 @@ class RefreshingApiClientTest {
         assertEquals("valid", tokens.value)
     }
 
+    @Test
+    fun rotatesTheRefreshTokenWhenTheSessionHasOne() {
+        val tokens = MemoryTokens("old").apply { refresh = "3.sid.r1" }
+        val bodies = mutableListOf<String>()
+        val delegate = ApiClient { request ->
+            when {
+                request.path == "sessions/token" -> {
+                    bodies += String(request.body ?: ByteArray(0))
+                    response("""{"token":"new","refreshToken":"3.sid.r2","expiresIn":900}""")
+                }
+                request.path == "auth/refresh" -> error("long-lived refresh must not be used")
+                tokens.getToken() == "old" -> throw http401(request)
+                else -> response("ok")
+            }
+        }
+
+        assertEquals("ok", RefreshingApiClient(delegate, tokens).execute(ApiRequest(path = "profile")).bodyAsString())
+        assertEquals(listOf("""{"refreshToken":"3.sid.r1"}"""), bodies)
+        assertEquals("new", tokens.value)
+        assertEquals("3.sid.r2", tokens.refresh)
+    }
+
+    @Test
+    fun aRefusedRefreshTokenSignsOut() {
+        val tokens = MemoryTokens("old").apply { refresh = "3.sid.stolen" }
+        val delegate = ApiClient { request -> throw ApiError.Http(401, """{"code":"REFRESH_REUSED"}""", request.method, request.path) }
+
+        runCatching { RefreshingApiClient(delegate, tokens).execute(ApiRequest(path = "profile")) }
+
+        assertNull(tokens.value)
+        assertNull(tokens.refresh)
+    }
+
     private fun response(text: String) = ApiResponse(200, emptyMap(), text.toByteArray())
 
     private fun http401(request: ApiRequest) = ApiError.Http(401, "{}", request.method, request.path)
@@ -69,7 +102,10 @@ class RefreshingApiClientTest {
 
 private class MemoryTokens(initial: String?) : TokenStore {
     var value: String? = initial
+    var refresh: String? = null
     override fun saveToken(token: String) { value = token }
     override fun getToken(): String? = value
-    override fun clearToken() { value = null }
+    override fun clearToken() { value = null; refresh = null }
+    override fun saveRefreshToken(token: String) { refresh = token }
+    override fun getRefreshToken(): String? = refresh
 }

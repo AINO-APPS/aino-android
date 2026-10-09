@@ -125,6 +125,12 @@ class AuthRepository(
         }
     }
 
+    /** The server already ended this session: forget it locally without calling the API. */
+    fun clearLocalCredential() {
+        tokens.clearToken()
+        tokens.clearFeatures()
+    }
+
     fun logout() {
         runCatching { api.execute(jsonRequest("POST", "auth/logout", Unit)) }
         tokens.clearToken()
@@ -137,7 +143,9 @@ class AuthRepository(
             throw AuthFailure("Platform administration is currently available in the web console.", "PLATFORM_CONSOLE_REQUIRED")
         }
         val auth = json.decodeFromString<AuthResponse>(text)
+        tokens.clearToken() // a previous session's refresh token must not outlive it
         tokens.saveToken(auth.token)
+        auth.refreshToken?.let(tokens::saveRefreshToken)
         // The login response intentionally stays small and does not include the
         // plan's effective `tenant_features`. Hydrate the profile (with retry)
         // before applying navigation gates so a fresh login does not hide

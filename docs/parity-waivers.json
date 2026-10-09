@@ -1136,6 +1136,36 @@
       "key": "PATCH /api/service-desk/tickets/:param",
       "owner": "product (P10 web-only)",
       "reason": "Only the web admin console edits a ticket; admin is web / desktop only (2026-10-01). See WEB_PARITY_PLAN.md P6.7 footnote 4."
+    },
+    {
+      "key": "POST /api/auth/mfa/disable",
+      "owner": "security (P2.1)",
+      "reason": "Admin two-step verification (P2.1) is web / desktop only: it gates administrator sign-in and admin changes, and the Android app has no admin surface (security decision 2026-10-01, middleware/webOnly.ts). App sign-ins are never challenged. See PRODUCTION_READINESS_PLAN.md P2.1."
+    },
+    {
+      "key": "POST /api/auth/mfa/enroll/confirm",
+      "owner": "security (P2.1)",
+      "reason": "Admin two-step verification (P2.1) is web / desktop only: it gates administrator sign-in and admin changes, and the Android app has no admin surface (security decision 2026-10-01, middleware/webOnly.ts). App sign-ins are never challenged. See PRODUCTION_READINESS_PLAN.md P2.1."
+    },
+    {
+      "key": "POST /api/auth/mfa/enroll/start",
+      "owner": "security (P2.1)",
+      "reason": "Admin two-step verification (P2.1) is web / desktop only: it gates administrator sign-in and admin changes, and the Android app has no admin surface (security decision 2026-10-01, middleware/webOnly.ts). App sign-ins are never challenged. See PRODUCTION_READINESS_PLAN.md P2.1."
+    },
+    {
+      "key": "GET /api/auth/mfa/status",
+      "owner": "security (P2.1)",
+      "reason": "Admin two-step verification (P2.1) is web / desktop only: it gates administrator sign-in and admin changes, and the Android app has no admin surface (security decision 2026-10-01, middleware/webOnly.ts). App sign-ins are never challenged. See PRODUCTION_READINESS_PLAN.md P2.1."
+    },
+    {
+      "key": "POST /api/auth/mfa/step-up",
+      "owner": "security (P2.1)",
+      "reason": "Admin two-step verification (P2.1) is web / desktop only: it gates administrator sign-in and admin changes, and the Android app has no admin surface (security decision 2026-10-01, middleware/webOnly.ts). App sign-ins are never challenged. See PRODUCTION_READINESS_PLAN.md P2.1."
+    },
+    {
+      "key": "POST /api/auth/mfa/verify",
+      "owner": "security (P2.1)",
+      "reason": "Admin two-step verification (P2.1) is web / desktop only: it gates administrator sign-in and admin changes, and the Android app has no admin surface (security decision 2026-10-01, middleware/webOnly.ts). App sign-ins are never challenged. See PRODUCTION_READINESS_PLAN.md P2.1."
     }
   ]
 }

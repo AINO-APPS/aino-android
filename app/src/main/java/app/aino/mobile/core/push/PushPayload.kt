@@ -2,7 +2,7 @@ package app.aino.mobile.core.push
 
 import java.time.Instant
 
-enum class PushKind { ChatMessage, IncomingCall, CallHandledElsewhere, General }
+enum class PushKind { ChatMessage, IncomingCall, CallHandledElsewhere, SessionRevoked, General }
 
 data class ValidatedPush(
     val kind: PushKind,
@@ -64,6 +64,13 @@ fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now())
             require(required("dedupeKey") == "call_cancel:${data["callId"]}")
             PushKind.CallHandledElsewhere
         }
+        // The account signed in on another phone: this device's session is gone.
+        "session_revoked" -> {
+            exact(setOf("type", "reason", "dedupeKey", "tenantId", "sentAt"))
+            require(data["reason"] == "signed_in_elsewhere")
+            require(Regex("session_revoked:[1-9][0-9]*").matches(required("dedupeKey")))
+            PushKind.SessionRevoked
+        }
         else -> {
             // `link` / `linkTaskId` are newer, optional deep-link hints: older
             // servers omit them and a malformed value is ignored at routing time.
@@ -73,7 +80,7 @@ fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now())
             )
             positive("notificationId"); required("title"); required("body"); positive("badgeCount")
             require(required("dedupeKey") == "notif:${data["notificationId"]}")
-            require(type !in setOf("incoming_call", "call_handled_elsewhere", "chat_message"))
+            require(type !in setOf("incoming_call", "call_handled_elsewhere", "chat_message", "session_revoked"))
             PushKind.General
         }
     }
@@ -87,13 +94,14 @@ fun notificationId(push: ValidatedPush): Int = when (push.kind) {
     PushKind.ChatMessage -> push.data.getValue("conversationId").toLong().hashCode()
     PushKind.IncomingCall, PushKind.CallHandledElsewhere -> push.data.getValue("callId").toLong().hashCode()
     PushKind.General -> push.data.getValue("notificationId").toLong().hashCode()
+    PushKind.SessionRevoked -> push.dedupeKey.hashCode()
 }
 
 /** Tray tag for [push]: keeps chat, alert and call ids in separate namespaces (see [NotificationTags]). */
 fun notificationTag(push: ValidatedPush): String = when (push.kind) {
     PushKind.ChatMessage -> NotificationTags.CHAT
     PushKind.IncomingCall, PushKind.CallHandledElsewhere -> NotificationTags.CALL
-    PushKind.General -> NotificationTags.ALERT
+    PushKind.General, PushKind.SessionRevoked -> NotificationTags.ALERT
 }
 
 /** The generic alert's relative web path (`/tasks?task=1`), or null when absent or not app-relative. */

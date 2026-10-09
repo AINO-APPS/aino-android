@@ -33,7 +33,14 @@ import org.webrtc.MediaStreamTrack
 import org.webrtc.PeerConnection
 import org.webrtc.VideoTrack
 
-enum class MeetingStatus { Joining, Joined, Failed }
+enum class MeetingStatus { Joining, Joined, Failed, Full }
+
+/**
+ * Meetings, group calls and huddles are a full WebRTC mesh; the server refuses
+ * a join once this many people are in (`meeting_full`). Mirrors server
+ * `realtime/meetingCapacity.ts`.
+ */
+const val MESH_PARTICIPANT_CAP = 8
 
 /** One emoji reaction shown over the call; [id] keys the animation. */
 data class CallReactionBurst(val id: Long, val userId: Long, val name: String, val emoji: String, val atMs: Long)
@@ -214,6 +221,11 @@ class MeetingSession(context: Context) {
             return
         }
         if (data.long("meetingId") != s.meeting.id) return
+        if (envelope.type == "meeting_full") {
+            joinAcked = true // stop the join retry / "Couldn't connect" timer
+            _state.update { it?.copy(status = MeetingStatus.Full) }
+            return
+        }
         when (envelope.type) {
             "meeting_participant_joined" -> onParticipantJoined(data)
             "meeting_signal" -> {

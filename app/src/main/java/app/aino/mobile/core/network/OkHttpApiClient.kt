@@ -111,7 +111,7 @@ class OkHttpApiClient(
         val JSON = "application/json; charset=utf-8".toMediaType()
         val BODY_REQUIRED = setOf("POST", "PUT", "PATCH")
 
-        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        fun defaultClient(): OkHttpClient = CertificatePinning.apply(OkHttpClient.Builder())
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)

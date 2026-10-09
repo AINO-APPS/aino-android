@@ -66,7 +66,7 @@ class RealtimeViewModel(
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val container = app.aino.mobile.core.AppContainer.get(context)
                 return RealtimeViewModel(
-                    RealtimeClient(container.tokens),
+                    RealtimeClient(container.freshTokens, client = container.http),
                     connectivity = context.getSystemService(ConnectivityManager::class.java),
                 ) as T
             }

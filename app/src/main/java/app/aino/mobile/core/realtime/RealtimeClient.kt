@@ -110,19 +110,36 @@ class RealtimeClient(
 
     @Synchronized
     private fun open(connectionGeneration: Long) {
-        val token = tokens.getToken()
-        if (!shouldRun || token.isNullOrBlank()) {
+        if (!shouldRun) {
             _state.value = RealtimeState.Disconnected
             return
         }
         _state.value = RealtimeState.Connecting(retryCount)
         // A handshake in flight is not "silent": don't let reconnectNow() cancel it as stale.
         lastInboundAt.set(System.currentTimeMillis())
-        val request = Request.Builder().url(realtimeUrl(baseUrl, token)).build()
-        socket = client.newWebSocket(request, listener(connectionGeneration))
+        // The provider may refresh a near-expired token over the network: never on the caller's thread.
+        reconnect = scope.launch {
+            val token = tokens.getToken()
+            synchronized(this@RealtimeClient) {
+                reconnect = null
+                if (!shouldRun || connectionGeneration != generation || socket != null) return@launch
+                if (token.isNullOrBlank()) {
+                    _state.value = RealtimeState.Disconnected
+                    return@launch
+                }
+                val request = Request.Builder().url(realtimeUrl(baseUrl, token)).build()
+                socket = client.newWebSocket(request, listener(connectionGeneration))
+            }
+        }
     }
 
     private fun listener(connectionGeneration: Long) = object : WebSocketListener() {
+        private val closeHandled = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        private fun closeOnce(code: Int, reason: String) {
+            if (closeHandled.compareAndSet(false, true)) handleClose(connectionGeneration, code, reason)
+        }
+
         override fun onOpen(webSocket: WebSocket, response: Response) {
             synchronized(this@RealtimeClient) {
                 if (connectionGeneration != generation || !shouldRun) {
@@ -145,10 +162,18 @@ class RealtimeClient(
             if (envelope.type != "pong" && !_events.tryEmit(envelope)) _resync.update { it + 1 }
         }
 
-        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = handleClose(connectionGeneration, code, reason)
+        // OkHttp reports a server-initiated close here and only calls onClosed once the
+        // close is echoed. Echo it and act now, or a 4001 (session ended) would hang until
+        // the server drops the TCP connection and then look like a plain network failure.
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            runCatching { webSocket.close(code, null) }
+            closeOnce(code, reason)
+        }
+
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = closeOnce(code, reason)
 
         override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
-            handleClose(connectionGeneration, response?.code ?: 1006, error.message ?: "Connection failed")
+            closeOnce(response?.code ?: 1006, error.message ?: "Connection failed")
         }
     }
 

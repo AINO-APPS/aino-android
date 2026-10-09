@@ -13,6 +13,27 @@ import app.aino.mobile.core.call.CallRingService
 import app.aino.mobile.core.call.incomingCallServiceExtras
 import app.aino.mobile.core.call.IncomingCallDismissals
 
+/** A numeric claim of a JWT (`tenant_id`, `iat`), or null when absent or unreadable. */
+internal fun jwtLongClaim(jwt: String, claim: String): Long? = runCatching {
+    val part = jwt.split('.')[1]
+    val payload = String(java.util.Base64.getUrlDecoder().decode(part.padEnd((part.length + 3) / 4 * 4, '=')))
+    (kotlinx.serialization.json.Json.parseToJsonElement(payload) as kotlinx.serialization.json.JsonObject)[claim]
+        ?.toString()?.trim('"')?.toLongOrNull()
+}.getOrNull()
+
+/**
+ * A `session_revoked` push signs out the stored credential only when it is for
+ * the same tenant and the credential predates the push: a push delayed while
+ * the phone was offline must not end a sign-in made after it was sent.
+ */
+internal fun sessionRevocationApplies(jwt: String, push: ValidatedPush): Boolean {
+    if (push.kind != PushKind.SessionRevoked) return false
+    push.tenantId?.let { if (jwtLongClaim(jwt, "tenant_id") != it) return false }
+    val sentAt = runCatching { java.time.Instant.parse(push.data.getValue("sentAt")).epochSecond }.getOrNull() ?: return false
+    val issuedAt = jwtLongClaim(jwt, "iat") ?: return true
+    return issuedAt <= sentAt
+}
+
 /** How long a chat push may hold FCM's (serial) worker thread to store the thread delta. */
 private const val CHAT_SYNC_BUDGET_MS = 1_500L
 
@@ -108,6 +129,15 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
                 )
                 CallRingService.stop(applicationContext)
                 IncomingCallDismissals.dismiss(callId)
+            }
+            PushKind.SessionRevoked -> {
+                // The account signed in on another phone; this app may be killed, so no socket told us.
+                val current = app.aino.mobile.core.AppContainer.get(applicationContext).tokens.getToken()
+                if (current != null && sessionRevocationApplies(current, validated)) {
+                    runBlocking { runCatching { app.aino.mobile.core.auth.SessionRevocation.signOutLocally(applicationContext) } }
+                    CallRingService.stop(applicationContext)
+                }
+                return
             }
             PushKind.General -> Unit
         }

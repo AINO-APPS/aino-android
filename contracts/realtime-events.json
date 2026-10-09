@@ -6,7 +6,7 @@
     "path": "server/**/*.ts"
   },
   "totals": {
-    "events": 83
+    "events": 84
   },
   "events": [
     "approval_update",
@@ -56,6 +56,7 @@
     "meeting_cancelled",
     "meeting_chat_replay_done",
     "meeting_ended",
+    "meeting_full",
     "meeting_hand_raised",
     "meeting_hls_started",
     "meeting_hls_stopped",

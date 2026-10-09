@@ -68,6 +68,7 @@ fun ProfileScreen(
     onEditProfile: () -> Unit,
     onNotificationSounds: () -> Unit,
     onFaceEnrollment: () -> Unit,
+    onSignedInDevices: () -> Unit,
     onToggleTheme: () -> Unit,
     onAvatarChanged: (String?) -> Unit,
     onSignOut: () -> Unit,
@@ -130,6 +131,8 @@ fun ProfileScreen(
             ProfileRow(HeroIcons.Bell, "Notification Sounds", onNotificationSounds)
             RowDivider()
             ProfileRow(HeroIcons.FaceSmile, "Face Enrollment", onFaceEnrollment)
+            RowDivider()
+            ProfileRow(HeroIcons.DevicePhoneMobile, "Signed-in devices", onSignedInDevices)
             RowDivider()
             ProfileRow(if (isDark) HeroIcons.Sun else HeroIcons.Moon, if (isDark) "Light Mode" else "Dark Mode", onToggleTheme)
         }

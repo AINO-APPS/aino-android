@@ -9,11 +9,13 @@ commit as the work, and write the commit SHA in the Done column.
 
 ## Next up
 
-1. P0.3: Install the 0.18.0 test release on a device and run the smoke test (owner).
-2. Deploy the web app so `/privacy`, `/terms` and `/account-deletion` are live, then create the Play Console listing with [PLAY_CONSOLE_SUBMISSION.md](PLAY_CONSOLE_SUBMISSION.md) (owner).
-3. P2.1: TOTP MFA for admin roles.
+1. Platform v3.0.45 is deployed (migrations 0010 + master 0009 applied, `MFA_ENC_KEY` set). Install Android 0.21.0 on two phones and run the sign-out test, then enrol an admin in two-step verification on the web (owner).
+2. Compute the real TLS pins from a network without TLS inspection and set `AINO_CERT_PINS` ([CERT_PINNING_RUNBOOK.md](CERT_PINNING_RUNBOOK.md)) (owner).
+3. Set `SENTRY_DSN` / `VITE_SENTRY_DSN` and add Sentry to the subprocessor list (P3.1) (owner).
+4. Deploy the web app so `/privacy`, `/terms` and `/account-deletion` are live, then create the Play Console listing with [PLAY_CONSOLE_SUBMISSION.md](PLAY_CONSOLE_SUBMISSION.md) (owner).
+5. Phase 3: legal and operations.
 
-**Test release:** [android-v0.18.0](https://github.com/AINO-APPS/aino-android/releases/tag/android-v0.18.0). `AINO-0.18.0.apk` is the `direct` build (pilots; also served by the R2 update channel). `AINO-0.18.0-play.aab` is for the Play Console internal-testing track.
+**Current release:** [android-v0.21.0](https://github.com/AINO-APPS/aino-android/releases/tag/android-v0.21.0), with platform v3.0.45 (Phase 2). **Earlier test release:** [android-v0.18.0](https://github.com/AINO-APPS/aino-android/releases/tag/android-v0.18.0). `AINO-0.18.0.apk` is the `direct` build (pilots; also served by the R2 update channel). `AINO-0.18.0-play.aab` is for the Play Console internal-testing track.
 
 ## Decisions (confirmed 2026-10-07)
 
@@ -51,7 +53,7 @@ commit as the work, and write the commit SHA in the Done column.
 |---|---|---|---|---|
 | P0.1 | Full CI green: Android (`play` + `direct` tests, lint, debug and release builds, 5 guardrails), platform server Jest (1,309) and web Vitest (285) + typecheck | both | ✅ | 2026-10-08 · android-v0.18.0 |
 | P0.2 | 16 KB page-size check (`zipalign -c -P 16`, ELF `LOAD` alignment of every `.so`). CameraX 1.3.4 `libimage_processing_util_jni.so` was 4 KB aligned; fixed by P1.7 | android | ✅ | 2026-10-07 |
-| P0.3 | Release-build smoke test on a device: login, clock-in with location and face, chat media, polls, 1:1 call from a killed app, huddle, notification deep links, update banner | android | ⏳ Needs a physical device; use the 0.18.0 test release | |
+| P0.3 | Release-build smoke test on a device: login, clock-in with location and face, chat media, polls, 1:1 call from a killed app, huddle, notification deep links, update banner | android | ✅ Verified on the owner's device | 2026-10-09 · android-v0.18.0+ |
 | P0.4 | `calls` vs `meetings` plan semantics. Decided: `calls` (Pro) = 1:1 and group calls / huddles; `meetings` (Enterprise) = scheduled meetings, lobby, HLS. Server: creating or reading a huddle needs `calls`, everything else needs `meetings`. Web and Android hide the call buttons without `calls`; Android `startCall` refuses too | both | ✅ | 2026-10-07 |
 | P0.5 | `chat_media_job` / `chat_poll_vote` impact. Confirmed: media-processing progress and other users' poll votes only showed after a reload. Fixed in P4.1 | android | ✅ | 2026-10-08 · android-v0.18.0 |
 | P0.6 | Branch / location model. Confirmed: organization → departments → teams, with **one** office geofence and Wi-Fi list per organization. No branches or multi-site attendance; added as P5.0 | platform | ✅ | 2026-10-08 · android-v0.18.0 |
@@ -73,14 +75,15 @@ commit as the work, and write the commit SHA in the Done column.
 
 | ID | Item | Repo | Status | Done |
 |---|---|---|---|---|
-| P2.1 | TOTP MFA plus step-up for admin roles on web / desktop | platform | ⏳ | |
-| P2.2 | Error tracking on server and web | platform | ⏳ | |
-| P2.3 | Malware scanning for uploads, or a strict MIME / size allowlist | platform | ⏳ | |
-| P2.4 | `FLAG_SECURE` on salary slips and view-once media | android | ⏳ | |
-| P2.5 | Certificate pinning with a backup pin and a rotation runbook | android | ⏳ | |
-| P2.6 | Encrypt the Room database, or record risk acceptance | android | ⏳ | |
-| P2.7 | Shorter access tokens with refresh rotation; active-devices view | both | ⏳ | |
-| P2.8 | Enforce and show the meeting participant cap (server, web, Android) | both | ⏳ | |
+| P2.1 | TOTP MFA for `hr_admin` and higher and for platform operators, on web / desktop. Sign-in asks for a code (`MFA_REQUIRED`), or forces enrollment (`MFA_ENROLL_REQUIRED`) with a QR code and 10 one-time recovery codes. Secrets are AES-GCM encrypted (`MFA_ENC_KEY`). Every change under `/api/admin*` and `/api/platform-access` needs a code from the last 10 minutes (step-up, `MFA_STEP_UP_REQUIRED`); the web app asks for the code and retries. Passkey and device-biometric sign-in count as MFA. App sign-ins are not challenged because the app has no admin surface | platform | ✅ | 2026-10-09 · android-v0.21.0, platform v3.0.45 |
+| P2.2 | Sentry on the server, web and desktop renderer; off unless `SENTRY_DSN` / `VITE_SENTRY_DSN` is set. No request bodies, cookies, auth headers, query strings, emails, IP addresses or local variables are sent; only numeric user and tenant IDs | platform | ✅ (DSN ⏳ owner) | 2026-10-09 · android-v0.21.0, platform v3.0.45 |
+| P2.3 | Strict allowlist instead of malware scanning. Every upload route checks the size, the declared MIME type and the file's magic bytes (`utils/uploadPolicy.ts`, 415 on mismatch). SVG logos are no longer accepted (they can contain script). File names are sanitized | platform | ✅ | 2026-10-09 · android-v0.21.0, platform v3.0.45 |
+| P2.4 | `FLAG_SECURE` through a shared `SecureScreen()` on salary slips and view-once media | android | ✅ | 2026-10-09 · android-v0.21.0, platform v3.0.45 |
+| P2.5 | OkHttp certificate pinning for `aino.org.in` and its subdomains (API, media, realtime, avatars, `direct` updater). At least 2 pins are required; debug builds never pin. See the [runbook](CERT_PINNING_RUNBOOK.md). Shipped **off** until the real pins are computed outside the corporate proxy | android | ✅ (pins ⏳ owner) | 2026-10-09 · android-v0.21.0, platform v3.0.45 |
+| P2.6 | Risk accepted, no SQLCipher: see [SECURITY_DECISIONS.md](SECURITY_DECISIONS.md) | android | ✅ | 2026-10-09 · android-v0.21.0, platform v3.0.45 |
+| P2.7 | The app gets a 15-minute access token plus a rotating refresh token (`POST /sessions/token`). Only hashes are stored, and replaying an old refresh token revokes the session. Older builds keep the long-lived rolling token. Signed-in devices list with remote sign-out on web (profile) and Android (Profile → Signed-in devices) | both | ✅ | 2026-10-09 · android-v0.21.0, platform v3.0.45 |
+| P2.8 | Cap of 8 participants for meetings, group calls and huddles. The server refuses a 9th person (`meeting_full`); people rejoining keep their place. Web and Android show "n / 8" and a "Meeting is full" state | both | ✅ | 2026-10-09 · android-v0.21.0, platform v3.0.45 |
+| P2.9 | One active session per client type: one phone plus one web / desktop. A new sign-in ends the other session of that type at once. Its socket is closed with `4001 "Signed in on another device"` on every server instance, and a `session_revoked` push signs out a backgrounded or killed app. Logout, password change or reset, and admin deactivation also close sockets at once | both | ✅ | 2026-10-09 · android-v0.21.0, platform v3.0.45 |
 
 ## Phase 3: legal and operations for India
 

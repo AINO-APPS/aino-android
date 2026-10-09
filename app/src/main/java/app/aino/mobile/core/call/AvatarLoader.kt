@@ -12,8 +12,9 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.security.MessageDigest
 
 /**
@@ -85,25 +86,25 @@ object AvatarLoader {
     }
   }
 
+  /** Shares the app's pinned TLS settings (P2.5), with short timeouts so a slow host never delays a ring. */
+  private val client: OkHttpClient by lazy {
+    app.aino.mobile.core.network.CertificatePinning.apply(OkHttpClient.Builder())
+      .connectTimeout(CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+      .readTimeout(READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
+      .build()
+  }
+
   private fun downloadToCache(url: String, cacheFile: File, token: String?): Bitmap? {
-    var connection: HttpURLConnection? = null
     return try {
-      connection = (URL(url).openConnection() as HttpURLConnection).apply {
-        connectTimeout = CONNECT_TIMEOUT_MS
-        readTimeout = READ_TIMEOUT_MS
-        instanceFollowRedirects = true
-        requestMethod = "GET"
+      val request = Request.Builder().url(url).get().apply {
         // The avatar lives behind the server's `/uploads` auth middleware, which
-        // returns 401 without a Bearer token. Attach the user's JWT so the
-        // notification can actually fetch the contact photo (mirrors the in-app
-        // AuthedImage component, which sends the same header).
-        if (!token.isNullOrBlank()) {
-          setRequestProperty("Authorization", "Bearer $token")
-        }
+        // returns 401 without a bearer token (mirrors the in-app AuthedImage).
+        if (!token.isNullOrBlank()) header("Authorization", "Bearer $token")
+      }.build()
+      val bytes = client.newCall(request).execute().use { response ->
+        if (!response.isSuccessful) return null
+        response.body?.bytes() ?: return null
       }
-      val code = connection.responseCode
-      if (code !in 200..299) return null
-      val bytes = connection.inputStream.use { it.readBytes() }
       if (bytes.isEmpty()) return null
 
       // Decode with downsampling so a large source photo doesn't allocate a huge
@@ -128,12 +129,6 @@ object AvatarLoader {
       scaled
     } catch (_: Throwable) {
       null
-    } finally {
-      try {
-        connection?.disconnect()
-      } catch (_: Throwable) {
-        // ignore
-      }
     }
   }
 

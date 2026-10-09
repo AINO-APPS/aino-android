@@ -45,8 +45,18 @@ class AuthViewModel(
             // credential intact, so preserve offline cache for the next retry.
             if (restored.isSuccess || !repository.hasStoredCredential()) persistOrClearScope(state)
             // Sessions never time out, so a rejected stored credential was revoked (password change, removal, sign-out elsewhere).
-            val message = SIGNED_IN_ELSEWHERE.takeIf { hadCredential && restored.isSuccess && state is AuthState.SignedOut }
+            val pending = SessionRevocation.consumePendingMessage(context)
+            val message = pending?.takeIf { state is AuthState.SignedOut }
+                ?: SIGNED_IN_ELSEWHERE.takeIf { hadCredential && restored.isSuccess && state is AuthState.SignedOut }
             _ui.value = AuthUiState(state = state, message = message, biometricEnrolled = biometricCredentials.isEnrolled())
+        }
+        // A session_revoked push already cleared the credential while this UI runs.
+        viewModelScope.launch {
+            SessionRevocation.revoked.collect { message ->
+                if (_ui.value.state is AuthState.Authenticated) {
+                    kotlinx.coroutines.withContext(Dispatchers.IO) { signOutRevoked(message) }
+                }
+            }
         }
     }
 
@@ -203,6 +213,23 @@ class AuthViewModel(
         }
     }
 
+    /**
+     * The server closed this device's socket because the account signed in on
+     * another phone. Drop the credential and local data right away.
+     */
+    fun onSessionRevoked(closeReason: String?) {
+        if (_ui.value.state !is AuthState.Authenticated) return
+        viewModelScope.launch(Dispatchers.IO) { signOutRevoked(SessionRevocation.messageFor(closeReason)) }
+    }
+
+    private suspend fun signOutRevoked(message: String) {
+        repository.clearLocalCredential()
+        persistOrClearScope(AuthState.SignedOut)
+        wipeUserMedia()
+        SessionRevocation.clearPendingMessage(context)
+        _ui.value = AuthUiState(state = AuthState.SignedOut, message = message, biometricEnrolled = biometricCredentials.isEnrolled())
+    }
+
     fun clearMessage() = _ui.update { it.copy(error = null, message = null) }
 
     /** Re-hydrate feature gates after a degraded session (P0.2 Retry action). */
@@ -216,6 +243,7 @@ class AuthViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching(action).fold(
                 onSuccess = { state ->
+                    if (state is AuthState.Authenticated) SessionRevocation.clearPendingMessage(context)
                     persistOrClearScope(state)
                     _ui.value = AuthUiState(
                         state = state,
