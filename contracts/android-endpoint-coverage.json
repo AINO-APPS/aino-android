@@ -6,7 +6,7 @@
   },
   "totals": {
     "platform": 488,
-    "covered": 255,
+    "covered": 256,
     "waived": 233,
     "missing": 0,
     "unmatched": 0
@@ -55,6 +55,11 @@
     {
       "method": "POST",
       "path": "/api/auth/logout",
+      "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/mfa/step-up",
       "source": "app/src/main/java/app/aino/mobile/core/auth/AuthRepository.kt"
     },
     {

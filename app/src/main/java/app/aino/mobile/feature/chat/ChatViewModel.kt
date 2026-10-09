@@ -152,6 +152,8 @@ data class ChatUiState(
     val userResults: List<ChatUser> = emptyList(),
     val searching: Boolean = false,
     val selectedConversationIds: Set<Long> = emptySet(),
+    /** List multi-select entered from the overflow menu, so it stays open with nothing picked yet. */
+    val conversationSelectionMode: Boolean = false,
     val deletingConversations: Boolean = false,
     val selectedConversation: ChatConversation? = null,
     val messages: List<ChatMessage> = emptyList(),
@@ -196,6 +198,7 @@ data class ChatUiState(
     val calls: List<CallLog> = emptyList(),
     val callsLoading: Boolean = false,
     val selectedCallIds: Set<Long> = emptySet(),
+    val callSelectionMode: Boolean = false,
     val deletingCalls: Boolean = false,
     val showInfo: Boolean = false,
     val members: List<ConversationMember> = emptyList(),
@@ -218,6 +221,8 @@ data class ChatUiState(
     val message: String? = null,
 ) {
     val unread: Int get() = totalUnread(conversations)
+    val selectingConversations: Boolean get() = conversationSelectionMode || selectedConversationIds.isNotEmpty()
+    val selectingCalls: Boolean get() = callSelectionMode || selectedCallIds.isNotEmpty()
 }
 
 /** One item of a Signal media send (camera, tray or gallery). */
@@ -713,7 +718,30 @@ class ChatViewModel(
     }
 
     fun cancelConversationSelection() {
-        _ui.update { st -> st.copy(selectedConversationIds = emptySet()) }
+        _ui.update { st -> st.copy(selectedConversationIds = emptySet(), conversationSelectionMode = false) }
+    }
+
+    fun startConversationSelection() {
+        _ui.update { st -> st.copy(conversationSelectionMode = true) }
+    }
+
+    /** Overflow "Mark all as read": clears the badges at once, then syncs each chat and refreshes once. */
+    fun markAllRead(conversations: Collection<ChatConversation>) {
+        val ids = conversations.filter { it.unreadCount > 0 }.map(ChatConversation::id).toSet()
+        if (ids.isEmpty()) return
+        val original = _ui.value.conversations
+        _ui.update { st -> st.copy(conversations = st.conversations.map { if (it.id in ids) it.copy(unreadCount = 0) else it }) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val failed = ids.filter { id -> runCatching { repository.markRead(id) }.isFailure }.toSet()
+            if (failed.isNotEmpty()) {
+                val restore = original.filter { it.id in failed }.associateBy(ChatConversation::id)
+                _ui.update { st -> st.copy(
+                    conversations = st.conversations.map { restore[it.id] ?: it },
+                    error = "Could not mark ${failed.size} chat${if (failed.size == 1) "" else "s"} as read",
+                ) }
+            }
+            refresh()
+        }
     }
 
     fun deleteSelectedConversations() {
@@ -727,6 +755,7 @@ class ChatViewModel(
             _ui.update { st -> st.copy(
                 deletingConversations = false,
                 selectedConversationIds = failed.toSet(),
+                conversationSelectionMode = st.conversationSelectionMode && failed.isNotEmpty(),
                 conversations = st.conversations.filterNot { it.id in ids && it.id !in failed },
                 message = if (failed.isEmpty()) "${ids.size} conversation${if (ids.size == 1) "" else "s"} deleted" else null,
                 error = if (failed.isNotEmpty()) "Could not delete ${failed.size} selected conversation${if (failed.size == 1) "" else "s"}" else null,
@@ -1872,7 +1901,11 @@ class ChatViewModel(
     }
 
     fun cancelCallSelection() {
-        _ui.update { st -> st.copy(selectedCallIds = emptySet()) }
+        _ui.update { st -> st.copy(selectedCallIds = emptySet(), callSelectionMode = false) }
+    }
+
+    fun startCallSelection() {
+        _ui.update { st -> st.copy(callSelectionMode = true) }
     }
 
     fun deleteSelectedCalls() {
@@ -1888,6 +1921,7 @@ class ChatViewModel(
                     _ui.update { st -> st.copy(
                         deletingCalls = false,
                         selectedCallIds = emptySet(),
+                        callSelectionMode = false,
                         calls = st.calls.filterNot { it.id in ids },
                         message = "${it.deleted} call${if (it.deleted == 1) "" else "s"} deleted",
                     ) }

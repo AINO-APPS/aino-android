@@ -30,6 +30,25 @@ class MockWebServerHarnessTest {
     }
 
     @Test
+    fun callerSuppliedAuthorizationReplacesStoredToken() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setResponseCode(200).setBody("{}"))
+            server.start()
+            val client = OkHttpApiClient(
+                baseUrl = server.url("api/").toString(),
+                tokenProvider = TokenProvider { "stored-token" },
+                timeZoneProvider = { TimeZone.getTimeZone("UTC") },
+                clock = { 0L },
+            )
+
+            client.execute(ApiRequest("POST", "auth/biometric/enroll", headers = mapOf("Authorization" to "Bearer step-up")))
+            val request = server.takeRequest()
+
+            assertEquals(listOf("Bearer step-up"), request.headers.values("Authorization"))
+        }
+    }
+
+    @Test
     fun bodylessPostSendsAnEmptyBodyInsteadOfThrowing() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(200).setBody("{\"ok\":true}"))

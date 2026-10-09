@@ -43,14 +43,15 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import androidx.media3.common.MediaItem
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import app.aino.mobile.core.AppContainer
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import coil3.compose.AsyncImage
+import coil3.video.videoFrameMillis
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -75,6 +76,8 @@ fun ChatMediaViewer(media: List<ChatMessage>, startMessageId: Long, secure: Bool
     val scope = rememberCoroutineScope()
     val pager = rememberPagerState(media.indexOfFirst { it.id == startMessageId }.coerceAtLeast(0)) { media.size }
     val save = rememberChatMediaSaver()
+    // Immersive like Signal's media viewer: a tap toggles the top bar and the video controls together.
+    var chromeVisible by remember { mutableStateOf(true) }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         // Signal view-once: block screenshots/recents thumbnails while open.
         if (secure) app.aino.mobile.core.designsystem.SecureScreen()
@@ -82,12 +85,28 @@ fun ChatMediaViewer(media: List<ChatMessage>, startMessageId: Long, secure: Bool
             HorizontalPager(pager, Modifier.fillMaxSize(), pageSpacing = 24.dp, key = { media[it].id }) { page ->
                 val item = media[page]
                 val url = resolveChatMediaUrl(item.fileUrl.orEmpty())
-                if (item.isVideoAttachment()) VideoPage(url, active = pager.currentPage == page)
-                else ZoomableImage(url, item.fileName)
+                if (item.isVideoAttachment()) {
+                    VideoPage(
+                        url = url,
+                        localUri = ChatMediaMemory.localFor(item.fileUrl),
+                        label = item.fileName,
+                        active = pager.currentPage == page,
+                        onControlsVisible = { chromeVisible = it },
+                    )
+                } else {
+                    ZoomableImage(url, item.fileName, onTap = { chromeVisible = !chromeVisible })
+                }
             }
             val current = media[pager.currentPage]
+            // A swipe to an image brings the bar back; a video page starts immersive.
+            LaunchedEffect(pager.currentPage) { chromeVisible = !current.isVideoAttachment() }
+            androidx.compose.animation.AnimatedVisibility(
+                visible = chromeVisible,
+                enter = androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.fadeOut(),
+            ) {
             Row(
-                Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().background(Color.Black.copy(alpha = .35f)).statusBarsPadding().padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(HeroIcons.XMark, "Close", Modifier.size(40.dp).clickable(onClick = onClose).padding(8.dp), tint = Color.White)
@@ -111,12 +130,13 @@ fun ChatMediaViewer(media: List<ChatMessage>, startMessageId: Long, secure: Bool
                     tint = Color.White,
                 )
             }
+            }
         }
     }
 }
 
 @Composable
-private fun ZoomableImage(url: String, label: String?) {
+private fun ZoomableImage(url: String, label: String?, onTap: () -> Unit) {
     val loader = AppContainer.get(LocalContext.current).imageLoader
     var scale by remember(url) { mutableFloatStateOf(1f) }
     var offset by remember(url) { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
@@ -127,7 +147,10 @@ private fun ZoomableImage(url: String, label: String?) {
         contentScale = ContentScale.Fit,
         modifier = Modifier.fillMaxSize()
             .pointerInput(url) {
-                detectTapGestures(onDoubleTap = { if (scale > 1f) { scale = 1f; offset = androidx.compose.ui.geometry.Offset.Zero } else scale = 2.5f })
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onDoubleTap = { if (scale > 1f) { scale = 1f; offset = androidx.compose.ui.geometry.Offset.Zero } else scale = 2.5f },
+                )
             }
             .pointerInput(url) {
                 // Only claim the gesture while zoomed or pinching so the pager still swipes at 1x.
@@ -147,26 +170,121 @@ private fun ZoomableImage(url: String, label: String?) {
     )
 }
 
+/**
+ * Signal-style viewer video: starts playing straight away with the controls
+ * hidden (a tap shows them; they auto-hide while playing), the poster frame
+ * from the bubble stays up until the first video frame renders, and the bytes
+ * come from the closest copy: the file sent from this device, the full video
+ * the bubble poster already downloaded, or the network through [VideoCache].
+ */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
-private fun VideoPage(url: String, active: Boolean) {
+private fun VideoPage(url: String, localUri: String?, label: String?, active: Boolean, onControlsVisible: (Boolean) -> Unit) {
     val context = LocalContext.current
     val container = AppContainer.get(context)
+    val activeState by rememberUpdatedState(active)
+    val controlsCallback by rememberUpdatedState(onControlsVisible)
+    // Coil keeps the whole video on disk for the bubble poster; hold the entry open while it plays.
+    val snapshot = remember(url) { runCatching { container.imageLoader.diskCache?.openSnapshot(url) }.getOrNull() }
+    val sources = remember(url, localUri) {
+        listOfNotNull(
+            localUri?.let(Uri::parse),
+            snapshot?.data?.toFile()?.takeIf { it.length() > 0 }?.let(Uri::fromFile),
+            Uri.parse(url),
+        ).distinct()
+    }
+    var sourceIndex by remember(url) { mutableIntStateOf(0) }
+    var firstFrameRendered by remember(url) { mutableStateOf(false) }
     val player = remember(url) {
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(context, OkHttpDataSource.Factory(container.mediaHttp))))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(app.aino.mobile.core.media.VideoCache.dataSourceFactory(context, container.mediaHttp)))
+            .setLoadControl(app.aino.mobile.core.media.VideoCache.quickStartLoadControl())
             .build()
-            .apply { setMediaItem(MediaItem.fromUri(url)); prepare() }
+            .apply {
+                setMediaItem(MediaItem.fromUri(sources[0]))
+                playWhenReady = active
+                prepare()
+            }
+    }
+    var view by remember(url) { mutableStateOf<PlayerView?>(null) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onRenderedFirstFrame() {
+                firstFrameRendered = true
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                // Finished: show the controls so the video can be replayed.
+                if (playbackState == Player.STATE_ENDED && activeState) view?.showController()
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                // A stale local copy (revoked content:// grant, evicted cache file): try the next source.
+                if (sourceIndex < sources.lastIndex) {
+                    sourceIndex += 1
+                    player.setMediaItem(MediaItem.fromUri(sources[sourceIndex]))
+                    player.prepare()
+                } else {
+                    view?.showController()
+                }
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            player.removeListener(listener)
+            player.release()
+            runCatching { snapshot?.close() }
+        }
     }
     LaunchedEffect(active) {
-        if (active) { container.audio.stop(); player.play() } else player.pause()
+        if (active) {
+            container.audio.stop()
+            player.play()
+        } else {
+            player.pause()
+            view?.hideController()
+        }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
-    AndroidView(
-        factory = { PlayerView(it).apply { this.player = player; useController = true } },
-        modifier = Modifier.fillMaxSize(),
-    )
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        AndroidView(
+            factory = {
+                PlayerView(it).apply {
+                    this.player = player
+                    useController = true
+                    controllerAutoShow = false
+                    controllerHideOnTouch = true
+                    controllerShowTimeoutMs = CONTROLS_TIMEOUT_MS
+                    setShowNextButton(false)
+                    setShowPreviousButton(false)
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    setControllerVisibilityListener(
+                        PlayerView.ControllerVisibilityListener { visibility ->
+                            if (activeState) controlsCallback(visibility == android.view.View.VISIBLE)
+                        },
+                    )
+                    hideController()
+                    view = this
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+        if (!firstFrameRendered) {
+            val request = remember(url, localUri) {
+                coil3.request.ImageRequest.Builder(context).data(localUri ?: url).videoFrameMillis(100).build()
+            }
+            AsyncImage(
+                model = request,
+                imageLoader = container.imageLoader,
+                contentDescription = label,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
 }
+
+private const val CONTROLS_TIMEOUT_MS = 2_500
 
 /**
  * Opens (ACTION_VIEW) or shares a chat file. Remote files are downloaded once

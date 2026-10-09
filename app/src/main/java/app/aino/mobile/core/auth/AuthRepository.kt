@@ -73,20 +73,47 @@ class AuthRepository(
         throw decodeFailure(error)
     }
 
-    fun enrollBiometric(deviceLabel: String): BiometricCredential {
+    /**
+     * Administrators must confirm a second factor before adding a sign-in
+     * credential (`403 MFA_STEP_UP_REQUIRED`). [stepUpToken] is the session
+     * token re-issued by [stepUp]; it is used for this call only.
+     */
+    fun enrollBiometric(deviceLabel: String, stepUpToken: String? = null): BiometricCredential {
         try {
+            val request = jsonRequest(
+                "POST",
+                "auth/biometric/enroll",
+                BiometricEnrollRequest(platform = "android", deviceLabel = deviceLabel),
+            )
             val response = api.execute(
-                jsonRequest(
-                    "POST",
-                    "auth/biometric/enroll",
-                    BiometricEnrollRequest(platform = "android", deviceLabel = deviceLabel),
-                ),
+                stepUpToken?.let { request.copy(headers = request.headers + ("Authorization" to "Bearer $it")) } ?: request,
             )
             val enrolled = json.decodeFromString<BiometricEnrollResponse>(response.bodyAsString())
             return BiometricCredential(enrolled.credentialId, enrolled.deviceSecret).also(::requireTenantBiometricCredential)
         } catch (error: ApiError.Http) {
             throw decodeFailure(error)
         }
+    }
+
+    /**
+     * Confirms an authenticator (or recovery) code and returns the session token
+     * carrying the fresh `mfa_at` proof (valid for 10 minutes server-side).
+     */
+    fun stepUp(code: String): String {
+        try {
+            val response = api.execute(jsonRequest("POST", "auth/mfa/step-up", MfaStepUpRequest(code.trim())))
+            return stepUpTokenFromCookies(response.headers)
+                ?: throw AuthFailure("Verification succeeded but the server did not return a session. Try again.", "MFA_STEP_UP_NO_TOKEN")
+        } catch (error: ApiError.Http) {
+            throw decodeFailure(error)
+        }
+    }
+
+    /** Best effort: drop a credential minted for this device that could not be stored locally. */
+    fun revokeBiometric(credentialId: String) {
+        val encoded = java.net.URLEncoder.encode(credentialId, "UTF-8")
+        // @api DELETE auth/biometric/:id
+        runCatching { api.execute(ApiRequest(method = "DELETE", path = "auth/biometric/$encoded")) }
     }
 
     fun biometricLogin(credential: BiometricCredential): AuthState = try {

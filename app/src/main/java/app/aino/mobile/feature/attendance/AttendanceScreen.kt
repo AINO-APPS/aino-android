@@ -25,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LeadingIconTab
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.aino.mobile.core.designsystem.AinoSnackbarHost
 import app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox
 import app.aino.mobile.core.designsystem.component.FirstLoadSpinner
 import app.aino.mobile.core.designsystem.icons.HeroIcons
@@ -159,7 +159,7 @@ fun AttendanceScreen(
         modifier = modifier.fillMaxSize(),
         containerColor = colors.bg,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { AinoSnackbarHost(snackbar) },
         floatingActionButton = {
             Box {
                 AnimatedVisibility(

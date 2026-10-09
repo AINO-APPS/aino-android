@@ -10,6 +10,8 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,40 +52,46 @@ import app.aino.mobile.core.designsystem.rememberAinoHaptics
 
 internal data class ChatListTabItem(val tab: ChatListTab, val label: String, val icon: ImageVector, val badge: Int)
 
-/** A segmented track with a sliding, lightly org-tinted "thumb" behind the active tab. */
+/** One overflow-menu entry; [receipt] draws the double read-receipt glyph instead of [icon]. */
+internal data class ChatMenuItem(
+    val label: String,
+    val icon: ImageVector? = null,
+    val receipt: Boolean = false,
+    val count: Int = 0,
+    val enabled: Boolean = true,
+    val onClick: () -> Unit,
+)
+
+/** Borderless tabs on the page background: only the active one gets a soft tinted pill. */
 @Composable
-internal fun ChatListTabs(tabs: List<ChatListTabItem>, activeTab: ChatListTab, onTab: (ChatListTab) -> Unit) {
+internal fun ChatListTabs(tabs: List<ChatListTabItem>, activeTab: ChatListTab, onTab: (ChatListTab) -> Unit, modifier: Modifier = Modifier) {
     val signal = signalColors
     val haptics = rememberAinoHaptics()
-    val index = tabs.indexOfFirst { it.tab == activeTab }.coerceAtLeast(0)
-    BoxWithConstraints(
-        Modifier.fillMaxWidth().height(36.dp).clip(RoundedCornerShape(18.dp)).background(signal.searchPill).padding(3.dp),
+    Row(
+        modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        val segment = maxWidth / tabs.size
-        val thumbX by animateDpAsState(segment * index, spring(dampingRatio = .8f, stiffness = 500f), label = "tabThumb")
-        Box(
-            Modifier.offset { androidx.compose.ui.unit.IntOffset(thumbX.roundToPx(), 0) }.width(segment).fillMaxSize()
-                .background(signal.primary.copy(alpha = if (signal.isDark) .18f else .12f), RoundedCornerShape(15.dp)),
-        )
-        Row(Modifier.fillMaxSize()) {
-            tabs.forEach { item ->
-                val active = item.tab == activeTab
-                val tint by animateColorAsState(if (active) signal.primary else signal.textSecondary, label = "tabTint")
-                Row(
-                    Modifier.weight(1f).fillMaxSize().clip(RoundedCornerShape(15.dp))
-                        .semantics { selected = active }
-                        .clickable(role = Role.Tab) { if (!active) { haptics.tick(); onTab(item.tab) } },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center,
-                ) {
-                    Icon(item.icon, null, Modifier.size(16.dp), tint = tint)
-                    Text(
-                        item.label, Modifier.padding(start = 5.dp).weight(1f, fill = false), color = tint, fontSize = 14.sp,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                    )
-                    if (item.badge > 0) SignalUnreadBadge(item.badge, modifier = Modifier.padding(start = 4.dp).height(16.dp))
-                }
+        tabs.forEach { item ->
+            val active = item.tab == activeTab
+            val tint by animateColorAsState(if (active) signal.primary else signal.textSecondary, label = "tabTint")
+            val pill by animateColorAsState(
+                if (active) signal.primary.copy(alpha = if (signal.isDark) .18f else .12f) else Color.Transparent,
+                label = "tabPill",
+            )
+            Row(
+                Modifier.height(38.dp).clip(RoundedCornerShape(19.dp)).background(pill)
+                    .semantics { selected = active }
+                    .clickable(role = Role.Tab) { if (!active) { haptics.tick(); onTab(item.tab) } }
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(item.icon, null, Modifier.size(18.dp), tint = tint)
+                Text(
+                    item.label, Modifier.padding(start = 6.dp), color = tint, fontSize = 15.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1,
+                )
+                if (item.badge > 0) SignalUnreadBadge(item.badge, modifier = Modifier.padding(start = 6.dp).height(18.dp))
             }
         }
     }

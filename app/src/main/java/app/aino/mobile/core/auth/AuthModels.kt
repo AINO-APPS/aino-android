@@ -42,6 +42,28 @@ data class BiometricEnrollResponse(val credentialId: String, val deviceSecret: S
 @Serializable
 data class BiometricLoginRequest(val credentialId: String, val deviceSecret: String)
 
+@Serializable
+data class MfaStepUpRequest(val code: String)
+
+const val MFA_STEP_UP_REQUIRED = "MFA_STEP_UP_REQUIRED"
+
+/**
+ * `POST /auth/mfa/step-up` re-issues the session token with a fresh `mfa_at`
+ * proof as a `Set-Cookie` only (tenant `token`, console `aino_console`). The
+ * app authenticates with a bearer header, so lift the token out of the cookie.
+ */
+fun stepUpTokenFromCookies(headers: Map<String, List<String>>): String? =
+    headers.entries
+        .filter { it.key.equals("Set-Cookie", ignoreCase = true) }
+        .flatMap { it.value }
+        .firstNotNullOfOrNull { cookie ->
+            val pair = cookie.substringBefore(';').trim()
+            val name = pair.substringBefore('=', "").trim()
+            pair.substringAfter('=', "").trim().takeIf { name in STEP_UP_COOKIES && it.isNotEmpty() }
+        }
+
+private val STEP_UP_COOKIES = setOf("token", "aino_console")
+
 fun requireTenantBiometricCredential(credential: BiometricCredential) {
     val tenantId = credential.credentialId.substringBefore('.').toLongOrNull()
     require(tenantId != null && tenantId > 0) {

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
@@ -27,6 +28,10 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
@@ -43,6 +48,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.aino.mobile.core.designsystem.icons.HeroIcons
 import app.aino.mobile.core.designsystem.theme.AinoBlue
 import app.aino.mobile.core.designsystem.theme.AinoCyan
 import app.aino.mobile.core.designsystem.theme.AinoDanger
@@ -274,6 +280,65 @@ fun AinoAlert(text: String, tone: AlertTone, modifier: Modifier = Modifier) {
         color = color,
         style = MaterialTheme.typography.bodySmall,
     )
+}
+
+/** Shared, branded snackbar for transient action feedback across feature screens. */
+@Composable
+fun AinoSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modifier) {
+    val colors = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current
+    val shape = RoundedCornerShape(18.dp)
+    SnackbarHost(hostState = hostState, modifier = modifier) { data ->
+        Snackbar(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            action = data.visuals.actionLabel?.let { label ->
+                {
+                    TextButton(onClick = data::performAction) {
+                        Text(label, color = colors.onAccent, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            },
+            dismissAction = if (data.visuals.withDismissAction) {
+                {
+                    androidx.compose.material3.IconButton(onClick = data::dismiss) {
+                        Icon(HeroIcons.XMark, contentDescription = "Dismiss", tint = colors.onAccent.copy(alpha = 0.72f))
+                    }
+                }
+            } else {
+                null
+            },
+            shape = shape,
+            containerColor = colors.primaryDark,
+            contentColor = colors.onAccent,
+            actionContentColor = colors.onAccent,
+            dismissActionContentColor = colors.onAccent.copy(alpha = 0.72f),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = colors.onAccent.copy(alpha = 0.14f),
+                ) {
+                    Icon(
+                        HeroIcons.Bolt,
+                        contentDescription = null,
+                        modifier = Modifier.padding(8.dp).size(18.dp),
+                        tint = colors.onAccent,
+                    )
+                }
+                Text(
+                    data.visuals.message,
+                    modifier = Modifier.weight(1f),
+                    color = colors.onAccent,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
 }
 
 @Composable

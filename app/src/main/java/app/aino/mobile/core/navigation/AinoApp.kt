@@ -3,6 +3,8 @@ package app.aino.mobile.core.navigation
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -133,6 +135,9 @@ fun AinoApp(
     onAuthenticatedForPush: () -> Unit,
 ) {
     val ui by auth.ui.collectAsStateWithLifecycle()
+    ui.stepUp?.let { prompt ->
+        app.aino.mobile.core.auth.StepUpDialog(prompt, onSubmit = auth::submitStepUpCode, onCancel = auth::cancelStepUp)
+    }
     val incomingCallUi by incomingCall.ui.collectAsStateWithLifecycle()
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
     val tenantAuthenticated = (ui.state as? AuthState.Authenticated)?.user?.tenantId != null
@@ -571,7 +576,8 @@ private fun AuthenticatedShell(
     Box(Modifier.fillMaxSize()) {
     AinoScaffold(
         topBar = {
-            if (!fullScreen) {
+            // Logo, search, bell and avatar live on Home only; other tabs use the space for their own header.
+            if (!fullScreen && (current ?: AinoDestination.Dashboard.route) == AinoDestination.Dashboard.route) {
                 AinoShellTopBar(
                     user = user,
                     statusVisual = statusVisual,
@@ -610,7 +616,10 @@ private fun AuthenticatedShell(
         val contentModifier = if (fullScreen) {
             Modifier.fillMaxSize()
         } else {
+            // Without the shell bar the top padding is the status bar; consume it so screens
+            // that also apply status-bar padding don't double it.
             Modifier.fillMaxSize().padding(padding)
+                .consumeWindowInsets(PaddingValues(top = padding.calculateTopPadding()))
         }
         Column(contentModifier) {
             if (showGateWarning) {

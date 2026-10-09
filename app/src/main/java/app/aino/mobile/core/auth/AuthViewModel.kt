@@ -24,6 +24,14 @@ data class AuthUiState(
     val error: String? = null,
     val message: String? = null,
     val biometricEnrolled: Boolean = false,
+    /** Admin step-up: ask for an authenticator code before enrolling a device credential. */
+    val stepUp: StepUpPrompt? = null,
+)
+
+data class StepUpPrompt(
+    val message: String,
+    val error: String? = null,
+    val submitting: Boolean = false,
 )
 
 class AuthViewModel(
@@ -100,6 +108,7 @@ class AuthViewModel(
         val loader = app.aino.mobile.core.AppContainer.get(context).imageLoader
         loader.memoryCache?.clear()
         loader.diskCache?.clear()
+        app.aino.mobile.core.media.VideoCache.clear(context)
         app.aino.mobile.core.notifications.NotificationSoundPrefs.clear(context)
         app.aino.mobile.core.push.PushTokenRegistrar.forget(context)
         // The previous account's messages and alerts must not linger (or badge the icon).
@@ -128,18 +137,74 @@ class AuthViewModel(
      */
     fun enrollBiometric(authenticatedCipher: Cipher, deviceLabel: String, onEnrolled: (() -> Unit)? = null) {
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching {
-                val credential = repository.enrollBiometric(deviceLabel)
-                biometricCredentials.save(credential, authenticatedCipher)
-            }.fold(
-                onSuccess = {
-                    _ui.update { it.copy(biometricEnrolled = true, message = "Fingerprint enabled for sign-in and clock-in.", error = null) }
-                    onEnrolled?.let { callback -> kotlinx.coroutines.withContext(Dispatchers.Main) { callback() } }
-                },
-                onFailure = { error -> _ui.update { it.copy(error = error.message ?: "Could not enable fingerprint") } },
-            )
+            runCatching { completeEnrollment(authenticatedCipher, deviceLabel, onEnrolled, freshStepUpToken()) }
+                .onFailure { error ->
+                    if (error is AuthFailure && error.code == MFA_STEP_UP_REQUIRED) {
+                        pendingEnrollment = PendingEnrollment(authenticatedCipher, deviceLabel, onEnrolled)
+                        _ui.update {
+                            it.copy(
+                                error = null,
+                                stepUp = StepUpPrompt(error.message ?: "Confirm it's you: enter the code from your authenticator app."),
+                            )
+                        }
+                    } else {
+                        _ui.update { it.copy(error = error.message ?: "Could not enable fingerprint") }
+                    }
+                }
         }
     }
+
+    /** Confirm the authenticator / recovery code, then finish the enrollment that asked for it. */
+    fun submitStepUpCode(code: String) {
+        val prompt = _ui.value.stepUp ?: return
+        val pending = pendingEnrollment ?: return cancelStepUp()
+        if (prompt.submitting) return
+        if (code.isBlank()) {
+            _ui.update { it.copy(stepUp = prompt.copy(error = "Enter the code from your authenticator app.")) }
+            return
+        }
+        _ui.update { it.copy(stepUp = prompt.copy(submitting = true, error = null)) }
+        viewModelScope.launch(Dispatchers.IO) {
+            val token = runCatching { repository.stepUp(code) }.getOrElse { error ->
+                _ui.update { state ->
+                    state.copy(stepUp = state.stepUp?.copy(submitting = false, error = error.message ?: "That code is not valid."))
+                }
+                return@launch
+            }
+            stepUpToken = token to System.currentTimeMillis()
+            pendingEnrollment = null
+            _ui.update { it.copy(stepUp = null) }
+            runCatching { completeEnrollment(pending.cipher, pending.deviceLabel, pending.onEnrolled, token) }
+                .onFailure { error -> _ui.update { it.copy(error = error.message ?: "Could not enable fingerprint") } }
+        }
+    }
+
+    fun cancelStepUp() {
+        pendingEnrollment = null
+        _ui.update { it.copy(stepUp = null, error = "Fingerprint / PIN sign-in was not enabled: verification cancelled.") }
+    }
+
+    private fun completeEnrollment(cipher: Cipher, deviceLabel: String, onEnrolled: (() -> Unit)?, stepUp: String?) {
+        val credential = repository.enrollBiometric(deviceLabel, stepUp)
+        try {
+            biometricCredentials.save(credential, cipher)
+        } catch (error: Exception) {
+            // The fingerprint / PIN confirmation expired while the code was entered.
+            repository.revokeBiometric(credential.credentialId)
+            throw IllegalStateException("Verification took too long. Tap \"Enable fingerprint / PIN\" again.", error)
+        }
+        _ui.update { it.copy(biometricEnrolled = true, message = "Fingerprint enabled for sign-in and clock-in.", error = null) }
+        onEnrolled?.let { callback -> viewModelScope.launch(Dispatchers.Main) { callback() } }
+    }
+
+    /** A step-up token stays valid server-side for 10 minutes; reuse it a little less than that. */
+    private fun freshStepUpToken(): String? =
+        stepUpToken?.takeIf { System.currentTimeMillis() - it.second < STEP_UP_REUSE_MS }?.first
+
+    private class PendingEnrollment(val cipher: Cipher, val deviceLabel: String, val onEnrolled: (() -> Unit)?)
+
+    @Volatile private var pendingEnrollment: PendingEnrollment? = null
+    @Volatile private var stepUpToken: Pair<String, Long>? = null
 
     /**
      * Decrypt the device credential with an authenticated cipher for an
@@ -223,6 +288,7 @@ class AuthViewModel(
     }
 
     private suspend fun signOutRevoked(message: String) {
+        stepUpToken = null
         repository.clearLocalCredential()
         persistOrClearScope(AuthState.SignedOut)
         wipeUserMedia()
@@ -239,6 +305,7 @@ class AuthViewModel(
 
     private fun execute(successMessage: String? = null, action: () -> AuthState) {
         if (_ui.value.loading) return
+        stepUpToken = null
         _ui.update { it.copy(loading = true, error = null, message = null) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching(action).fold(
@@ -260,6 +327,7 @@ class AuthViewModel(
 
     private fun executeWithScopeCleanup(successMessage: String? = null, action: () -> AuthState) {
         if (_ui.value.loading) return
+        stepUpToken = null
         val user = when (val state = _ui.value.state) {
             is AuthState.Authenticated -> state.user
             is AuthState.PasswordChangeRequired -> state.user
@@ -322,6 +390,7 @@ class AuthViewModel(
 
     companion object {
         const val SIGNED_IN_ELSEWHERE = "Your session ended. Please sign in again."
+        private const val STEP_UP_REUSE_MS = 9 * 60 * 1000L
 
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")

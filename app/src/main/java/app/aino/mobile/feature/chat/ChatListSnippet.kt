@@ -1,8 +1,6 @@
 package app.aino.mobile.feature.chat
 
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material.icons.Icons
@@ -16,7 +14,6 @@ import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -41,11 +38,10 @@ fun previewIcon(kind: PreviewKind): ImageVector = when (kind) {
     PreviewKind.Deleted -> Icons.Outlined.Block
 }
 
-private const val TICK_ID = "tick"
 private const val KIND_ID = "kind"
 
 /**
- * The chat list's second line: delivery tick for the user's own last message,
+ * The chat list's second line (the receipt sits under the time instead):
  * "You:" / "Ana:" in groups, then a Material icon for media and the text, all
  * flowing as one two-line text so icons wrap and ellipsize with it.
  */
@@ -69,17 +65,11 @@ fun ConversationSnippet(
     }
     val color = if (unread) textColor else secondaryColor
     val text = buildAnnotatedString {
-        if (mine) { appendInlineContent(TICK_ID, "✓"); append(" ") }
         if (sender != null) append("$sender: ")
         if (snippet.kind != null) { appendInlineContent(KIND_ID, snippet.kind.glyph); append(" ") }
         append(snippet.text)
     }
     val inline = buildMap {
-        if (mine) put(TICK_ID, InlineTextContent(Placeholder(1.5.em, 1.em, PlaceholderVerticalAlign.TextCenter)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                SignalReceiptIcon(listDeliveryTick(conversation), secondaryColor, Modifier.padding(end = 2.dp), punchThrough = background)
-            }
-        })
         snippet.kind?.let { kind ->
             put(KIND_ID, InlineTextContent(Placeholder(1.1.em, 1.1.em, PlaceholderVerticalAlign.TextCenter)) {
                 Icon(previewIcon(kind), null, Modifier.padding(top = 1.dp), tint = color)

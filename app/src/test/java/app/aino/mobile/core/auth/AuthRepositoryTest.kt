@@ -247,6 +247,54 @@ class AuthRepositoryTest {
         assertEquals(null, store.cachedFeatures)
     }
 
+    @Test
+    fun stepUpReturnsReissuedCookieTokenAndEnrollUsesItOnce() {
+        val requests = mutableListOf<ApiRequest>()
+        val tokenStore = MemoryTokenStore().apply { value = "stored" }
+        val repository = AuthRepository(FakeApiClient { request ->
+            requests += request
+            when (request.path) {
+                "auth/mfa/step-up" -> ApiResponse(
+                    200,
+                    mapOf("set-cookie" to listOf("token=stepped; Path=/; HttpOnly; SameSite=Strict")),
+                    """{"stepUpValidFor":600}""".toByteArray(),
+                )
+                "auth/biometric/enroll" -> response("""{"credentialId":"3.abc","deviceSecret":"s"}""")
+                else -> error("unexpected ${request.path}")
+            }
+        }, tokenStore)
+
+        val token = repository.stepUp(" 123456 ")
+        repository.enrollBiometric("Pixel", token)
+
+        assertEquals("stepped", token)
+        assertEquals("""{"code":"123456"}""", requests[0].body!!.decodeToString())
+        assertEquals("Bearer stepped", requests[1].headers["Authorization"])
+        assertEquals("stored", tokenStore.value)
+    }
+
+    @Test
+    fun enrollSurfacesStepUpRequirement() {
+        val repository = AuthRepository(FakeApiClient {
+            throw ApiError.Http(
+                403,
+                """{"error":"Confirm it's you: enter the code from your authenticator app.","code":"MFA_STEP_UP_REQUIRED"}""",
+                "POST",
+                "https://next.aino.org.in/api/auth/biometric/enroll",
+            )
+        }, MemoryTokenStore())
+
+        val failure = runCatching { repository.enrollBiometric("Pixel") }.exceptionOrNull() as AuthFailure
+
+        assertEquals(MFA_STEP_UP_REQUIRED, failure.code)
+    }
+
+    @Test
+    fun stepUpTokenIgnoresUnrelatedCookies() {
+        assertEquals(null, stepUpTokenFromCookies(mapOf("Set-Cookie" to listOf("theme=dark; Path=/"))))
+        assertEquals("c", stepUpTokenFromCookies(mapOf("Set-Cookie" to listOf("x=1", "aino_console=c; Secure"))))
+    }
+
     private fun response(json: String) = ApiResponse(200, emptyMap(), json.toByteArray())
 }
 

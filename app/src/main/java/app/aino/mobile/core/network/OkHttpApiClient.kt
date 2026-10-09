@@ -76,8 +76,10 @@ class OkHttpApiClient(
     override fun execute(request: ApiRequest): ApiResponse {
         val method = request.method.uppercase()
         val url = resolveApiUrl(baseUrl, request.path)
+        // A caller-supplied Authorization (e.g. a step-up token) replaces the stored one.
+        val explicitAuth = request.headers.keys.any { it.equals(RequestHeaders.AUTHORIZATION, ignoreCase = true) }
         val headers = request.headers + standardHeaders(
-            tokenProvider.getToken(),
+            tokenProvider.getToken().takeUnless { explicitAuth },
             timezoneOffsetMinutes(timeZoneProvider(), clock()),
         )
         val builder = Request.Builder().url(url)

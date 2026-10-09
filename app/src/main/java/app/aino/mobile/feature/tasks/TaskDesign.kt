@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.aino.mobile.core.designsystem.AinoSnackbarHost
 import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
@@ -703,5 +704,5 @@ fun TaskNoticeHost(viewModel: TaskViewModel, modifier: Modifier = Modifier) {
             }
         }
     }
-    androidx.compose.material3.SnackbarHost(host, modifier.padding(horizontal = 12.dp))
+    AinoSnackbarHost(host, modifier.padding(horizontal = 12.dp))
 }

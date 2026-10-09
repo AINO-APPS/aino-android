@@ -135,7 +135,7 @@ fun ChatScreen(
             viewModel.openConversationById(conversationId)
         }
     }
-    BackHandler(enabled = ui.selectedConversationIds.isNotEmpty()) { viewModel.cancelConversationSelection() }
+    BackHandler(enabled = ui.selectingConversations) { viewModel.cancelConversationSelection() }
     // One-shot navigation from the VM: open a just-created chat, or leave a thread we no longer belong to.
     LaunchedEffect(ui.openConversationId, ui.closeThread) {
         val openId = ui.openConversationId
@@ -147,7 +147,7 @@ fun ChatScreen(
             ui.closeThread -> { viewModel.consumeNavigation(); onNavigateBack?.invoke() }
         }
     }
-    BackHandler(enabled = ui.selectedCallIds.isNotEmpty()) { viewModel.cancelCallSelection() }
+    BackHandler(enabled = ui.selectingCalls) { viewModel.cancelCallSelection() }
     // A group invite link (aino://chat/join/<token> or the web link) previews the group over any chat screen.
     ui.invite?.let { JoinGroupSheet(it, viewModel) }
     val visibleConversations = remember(ui.conversations, activeTab, query, archivedOpen) {
@@ -186,7 +186,7 @@ fun ChatScreen(
         viewModel.searchAllMessages(query)
     }
     BackHandler(enabled = searchOpen) { searchOpen = false; viewModel.updateUserSearch("") }
-    BackHandler(enabled = archivedOpen && !searchOpen && ui.selectedConversationIds.isEmpty()) { archivedOpen = false }
+    BackHandler(enabled = archivedOpen && !searchOpen && !ui.selectingConversations) { archivedOpen = false }
     val openConversation: (ChatConversation) -> Unit = { conversation ->
         if (onOpenConversation != null) onOpenConversation(conversation.id) else viewModel.openConversation(conversation)
     }
@@ -210,12 +210,14 @@ fun ChatScreen(
         )
         add(ChatListTabItem(ChatListTab.Calls, "Calls", HeroIcons.Phone, 0))
     }
-    val selecting = ui.selectedConversationIds.isNotEmpty()
+    val selecting = ui.selectingConversations
     val rowHaptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
 
     Box(Modifier.fillMaxSize().background(signal.background)) {
-        Column(Modifier.fillMaxSize()) {
-            if (ui.selectedCallIds.isNotEmpty()) {
+        // The shell consumes the status bar while its scaffold pads the list; when a pushed
+        // full-screen route drops that padding mid-transition, this keeps the toolbar below it.
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            if (ui.selectingCalls) {
                 SelectionHeader(
                     selected = ui.selectedCallIds.size,
                     allSelected = ui.calls.isNotEmpty() && ui.calls.all { it.id in ui.selectedCallIds },
@@ -224,7 +226,7 @@ fun ChatScreen(
                     onSelectAll = viewModel::selectAllCalls,
                     onDelete = viewModel::deleteSelectedCalls,
                 )
-            } else if (ui.selectedConversationIds.isNotEmpty()) {
+            } else if (ui.selectingConversations) {
                 SelectionHeader(
                     selected = ui.selectedConversationIds.size,
                     allSelected = visibleConversations.isNotEmpty() && visibleConversations.all { it.id in ui.selectedConversationIds },
@@ -247,6 +249,33 @@ fun ChatScreen(
                         if (!open) viewModel.updateUserSearch("")
                     },
                     onNewGroup = onNewGroup,
+                    menu = when (activeTab) {
+                        ChatListTab.Chat -> buildList {
+                            if (!archivedOpen) {
+                                add(ChatMenuItem("New chat", HeroIcons.PencilSquare) { searchOpen = true })
+                                add(ChatMenuItem("New group", HeroIcons.UserGroup, onClick = onNewGroup))
+                                add(null)
+                            }
+                            add(ChatMenuItem("Mark all as read", receipt = true, enabled = visibleConversations.any { it.unreadCount > 0 }) { viewModel.markAllRead(visibleConversations) })
+                            add(ChatMenuItem("Select chats", HeroIcons.CheckCircle, enabled = visibleConversations.isNotEmpty(), onClick = viewModel::startConversationSelection))
+                            val archivedCount = ui.conversations.count { it.isArchived && !it.isMeetingChat }
+                            if (archivedOpen) add(ChatMenuItem("Back to chats", HeroIcons.ChatBubbleOvalLeft) { archivedOpen = false })
+                            else add(ChatMenuItem("Archived chats", HeroIcons.ArchiveBox, count = archivedCount) { archivedOpen = true })
+                            add(null)
+                            add(ChatMenuItem("Refresh", HeroIcons.ArrowPath, onClick = viewModel::refresh))
+                        }
+                        ChatListTab.Meet -> listOf(
+                            ChatMenuItem("Mark all as read", receipt = true, enabled = visibleConversations.any { it.unreadCount > 0 }) { viewModel.markAllRead(visibleConversations) },
+                            ChatMenuItem("Select chats", HeroIcons.CheckCircle, enabled = visibleConversations.isNotEmpty(), onClick = viewModel::startConversationSelection),
+                            null,
+                            ChatMenuItem("Refresh", HeroIcons.ArrowPath, onClick = viewModel::refresh),
+                        )
+                        ChatListTab.Calls -> listOf(
+                            ChatMenuItem("Select calls", HeroIcons.CheckCircle, enabled = ui.calls.isNotEmpty(), onClick = viewModel::startCallSelection),
+                            null,
+                            ChatMenuItem("Refresh", HeroIcons.ArrowPath, onClick = viewModel::loadCalls),
+                        )
+                    },
                 )
             }
 
@@ -312,6 +341,7 @@ fun ChatScreen(
                                     currentUserId = ui.currentUserId,
                                     selected = call.id in ui.selectedCallIds,
                                     selectionEnabled = true,
+                                    selectionMode = ui.selectingCalls,
                                     onToggleSelection = { viewModel.toggleCallSelection(call.id) },
                                 )
                             }
@@ -372,12 +402,13 @@ fun ChatScreen(
     }
 }
 
-/** List toolbar: Chats/Meet/Calls tabs + search + overflow in one row; search swaps in a field. */
+/** List toolbar: borderless Chats/Meet/Calls tabs + search + overflow in one row; search swaps in a field. */
 @Composable
 private fun ChatHeader(
     tabs: List<ChatListTabItem>, activeTab: ChatListTab, onTab: (ChatListTab) -> Unit,
     elevated: Boolean, searchOpen: Boolean, query: String,
     onQuery: (String) -> Unit, onSearchOpen: (Boolean) -> Unit, onNewGroup: () -> Unit,
+    menu: List<ChatMenuItem?> = listOf(ChatMenuItem("New group", HeroIcons.UserGroup, onClick = onNewGroup)),
 ) {
     val signal = signalColors
     var menuOpen by remember { mutableStateOf(false) }
@@ -411,18 +442,41 @@ private fun ChatHeader(
             }
             Spacer(Modifier.width(8.dp))
         } else {
-            Box(Modifier.weight(1f).padding(start = 12.dp)) {
+            Box(Modifier.weight(1f).padding(start = 8.dp)) {
                 if (tabs.size > 1) ChatListTabs(tabs, activeTab, onTab)
             }
-            Icon(HeroIcons.MagnifyingGlass, "Search", Modifier.size(48.dp).clip(CircleShape).clickable { onSearchOpen(true) }.padding(12.dp), tint = signal.text)
+            Icon(HeroIcons.MagnifyingGlass, "Search", Modifier.size(44.dp).clip(CircleShape).clickable { onSearchOpen(true) }.padding(11.dp), tint = signal.text)
             Box {
-                Icon(HeroIcons.EllipsisVertical, "More options", Modifier.size(48.dp).clip(CircleShape).clickable { menuOpen = true }.padding(12.dp), tint = signal.text)
-                androidx.compose.material3.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = { Text("New group", color = signal.text) },
-                        leadingIcon = { Icon(HeroIcons.UserPlus, null, tint = signal.text) },
-                        onClick = { haptics.tap(); menuOpen = false; onNewGroup() },
-                    )
+                val menuBg by androidx.compose.animation.animateColorAsState(if (menuOpen) signal.searchPill else Color.Transparent, label = "menuButton")
+                Icon(
+                    HeroIcons.EllipsisVertical, "More options",
+                    Modifier.size(44.dp).clip(CircleShape).background(menuBg).clickable { menuOpen = true }.padding(11.dp),
+                    tint = signal.text,
+                )
+                androidx.compose.material3.DropdownMenu(
+                    expanded = menuOpen,
+                    onDismissRequest = { menuOpen = false },
+                    shape = RoundedCornerShape(16.dp),
+                    containerColor = signal.surface,
+                    modifier = Modifier.widthIn(min = 220.dp),
+                ) {
+                    menu.forEach { item ->
+                        if (item == null) {
+                            Box(Modifier.padding(vertical = 4.dp).fillMaxWidth().height(1.dp).background(signal.divider))
+                            return@forEach
+                        }
+                        val tint = if (item.enabled) signal.text else signal.textSecondary.copy(alpha = .5f)
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text(item.label, color = tint, fontSize = 15.sp) },
+                            leadingIcon = {
+                                if (item.receipt) SignalReceiptIcon(DeliveryTick.Read, tint, Modifier.padding(end = 2.dp), punchThrough = signal.surface)
+                                else item.icon?.let { Icon(it, null, Modifier.size(22.dp), tint = tint) }
+                            },
+                            trailingIcon = if (item.count > 0) { { Text("${item.count}", color = signal.textSecondary, fontSize = 13.sp) } } else null,
+                            enabled = item.enabled,
+                            onClick = { haptics.tap(); menuOpen = false; item.onClick() },
+                        )
+                    }
                 }
             }
         }
@@ -489,13 +543,13 @@ private fun ConversationRow(
             .background(highlightBg)
             .combinedClickable(
                 onClick = {
-                    if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) { haptics.toggle(); viewModel.toggleConversationSelection(conversation.id) }
+                    if (viewModel.ui.value.selectingConversations) { haptics.toggle(); viewModel.toggleConversationSelection(conversation.id) }
                     else open()
                 },
                 // Signal: long-press opens the context menu; while selecting it keeps toggling.
                 onLongClick = {
                     haptics.longPress()
-                    if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) viewModel.toggleConversationSelection(conversation.id)
+                    if (viewModel.ui.value.selectingConversations) viewModel.toggleConversationSelection(conversation.id)
                     else menuOpen = true
                 },
             )
@@ -504,7 +558,7 @@ private fun ConversationRow(
     ) {
         Box(
             Modifier.clickable(onClickLabel = "Open contact details") {
-                if (viewModel.ui.value.selectedConversationIds.isNotEmpty()) viewModel.toggleConversationSelection(conversation.id)
+                if (viewModel.ui.value.selectingConversations) viewModel.toggleConversationSelection(conversation.id)
                 else sheetOpen = true
             },
         ) {
@@ -532,24 +586,36 @@ private fun ConversationRow(
                 if (conversation.isMuted) Icon(HeroIcons.BellSlash, "Muted", Modifier.padding(start = 4.dp).size(14.dp), tint = signal.textSecondary)
                 if (conversation.isPinned) Icon(HeroIcons.PushPin, "Pinned", Modifier.padding(start = 4.dp).size(14.dp), tint = signal.textSecondary)
                 if (conversation.isFavourite) Icon(HeroIcons.Star, "Favourite", Modifier.padding(start = 4.dp).size(14.dp), tint = Color(0xFFCB912F))
-                Spacer(Modifier.weight(1f).widthIn(min = 6.dp))
-                Text(
-                    listTime(conversation.lastMessageAt ?: conversation.updatedAt),
-                    color = if (unread) signal.primary else signal.textSecondary, fontSize = 12.sp,
-                    fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal,
-                )
             }
-            Row(Modifier.padding(top = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                ConversationSnippet(
-                    conversation, currentUserId, unread,
-                    textColor = signal.text, secondaryColor = signal.textSecondary,
-                    background = signal.background,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                )
+            ConversationSnippet(
+                conversation, currentUserId, unread,
+                textColor = signal.text, secondaryColor = signal.textSecondary,
+                background = signal.background,
+                modifier = Modifier.padding(top = 3.dp),
+                maxLines = 1,
+            )
+        }
+        // Right rail: time on top, unread badge or own-message receipt underneath, flush to the end edge.
+        Column(
+            Modifier.padding(start = 10.dp).widthIn(min = 40.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Text(
+                listTime(conversation.lastMessageAt ?: conversation.updatedAt),
+                color = if (unread) signal.primary else signal.textSecondary, fontSize = 12.sp, lineHeight = 16.sp,
+                fontWeight = if (unread) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1,
+            )
+            Box(Modifier.height(20.dp), contentAlignment = Alignment.CenterEnd) {
                 if (unread) {
-                    Spacer(Modifier.width(8.dp))
-                    Box(Modifier.clip(CircleShape).clickable { haptics.tap(); viewModel.markRead(conversation) }) { SignalUnreadBadge(conversation.unreadCount, muted = conversation.isMuted) }
+                    Box(Modifier.clip(CircleShape).clickable { haptics.tap(); viewModel.markRead(conversation) }) {
+                        SignalUnreadBadge(conversation.unreadCount, muted = conversation.isMuted)
+                    }
+                } else if (conversation.lastIsMine(currentUserId) && conversation.lastDeleted == null) {
+                    SignalReceiptIcon(
+                        listDeliveryTick(conversation), signal.textSecondary,
+                        punchThrough = highlightBg.compositeOver(signal.background),
+                    )
                 }
             }
         }
@@ -1158,6 +1224,7 @@ private fun CallRow(
     currentUserId: Long?,
     selected: Boolean = false,
     selectionEnabled: Boolean = false,
+    selectionMode: Boolean = selected,
     onToggleSelection: () -> Unit = {},
 ) {
     Row(
@@ -1165,14 +1232,14 @@ private fun CallRow(
             .background(if (selected) app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.primaryGlow else Color.Transparent)
             .combinedClickable(
                 enabled = selectionEnabled,
-                onClick = { if (selected) onToggleSelection() },
+                onClick = { if (selected || selectionMode) onToggleSelection() },
                 onLongClick = onToggleSelection,
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (selectionEnabled && selected) {
-            Checkbox(checked = true, onCheckedChange = { onToggleSelection() })
+        if (selectionEnabled && (selected || selectionMode)) {
+            Checkbox(checked = selected, onCheckedChange = { onToggleSelection() })
         }
         val webColors = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current
         val label = call.historyLabel(currentUserId)
