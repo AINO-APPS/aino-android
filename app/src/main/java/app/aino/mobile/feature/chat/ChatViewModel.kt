@@ -243,6 +243,8 @@ class ChatViewModel(
     private val storedThreadUpdates: kotlinx.coroutines.flow.Flow<Long> = app.aino.mobile.core.push.PushSync.threadUpdates,
     /** Square-crops a picked group photo for upload; null when the image can't be used. */
     private val prepareGroupAvatar: (Uri) -> app.aino.mobile.core.media.PreparedAvatar? = { null },
+    /** Pause before the single retry of a list load that failed at the transport (stale socket after resume). */
+    private val listRetryDelayMs: Long = 750,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ChatUiState())
     val ui: StateFlow<ChatUiState> = _ui.asStateFlow()
@@ -403,7 +405,13 @@ class ChatViewModel(
                     adoptListedConversation(cached)
                 }
             }
-            runCatching(repository::loadConversations).fold(
+            // Resume and reconnect refreshes often hit a pooled socket the OS already
+            // dropped; one quick retry absorbs that instead of flashing "Offline".
+            runCatching(repository::loadConversations).recoverCatching { first ->
+                if (first !is ApiError.Network) throw first
+                delay(listRetryDelayMs)
+                repository.loadConversations()
+            }.fold(
                 onSuccess = { conversations ->
                     scopedCache.replace(conversations)
                     val userIds = conversations.mapNotNull { it.otherUserId }.distinct()
@@ -414,21 +422,26 @@ class ChatViewModel(
                         presence = presence,
                         fromCache = false,
                         syncedAtMs = startedAt,
+                        // A fresh list retires the stale-list notice from an earlier failure.
+                        message = st.message.takeUnless { it in LIST_STALE_NOTICES },
                     ) }
                     adoptListedConversation(conversations)
                     warmThreads(scopedCache, conversations)
                 },
                 onFailure = { error ->
-                    // Offline first: keep the exact scoped cache visible, while
-                    // reporting that freshness/presence are unavailable.
+                    // Offline first: keep the exact scoped cache visible. Only a transport
+                    // failure means "offline"; an HTTP or decode error is just a stale list.
                     val cached = runCatching { scopedCache.snapshot() }.getOrDefault(emptyList())
                     _ui.update { st -> st.copy(
                         loading = false,
                         conversations = zeroUnread(cached, visibleConversationId()),
-                        presence = emptyMap(),
                         fromCache = cached.isNotEmpty(),
-                        error = if (cached.isEmpty()) error.message ?: "Could not load conversations" else null,
-                        message = if (cached.isNotEmpty()) "Offline · showing cached conversations" else null,
+                        error = if (cached.isEmpty()) userFacingMessage(error, "Could not load conversations") else null,
+                        message = when {
+                            cached.isEmpty() -> st.message.takeUnless { it in LIST_STALE_NOTICES }
+                            error is ApiError.Network -> OFFLINE_LIST_NOTICE
+                            else -> STALE_LIST_NOTICE
+                        },
                     ) }
                 },
             )
@@ -2295,6 +2308,9 @@ class ChatViewModel(
 
     companion object {
         private const val DRAFT_PREFS = "aino_chat_drafts"
+        internal const val OFFLINE_LIST_NOTICE = "Offline · showing cached conversations"
+        internal const val STALE_LIST_NOTICE = "Couldn't refresh chats · showing saved conversations"
+        private val LIST_STALE_NOTICES = setOf(OFFLINE_LIST_NOTICE, STALE_LIST_NOTICE)
 
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")

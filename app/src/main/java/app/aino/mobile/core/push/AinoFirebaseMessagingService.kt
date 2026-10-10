@@ -58,6 +58,12 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
             return
         }
         if (!PushDeduplicator(applicationContext).accept(validated.dedupeKey)) return
+        val hasStoredCredential = validated.kind != PushKind.ChatMessage ||
+            !KeystoreTokenStore(applicationContext).getToken().isNullOrBlank()
+        if (!shouldHandlePush(validated, hasStoredCredential)) {
+            android.util.Log.i("AinoPush", "Dropped chat push while signed out")
+            return
+        }
         var displayFallback = true
         when (validated.kind) {
             // Signal-style MessagingStyle with Reply / Mark-as-read. FCM delivers

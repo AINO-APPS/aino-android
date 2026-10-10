@@ -11,6 +11,9 @@ data class ValidatedPush(
     val tenantId: Long?,
 )
 
+internal fun shouldHandlePush(push: ValidatedPush, hasStoredCredential: Boolean): Boolean =
+    push.kind != PushKind.ChatMessage || hasStoredCredential
+
 fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now()): Result<ValidatedPush> = runCatching {
     fun required(name: String): String = data[name]?.takeIf(String::isNotBlank)
         ?: throw IllegalArgumentException("Missing push field: $name")

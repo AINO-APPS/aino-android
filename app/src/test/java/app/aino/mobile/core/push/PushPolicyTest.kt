@@ -7,6 +7,16 @@ import org.junit.Test
 
 class PushPolicyTest {
     @Test
+    fun chatPushesRequireAStoredCredentialButOtherPushesDoNot() {
+        val chat = ValidatedPush(PushKind.ChatMessage, emptyMap(), "msg:1", 1L)
+        val alert = ValidatedPush(PushKind.General, emptyMap(), "notif:1", 1L)
+
+        assertFalse(shouldHandlePush(chat, hasStoredCredential = false))
+        assertTrue(shouldHandlePush(chat, hasStoredCredential = true))
+        assertTrue(shouldHandlePush(alert, hasStoredCredential = false))
+    }
+
+    @Test
     fun tokenRegistrationMatchesBackendContract() {
         val encoded = encodeDeviceTokenRequest("fcm-token").toString(Charsets.UTF_8)
         assertTrue(encoded.contains("\"deviceToken\":\"fcm-token\""))
