@@ -613,8 +613,9 @@ private fun ConversationRow(
                         SignalUnreadBadge(conversation.unreadCount, muted = conversation.isMuted)
                     }
                 } else if (conversation.lastIsMine(currentUserId) && conversation.lastDeleted == null) {
+                    val tick = listDeliveryTick(conversation)
                     SignalReceiptIcon(
-                        listDeliveryTick(conversation), signal.textSecondary,
+                        tick, if (tick == DeliveryTick.Read) signal.tickRead else signal.textSecondary,
                         punchThrough = highlightBg.compositeOver(signal.background),
                     )
                 }
@@ -2043,16 +2044,17 @@ internal fun deliveryTick(message: ChatMessage, receipts: List<ReadReceipt>, par
 }
 
 /**
- * Tick colours: sending/sent muted; delivered and read in the org accent
- * (`--primary`). Over media everything is white on the dark pill ([onMedia]).
+ * Tick colours: sending/sent muted, delivered grey (`--text-secondary`), read
+ * in the org accent (`--primary`). Over media everything is white on the dark
+ * pill ([onMedia]).
  */
 @Composable
 private fun DeliveryTickIcon(tick: DeliveryTick, onMedia: Boolean) {
     val signal = signalColors
     val tint = when {
         onMedia -> Color.White
-        // Delivered and read both use the org accent; the glyph shape tells them apart.
-        tick == DeliveryTick.Read || tick == DeliveryTick.Delivered -> signal.tickRead
+        tick == DeliveryTick.Read -> signal.tickRead
+        tick == DeliveryTick.Delivered -> signal.tickDelivered
         else -> signal.tickMuted
     }
     SignalReceiptIcon(tick, tint, punchThrough = if (onMedia) Color.Black.copy(alpha = .55f) else signal.outgoing)

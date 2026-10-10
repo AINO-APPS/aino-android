@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -90,13 +91,14 @@ import app.aino.mobile.core.designsystem.icons.HeroIcons
 // ---------------------------------------------------------------------------
 
 /**
- * Signal-shaped receipts (independent drawing on a 21×16 grid, drawn 20×15dp):
+ * "Ripple tick" receipts (16×16 grid, drawn 15×15dp):
  *  - Sending   → faint ring + spinning quarter arc
- *  - Sent      → one circled check
- *  - Delivered → two overlapping circled checks
- *  - Read      → two overlapping filled discs with the checks punched out
+ *  - Sent      → outlined circle with a check
+ *  - Delivered → solid disc with the check punched out
+ *  - Read      → filled disc (org accent) with a ripple ring around it
  * [punchThrough] is the colour behind the glyph (the bubble fill, or the dark
- * media pill): it punches the checks and separates the overlapping circles.
+ * media pill): it punches the delivered check, and the read check when the
+ * tint is light (e.g. white over media).
  */
 @Composable
 internal fun SignalReceiptIcon(
@@ -119,37 +121,37 @@ internal fun SignalReceiptIcon(
             label = "tickSpinAngle",
         ).value
     } else 0f
-    Canvas(modifier.padding(start = 3.dp).size(width = 20.dp, height = 15.dp).semantics { contentDescription = label }) {
+    Canvas(modifier.padding(start = 3.dp).size(15.dp).semantics { contentDescription = label }) {
         val u = size.height / 16f
         fun p(x: Float, y: Float) = Offset(x * u, y * u)
-        fun check(color: Color, width: Float, cx: Float) {
+        val center = p(8f, 8f)
+        fun check(color: Color, inner: Boolean) {
             val path = androidx.compose.ui.graphics.Path().apply {
-                moveTo((cx - 3f) * u, 8.2f * u); lineTo((cx - 0.9f) * u, 10.3f * u); lineTo((cx + 3.2f) * u, 5.9f * u)
+                if (inner) { moveTo(5.6f * u, 8.1f * u); lineTo(7.2f * u, 9.7f * u); lineTo(10.4f * u, 6.3f * u) }
+                else { moveTo(4.9f * u, 8.2f * u); lineTo(7f * u, 10.3f * u); lineTo(11.1f * u, 5.8f * u) }
             }
-            drawPath(path, color, style = Stroke(width * u, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
-        }
-        val r = 6.2f
-        fun outlined(cx: Float, separate: Boolean) {
-            if (separate) drawCircle(punchThrough, (r + 1.3f) * u, p(cx, 8f))
-            drawCircle(tint, r * u, p(cx, 8f), style = Stroke(1.3f * u))
-            check(tint, 1.5f, cx)
-        }
-        fun filled(cx: Float, separate: Boolean) {
-            if (separate) drawCircle(punchThrough, (r + 1.3f) * u, p(cx, 8f))
-            drawCircle(tint, (r + 0.65f) * u, p(cx, 8f))
-            check(punchThrough, 1.5f, cx)
+            drawPath(path, color, style = Stroke((if (inner) 1.4f else 1.5f) * u, cap = StrokeCap.Round, join = androidx.compose.ui.graphics.StrokeJoin.Round))
         }
         when (tick) {
             DeliveryTick.Sending -> {
-                val center = p(8f, 8f)
                 drawCircle(tint.copy(alpha = tint.alpha * .35f), 6f * u, center, style = Stroke(1.5f * u))
                 rotate(spin, center) {
                     drawArc(tint, -90f, 90f, false, topLeft = p(2f, 2f), size = androidx.compose.ui.geometry.Size(12f * u, 12f * u), style = Stroke(1.5f * u, cap = StrokeCap.Round))
                 }
             }
-            DeliveryTick.Sent -> outlined(8f, separate = false)
-            DeliveryTick.Delivered -> { outlined(7.5f, separate = false); outlined(13.5f, separate = true) }
-            DeliveryTick.Read -> { filled(7.5f, separate = false); filled(13.5f, separate = true) }
+            DeliveryTick.Sent -> {
+                drawCircle(tint, 6.6f * u, center, style = Stroke(1.5f * u))
+                check(tint, inner = false)
+            }
+            DeliveryTick.Delivered -> {
+                drawCircle(tint, 7f * u, center)
+                check(punchThrough, inner = false)
+            }
+            DeliveryTick.Read -> {
+                drawCircle(tint.copy(alpha = tint.alpha * .45f), 7.2f * u, center, style = Stroke(1.3f * u))
+                drawCircle(tint, 5.2f * u, center)
+                check(if (tint.luminance() > .5f) punchThrough else Color.White, inner = true)
+            }
         }
     }
 }
