@@ -19,8 +19,11 @@ data class UpdateUiState(
 interface AppUpdater {
     val ui: StateFlow<UpdateUiState>
 
-    /** Silent check on launch / resume; never shows an error for "no update". */
-    fun check(activity: Activity)
+    /**
+     * Launch / resume checks are silent. A [userInitiated] check (Profile →
+     * Check for updates) also reports "up to date" and failures.
+     */
+    fun check(activity: Activity, userInitiated: Boolean = false)
 
     /** User accepted the update banner. */
     fun install(activity: Activity)

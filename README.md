@@ -114,19 +114,26 @@ palette and preserves the same blue accent hierarchy.
 
 ## Updates
 
-Native releases use an isolated R2 channel:
+There are two product flavors, built from one codebase:
+
+| Flavor | Release asset | Updates |
+|---|---|---|
+| `direct` | `AINO-X.Y.Z-direct.apk` | Self-updater: reads the R2 channel, downloads the signed APK and hands it to the Android installer |
+| `play` | `AINO-X.Y.Z-play.aab` | Google Play (In-App Updates API, flexible flow). No `REQUEST_INSTALL_PACKAGES` |
+
+The `direct` channel:
 
 - manifest: `https://cdn.aino.org.in/android/latest.json`
-- immutable APKs: `https://cdn.aino.org.in/android/releases/android-vX.Y.Z/AINO-X.Y.Z.apk`
+- immutable APKs: `https://cdn.aino.org.in/android/releases/android-vX.Y.Z/AINO-X.Y.Z-direct.apk`
+  (releases up to 0.21.5 are named `AINO-X.Y.Z.apk`)
 
-Authenticated users can check and install updates from **More**. APK URLs must be
-HTTPS, match the configured CDN host, and use the native `android/releases/`
-prefix. Android may require the user to grant AINO permission to install unknown
-apps. This direct installer is for sideload distribution and must be disabled if
-the app is later distributed through Google Play.
-
-`0.1.1` is the first build containing this updater; install it manually from R2
-or GitHub once. Every later native release can then be discovered in-app.
+Both flavors check silently on launch/resume and show a banner when an update
+exists. **Profile → Check for updates** checks on demand and also reports
+"up to date" or a failure. APK URLs must be HTTPS, match the configured CDN host,
+and use the native `android/releases/` prefix. Android may require the user to
+grant AINO permission to install unknown apps. An update installs in place (data
+kept) only when it has the same package, the same `CN=AINO` signing key and a
+higher `versionCode`; debug builds cannot be updated by release APKs.
 
 `0.2.1` is a call-lifecycle reliability checkpoint. It adds process-scoped call
 identity/state ownership, typed deployed realtime-event routing, duplicate signal

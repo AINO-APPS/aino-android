@@ -173,7 +173,7 @@ jobs:
           AAB="app/build/outputs/bundle/playRelease/app-play-release.aab"
           test -f "$APK" || { echo "::error::Missing $APK"; find app/build/outputs -name '*.apk' || true; exit 1; }
           test -f "$AAB" || { echo "::error::Missing $AAB"; find app/build/outputs -name '*.aab' || true; exit 1; }
-          cp "$APK" "release-assets/AINO-${VERSION}.apk"
+          cp "$APK" "release-assets/AINO-${VERSION}-direct.apk"
           cp "$AAB" "release-assets/AINO-${VERSION}-play.aab"
           ls -la release-assets/
 
@@ -189,7 +189,7 @@ jobs:
             echo "::error::play build requests REQUEST_INSTALL_PACKAGES"
             exit 1
           fi
-          DIRECT_PERMS=$("$BUILD_TOOLS/aapt" dump permissions "release-assets/AINO-${VERSION}.apk")
+          DIRECT_PERMS=$("$BUILD_TOOLS/aapt" dump permissions "release-assets/AINO-${VERSION}-direct.apk")
           echo "$DIRECT_PERMS" | grep -q REQUEST_INSTALL_PACKAGES || { echo "::error::direct build lost the self-updater permission"; exit 1; }
           # 16 KB page size (required by Play for targetSdk 35+): ZIP alignment of
           # uncompressed native libraries.
@@ -202,7 +202,7 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
-          "$BUILD_TOOLS/apksigner" verify --print-certs "release-assets/AINO-${VERSION}.apk" | tee /tmp/certs.txt
+          "$BUILD_TOOLS/apksigner" verify --print-certs "release-assets/AINO-${VERSION}-direct.apk" | tee /tmp/certs.txt
           if grep -qi 'CN=Android Debug' /tmp/certs.txt; then
             echo "::error::APK is DEBUG-signed - the release signing config did not apply"
             exit 1
@@ -219,7 +219,7 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
-          BADGING=$("$BUILD_TOOLS/aapt" dump badging "release-assets/AINO-${VERSION}.apk" | head -1)
+          BADGING=$("$BUILD_TOOLS/aapt" dump badging "release-assets/AINO-${VERSION}-direct.apk" | head -1)
           echo "$BADGING"
           echo "$BADGING" | grep -q "package: name='app.aino.mobile'"
           echo "$BADGING" | grep -q "versionName='${VERSION}'"
@@ -238,8 +238,8 @@ jobs:
         run: |
           set -euo pipefail
           TAG="android-v${VERSION}"
-          aws s3 cp "release-assets/AINO-${VERSION}.apk" \
-            "s3://${R2_BUCKET}/android/releases/${TAG}/AINO-${VERSION}.apk" \
+          aws s3 cp "release-assets/AINO-${VERSION}-direct.apk" \
+            "s3://${R2_BUCKET}/android/releases/${TAG}/AINO-${VERSION}-direct.apk" \
             --endpoint-url "$R2_ENDPOINT" \
             --content-type "application/vnd.android.package-archive" \
             --cache-control "public, max-age=31536000, immutable"
@@ -254,7 +254,7 @@ jobs:
           fi
           jq -n \
             --arg version    "$VERSION" \
-            --arg apkUrl     "${R2_PUBLIC_BASE_URL}/android/releases/android-v${VERSION}/AINO-${VERSION}.apk" \
+            --arg apkUrl     "${R2_PUBLIC_BASE_URL}/android/releases/android-v${VERSION}/AINO-${VERSION}-direct.apk" \
             --arg notes      "$NOTES" \
             --arg releaseUrl "${R2_PUBLIC_BASE_URL}/android/releases/android-v${VERSION}/" \
             '{version:$version, apkUrl:$apkUrl, notes:$notes, releaseUrl:$releaseUrl}' \
@@ -281,7 +281,7 @@ jobs:
             sleep 5
           done
           code=$(curl -o /dev/null -s -w '%{http_code}' -I \
-            "${R2_PUBLIC_BASE_URL}/android/releases/android-v${VERSION}/AINO-${VERSION}.apk")
+            "${R2_PUBLIC_BASE_URL}/android/releases/android-v${VERSION}/AINO-${VERSION}-direct.apk")
           if [ "$code" != "200" ]; then
             echo "::error::Published APK is not reachable (HTTP $code)"
             exit 1
@@ -321,8 +321,9 @@ jobs:
             echo
             echo "### Install"
             echo
-            echo "Pilots: download \`AINO-${VERSION}.apk\` and install it on an Android 8.0+ device."
-            echo "Google Play: upload \`AINO-${VERSION}-play.aab\` in the Play Console."
+            echo "Direct install (pilots): download \`AINO-${VERSION}-direct.apk\` on an Android 8.0+ device."
+            echo "It updates itself in place: Profile → Check for updates, or the banner on launch."
+            echo "Google Play: upload \`AINO-${VERSION}-play.aab\` in the Play Console (Play handles updates)."
             echo "You may need to allow installs from unknown sources."
             echo
             echo "### Checksums"
@@ -338,7 +339,7 @@ jobs:
           set -euo pipefail
           if gh release view "android-v${VERSION}" >/dev/null 2>&1; then
             gh release upload "android-v${VERSION}" \
-              "release-assets/AINO-${VERSION}.apk" \
+              "release-assets/AINO-${VERSION}-direct.apk" \
               "release-assets/AINO-${VERSION}-play.aab" \
               release-assets/checksums.txt \
               --clobber
@@ -347,7 +348,7 @@ jobs:
               --notes-file release-notes.md
           else
             gh release create "android-v${VERSION}" \
-              "release-assets/AINO-${VERSION}.apk" \
+              "release-assets/AINO-${VERSION}-direct.apk" \
               "release-assets/AINO-${VERSION}-play.aab" \
               release-assets/checksums.txt \
               --title "AINO Android v${VERSION}" \

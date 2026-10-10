@@ -1,6 +1,7 @@
 package app.aino.mobile.core.update
 
 import android.app.Activity
+import app.aino.mobile.BuildConfig
 import com.google.android.play.core.appupdate.AppUpdateInfo
 import com.google.android.play.core.appupdate.AppUpdateManager
 import com.google.android.play.core.appupdate.AppUpdateManagerFactory
@@ -40,20 +41,31 @@ class PlayAppUpdater : AppUpdater {
             manager = it
         }
 
-    override fun check(activity: Activity) {
-        manager(activity).appUpdateInfo.addOnSuccessListener { update ->
-            info = update
-            when {
-                update.installStatus() == InstallStatus.DOWNLOADED ->
-                    _ui.value = UpdateUiState(available = update.asAvailable(), readyToInstall = true)
-                update.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE &&
-                    update.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE) &&
-                    update.availableVersionCode() != dismissedCode ->
-                    _ui.value = UpdateUiState(available = update.asAvailable())
-                else -> if (!_ui.value.loading) _ui.value = UpdateUiState()
-            }
+    override fun check(activity: Activity, userInitiated: Boolean) {
+        if (userInitiated) {
+            // A Play download is already running; its own progress owns the banner.
+            if (_ui.value.loading) return
+            dismissedCode = null
+            _ui.value = UpdateUiState(loading = true)
         }
-        // No Play Store / not installed from Play (e.g. internal sideload): stay silent.
+        manager(activity).appUpdateInfo
+            .addOnSuccessListener { update ->
+                info = update
+                when {
+                    update.installStatus() == InstallStatus.DOWNLOADED ->
+                        _ui.value = UpdateUiState(available = update.asAvailable(), readyToInstall = true)
+                    update.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE &&
+                        update.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE) &&
+                        update.availableVersionCode() != dismissedCode ->
+                        _ui.value = UpdateUiState(available = update.asAvailable())
+                    userInitiated -> _ui.value = UpdateUiState(message = "AINO ${BuildConfig.VERSION_NAME} is up to date.")
+                    else -> if (!_ui.value.loading) _ui.value = UpdateUiState()
+                }
+            }
+            // No Play Store / not installed from Play (e.g. internal sideload): silent unless asked.
+            .addOnFailureListener {
+                if (userInitiated) _ui.value = UpdateUiState(message = "Could not check Google Play for updates.")
+            }
     }
 
     override fun install(activity: Activity) {

@@ -946,6 +946,7 @@ private fun AuthenticatedShell(
                     onToggleTheme = onToggleTheme,
                     onAvatarChanged = { avatar -> auth.updateUser { it.copy(avatar = avatar) } },
                     onSignOut = onSignOut,
+                    updates = updates,
                 )
             }
             composable(PROFILE_EDIT_ROUTE) {

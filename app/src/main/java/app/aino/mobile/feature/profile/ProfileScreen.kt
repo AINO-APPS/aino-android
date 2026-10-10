@@ -39,6 +39,8 @@ import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.component.profileStatusVisual
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.icons.HeroIcons
+import app.aino.mobile.core.update.AppUpdater
+import app.aino.mobile.core.update.UpdateBanner
 
 /** StatusPicker `PICKABLE_STATUSES` (`client/src/status/constants.ts` STATUS_META). */
 private val PICKABLE = listOf(
@@ -72,8 +74,11 @@ fun ProfileScreen(
     onToggleTheme: () -> Unit,
     onAvatarChanged: (String?) -> Unit,
     onSignOut: () -> Unit,
+    updates: AppUpdater,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val updateUi by updates.ui.collectAsStateWithLifecycle()
+    val activity = androidx.activity.compose.LocalActivity.current
     val colors = LocalWebColors.current
     LaunchedEffect(Unit) { viewModel.refresh() }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -145,11 +150,18 @@ fun ProfileScreen(
         ProfileSection {
             ProfileRow(HeroIcons.ArrowRightStartOnRectangle, "Sign Out", { viewModel.askSignOut(true) }, tint = colors.danger)
         }
-        Text(
-            "AINO ${app.aino.mobile.BuildConfig.VERSION_NAME}",
-            Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp),
-            color = colors.textMuted, fontSize = 12.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
+        // The shell's update banner is hidden on this full-screen route, so it is repeated here.
+        UpdateBanner(updateUi, onInstall = { activity?.let(updates::install) }, onDismiss = updates::dismiss)
+        ProfileSection {
+            val checking = updateUi.loading && updateUi.available == null
+            ProfileRow(
+                HeroIcons.ArrowPath,
+                if (checking) "Checking for updates…" else "Check for updates",
+                { activity?.let { updates.check(it, userInitiated = true) } },
+                supporting = "AINO ${app.aino.mobile.BuildConfig.VERSION_NAME}",
+                enabled = !updateUi.loading,
+            )
+        }
     }
 
     if (ui.signOutConfirming) {

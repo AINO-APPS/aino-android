@@ -1,6 +1,7 @@
 package app.aino.mobile.core.update
 
 import android.app.Activity
+import app.aino.mobile.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,12 +19,22 @@ class DirectAppUpdater(
     override val ui: StateFlow<UpdateUiState> = _ui.asStateFlow()
     private var dismissedVersion: String? = null
 
-    override fun check(activity: Activity) {
+    override fun check(activity: Activity, userInitiated: Boolean) {
         if (_ui.value.loading) return
+        if (userInitiated) {
+            dismissedVersion = null
+            _ui.value = UpdateUiState(loading = true)
+        }
         scope.launch {
-            runCatching(repository::check).onSuccess { update ->
-                _ui.value = UpdateUiState(available = update?.takeIf { it.version != dismissedVersion })
-            }
+            runCatching(repository::check)
+                .onSuccess { update ->
+                    _ui.value = when {
+                        update != null && update.version != dismissedVersion -> UpdateUiState(available = update)
+                        userInitiated -> UpdateUiState(message = "AINO ${BuildConfig.VERSION_NAME} is up to date.")
+                        else -> UpdateUiState()
+                    }
+                }
+                .onFailure { if (userInitiated) _ui.value = UpdateUiState(message = "Could not check for updates. Try again later.") }
         }
     }
 
