@@ -69,8 +69,21 @@ class OkHttpApiClient(
      * separate connection): on HTTP/2 a multi-MB body would otherwise sit in
      * front of every text send multiplexed onto the same socket.
      */
-    private val uploadClient: OkHttpClient by lazy {
-        client.newBuilder().connectionPool(ConnectionPool()).writeTimeout(5, TimeUnit.MINUTES).build()
+    private val uploadClientHolder = lazy {
+        // Large bodies on a slow uplink may legitimately take minutes: no whole-call deadline.
+        client.newBuilder()
+            .connectionPool(ConnectionPool())
+            .callTimeout(0, TimeUnit.MILLISECONDS)
+            .writeTimeout(5, TimeUnit.MINUTES)
+            .readTimeout(2, TimeUnit.MINUTES)
+            .build()
+    }
+    private val uploadClient: OkHttpClient by uploadClientHolder
+
+    /** Drops idle connections of both pools (the network they were opened on is gone). */
+    fun evictConnections() {
+        client.connectionPool.evictAll()
+        if (uploadClientHolder.isInitialized()) uploadClient.connectionPool.evictAll()
     }
 
     override fun execute(request: ApiRequest): ApiResponse {
@@ -95,7 +108,9 @@ class OkHttpApiClient(
         // request body"); callers with nothing to send (mark read, delivered,
         // call accept …) get an empty body instead.
         builder.method(method, body)
-        val transport = if (request.streamBody != null || request.onUploadProgress != null) uploadClient else client
+        // Whole-file multipart bodies (meeting / task attachments) need the upload limits too.
+        val isUpload = request.streamBody != null || request.onUploadProgress != null || contentType.type == "multipart"
+        val transport = if (isUpload) uploadClient else client
         try {
             transport.newCall(builder.build()).execute().use { response ->
                 val bytes = response.body?.bytes() ?: ByteArray(0)
@@ -114,9 +129,11 @@ class OkHttpApiClient(
         val BODY_REQUIRED = setOf("POST", "PUT", "PATCH")
 
         fun defaultClient(): OkHttpClient = CertificatePinning.apply(OkHttpClient.Builder())
-            .connectTimeout(60, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .pingInterval(15, TimeUnit.SECONDS)
+            .callTimeout(90, TimeUnit.SECONDS)
             .build()
     }
 }

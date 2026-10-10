@@ -55,9 +55,11 @@ sealed class ApiError(message: String, cause: Throwable? = null) : IOException(m
  */
 fun userFacingMessage(error: Throwable, fallback: String): String = when (error) {
     is ApiError.Http -> serverErrorText(error.responseBody) ?: fallback
-    is ApiError.Network -> "Can't reach the server. Check your connection and try again."
+    is ApiError.Network -> NETWORK_ERROR_MESSAGE
     else -> error.message?.takeUnless { it.startsWith("HTTP ") } ?: fallback
 }
+
+const val NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connection and try again."
 
 private val ERROR_FIELD = Regex("\"(?:error|message)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
 

@@ -31,15 +31,40 @@ class AppContainer private constructor(private val context: Context) {
 
     val tokens = KeystoreTokenStore(context)
 
-    /** Every AINO request (API, media, realtime) shares these TLS pins (P2.5). */
+    /**
+     * Every AINO request (API, media, realtime) shares these TLS pins (P2.5).
+     * A dead route must fail fast: 60 s waits on a socket left behind by a
+     * network change used to surface as "offline" long after the network returned.
+     */
     val http: OkHttpClient = app.aino.mobile.core.network.CertificatePinning.apply(OkHttpClient.Builder())
-        .connectTimeout(60, TimeUnit.SECONDS)
-        .readTimeout(60, TimeUnit.SECONDS)
-        .writeTimeout(60, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    /**
+     * JSON API calls: HTTP/2 pings detect a half-open pooled connection, and a
+     * call deadline bounds a request that would otherwise hang across retries.
+     */
+    private val apiHttp: OkHttpClient = http.newBuilder()
+        .pingInterval(15, TimeUnit.SECONDS)
+        .callTimeout(90, TimeUnit.SECONDS)
         .build()
 
     /** Un-refreshing client for the auth flow itself (login, refresh). */
-    val rawApi: ApiClient = OkHttpApiClient(tokenProvider = tokens, client = http)
+    private val okHttpApi = OkHttpApiClient(tokenProvider = tokens, client = apiHttp)
+    val rawApi: ApiClient = okHttpApi
+
+    /** Default network of the device; resets drop connections opened on the previous network. */
+    val connectivity: app.aino.mobile.core.network.ConnectivityMonitor by lazy {
+        app.aino.mobile.core.network.ConnectivityMonitor(context.getSystemService(android.net.ConnectivityManager::class.java)).also { it.start() }
+    }
+
+    /** Closes idle pooled connections: after a network change they belong to a path that no longer exists. */
+    fun resetConnections() {
+        http.connectionPool.evictAll()
+        okHttpApi.evictConnections()
+    }
 
     /** Last successful GET bodies of the signed-in user (scope set by AuthViewModel). */
     val responses = app.aino.mobile.core.network.ResponseCache(context.cacheDir.resolve("api-cache"))

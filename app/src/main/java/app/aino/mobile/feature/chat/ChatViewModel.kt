@@ -13,6 +13,7 @@ import app.aino.mobile.core.db.ScopedCache
 import app.aino.mobile.core.db.ChatOutbox
 import app.aino.mobile.core.db.OutboxCoordinator
 import app.aino.mobile.core.network.ApiError
+import app.aino.mobile.core.network.NETWORK_ERROR_MESSAGE
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
 import app.aino.mobile.core.network.userFacingMessage
@@ -24,17 +25,22 @@ import app.aino.mobile.feature.chat.media.MediaPrepRequest
 import app.aino.mobile.feature.chat.media.MediaPreparer
 import app.aino.mobile.feature.chat.media.PreparedMedia
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -134,6 +140,12 @@ private fun messageLoadFailure(error: Throwable, fallback: String): String = whe
     is ApiError -> userFacingMessage(error, fallback)
     is SerializationException -> "The server returned an unexpected message format. Try again."
     else -> fallback
+}
+
+/** UI text for a failed action: never the raw transport string ("Network failure for POST https://…"). */
+internal fun actionError(error: Throwable, fallback: String): String = when (error) {
+    is ApiError -> userFacingMessage(error, fallback)
+    else -> error.message ?: fallback
 }
 
 data class ChatUiState(
@@ -245,12 +257,23 @@ class ChatViewModel(
     private val prepareGroupAvatar: (Uri) -> app.aino.mobile.core.media.PreparedAvatar? = { null },
     /** Pause before the single retry of a list load that failed at the transport (stale socket after resume). */
     private val listRetryDelayMs: Long = 750,
+    /** Silent backoff for list/thread refreshes that failed transiently (Signal-style: no banner, just retry). The factory passes [TRANSIENT_RETRY_DELAYS_MS]. */
+    transientRetryDelaysMs: List<Long> = emptyList(),
+    /** How long a text sent over the socket may wait for its echo before it is re-sent over REST. */
+    private val socketEchoTimeoutMs: Long = SOCKET_ECHO_TIMEOUT_MS,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ChatUiState())
     val ui: StateFlow<ChatUiState> = _ui.asStateFlow()
     private var scope: CacheScope? = null
     private var cache: ChatCache? = null
     private var realtimeRefresh: Job? = null
+    @Volatile private var refreshAgain = false
+    private val listRetries = RetryBackoff(transientRetryDelaysMs)
+    private val threadRetries = RetryBackoff(transientRetryDelaysMs)
+    private var listRetry: Job? = null
+    private var threadRetry: Job? = null
+    /** Texts sent over the socket, completed when the server echoes their clientMsgId. */
+    private val socketEchoes = java.util.concurrent.ConcurrentHashMap<String, CompletableDeferred<Unit>>()
     private var typingExpiry: Job? = null
     private var typingDispatch: Job? = null
     private var linkPreviewJob: Job? = null
@@ -294,6 +317,18 @@ class ChatViewModel(
         // A push wake stored new rows: fold them into the open thread / its memory copy.
         viewModelScope.launch {
             storedThreadUpdates.collect { id -> mergeStoredThread(id) }
+        }
+        // "Can't reach the server" after a tap is a hint, not a state: the connection strip
+        // carries the ongoing status. An empty list that could not load keeps its error.
+        viewModelScope.launch {
+            _ui.map { it.error }.distinctUntilChanged().collectLatest { error ->
+                if (error != NETWORK_ERROR_MESSAGE) return@collectLatest
+                delay(TRANSIENT_ERROR_DISPLAY_MS)
+                _ui.update { st ->
+                    val hasContent = st.conversations.isNotEmpty() || st.selectedConversation != null
+                    if (st.error == error && hasContent) st.copy(error = null) else st
+                }
+            }
         }
     }
 
@@ -379,6 +414,11 @@ class ChatViewModel(
         scope = next
         cache = next?.let(cacheFactory)
         threadCache.clear()
+        listRetry?.cancel()
+        threadRetry?.cancel()
+        listRetries.reset()
+        threadRetries.reset()
+        refreshAgain = false
         discardPrewarmedMedia()
         // Session flags set by the shell (plan features) survive the account reset.
         _ui.value = ChatUiState(currentUserId = next?.userId, callsEnabled = _ui.value.callsEnabled)
@@ -393,9 +433,18 @@ class ChatViewModel(
         }
     }
 
-    fun refresh() {
+    fun refresh() = refreshList(retrying = false)
+
+    private fun refreshList(retrying: Boolean) {
         val scopedCache = cache ?: return
-        if (_ui.value.loading) return
+        if (_ui.value.loading) {
+            // Resume / resync / realtime triggers that land mid-flight run once more afterwards.
+            refreshAgain = true
+            return
+        }
+        refreshAgain = false
+        if (!retrying) listRetries.reset()
+        listRetry?.cancel()
         _ui.update { st -> st.copy(loading = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             val startedAt = System.currentTimeMillis()
@@ -416,6 +465,7 @@ class ChatViewModel(
                     scopedCache.replace(conversations)
                     val userIds = conversations.mapNotNull { it.otherUserId }.distinct()
                     val presence = runCatching { repository.loadPresence(userIds) }.getOrDefault(emptyMap())
+                    listRetries.reset()
                     _ui.update { st -> st.copy(
                         loading = false,
                         conversations = zeroUnread(conversations, visibleConversationId()),
@@ -423,28 +473,52 @@ class ChatViewModel(
                         fromCache = false,
                         syncedAtMs = startedAt,
                         // A fresh list retires the stale-list notice from an earlier failure.
-                        message = st.message.takeUnless { it in LIST_STALE_NOTICES },
+                        message = st.message.takeUnless { it == STALE_LIST_NOTICE },
                     ) }
                     adoptListedConversation(conversations)
                     warmThreads(scopedCache, conversations)
                 },
                 onFailure = { error ->
-                    // Offline first: keep the exact scoped cache visible. Only a transport
-                    // failure means "offline"; an HTTP or decode error is just a stale list.
+                    // Offline first: keep the exact scoped cache visible. A transient failure
+                    // (no route, timeout, 5xx, throttling) is not news: the connection strip
+                    // reports the link, and the list retries on its own. Only a final answer
+                    // (other 4xx, malformed body) is worth a notice.
                     val cached = runCatching { scopedCache.snapshot() }.getOrDefault(emptyList())
+                    val transient = isTransientSendFailure(error)
+                    if (transient) scheduleListRetry()
                     _ui.update { st -> st.copy(
                         loading = false,
                         conversations = zeroUnread(cached, visibleConversationId()),
                         fromCache = cached.isNotEmpty(),
                         error = if (cached.isEmpty()) userFacingMessage(error, "Could not load conversations") else null,
                         message = when {
-                            cached.isEmpty() -> st.message.takeUnless { it in LIST_STALE_NOTICES }
-                            error is ApiError.Network -> OFFLINE_LIST_NOTICE
+                            cached.isEmpty() || transient -> st.message.takeUnless { it == STALE_LIST_NOTICE }
                             else -> STALE_LIST_NOTICE
                         },
                     ) }
                 },
             )
+            if (refreshAgain) refresh()
+        }
+    }
+
+    /** Backoff retry of a list refresh that failed transiently; any other refresh supersedes it. */
+    private fun scheduleListRetry() {
+        val wait = listRetries.next() ?: return
+        listRetry?.cancel()
+        // IO, not Main: the timer must never depend on the UI thread (or a test's Main).
+        listRetry = viewModelScope.launch(Dispatchers.IO) {
+            delay(wait)
+            refreshList(retrying = true)
+        }
+    }
+
+    private fun scheduleThreadRetry(conversationId: Long) {
+        val wait = threadRetries.next() ?: return
+        threadRetry?.cancel()
+        threadRetry = viewModelScope.launch(Dispatchers.IO) {
+            delay(wait)
+            if (isOpen(conversationId)) refreshThread(secondaryDelayMs = 0L, retrying = true)
         }
     }
 
@@ -534,6 +608,7 @@ class ChatViewModel(
                 // clientMsgId, so the optimistic bubble is swapped in place instead
                 // of sitting next to the persisted row until the thread reloads.
                 val incoming = decodeChatRealtime<ChatRealtimeMessage>(event.data)
+                incoming?.clientMsgId?.let { socketEchoes[it]?.complete(Unit) }
                 if (incoming != null && incoming.formatType != "system") {
                     _ui.update { st -> st.copy(conversations = applyListLastMessage(st.conversations, incoming)) }
                 }
@@ -641,7 +716,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.searchUsers(query) }.fold(
                 onSuccess = { _ui.update { st -> st.copy(searching = false, userResults = it) } },
-                onFailure = { _ui.update { st -> st.copy(searching = false, error = it.message ?: "User search failed") } },
+                onFailure = { _ui.update { st -> st.copy(searching = false, error = actionError(it, "User search failed")) } },
             )
         }
     }
@@ -695,7 +770,7 @@ class ChatViewModel(
                     ) }
                     refresh()
                 },
-                onFailure = { _ui.update { st -> st.copy(loading = false, error = it.message ?: "Could not start conversation") } },
+                onFailure = { _ui.update { st -> st.copy(loading = false, error = actionError(it, "Could not start conversation")) } },
             )
         }
     }
@@ -710,7 +785,7 @@ class ChatViewModel(
             runCatching { repository.markRead(conversation.id) }.fold(
                 onSuccess = { refresh() },
                 onFailure = {
-                    _ui.update { st -> st.copy(conversations = original, error = it.message ?: "Could not mark conversation read") }
+                    _ui.update { st -> st.copy(conversations = original, error = actionError(it, "Could not mark conversation read")) }
                 },
             )
         }
@@ -1012,10 +1087,12 @@ class ChatViewModel(
     fun refreshThread() = refreshThread(secondaryDelayMs = 0L)
 
     /** Messages publish as soon as they arrive; receipts follow once [secondaryDelayMs] (the open transition) has passed. */
-    private fun refreshThread(secondaryDelayMs: Long) {
+    private fun refreshThread(secondaryDelayMs: Long, retrying: Boolean = false) {
         val conversation = _ui.value.selectedConversation ?: return
         val scopedCache = cache ?: return
         val id = conversation.id
+        if (!retrying) threadRetries.reset()
+        threadRetry?.cancel()
         _ui.update { st -> st.copy(threadLoading = true, error = null) }
         viewModelScope.launch(Dispatchers.IO) {
             if (_ui.value.messages.isEmpty()) {
@@ -1027,6 +1104,7 @@ class ChatViewModel(
             }
             runCatching { repository.loadMessages(id) }.fold(
                 onSuccess = { latest ->
+                    threadRetries.reset()
                     val next = _ui.updateAndGet { state ->
                         if (state.selectedConversation?.id != id) return@updateAndGet state
                         val merged = mergeLatestPage(state.messages, latest)
@@ -1059,12 +1137,15 @@ class ChatViewModel(
                     // A failed refresh does not establish that the device is offline.
                     val shown = _ui.value.messages
                     val cached = shown.ifEmpty { runCatching { scopedCache.messageSnapshot(id) }.getOrDefault(emptyList()) }
+                    // Saved messages on screen + a transient failure: say nothing, retry quietly.
+                    val transient = isTransientSendFailure(error)
+                    if (transient) scheduleThreadRetry(id)
                     _ui.update {
                         if (it.selectedConversation?.id != id) it else it.copy(
                             threadLoading = false,
                             messages = if (it.messages.isEmpty()) cached else it.messages,
                             threadFromCache = cached.isNotEmpty(),
-                            threadRefreshError = failure,
+                            threadRefreshError = failure.takeUnless { transient && cached.isNotEmpty() },
                         )
                     }
                 },
@@ -1167,7 +1248,10 @@ class ChatViewModel(
         sendQueue.submit(conversation.id) {
             val stored = persisted.await()
             if (scope != currentScope) return@submit
-            if (socketEnvelope != null && realtimeSend(socketEnvelope)) {
+            // A queued frame is not a delivered one: a half-open socket accepts it and drops it.
+            // Only the server's echo of this clientMsgId confirms it; otherwise send over REST
+            // (the server dedupes clientMsgId, so a late echo can't double the message).
+            if (socketEnvelope != null && sendOverSocket(socketEnvelope, clientId)) {
                 if (stored) runCatching { outbox.delivered(currentScope, clientId) }
                 return@submit
             }
@@ -1199,6 +1283,17 @@ class ChatViewModel(
     }
 
     private class ScopeChanged : Exception()
+
+    /** True once the server echoed [clientId] back; false when the frame wasn't taken or no echo came in time. */
+    private suspend fun sendOverSocket(envelope: RealtimeEnvelope, clientId: String): Boolean {
+        val echo = CompletableDeferred<Unit>()
+        socketEchoes[clientId] = echo
+        return try {
+            realtimeSend(envelope) && withTimeoutOrNull(socketEchoTimeoutMs) { echo.await() } != null
+        } finally {
+            socketEchoes.remove(clientId)
+        }
+    }
 
     /** Swaps the optimistic bubble for the server row the moment the send returns (no wait for the WS echo). */
     private fun onOwnMessageSent(row: ChatMessage, clientId: String) {
@@ -1285,7 +1380,7 @@ class ChatViewModel(
         ) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.editMessage(message.id, content) }.onFailure {
-                _ui.update { st -> st.copy(messages = original, editingMessage = message, composer = content, error = it.message ?: "Could not edit message") }
+                _ui.update { st -> st.copy(messages = original, editingMessage = message, composer = content, error = actionError(it, "Could not edit message")) }
             }
         }
     }
@@ -1301,7 +1396,7 @@ class ChatViewModel(
         ) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.deleteMessage(message.id) }.onFailure {
-                _ui.update { st -> st.copy(messages = original, error = it.message ?: "Could not delete message") }
+                _ui.update { st -> st.copy(messages = original, error = actionError(it, "Could not delete message")) }
             }
         }
     }
@@ -1315,7 +1410,7 @@ class ChatViewModel(
                 onSuccess = { result ->
                     _ui.update { st -> st.copy(messages = st.messages.map { if (it.id == message.id) it.copy(starred = result.starred) else it }) }
                 },
-                onFailure = { _ui.update { st -> st.copy(messages = original, error = it.message ?: "Could not update saved message") } },
+                onFailure = { _ui.update { st -> st.copy(messages = original, error = actionError(it, "Could not update saved message")) } },
             )
         }
     }
@@ -1343,7 +1438,7 @@ class ChatViewModel(
                         pinnedMessages = updatePinnedList(st.pinnedMessages, messages, message.id, response.pinned, message),
                     ) }
                 },
-                onFailure = { _ui.update { st -> st.copy(messages = original, error = it.message ?: "Could not update pinned message") } },
+                onFailure = { _ui.update { st -> st.copy(messages = original, error = actionError(it, "Could not update pinned message")) } },
             )
         }
     }
@@ -1401,7 +1496,7 @@ class ChatViewModel(
                     refresh()
                     if (refreshCurrent) refreshThread()
                 },
-                onFailure = { _ui.update { st -> st.copy(forwarding = false, error = it.message ?: "Could not forward message") } },
+                onFailure = { _ui.update { st -> st.copy(forwarding = false, error = actionError(it, "Could not forward message")) } },
             )
         }
     }
@@ -1411,7 +1506,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.toggleReaction(message.id, emoji) }.fold(
                 onSuccess = { refreshThread() },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update reaction") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not update reaction")) } },
             )
         }
     }
@@ -1426,7 +1521,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.createPoll(conversation.id, question.trim(), cleaned, multiSelect) }.fold(
                 onSuccess = { refreshThread() },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not create poll") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not create poll")) } },
             )
         }
     }
@@ -1445,7 +1540,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.votePoll(pollId, optionIndex) }.fold(
                 onSuccess = { loadPoll(pollId) },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update poll") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not update poll")) } },
             )
         }
     }
@@ -1839,7 +1934,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.cancelMediaJob(id) }.fold(
                 onSuccess = { refreshThread() },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not cancel media") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not cancel media")) } },
             )
         }
     }
@@ -1849,7 +1944,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.retryMediaJob(id) }.fold(
                 onSuccess = { refreshThread() },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not retry media") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not retry media")) } },
             )
         }
     }
@@ -1864,7 +1959,7 @@ class ChatViewModel(
                     callsLoadedFor = loadingScope
                     _ui.update { st -> st.copy(callsLoading = false, calls = it) }
                 },
-                onFailure = { _ui.update { st -> st.copy(callsLoading = false, error = it.message ?: "Could not load calls") } },
+                onFailure = { _ui.update { st -> st.copy(callsLoading = false, error = actionError(it, "Could not load calls")) } },
             )
         }
     }
@@ -1942,7 +2037,7 @@ class ChatViewModel(
                 onFailure = {
                     _ui.update { st -> st.copy(
                         deletingCalls = false,
-                        error = it.message ?: "Could not delete call history",
+                        error = actionError(it, "Could not delete call history"),
                     ) }
                 },
             )
@@ -1976,7 +2071,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.toggleFavouriteConversation(current.id) }.fold(
                 onSuccess = { updateSelected(current.copy(isFavourite = it.favourite)); refresh() },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update favourite") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not update favourite")) } },
             )
         }
     }
@@ -2051,7 +2146,7 @@ class ChatViewModel(
                 onSuccess = { patchConversation(reconcile(optimistic, it)); after() },
                 onFailure = {
                     patchConversation(original)
-                    _ui.update { st -> st.copy(error = it.message ?: failure) }
+                    _ui.update { st -> st.copy(error = actionError(it, failure)) }
                 },
             )
         }
@@ -2065,7 +2160,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { block(conversation) }.fold(
                 onSuccess = { _ui.update { st -> st.copy(infoLoading = false, infoContent = it) } },
-                onFailure = { _ui.update { st -> st.copy(infoLoading = false, error = it.message ?: "Could not load") } },
+                onFailure = { _ui.update { st -> st.copy(infoLoading = false, error = actionError(it, "Could not load")) } },
             )
         }
     }
@@ -2108,7 +2203,7 @@ class ChatViewModel(
                     forgetConversationLocally(conversation.id)
                     refresh()
                 },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not delete chat") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not delete chat")) } },
             )
         }
     }
@@ -2131,7 +2226,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { if (current.isBlocked) repository.unblockUser(userId) else repository.blockUser(userId) }.fold(
                 onSuccess = { patchConversation(current.copy(isBlocked = it.blocked)); refresh() },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update block") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not update block")) } },
             )
         }
     }
@@ -2147,7 +2242,7 @@ class ChatViewModel(
                     refreshThread()
                     refresh()
                 },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not clear chat") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not clear chat")) } },
             )
         }
     }
@@ -2157,7 +2252,7 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.leaveGroup(current.id) }.fold(
                 onSuccess = { onLeftGroup(current.id) },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not leave group") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not leave group")) } },
             )
         }
     }
@@ -2172,7 +2267,7 @@ class ChatViewModel(
                     _ui.update { st -> st.copy(members = members) }
                     refresh()
                 },
-                onFailure = { _ui.update { st -> st.copy(error = it.message ?: "Could not update group") } },
+                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not update group")) } },
             )
         }
     }
@@ -2290,7 +2385,7 @@ class ChatViewModel(
                         )
                     }
                 },
-                onFailure = { _ui.update { st -> st.copy(creatingGroup = false, error = it.message ?: "Could not create group") } },
+                onFailure = { _ui.update { st -> st.copy(creatingGroup = false, error = actionError(it, "Could not create group")) } },
             )
         }
     }
@@ -2308,9 +2403,11 @@ class ChatViewModel(
 
     companion object {
         private const val DRAFT_PREFS = "aino_chat_drafts"
-        internal const val OFFLINE_LIST_NOTICE = "Offline · showing cached conversations"
         internal const val STALE_LIST_NOTICE = "Couldn't refresh chats · showing saved conversations"
-        private val LIST_STALE_NOTICES = setOf(OFFLINE_LIST_NOTICE, STALE_LIST_NOTICE)
+        internal val TRANSIENT_RETRY_DELAYS_MS = listOf(2_000L, 5_000L, 15_000L, 30_000L, 60_000L)
+        internal const val SOCKET_ECHO_TIMEOUT_MS = 8_000L
+        /** A transient action failure is a hint, not a state: it clears itself. */
+        internal const val TRANSIENT_ERROR_DISPLAY_MS = 4_000L
 
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -2327,6 +2424,7 @@ class ChatViewModel(
                     warm = ChatRepository(container.cachedApi),
                     forgetWarmThread = { id -> app.aino.mobile.core.push.PushSync.forgetThread(context.applicationContext, id) },
                     prepareGroupAvatar = { uri -> app.aino.mobile.core.media.prepareSquareAvatar(context.applicationContext, uri) },
+                    transientRetryDelaysMs = TRANSIENT_RETRY_DELAYS_MS,
                 ).also { it.context = context.applicationContext } as T
             }
         }

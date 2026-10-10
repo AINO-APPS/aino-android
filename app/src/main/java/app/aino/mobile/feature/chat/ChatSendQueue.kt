@@ -78,6 +78,19 @@ suspend fun <T> withSendRetries(
 
 const val SEND_ATTEMPTS = 4
 
+/** A silent retry schedule: the next wait, or null once exhausted until [reset] (a fresh trigger). */
+class RetryBackoff(private val delaysMs: List<Long>) {
+    private var attempt = 0
+
+    @Synchronized
+    fun next(): Long? = delaysMs.getOrNull(attempt)?.also { attempt++ }
+
+    @Synchronized
+    fun reset() {
+        attempt = 0
+    }
+}
+
 /**
  * Text holds its place at the head of the queue until it is delivered (Signal keeps
  * the job until the network returns): handing it off and moving on would let a

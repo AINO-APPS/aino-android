@@ -108,6 +108,7 @@ import app.aino.mobile.core.call.CallSessionRuntime
 import app.aino.mobile.core.call.toRoute
 import app.aino.mobile.core.call.IncomingCallScreen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.aino.mobile.core.designsystem.icons.HeroIcons
@@ -142,10 +143,15 @@ fun AinoApp(
     val realtimeState by realtime.state.collectAsStateWithLifecycle()
     val tenantAuthenticated = (ui.state as? AuthState.Authenticated)?.user?.tenantId != null
     LaunchedEffect(tenantAuthenticated) { realtime.setAuthenticatedTenant(tenantAuthenticated) }
+    // Visible app: the socket stays open. Backgrounded with push: closed after a short grace.
+    androidx.lifecycle.compose.LifecycleStartEffect(realtime) {
+        realtime.setForeground(true)
+        onStopOrDispose { realtime.setForeground(false) }
+    }
     // Foreground: skip any pending backoff and replace a socket that went stale while asleep.
     androidx.lifecycle.compose.LifecycleResumeEffect(realtime, tenantAuthenticated) {
         // A socket stopped by a 4001 we could not verify (offline at the time) gets one more try.
-        if (tenantAuthenticated && realtime.state.value is RealtimeState.Stopped) realtime.setAuthenticatedTenant(true)
+        if (tenantAuthenticated && realtime.state.value is RealtimeState.Stopped) realtime.retryStopped()
         else realtime.reconnectNow()
         onPauseOrDispose { }
     }
@@ -161,7 +167,7 @@ fun AinoApp(
         // 4001 with a live session = the socket's token aged out; the API check refreshed it.
         if (auth.verifySessionStillActive() && stopped.code == 4001) {
             kotlinx.coroutines.delay(5_000)
-            realtime.setAuthenticatedTenant(true)
+            realtime.retryStopped()
         }
     }
     val authenticatedUser = (ui.state as? AuthState.Authenticated)?.user
@@ -193,6 +199,13 @@ fun AinoApp(
     }
     // A new socket rebuilds the meeting mesh and replays its chat (web WS `open`).
     LaunchedEffect(realtimeState) { meetingSession.onRealtimeState(realtimeState == RealtimeState.Connected) }
+    // Call signaling rides the socket: keep it open in the background while a call rings or runs.
+    // A plain collector (not lifecycle-aware) so a call arriving while backgrounded still counts.
+    LaunchedEffect(realtime, activeCall, meetingSession, incomingCall) {
+        kotlinx.coroutines.flow.combine(activeCall.ui, meetingSession.state, incomingCall.ui) { callUi, meeting, ringing ->
+            callUi.visible || meeting != null || ringing.route != null
+        }.distinctUntilChanged().collect(realtime::setInCall)
+    }
     LaunchedEffect(tenantAuthenticated) { if (!tenantAuthenticated) meetingSession.leave() }
     // P7.4: the bell's notifications live for the session (web NotificationBell polls every 30s).
     val notifications = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.notifications.NotificationsViewModel>(
@@ -351,6 +364,8 @@ fun AinoApp(
     }
     // Call surfaces overlay the shell rather than replacing it, so the NavHost
     // (and a minimised meeting) survive a ring or a 1:1 call.
+    val connectionIndicator by realtime.indicator.collectAsStateWithLifecycle()
+    androidx.compose.runtime.CompositionLocalProvider(app.aino.mobile.core.designsystem.LocalConnectionIndicator provides connectionIndicator) {
     Box(Modifier.fillMaxSize()) {
     when (val state = ui.state) {
         AuthState.Initializing -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -422,6 +437,7 @@ fun AinoApp(
     } else if (tenantAuthenticated) {
         // Ask once for the settings that let calls ring visibly (call channel, full-screen intent).
         app.aino.mobile.core.call.CallAlertSetupPrompt()
+    }
     }
     }
 }

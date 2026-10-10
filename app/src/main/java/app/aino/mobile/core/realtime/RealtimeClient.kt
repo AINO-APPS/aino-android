@@ -88,6 +88,42 @@ class RealtimeClient(
         open(++generation)
     }
 
+    /**
+     * Not needed for now (backgrounded, or no network): close without retrying
+     * but remember the session, so the next [connect] counts as a reconnect
+     * and screens catch up on what they missed. A terminal stop stays stopped.
+     */
+    @Synchronized
+    fun pause() {
+        if (_state.value is RealtimeState.Stopped || !shouldRun) return
+        shouldRun = false
+        generation++
+        reconnect?.cancel()
+        reconnect = null
+        stopHeartbeat()
+        socket?.close(1000, "Paused")
+        socket = null
+        retryCount = 0
+        _state.value = RealtimeState.Disconnected
+    }
+
+    /**
+     * The default network changed: the current socket is bound to a path that
+     * no longer exists even if it was active a moment ago. Replace it now.
+     */
+    @Synchronized
+    fun forceReconnect() {
+        if (!shouldRun) return
+        generation++
+        reconnect?.cancel()
+        reconnect = null
+        stopHeartbeat()
+        socket?.cancel()
+        socket = null
+        retryCount = 0
+        open(generation)
+    }
+
     @Synchronized
     fun disconnect() {
         shouldRun = false

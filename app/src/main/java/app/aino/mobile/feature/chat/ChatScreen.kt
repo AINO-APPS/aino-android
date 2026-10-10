@@ -279,6 +279,7 @@ fun ChatScreen(
                 )
             }
 
+            app.aino.mobile.core.designsystem.ConnectionStatusStrip()
             app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox(
                 loading = if (activeTab == ChatListTab.Calls) ui.callsLoading else ui.loading,
                 onRefresh = { if (activeTab == ChatListTab.Calls) viewModel.loadCalls() else viewModel.refresh() },
@@ -926,6 +927,8 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                     ThreadBar.Header -> ThreadHeader(conversation, ui, viewModel, onNavigateBack, withCallPermissions, onOpenAllMedia = { allMediaOpen = true })
                 }
             }
+            // The live link's status replaces per-request "offline" warnings.
+            app.aino.mobile.core.designsystem.ConnectionStatusStrip()
             // Signal pinned-message bar: newest pin shown; tap jumps and cycles to the next.
             androidx.compose.animation.AnimatedVisibility(
                 visible = ui.pinnedMessages.isNotEmpty() && ui.selectedMessageIds.isEmpty() && !ui.threadSearchOpen,

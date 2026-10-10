@@ -49,6 +49,31 @@ paths inspected, date, behaviors derived, and how the AINO implementation differ
     an AINO palette.
   - Icons come from HeroIcons and Material Symbols (Apache-2.0).
 
+**2026-10-10: chat connection stability (realtime lifecycle, offline notices)**
+
+- Repository: `signalapp/Signal-Android`. We read the app-level message
+  retrieval observer (`IncomingMessageObserver.kt`) for its behavior only.
+  Nothing was copied: no code, constants, names, strings or comments.
+- Behaviors derived:
+  - One "connection needed" decision combines being in the foreground (or
+    within a short grace period after going to the background), a usable
+    network, and whether push can wake the app. The socket opens and closes
+    only from that decision.
+  - Connectivity monitoring starts by assuming the device is online. A network
+    change resets the network layer (pooled connections and the socket).
+  - Screens keep showing stored data. A failed fetch is not reported to the
+    user. Pending sends stay queued until they succeed.
+- How AINO differs:
+  - `RealtimeConnectionPolicy`, `ConnectivityMonitor` / `NetworkTracker` and
+    the `ConnectionStatusStrip` are newly written against AINO's realtime
+    contract (`/ws` envelopes, app-level ping) and its OkHttp stack. The
+    grace period, retry delays and timeouts are AINO's own values.
+  - An open call, meeting or ringing call keeps the socket open, because AINO
+    call signaling uses it.
+  - A text sent over the socket counts as delivered only when the server echoes
+    its `clientMsgId`. Otherwise it is sent again over REST, where the server
+    dedupes by `clientMsgId`.
+
 ## Runtime dependencies
 
 Dependencies are declared in `gradle/libs.versions.toml` and resolved from Google
