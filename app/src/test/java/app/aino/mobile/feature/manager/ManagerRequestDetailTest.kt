@@ -257,4 +257,17 @@ class ManagerRequestDetailTest {
         vm.approve(5)
         assertEquals("You cannot approve your own request", vm.ui.value.approvals.error)
     }
+
+    @Test
+    fun bulkApproveClearsSelectionAndConfirms() {
+        val vm = viewModel()
+        vm.toggleApprovalSelect(5)
+        vm.bulkApprove()
+        assertTrue("POST manager/approvals/bulk" in captured)
+        assertTrue(vm.ui.value.selectedApprovalIds.isEmpty())
+        assertEquals("ok", vm.ui.value.bulkMessage)
+        // Changing the selection again drops the stale confirmation.
+        vm.toggleApprovalSelect(5)
+        assertNull(vm.ui.value.bulkMessage)
+    }
 }

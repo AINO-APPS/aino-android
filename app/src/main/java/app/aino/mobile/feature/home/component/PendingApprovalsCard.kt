@@ -1,17 +1,20 @@
 package app.aino.mobile.feature.home.component
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,21 +31,40 @@ private fun formatType(type: String): String = when (type) {
     else -> type.replace('_', ' ').replaceFirstChar(Char::uppercase)
 }
 
-/** `PendingApprovalsCard` (P2.7): manager-gated approve/reject list. */
+/** Rows previewed on the dashboard; the rest are behind "View all" (web `PendingApprovalsCard`). */
+internal const val PENDING_APPROVALS_PREVIEW = 3
+
+/**
+ * `PendingApprovalsCard` (P2.7): manager-gated approve/reject list. Like web,
+ * the card opens the approvals queue and a row opens that request; the
+ * approve / reject buttons keep their own taps.
+ */
 @Composable
-fun PendingApprovalsCard(approvals: List<Approval>, onApprove: (Long) -> Unit, onReject: (Long) -> Unit) {
+fun PendingApprovalsCard(
+    approvals: List<Approval>,
+    onApprove: (Long) -> Unit,
+    onReject: (Long) -> Unit,
+    onOpenAll: () -> Unit,
+    onOpenRequest: (Long) -> Unit,
+) {
     val colors = LocalWebColors.current
     if (approvals.isEmpty()) return
 
-    WebCard {
+    WebCard(Modifier.clip(RoundedCornerShape(20.dp)).clickable(onClickLabel = "Open approvals", onClick = onOpenAll)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(HeroIcons.ClipboardDocumentList, null, Modifier.size(18.dp), tint = colors.warning)
             Text(" Pending Approvals", color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             Text(" ${approvals.size}", color = colors.textMuted, fontSize = 13.sp)
         }
         Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            approvals.forEach { approval ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            approvals.take(PENDING_APPROVALS_PREVIEW).forEach { approval ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClickLabel = "Open request") { onOpenRequest(approval.id) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Column(Modifier.weight(1f)) {
                         Text(approval.requesterName ?: approval.requesterUsername ?: "Unknown", color = colors.text, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         Text(formatType(approval.type), color = colors.textSecondary, fontSize = 12.sp)
@@ -55,6 +77,15 @@ fun PendingApprovalsCard(approvals: List<Approval>, onApprove: (Long) -> Unit, o
                     }
                 }
             }
+        }
+        if (approvals.size > PENDING_APPROVALS_PREVIEW) {
+            Text(
+                "View all \u2192",
+                color = colors.primary,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
 }

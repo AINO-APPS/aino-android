@@ -40,6 +40,7 @@ fun HomeScreen(
     viewModel: DashboardViewModel,
     onCalendar: () -> Unit,
     onTasks: () -> Unit,
+    onOpenLink: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
@@ -67,7 +68,13 @@ fun HomeScreen(
                 TasksSummaryCard(snapshot?.tasks, onTasks)
                 SprintProgressCard(snapshot?.sprint, snapshot?.sprintTasks.orEmpty(), snapshot?.backlogTasks.orEmpty(), onTasks)
                 if (isManager) {
-                    PendingApprovalsCard(snapshot?.approvals.orEmpty(), viewModel::approve, viewModel::reject)
+                    PendingApprovalsCard(
+                        snapshot?.approvals.orEmpty(),
+                        onApprove = viewModel::approve,
+                        onReject = viewModel::reject,
+                        onOpenAll = { onOpenLink("/manager?tab=approvals") },
+                        onOpenRequest = { id -> onOpenLink("/manager?tab=approvals&request=$id") },
+                    )
                 }
             }
         }

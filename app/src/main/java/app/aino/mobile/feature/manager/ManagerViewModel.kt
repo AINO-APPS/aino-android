@@ -99,6 +99,8 @@ data class ManagerUiState(
     val approvalsFilter: String = "pending",
     val approvals: Section<List<ApprovalRow>> = Section(),
     val selectedApprovalIds: Set<Long> = emptySet(),
+    /** Server summary of the last bulk approve / reject (e.g. "3 request(s) approved"). */
+    val bulkMessage: String? = null,
     val rejectTargetId: Long? = null,
     val rejectReason: String = "",
 
@@ -300,7 +302,7 @@ class ManagerViewModel(
     // ── Approvals ─────────────────────────────────────────────────────────────
 
     fun setApprovalsFilter(filter: String) {
-        _ui.update { it.copy(approvalsFilter = filter, selectedApprovalIds = emptySet()) }
+        _ui.update { it.copy(approvalsFilter = filter, selectedApprovalIds = emptySet(), bulkMessage = null) }
         loadApprovals()
     }
 
@@ -319,7 +321,7 @@ class ManagerViewModel(
         _ui.update { state ->
             val next = state.selectedApprovalIds.toMutableSet()
             if (!next.remove(id)) next.add(id)
-            state.copy(selectedApprovalIds = next)
+            state.copy(selectedApprovalIds = next, bulkMessage = null)
         }
     }
 
@@ -379,9 +381,19 @@ class ManagerViewModel(
     private fun bulk(action: String) {
         val ids = _ui.value.selectedApprovalIds.toList()
         if (ids.isEmpty()) return
+        _ui.update { it.copy(bulkMessage = null) }
         mutation(
             action = { repository.bulkAction(ids, action, null) },
-            onSuccess = { refreshApprovals() },
+            onSuccess = { response ->
+                val done = if (action == "approve") "approved" else "rejected"
+                _ui.update {
+                    it.copy(
+                        selectedApprovalIds = emptySet(),
+                        bulkMessage = response.message.ifBlank { "${response.processed} request(s) $done" },
+                    )
+                }
+                refreshAfterDecision()
+            },
             onError = { error ->
                 val message = error.managerMessage("Failed to $action requests")
                 _ui.update { it.copy(approvals = it.approvals.copy(error = message)) }

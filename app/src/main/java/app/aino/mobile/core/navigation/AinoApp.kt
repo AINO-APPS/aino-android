@@ -647,6 +647,7 @@ private fun AuthenticatedShell(
                     dashboard,
                     onCalendar = { navigate(AinoDestination.Calendar) },
                     onTasks = { navigate(AinoDestination.Tasks) },
+                    onOpenLink = { link -> openWebLink(link) },
                 )
             }
             composable(AinoDestination.Tasks.route) {

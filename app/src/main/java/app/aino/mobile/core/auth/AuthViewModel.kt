@@ -133,14 +133,20 @@ class AuthViewModel(
 
     /**
      * Enroll this device once for both biometric sign-in and attendance.
-     * `onEnrolled` runs on success (e.g. continue a pending clock-in).
+     * `onEnrolled` runs on success (e.g. continue a pending clock-in);
+     * `onFailed` runs (on Main) when enrollment fails or is cancelled.
      */
-    fun enrollBiometric(authenticatedCipher: Cipher, deviceLabel: String, onEnrolled: (() -> Unit)? = null) {
+    fun enrollBiometric(
+        authenticatedCipher: Cipher,
+        deviceLabel: String,
+        onEnrolled: (() -> Unit)? = null,
+        onFailed: ((String) -> Unit)? = null,
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { completeEnrollment(authenticatedCipher, deviceLabel, onEnrolled, freshStepUpToken()) }
                 .onFailure { error ->
                     if (error is AuthFailure && error.code == MFA_STEP_UP_REQUIRED) {
-                        pendingEnrollment = PendingEnrollment(authenticatedCipher, deviceLabel, onEnrolled)
+                        pendingEnrollment = PendingEnrollment(authenticatedCipher, deviceLabel, onEnrolled, onFailed)
                         _ui.update {
                             it.copy(
                                 error = null,
@@ -148,7 +154,9 @@ class AuthViewModel(
                             )
                         }
                     } else {
-                        _ui.update { it.copy(error = error.message ?: "Could not enable fingerprint") }
+                        val message = error.message ?: "Could not enable fingerprint"
+                        _ui.update { it.copy(error = message) }
+                        notifyFailed(onFailed, message)
                     }
                 }
         }
@@ -175,13 +183,24 @@ class AuthViewModel(
             pendingEnrollment = null
             _ui.update { it.copy(stepUp = null) }
             runCatching { completeEnrollment(pending.cipher, pending.deviceLabel, pending.onEnrolled, token) }
-                .onFailure { error -> _ui.update { it.copy(error = error.message ?: "Could not enable fingerprint") } }
+                .onFailure { error ->
+                    val message = error.message ?: "Could not enable fingerprint"
+                    _ui.update { it.copy(error = message) }
+                    notifyFailed(pending.onFailed, message)
+                }
         }
     }
 
     fun cancelStepUp() {
+        val pending = pendingEnrollment
         pendingEnrollment = null
-        _ui.update { it.copy(stepUp = null, error = "Fingerprint / PIN sign-in was not enabled: verification cancelled.") }
+        val message = "Fingerprint / PIN sign-in was not enabled: verification cancelled."
+        _ui.update { it.copy(stepUp = null, error = message) }
+        notifyFailed(pending?.onFailed, message)
+    }
+
+    private fun notifyFailed(onFailed: ((String) -> Unit)?, message: String) {
+        onFailed?.let { callback -> viewModelScope.launch(Dispatchers.Main) { callback(message) } }
     }
 
     private fun completeEnrollment(cipher: Cipher, deviceLabel: String, onEnrolled: (() -> Unit)?, stepUp: String?) {
@@ -201,7 +220,12 @@ class AuthViewModel(
     private fun freshStepUpToken(): String? =
         stepUpToken?.takeIf { System.currentTimeMillis() - it.second < STEP_UP_REUSE_MS }?.first
 
-    private class PendingEnrollment(val cipher: Cipher, val deviceLabel: String, val onEnrolled: (() -> Unit)?)
+    private class PendingEnrollment(
+        val cipher: Cipher,
+        val deviceLabel: String,
+        val onEnrolled: (() -> Unit)?,
+        val onFailed: ((String) -> Unit)?,
+    )
 
     @Volatile private var pendingEnrollment: PendingEnrollment? = null
     @Volatile private var stepUpToken: Pair<String, Long>? = null

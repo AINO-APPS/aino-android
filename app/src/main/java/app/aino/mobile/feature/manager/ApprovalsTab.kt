@@ -56,6 +56,7 @@ internal fun ApprovalsTab(ui: ManagerUiState, viewModel: ManagerViewModel) {
         }
 
         section.error?.let { ManagerErrorText(it) }
+        ui.bulkMessage?.let { Text(it, color = colors.success, fontSize = 0.85.rem, fontWeight = FontWeight.Medium) }
         when {
             section.initialLoading -> ManagerLoading()
             rows.isEmpty() -> ManagerEmpty("No ${ui.approvalsFilter.ifEmpty { "" }} requests".trim())

@@ -21,10 +21,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -68,7 +72,13 @@ fun ClockInVerifySheet(
     val colors = LocalWebColors.current
     val isClockOut = session.action == AttendanceAction.ClockOut
     val busy = session.step == VerifyStep.Submitting || session.step == VerifyStep.Authenticating
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // While busy the sheet must not hide: a hidden ModalBottomSheet whose
+    // dismiss is refused leaves its invisible window on top, eating every touch.
+    val currentBusy by rememberUpdatedState(busy)
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { value -> value != SheetValue.Hidden || !currentBusy },
+    )
     // Auto-launch the OS prompt once per token (presence settled / retry).
     LaunchedEffect(session.promptToken) {
         if (session.promptToken > 0 && session.step == VerifyStep.Ready && session.submitError == null) {
@@ -76,7 +86,12 @@ fun ClockInVerifySheet(
         }
     }
 
-    ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }, sheetState = sheetState, containerColor = colors.bgElevated) {
+    ModalBottomSheet(
+        onDismissRequest = { if (!busy) onClose() },
+        sheetState = sheetState,
+        containerColor = colors.bgElevated,
+        properties = ModalBottomSheetProperties(shouldDismissOnBackPress = !busy),
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()

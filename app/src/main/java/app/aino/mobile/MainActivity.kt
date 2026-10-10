@@ -317,10 +317,19 @@ class MainActivity : FragmentActivity() {
             subtitle = "Used to sign in and to clock in / out",
             cipher = cipher,
             onCipher = { authenticated ->
-                authViewModel.enrollBiometric(authenticated, deviceLabel()) {
-                    // Continue the clock action straight away with the new credential.
-                    if (thenClockAction) attendanceViewModel.requestIdentityPrompt()
-                }
+                authViewModel.enrollBiometric(
+                    authenticated,
+                    deviceLabel(),
+                    onEnrolled = {
+                        // Continue the clock action straight away with the new credential.
+                        if (thenClockAction) attendanceViewModel.identityEnrollmentFinished()
+                    },
+                    onFailed = { message ->
+                        if (thenClockAction) {
+                            attendanceViewModel.reportVerifyError(message, VerifyFix.EnableFingerprint, "Fingerprint Not Enabled")
+                        }
+                    },
+                )
             },
             onError = { message, _ ->
                 if (thenClockAction) {

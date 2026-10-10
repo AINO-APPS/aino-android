@@ -1072,6 +1072,19 @@ class AttendanceViewModel(
     }
 
     /**
+     * Inline fingerprint / PIN setup (first clock-in) finished: the sheet is
+     * still Authenticating from the setup prompt, so move it back to Ready and
+     * launch the verify prompt with the new credential.
+     */
+    fun identityEnrollmentFinished() {
+        val session = _ui.value.verifySession ?: return
+        if (session.step == VerifyStep.Submitting) return
+        _ui.value = _ui.value.copy(
+            verifySession = session.copy(step = VerifyStep.Ready, submitError = null, promptToken = session.promptToken + 1),
+        )
+    }
+
+    /**
      * The OS prompt unlocked the device credential: submit with it. The server
      * re-checks office presence (Wi-Fi/geofence) and verifies the credential.
      */
