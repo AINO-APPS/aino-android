@@ -320,7 +320,8 @@ class ChatViewModel(
         }
         // "Can't reach the server" after a tap is a hint, not a state: the connection strip
         // carries the ongoing status. An empty list that could not load keeps its error.
-        viewModelScope.launch {
+        // Off Main: `_ui` is updated from IO threads, and this must not hop to the UI thread for each.
+        viewModelScope.launch(Dispatchers.Default) {
             _ui.map { it.error }.distinctUntilChanged().collectLatest { error ->
                 if (error != NETWORK_ERROR_MESSAGE) return@collectLatest
                 delay(TRANSIENT_ERROR_DISPLAY_MS)
