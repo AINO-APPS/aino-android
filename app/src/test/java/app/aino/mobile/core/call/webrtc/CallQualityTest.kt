@@ -15,7 +15,8 @@ class CallQualityTest {
         jitterDelay: Double = 0.0,
         jitterCount: Long = 0,
         limitation: String? = null,
-    ) = RawStatsSample(time, rtt, lost, received, freezes, jitterDelay, jitterCount, limitation)
+        outLoss: Double? = null,
+    ) = RawStatsSample(time, rtt, lost, received, freezes, jitterDelay, jitterCount, limitation, outLoss)
 
     @Test
     fun ladderMatchesLegacyAndMobileCap() {
@@ -25,7 +26,7 @@ class CallQualityTest {
             assertTrue(worse.maxFramerate <= better.maxFramerate)
         }
         assertEquals(MOBILE_TOP_TIER_BITRATE, buildTiers()[0].maxBitrate)
-        assertEquals(1_500_000, buildTiers(false)[0].maxBitrate)
+        assertEquals(2_000_000, buildTiers(false)[0].maxBitrate)
     }
 
     @Test
@@ -46,27 +47,31 @@ class CallQualityTest {
     }
 
     @Test
-    fun badSamplesDownshiftOneRungAndStopAtBottom() {
+    fun sustainedUplinkLossDownshiftsOneRungPerTwoSamplesAndStopsAtBottom() {
         val controller = CallQualityController()
-        controller.setTierIndex(0)
         controller.observe(sample(0))
         val path = mutableListOf<Int>()
-        repeat(5) { index ->
-            path += controller.observe(sample((index + 1) * 2_000L, freezes = (index + 1).toLong())).tierIndex
-        }
-        assertEquals(listOf(1, 2, 3, 4, 4), path)
+        repeat(10) { index -> path += controller.observe(sample((index + 1) * 2_000L, outLoss = .3)).tierIndex }
+        assertEquals(listOf(0, 1, 1, 2, 2, 3, 3, 4, 4, 4), path)
     }
 
     @Test
-    fun resolutionUpshiftNeedsSixCleanSamples() {
+    fun inboundFreezesAndOurOwnBandwidthCapDoNotLowerTheSender() {
         val controller = CallQualityController()
         controller.observe(sample(0))
-        val dropped = controller.observe(sample(2_000, freezes = 1))
-        assertEquals(BOTTOM_TIER_INDEX, dropped.tierIndex)
-        repeat(5) { index ->
-            assertFalse(controller.observe(sample(4_000L + index * 2_000, freezes = 1)).changed)
+        repeat(6) { index ->
+            val decision = controller.observe(sample((index + 1) * 2_000L, freezes = (index + 1).toLong(), limitation = "bandwidth"))
+            assertEquals(ConnectionQuality.Poor, decision.quality)
+            assertEquals(START_TIER_INDEX, decision.tierIndex)
         }
-        val recovered = controller.observe(sample(14_000, freezes = 1))
+    }
+
+    @Test
+    fun resolutionUpshiftNeedsFiveCleanSamples() {
+        val controller = CallQualityController()
+        controller.setTierIndex(BOTTOM_TIER_INDEX)
+        repeat(4) { index -> assertFalse(controller.observe(sample(index * 2_000L)).changed) }
+        val recovered = controller.observe(sample(8_000))
         assertTrue(recovered.changed)
         assertEquals(BOTTOM_TIER_INDEX - 1, recovered.tierIndex)
     }
@@ -87,22 +92,20 @@ class CallQualityTest {
     }
 
     @Test
-    fun bandwidthAndJitterTriggerLegacyGrades() {
+    fun jitterGradesTheBadge() {
         val controller = CallQualityController()
-        controller.observe(sample(0))
-        assertEquals(ConnectionQuality.Poor, controller.observe(sample(2_000, limitation = "bandwidth")).quality)
-        controller.reset()
         controller.observe(sample(0, jitterDelay = 0.0, jitterCount = 0))
         assertEquals(ConnectionQuality.Poor, controller.observe(sample(2_000, jitterDelay = 6.0, jitterCount = 10)).quality)
     }
 
     @Test
-    fun resetRestoresConnectRampTier() {
+    fun resetRestoresTopTier() {
         val controller = CallQualityController()
-        controller.observe(sample(0)); controller.observe(sample(2_000, freezes = 5))
-        assertEquals(BOTTOM_TIER_INDEX, controller.getTierIndex())
+        controller.observe(sample(0))
+        repeat(4) { controller.observe(sample((it + 1) * 2_000L, outLoss = .5)) }
+        assertTrue(controller.getTierIndex() > START_TIER_INDEX)
         controller.reset()
-        assertEquals(RAMP_START_TIER_INDEX, controller.getTierIndex())
+        assertEquals(START_TIER_INDEX, controller.getTierIndex())
     }
 
     @Test

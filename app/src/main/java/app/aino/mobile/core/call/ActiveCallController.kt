@@ -80,7 +80,7 @@ data class ActiveCallUi(
  * lifecycle. The caller always creates the offer (impolite); the callee is
  * polite. Signals: `call_signal` with `offer`/`answer`/`ice-candidate` plus
  * `audio-state` / `video-state` so the peer shows mute / camera-off.
- * ponytail: no relay-only rebuild after a failed ICE restart, no hold, noise
+ * ponytail: no relay-only rebuild after failed ICE restarts, no hold, noise
  * toggle, screen share, recording or reactions — add with the matching web control.
  */
 class ActiveCallController(private val context: Context, private val session: CallSessionController) {
@@ -96,7 +96,8 @@ class ActiveCallController(private val context: Context, private val session: Ca
     private var ice = CompletableDeferred<IceConfigDto>()
     private val signalLock = Mutex()
     private var remoteUserId: Long? = null
-    private var iceRestarted = false
+    private var iceRestarts = 0
+    private val outbox = CallSignalQueue()
     private var timeout: Job? = null
     private var recovery: Job? = null
     private var closing: Job? = null
@@ -109,7 +110,23 @@ class ActiveCallController(private val context: Context, private val session: Ca
         // start) or just before a stale socket is replaced; frames sent then are
         // lost. Like Signal's call manager, re-announce once the socket is open so
         // the server replays the buffered offer and the caller re-offers.
-        scope.launch { CallRealtimeLink.connected.collect { if (it) announceIncomingReady() } }
+        scope.launch {
+            CallRealtimeLink.connected.collect { connected ->
+                if (!connected) return@collect
+                announceIncomingReady()
+                flushSignals()
+            }
+        }
+        // Wi-Fi <-> cellular handover kills the selected candidate pair. Restart ICE
+        // right away instead of waiting for the consent timeout (~10+ s of frozen video).
+        scope.launch {
+            AppContainer.get(context).connectivity.resets.collect {
+                if (_ui.value.visible && _ui.value.connectedAt != null && peer != null) {
+                    iceRestarts = 0
+                    peer?.restartIce()
+                }
+            }
+        }
     }
 
     private fun announceIncomingReady() {
@@ -176,7 +193,8 @@ class ActiveCallController(private val context: Context, private val session: Ca
 
     private fun begin(initial: ActiveCallUi, startVideoOff: Boolean = false) {
         closing?.cancel()
-        iceRestarted = false
+        iceRestarts = 0
+        outbox.clear()
         ice = CompletableDeferred()
         val video = initial.isVideo
         // The video track exists for any video call so the camera can be turned on later.
@@ -293,44 +311,63 @@ class ActiveCallController(private val context: Context, private val session: Ca
             PeerConnection.PeerConnectionState.CONNECTED -> {
                 timeout?.cancel()
                 recovery?.cancel()
+                iceRestarts = 0
                 session.mediaConnected()
                 _ui.update { it.copy(connectedAt = it.connectedAt ?: System.currentTimeMillis()) }
                 sendMediaState()
             }
             PeerConnection.PeerConnectionState.DISCONNECTED -> {
                 session.mediaDisconnected()
-                // useWebRTC.ts:781 — one ICE restart after 2 s still disconnected.
-                recovery?.cancel()
-                recovery = scope.launch {
-                    delay(2_000)
-                    restartOnce()
+                // Keep retrying ICE with backoff while the path is down (one restart
+                // was not enough for a network handover); give up after 30 s.
+                if (recovery?.isActive != true) {
+                    recovery = scope.launch {
+                        while (true) {
+                            delay(iceRestartDelayMs(iceRestarts))
+                            if (!restartIce()) break
+                        }
+                    }
                 }
                 arm(30_000, "Couldn't connect")
             }
             PeerConnection.PeerConnectionState.FAILED -> {
                 session.mediaDisconnected()
-                if (!restartOnce()) {
+                if (!restartIce()) {
                     timeout?.cancel()
                     closeWith("Couldn't connect")
+                } else if (timeout?.isActive != true) {
+                    arm(30_000, "Couldn't connect")
                 }
             }
             else -> Unit
         }
     }
 
-    private fun restartOnce(): Boolean {
+    /** Returns false once the path is back or the restart budget for this outage is spent. */
+    private fun restartIce(): Boolean {
         val current = peer ?: return false
-        if (current.connectionState == PeerConnection.PeerConnectionState.CONNECTED) return true
-        if (iceRestarted) return false
-        iceRestarted = true
+        if (current.connectionState == PeerConnection.PeerConnectionState.CONNECTED) return false
+        if (iceRestarts >= MAX_ICE_RESTARTS) return false
+        iceRestarts++
         current.restartIce()
         return true
     }
 
     private fun sendSignal(signal: CallSignal) {
-        val route = session.state.value.route ?: return
-        val target = remoteUserId ?: return
-        runCatching { send(callSignalEnvelope(CallSignalCommand(route.callId, route.conversationId, target, signal))) }
+        // Queue first, then flush: a signal never overtakes ones still waiting for the socket.
+        outbox.add(signal)
+        flushSignals()
+    }
+
+    private fun trySend(signal: CallSignal): Boolean {
+        val route = session.state.value.route ?: return false
+        val target = remoteUserId ?: return false
+        return runCatching { send(callSignalEnvelope(CallSignalCommand(route.callId, route.conversationId, target, signal))) }.getOrDefault(false)
+    }
+
+    private fun flushSignals() {
+        if (!_ui.value.visible) return outbox.clear()
+        outbox.flush(::trySend)
     }
 
     private fun sendMediaState() {
@@ -449,6 +486,7 @@ class ActiveCallController(private val context: Context, private val session: Ca
         stopRingback()
         timeout?.cancel()
         recovery?.cancel()
+        outbox.clear()
         peer?.close()
         peer = null
         _ui.update { it.copy(localVideo = null, remoteVideo = null) }

@@ -21,11 +21,12 @@ class RefreshingApiClient(
     private val refreshLock = Any()
 
     override fun execute(request: ApiRequest): ApiResponse {
+        if (request.path !in REFRESH_PATHS) refreshIfExpiring()
         val tokenAtStart = tokens.getToken()
         return try {
             delegate.execute(request)
         } catch (error: ApiError.Http) {
-            if (error.statusCode != 401 || tokenAtStart.isNullOrBlank() || request.path in REFRESH_PATHS) throw error
+            if (!isExpiredSession(error, tokenAtStart) || tokenAtStart.isNullOrBlank() || request.path in REFRESH_PATHS) throw error
             synchronized(refreshLock) {
                 val current = tokens.getToken()
                 if (current == tokenAtStart) refreshToken() // First caller refreshes.
@@ -34,6 +35,25 @@ class RefreshingApiClient(
             delegate.execute(request) // Retry exactly once with the current token.
         }
     }
+
+    /**
+     * Renews a 15-minute access token shortly before it expires, so requests
+     * never reach the server with a dead token. A failed attempt is left to
+     * the reactive path above (the request itself still goes out).
+     */
+    private fun refreshIfExpiring() {
+        val current = tokens.getToken() ?: return
+        if (jwtExpiresWithin(current, PROACTIVE_REFRESH_SECONDS)) refreshFor(current)
+    }
+
+    /**
+     * 401, or the older server's 400 "Organization context required" that its
+     * tenant middleware returns when the JWT carrying the tenant has expired.
+     */
+    private fun isExpiredSession(error: ApiError.Http, token: String?): Boolean =
+        error.statusCode == 401 ||
+            (error.statusCode == 400 && token != null && jwtExpiresWithin(token, 0) &&
+                error.responseBody.contains(ORG_CONTEXT_REQUIRED, ignoreCase = true))
 
     /**
      * Refreshes on behalf of a client that is not this one (media fetches, the
@@ -79,6 +99,8 @@ class RefreshingApiClient(
         // @api POST sessions/token
         const val TOKEN_PATH = "sessions/token"
         val REFRESH_PATHS = setOf(REFRESH_PATH, TOKEN_PATH)
+        const val PROACTIVE_REFRESH_SECONDS = 60L
+        const val ORG_CONTEXT_REQUIRED = "Organization context required"
     }
 }
 

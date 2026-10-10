@@ -197,7 +197,7 @@ class RtcPeer(
     }
 
     /**
-     * Caps audio at [AUDIO_MAX_BITRATE], starts video at the controller's ramp
+     * Caps audio at [AUDIO_MAX_BITRATE], starts video at the controller's top
      * tier, then polls stats every [intervalMs] and applies tier changes until
      * [close]. Idempotent while running.
      */

@@ -58,6 +58,10 @@ enum class ConnectionIndicator { Connected, Connecting, WaitingForNetwork }
 fun connectionIndicator(state: RealtimeState, network: NetworkStatus): ConnectionIndicator = when {
     !network.usable -> ConnectionIndicator.WaitingForNetwork
     state == RealtimeState.Connected -> ConnectionIndicator.Connected
+    // Stopped is not "connecting": nothing is in flight, and the shell either retries
+    // it (live session) or signs out. A spinner there never resolved. Chat still
+    // loads and sends over HTTP and catches up on resync, as Signal does.
+    state is RealtimeState.Stopped -> ConnectionIndicator.Connected
     else -> ConnectionIndicator.Connecting
 }
 
@@ -69,4 +73,5 @@ fun Flow<ConnectionIndicator>.debounceProblems(delayMs: Long = CONNECTION_INDICA
         emit(indicator)
     }.distinctUntilChanged()
 
-const val CONNECTION_INDICATOR_DELAY_MS = 3_000L
+/** Reconnects after a network handover or server deploy routinely take several seconds. */
+const val CONNECTION_INDICATOR_DELAY_MS = 10_000L

@@ -48,6 +48,7 @@ class RealtimeConnectionPolicyTest {
         assertEquals(ConnectionIndicator.Connected, connectionIndicator(RealtimeState.Connected, NetworkStatus.Unknown))
         assertEquals(ConnectionIndicator.Connecting, connectionIndicator(RealtimeState.Connecting(2), NetworkStatus.Available(true)))
         assertEquals(ConnectionIndicator.Connecting, connectionIndicator(RealtimeState.Disconnected, NetworkStatus.Available(false)))
+        assertEquals(ConnectionIndicator.Connected, connectionIndicator(RealtimeState.Stopped(4001, "Unauthorized"), NetworkStatus.Available(true)))
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)

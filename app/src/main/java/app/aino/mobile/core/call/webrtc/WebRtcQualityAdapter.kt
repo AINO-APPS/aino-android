@@ -1,6 +1,7 @@
 package app.aino.mobile.core.call.webrtc
 
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.max
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.webrtc.PeerConnection
@@ -15,6 +16,7 @@ fun collectStatsSample(report: RTCStatsReport, nowEpochMs: Long = System.current
     var jitterDelay = 0.0
     var jitterCount = 0L
     var limitation: String? = null
+    var outboundLost: Double? = null
     report.statsMap.values.forEach { stat ->
         val values = stat.members
         fun number(key: String): Number? = values[key] as? Number
@@ -31,10 +33,13 @@ fun collectStatsSample(report: RTCStatsReport, nowEpochMs: Long = System.current
                 if (kind == "video") freezes += number("freezeCount")?.toLong() ?: 0
             }
             stat.type == "outbound-rtp" && kind == "video" -> limitation = values["qualityLimitationReason"] as? String ?: limitation
-            stat.type == "remote-inbound-rtp" && rtt == null -> rtt = number("roundTripTime")?.toDouble()
+            stat.type == "remote-inbound-rtp" -> {
+                if (rtt == null) rtt = number("roundTripTime")?.toDouble()
+                if (kind == "video") number("fractionLost")?.toDouble()?.let { outboundLost = max(outboundLost ?: 0.0, it) }
+            }
         }
     }
-    return RawStatsSample(nowEpochMs, rtt, lost, received, freezes, jitterDelay, jitterCount, limitation)
+    return RawStatsSample(nowEpochMs, rtt, lost, received, freezes, jitterDelay, jitterCount, limitation, outboundLost)
 }
 
 class EncodingParameterApplier {

@@ -13,16 +13,22 @@ data class VideoEncodingTier(
 )
 
 val VIDEO_TIERS = listOf(
-    VideoEncodingTier(1_500_000, 1.0, 30),
-    VideoEncodingTier(800_000, 1.0, 30),
-    VideoEncodingTier(500_000, 1.0, 24),
-    VideoEncodingTier(300_000, 1.5, 20),
-    VideoEncodingTier(150_000, 2.0, 15),
+    VideoEncodingTier(2_000_000, 1.0, 30),
+    VideoEncodingTier(1_000_000, 1.0, 30),
+    VideoEncodingTier(600_000, 1.0, 24),
+    VideoEncodingTier(350_000, 1.5, 20),
+    VideoEncodingTier(200_000, 2.0, 15),
 )
 
-const val MOBILE_TOP_TIER_BITRATE = 1_200_000
+const val MOBILE_TOP_TIER_BITRATE = 1_500_000
 const val BOTTOM_TIER_INDEX = 4
-const val RAMP_START_TIER_INDEX = 3
+
+/**
+ * Calls start uncapped at the top rung. WebRTC's congestion controller already
+ * ramps the real send rate to what the path can carry; starting low only added
+ * a slow app-level ramp on top of it (blurry first ~30 s of every call).
+ */
+const val START_TIER_INDEX = 0
 const val AUDIO_MAX_BITRATE = 48_000
 const val QUALITY_STATS_INTERVAL_MS = 2_000L
 
@@ -39,6 +45,8 @@ data class RawStatsSample(
     val jitterBufferDelay: Double = 0.0,
     val jitterBufferEmittedCount: Long = 0,
     val qualityLimitationReason: String? = null,
+    /** Loss the peer reports for *our* video (remote-inbound-rtp fractionLost, 0..1). */
+    val outboundFractionLost: Double? = null,
 )
 
 data class QualityDecision(
@@ -54,13 +62,25 @@ data class QualityDecision(
     val reason: String,
 )
 
+/**
+ * Two separate judgements:
+ *  - the badge ([QualityDecision.quality]) reflects everything the user experiences,
+ *    including the peer's video freezing or arriving lossy;
+ *  - the sender cap ([QualityDecision.tier]) only reacts to problems on *our uplink*
+ *    (loss the peer reports for our stream, sustained queueing delay). Inbound
+ *    trouble is the peer's uplink and their own controller handles it; downgrading
+ *    our sender for it just made both sides blurry. Our own cap showing up as
+ *    `qualityLimitationReason=bandwidth` is not a signal either.
+ */
 class CallQualityController(isMobile: Boolean = true) {
     private val tiers = buildTiers(isMobile)
-    private var tierIndex = RAMP_START_TIER_INDEX
+    private var tierIndex = START_TIER_INDEX
     private var previous: RawStatsSample? = null
     private var rttEwma: Double? = null
     private var lossEwma = 0.0
+    private var outboundLossEwma = 0.0
     private var goodStreak = 0
+    private var badStreak = 0
     private var baselineRtt: Double? = null
     private val baselineSamples = mutableListOf<Double>()
     private var firstSampleAt: Long? = null
@@ -71,6 +91,9 @@ class CallQualityController(isMobile: Boolean = true) {
         sample.rttSeconds?.takeIf(Double::isFinite)?.let { rtt ->
             rttEwma = rttEwma?.let { EWMA_ALPHA * rtt + (1 - EWMA_ALPHA) * it } ?: rtt
             updateBaseline(requireNotNull(rttEwma), sample.timestampMs)
+        }
+        sample.outboundFractionLost?.takeIf(Double::isFinite)?.let { fraction ->
+            outboundLossEwma = EWMA_ALPHA * fraction.coerceIn(0.0, 1.0) + (1 - EWMA_ALPHA) * outboundLossEwma
         }
 
         var intervalLoss = 0.0
@@ -90,24 +113,39 @@ class CallQualityController(isMobile: Boolean = true) {
         val rttExcess = if (rttEwma != null && baselineRtt != null) max(0.0, rttEwma!! - baselineRtt!!) else 0.0
 
         if (rttEwma == null) return decision(ConnectionQuality.Unknown, false, freezeDelta, jitter, "no rtt sample yet")
-        var quality = ConnectionQuality.Good
+
+        // Sender (uplink) health: the only input to the encoder cap.
+        var send = ConnectionQuality.Good
         var reason = "stable"
         when {
-            freezeDelta > 0 -> { quality = ConnectionQuality.Poor; reason = "$freezeDelta freeze(s) observed" }
-            sample.qualityLimitationReason == "bandwidth" -> { quality = ConnectionQuality.Poor; reason = "encoder bandwidth-limited" }
-            lossEwma >= LOSS_BAD -> { quality = ConnectionQuality.Poor; reason = "loss ${"%.1f".format(lossEwma * 100)}%" }
-            rttExcess >= RTT_EXCESS_BAD -> { quality = ConnectionQuality.Poor; reason = "rtt +${(rttExcess * 1000).roundToInt()}ms over baseline" }
+            outboundLossEwma >= OUTBOUND_LOSS_BAD -> { send = ConnectionQuality.Poor; reason = "uplink loss ${"%.1f".format(outboundLossEwma * 100)}%" }
+            rttExcess >= RTT_EXCESS_BAD -> { send = ConnectionQuality.Poor; reason = "rtt +${(rttExcess * 1000).roundToInt()}ms over baseline" }
+            outboundLossEwma >= OUTBOUND_LOSS_WARN || rttExcess >= RTT_EXCESS_WARN || sample.qualityLimitationReason == "cpu" -> {
+                send = ConnectionQuality.Fair; reason = "uplink degrading"
+            }
+        }
+
+        // Badge: worst of uplink and what we receive.
+        var quality = send
+        when {
+            freezeDelta > 0 -> { quality = ConnectionQuality.Poor; reason = "$freezeDelta inbound freeze(s)" }
+            lossEwma >= LOSS_BAD -> { quality = ConnectionQuality.Poor; reason = "inbound loss ${"%.1f".format(lossEwma * 100)}%" }
             jitter >= JITTER_BUFFER_BAD -> { quality = ConnectionQuality.Poor; reason = "jitter buffer ${(jitter * 1000).roundToInt()}ms" }
-            lossEwma >= LOSS_WARN || rttExcess >= RTT_EXCESS_WARN || jitter >= JITTER_BUFFER_WARN || sample.qualityLimitationReason == "cpu" -> {
-                quality = ConnectionQuality.Fair; reason = "degrading"
+            quality == ConnectionQuality.Good && (lossEwma >= LOSS_WARN || jitter >= JITTER_BUFFER_WARN) -> {
+                quality = ConnectionQuality.Fair; reason = "inbound degrading"
             }
         }
 
         val before = tierIndex
-        when (quality) {
-            ConnectionQuality.Poor -> { goodStreak = 0; if (tierIndex < BOTTOM_TIER_INDEX) tierIndex++ }
-            ConnectionQuality.Fair -> goodStreak = 0
+        when (send) {
+            ConnectionQuality.Poor -> {
+                goodStreak = 0
+                badStreak++
+                if (badStreak >= DOWNSHIFT_SAMPLES && tierIndex < BOTTOM_TIER_INDEX) { tierIndex++; badStreak = 0 }
+            }
+            ConnectionQuality.Fair -> { goodStreak = 0; badStreak = 0 }
             ConnectionQuality.Good -> {
+                badStreak = 0
                 goodStreak++
                 if (tierIndex > 0) {
                     val resolutionChange = tiers[tierIndex - 1].scaleResolutionDownBy != tiers[tierIndex].scaleResolutionDownBy
@@ -122,10 +160,10 @@ class CallQualityController(isMobile: Boolean = true) {
 
     fun getTierIndex() = tierIndex
     fun getTier() = tiers[tierIndex]
-    fun setTierIndex(index: Int) { tierIndex = index.coerceIn(0, BOTTOM_TIER_INDEX); goodStreak = 0 }
+    fun setTierIndex(index: Int) { tierIndex = index.coerceIn(0, BOTTOM_TIER_INDEX); goodStreak = 0; badStreak = 0 }
     fun reset() {
-        tierIndex = RAMP_START_TIER_INDEX; previous = null; rttEwma = null; lossEwma = 0.0
-        goodStreak = 0; baselineRtt = null; baselineSamples.clear(); firstSampleAt = null
+        tierIndex = START_TIER_INDEX; previous = null; rttEwma = null; lossEwma = 0.0; outboundLossEwma = 0.0
+        goodStreak = 0; badStreak = 0; baselineRtt = null; baselineSamples.clear(); firstSampleAt = null
     }
 
     private fun updateBaseline(rtt: Double, timestamp: Long) {
@@ -148,12 +186,15 @@ class CallQualityController(isMobile: Boolean = true) {
     private companion object {
         const val LOSS_BAD = .05
         const val LOSS_WARN = .02
-        const val RTT_EXCESS_BAD = .2
-        const val RTT_EXCESS_WARN = .08
+        const val OUTBOUND_LOSS_BAD = .10
+        const val OUTBOUND_LOSS_WARN = .04
+        const val RTT_EXCESS_BAD = .25
+        const val RTT_EXCESS_WARN = .1
         const val JITTER_BUFFER_BAD = .5
         const val JITTER_BUFFER_WARN = .25
         const val EWMA_ALPHA = .4
-        const val UPSHIFT_SAMPLES = 4
+        const val DOWNSHIFT_SAMPLES = 2
+        const val UPSHIFT_SAMPLES = 3
         const val UPSHIFT_RESOLUTION_PENALTY = 2
         const val BASELINE_WINDOW_MS = 10_000
         const val BASELINE_MIN_SAMPLES = 3

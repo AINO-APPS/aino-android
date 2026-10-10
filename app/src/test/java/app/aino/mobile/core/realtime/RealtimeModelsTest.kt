@@ -41,9 +41,15 @@ class RealtimeModelsTest {
     @Test
     fun authTenantAndConnectionLimitClosesAreTerminal() {
         assertTrue(isTerminalRealtimeClose(4001))
-        assertTrue(isTerminalRealtimeClose(4003))
-        assertTrue(isTerminalRealtimeClose(4029))
+        assertFalse(isTerminalRealtimeClose(4003))
+        assertFalse(isTerminalRealtimeClose(4029))
         assertFalse(isTerminalRealtimeClose(1006))
+        assertTrue(isSlowRetryRealtimeClose(4003))
+        assertTrue(isSlowRetryRealtimeClose(4029))
+        assertTrue(isSlowRetryRealtimeClose(1013))
+        assertFalse(isSlowRetryRealtimeClose(1006))
+        assertEquals(SLOW_RETRY_MIN_MS, slowRetryDelay(0.0))
+        assertEquals(SLOW_RETRY_MAX_MS, slowRetryDelay(1.0))
     }
 
     @Test

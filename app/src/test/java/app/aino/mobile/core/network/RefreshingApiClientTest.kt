@@ -97,6 +97,68 @@ class RefreshingApiClientTest {
 
     private fun response(text: String) = ApiResponse(200, emptyMap(), text.toByteArray())
 
+    @Test
+    fun refreshesAnExpiringTokenBeforeTheRequest() {
+        val tokens = MemoryTokens(jwt(expSeconds = now() + 30))
+        val calls = mutableListOf<String>()
+        val delegate = ApiClient { request ->
+            calls += request.path
+            if (request.path == "auth/refresh") response("""{"token":"${jwt(now() + 900)}"}""") else response("ok")
+        }
+
+        RefreshingApiClient(delegate, tokens).execute(ApiRequest(path = "chat/conversations"))
+
+        assertEquals(listOf("auth/refresh", "chat/conversations"), calls)
+    }
+
+    @Test
+    fun treatsOrgContextRequiredWithAnExpiredTokenAsUnauthorized() {
+        val expired = jwt(expSeconds = now() - 5)
+        val fresh = jwt(expSeconds = now() + 900)
+        val tokens = MemoryTokens(expired)
+        val calls = mutableListOf<String>()
+        var refreshes = 0
+        val delegate = ApiClient { request ->
+            calls += request.path
+            when {
+                request.path == "auth/refresh" -> {
+                    // The proactive attempt fails (network); the reactive one succeeds.
+                    if (refreshes++ == 0) throw ApiError.Network(request.method, request.path, java.io.IOException("offline"))
+                    response("""{"token":"$fresh"}""")
+                }
+                tokens.getToken() == expired -> throw ApiError.Http(
+                    400, """{"error":"Organization context required. Please log in from your organization domain."}""", request.method, request.path,
+                )
+                else -> response("ok")
+            }
+        }
+
+        val result = RefreshingApiClient(delegate, tokens).execute(ApiRequest(path = "chat/ice-config"))
+
+        assertEquals("ok", result.bodyAsString())
+        assertEquals(fresh, tokens.value)
+    }
+
+    @Test
+    fun aPlain400IsNotRetried() {
+        val tokens = MemoryTokens(jwt(expSeconds = now() + 900))
+        var calls = 0
+        val delegate = ApiClient { request -> calls++; throw ApiError.Http(400, """{"error":"bad"}""", request.method, request.path) }
+
+        runCatching { RefreshingApiClient(delegate, tokens).execute(ApiRequest(path = "chat/x")) }
+
+        assertEquals(1, calls)
+    }
+
+    private fun now() = System.currentTimeMillis() / 1000
+
+    private fun jwt(expSeconds: Long): String {
+        val enc = java.util.Base64.getUrlEncoder().withoutPadding()
+        val header = enc.encodeToString("""{"alg":"HS256"}""".toByteArray())
+        val payload = enc.encodeToString("""{"id":1,"exp":$expSeconds}""".toByteArray())
+        return "$header.$payload.sig"
+    }
+
     private fun http401(request: ApiRequest) = ApiError.Http(401, "{}", request.method, request.path)
 }
 

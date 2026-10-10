@@ -31,6 +31,43 @@ class WebRtcPolicyTest {
     }
 
     @Test
+    fun cachesRealTurnUntilCloseToExpiryAndRetriesANetworkBlip() {
+        IceConfigRepository.clearCache()
+        var now = 1_000_000_000_000L
+        var calls = 0
+        val api = ApiClient { request ->
+            calls++
+            if (calls == 1) throw app.aino.mobile.core.network.ApiError.Network(request.method, request.path, java.io.IOException("blip"))
+            val expiresAt = now / 1000 + 3 * 60 * 60
+            ApiResponse(200, emptyMap(), """{"mode":"cloudflare-calls","expiresAt":$expiresAt,"iceServers":[{"urls":"turn:t"}]}""".toByteArray())
+        }
+        val repo = IceConfigRepository(api, clockMs = { now })
+
+        repo.load()
+        assertEquals(2, calls) // the blip was retried once
+        repo.load()
+        assertEquals(2, calls) // served from cache
+        now += 61 * 60 * 1000L // under 2 h of credential life left
+        repo.load()
+        assertEquals(3, calls)
+        IceConfigRepository.clearCache()
+    }
+
+    @Test
+    fun neverCachesThePublicFallback() {
+        IceConfigRepository.clearCache()
+        var calls = 0
+        val api = ApiClient {
+            calls++
+            ApiResponse(200, emptyMap(), """{"mode":"public-fallback","iceServers":[{"urls":"turn:openrelay.metered.ca:80"}]}""".toByteArray())
+        }
+        val repo = IceConfigRepository(api)
+        repo.load()
+        repo.load()
+        assertEquals(2, calls)
+    }
+
+    @Test
     fun publicTurnPolicyKeepsStunAndRemovesOnlyOpenRelay() {
         val servers = listOf(
             IceServerDto(IceUrls(listOf("stun:stun.example.test", "turn:openrelay.metered.ca:80"))),

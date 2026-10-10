@@ -227,14 +227,14 @@ class RealtimeClient(
             _state.value = RealtimeState.Stopped(code, reason)
             return
         }
-        scheduleReconnect(connectionGeneration)
+        scheduleReconnect(connectionGeneration, code)
     }
 
     @Synchronized
-    private fun scheduleReconnect(connectionGeneration: Long) {
+    private fun scheduleReconnect(connectionGeneration: Long, code: Int) {
         reconnect?.cancel()
         val attempt = retryCount++
-        val delayMs = reconnectDelay(attempt, random())
+        val delayMs = if (isSlowRetryRealtimeClose(code)) slowRetryDelay(random()) else reconnectDelay(attempt, random())
         _state.value = RealtimeState.Connecting(attempt)
         reconnect = scope.launch {
             delay(delayMs)

@@ -969,7 +969,9 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                     onRetry = viewModel::loadOlderMessages,
                 )
             }
-            ui.error?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
+            // One failure, one banner: a thread load and a side request failing for the same reason showed it twice.
+            ui.error?.takeUnless { it == ui.threadRefreshError || it == ui.olderMessagesError?.message }
+                ?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
             Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
                 Modifier.fillMaxSize(),

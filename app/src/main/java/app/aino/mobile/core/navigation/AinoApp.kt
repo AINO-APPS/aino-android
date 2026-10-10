@@ -188,7 +188,13 @@ fun AinoApp(
     LaunchedEffect(realtimeState, tenantAuthenticated) {
         val connected = realtimeState == RealtimeState.Connected
         app.aino.mobile.core.call.CallRealtimeLink.setConnected(connected)
-        if (connected && tenantAuthenticated) app.aino.mobile.core.call.CallReconciler.reconcile(appContext)
+        if (connected && tenantAuthenticated) {
+            app.aino.mobile.core.call.CallReconciler.reconcile(appContext)
+            // Real TURN credentials ready before anyone presses "call".
+            withContext(Dispatchers.IO) {
+                app.aino.mobile.core.call.webrtc.IceConfigRepository(app.aino.mobile.core.AppContainer.get(appContext).api).prefetch()
+            }
+        }
     }
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose { app.aino.mobile.core.call.CallRealtimeLink.setConnected(false) }
@@ -206,7 +212,12 @@ fun AinoApp(
             callUi.visible || meeting != null || ringing.route != null
         }.distinctUntilChanged().collect(realtime::setInCall)
     }
-    LaunchedEffect(tenantAuthenticated) { if (!tenantAuthenticated) meetingSession.leave() }
+    LaunchedEffect(tenantAuthenticated) {
+        if (!tenantAuthenticated) {
+            meetingSession.leave()
+            app.aino.mobile.core.call.webrtc.IceConfigRepository.clearCache()
+        }
+    }
     // P7.4: the bell's notifications live for the session (web NotificationBell polls every 30s).
     val notifications = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.notifications.NotificationsViewModel>(
         factory = app.aino.mobile.feature.notifications.NotificationsViewModel.factory(appContext),

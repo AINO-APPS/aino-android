@@ -44,4 +44,21 @@ fun reconnectDelay(attempt: Int, randomFraction: Double): Long {
     return (reconnectCeiling(attempt) * randomFraction).toLong()
 }
 
-fun isTerminalRealtimeClose(code: Int): Boolean = code in setOf(4001, 4003, 4029)
+/** Only "this session is over" stops the socket; AinoApp then verifies the session and may retry. */
+fun isTerminalRealtimeClose(code: Int): Boolean = code == 4001
+
+/**
+ * The server is up but asked us to come back later: tenant pool unavailable
+ * (4003 / 1013) or too many sockets for this user (4029, stale ones expire).
+ * Retrying slowly recovers on its own; stopping left chat stuck until restart.
+ */
+fun isSlowRetryRealtimeClose(code: Int): Boolean = code in setOf(1013, 4003, 4029)
+
+/** 15–30 s, jittered so a fleet of clients does not return in lockstep. */
+fun slowRetryDelay(randomFraction: Double): Long {
+    require(randomFraction in 0.0..1.0)
+    return SLOW_RETRY_MIN_MS + ((SLOW_RETRY_MAX_MS - SLOW_RETRY_MIN_MS) * randomFraction).toLong()
+}
+
+const val SLOW_RETRY_MIN_MS = 15_000L
+const val SLOW_RETRY_MAX_MS = 30_000L
