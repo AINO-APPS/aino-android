@@ -400,8 +400,84 @@ fun applyRealtimeMediaJob(messages: List<ChatMessage>, event: ChatMediaJobEvent)
         } else message
     }
 
+const val POLL_MIN_OPTIONS = 2
+const val POLL_MAX_OPTIONS = 10
+const val POLL_QUESTION_LIMIT = 500
+const val POLL_OPTION_LIMIT = 200
+const val POLL_VISIBLE_VOTERS = 5
+
+fun pollCreationError(question: String, options: List<String>): String? = when {
+    question.isBlank() -> "Add a question."
+    question.length > POLL_QUESTION_LIMIT -> "Keep the question within 500 characters."
+    options.size !in POLL_MIN_OPTIONS..POLL_MAX_OPTIONS -> "Use between 2 and 10 options."
+    options.any { it.length > POLL_OPTION_LIMIT } -> "Keep each option within 200 characters."
+    options.count(String::isNotBlank) < POLL_MIN_OPTIONS -> "Add at least two options."
+    else -> null
+}
+
+data class PollDraftOption(val id: Int, val text: String = "")
+data class PollDraft(
+    val question: String = "",
+    val options: List<PollDraftOption> = listOf(PollDraftOption(0), PollDraftOption(1)),
+    val multiSelect: Boolean = false,
+    val nextOptionId: Int = 2,
+) {
+    val error: String? get() = pollCreationError(question, options.map { it.text })
+    fun addOption(): PollDraft = if (options.size >= POLL_MAX_OPTIONS) this
+        else copy(options = options + PollDraftOption(nextOptionId), nextOptionId = nextOptionId + 1)
+    fun removeOption(id: Int): PollDraft = if (options.size <= POLL_MIN_OPTIONS) this
+        else copy(options = options.filterNot { it.id == id })
+    fun updateOption(id: Int, text: String): PollDraft = copy(
+        options = options.map { if (it.id == id) it.copy(text = text.take(POLL_OPTION_LIMIT)) else it },
+    )
+}
+
+data class PollUiState(
+    val loading: Boolean = false,
+    val voting: Boolean = false,
+    val pendingOptionIndex: Int? = null,
+    val loadError: String? = null,
+    val voteError: String? = null,
+) {
+    fun canVote(poll: ChatPoll?): Boolean = poll != null && poll.closedAt == null &&
+        !loading && !voting && loadError == null
+}
+
+data class PollCreationState(
+    val sending: Boolean = false,
+    val error: String? = null,
+    val createdPollId: Long? = null,
+)
+
 data class PollOptionTally(val count: Int, val percent: Int, val mine: Boolean)
 data class PollTally(val total: Int, val options: List<PollOptionTally>)
+
+data class PollVoterGroup(
+    val optionIndex: Int,
+    val label: String,
+    val voters: List<PollVoter>,
+    val leading: Boolean,
+    val tied: Boolean,
+) {
+    fun visibleVoters(expanded: Boolean): List<PollVoter> = if (expanded) voters else voters.take(POLL_VISIBLE_VOTERS)
+}
+
+fun PollVoter.displayName(currentUserId: Long?): String =
+    if (userId == currentUserId) "You" else fullName.takeIf(String::isNotBlank) ?: "Member"
+
+fun pollVoterGroups(poll: ChatPoll, currentUserId: Long?): List<PollVoterGroup> {
+    val groups = poll.options.mapIndexed { index, label ->
+        PollVoterGroup(index, label, poll.votes[index].orEmpty().sortedWith(
+            compareBy<PollVoter> { it.userId != currentUserId }.thenBy { it.fullName.lowercase() }.thenBy { it.userId },
+        ), leading = false, tied = false)
+    }
+    val maximum = groups.maxOfOrNull { it.voters.size } ?: 0
+    val tied = maximum > 0 && groups.count { it.voters.size == maximum } > 1
+    return groups.map { it.copy(leading = maximum > 0 && it.voters.size == maximum, tied = tied && it.voters.size == maximum) }
+}
+
+fun pollUniqueVoterCount(poll: ChatPoll): Int = poll.votes.values.flatten().map { it.userId }.distinct().size
+fun pollVoteLabel(count: Int): String = "$count vote${if (count == 1) "" else "s"}"
 
 /** Web `PollDisplay` arithmetic: per-option count, rounded share of all votes, and the user's own picks. */
 fun pollTally(poll: ChatPoll?, optionCount: Int, currentUserId: Long?): PollTally {
@@ -729,7 +805,7 @@ fun chatMessageEnvelope(
     val multiSelect: Boolean = false,
 )
 @Serializable data class PollVoteRequest(val optionIdx: Int)
-@Serializable data class PollVoter(val userId: Long, val fullName: String)
+@Serializable data class PollVoter(val userId: Long, val fullName: String, val avatar: String? = null)
 @Serializable data class ChatPoll(
     val id: Long,
     @SerialName("conversation_id") val conversationId: Long,

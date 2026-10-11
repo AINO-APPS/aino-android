@@ -154,6 +154,8 @@ data class ChatUiState(
     val callsEnabled: Boolean = false,
     /** Loaded poll tallies by poll id, refreshed on `chat_poll_vote`. */
     val polls: Map<Long, ChatPoll> = emptyMap(),
+    val pollStates: Map<Long, PollUiState> = emptyMap(),
+    val pollCreation: PollCreationState = PollCreationState(),
     val loading: Boolean = false,
     val conversations: List<ChatConversation> = emptyList(),
     val presence: Map<Long, ChatPresence> = emptyMap(),
@@ -267,6 +269,8 @@ class ChatViewModel(
     private var scope: CacheScope? = null
     private var cache: ChatCache? = null
     private var realtimeRefresh: Job? = null
+    private val pollLock = Any()
+    private val pollRefreshAgain = mutableSetOf<Long>()
     @Volatile private var refreshAgain = false
     private val listRetries = RetryBackoff(transientRetryDelaysMs)
     private val threadRetries = RetryBackoff(transientRetryDelaysMs)
@@ -413,6 +417,7 @@ class ChatViewModel(
         // In-flight texts of the previous account stop at their next attempt; its durable worker takes them over.
         scope?.let { previous -> viewModelScope.launch(Dispatchers.IO) { runCatching { outbox.recover(previous) } } }
         scope = next
+        synchronized(pollLock) { pollRefreshAgain.clear() }
         cache = next?.let(cacheFactory)
         threadCache.clear()
         listRetry?.cancel()
@@ -1512,39 +1517,130 @@ class ChatViewModel(
         }
     }
 
+    fun resetPollCreation() {
+        if (!_ui.value.pollCreation.sending) _ui.update { it.copy(pollCreation = PollCreationState()) }
+    }
+
     fun createPoll(question: String, options: List<String>, multiSelect: Boolean) {
         val conversation = _ui.value.selectedConversation ?: return
-        val cleaned = options.map(String::trim).filter(String::isNotEmpty)
-        if (question.isBlank() || cleaned.size < 2) {
-            _ui.update { st -> st.copy(error = "A poll needs a question and at least two options") }
-            return
+        val requestScope = scope
+        synchronized(pollLock) {
+            if (_ui.value.pollCreation.sending || _ui.value.pollCreation.createdPollId != null) return
+            val error = if (!conversation.isGroup) "Polls are available in groups." else pollCreationError(question, options)
+            if (error != null) {
+                _ui.update { it.copy(pollCreation = PollCreationState(error = error)) }
+                return
+            }
+            _ui.update { it.copy(pollCreation = PollCreationState(sending = true)) }
         }
+        val cleaned = options.map(String::trim).filter(String::isNotEmpty)
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.createPoll(conversation.id, question.trim(), cleaned, multiSelect) }.fold(
-                onSuccess = { refreshThread() },
-                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not create poll")) } },
-            )
+            try {
+                val response = repository.createPoll(conversation.id, question.trim(), cleaned, multiSelect)
+                check(response.ok) { "Could not create poll. Try again." }
+                if (scope != requestScope) return@launch
+                _ui.update { it.copy(
+                    polls = it.polls + (response.poll.id to response.poll),
+                    pollCreation = PollCreationState(createdPollId = response.poll.id),
+                ) }
+                if (_ui.value.selectedConversation?.id == conversation.id) refreshThread()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (scope == requestScope) _ui.update {
+                    it.copy(pollCreation = PollCreationState(error = pollActionError(error, "Could not create poll. Try again.")))
+                }
+            }
         }
     }
 
-    /** Web `PollDisplay`: the bubble shows the live tally from `GET /chat/polls/:id`. */
+    /** Serializes each poll's refresh/mutation so an older GET cannot overwrite a vote. */
     fun loadPoll(pollId: Long) {
+        val requestScope = scope
+        synchronized(pollLock) {
+            val state = _ui.value.pollStates[pollId] ?: PollUiState()
+            if (state.loading || state.voting) {
+                pollRefreshAgain += pollId
+                return
+            }
+            _ui.update { it.copy(pollStates = it.pollStates + (pollId to state.copy(loading = true, loadError = null))) }
+        }
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.loadPoll(pollId) }.onSuccess { poll ->
-                _ui.update { st -> st.copy(polls = st.polls + (pollId to poll)) }
+            try {
+                val poll = repository.loadPoll(pollId)
+                if (scope != requestScope) return@launch
+                _ui.update { it.copy(polls = it.polls + (pollId to poll)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (scope == requestScope) updatePollState(pollId) {
+                    it.copy(loadError = pollActionError(error, "Could not load votes. Try again."))
+                }
+            } finally {
+                synchronized(pollLock) {
+                    if (scope == requestScope) {
+                        updatePollState(pollId) { it.copy(loading = false) }
+                        refreshPollAgain(pollId)
+                    }
+                }
             }
         }
     }
 
     fun votePoll(message: ChatMessage, optionIndex: Int) {
         val pollId = message.pollId() ?: return
+        val requestScope = scope
+        synchronized(pollLock) {
+            val poll = _ui.value.polls[pollId] ?: return
+            val state = _ui.value.pollStates[pollId] ?: PollUiState()
+            if (!state.canVote(poll) || optionIndex !in poll.options.indices || message.deletedAt != null) return
+            if (message.conversationId != null && message.conversationId != poll.conversationId) return
+            updatePollState(pollId) { it.copy(voting = true, pendingOptionIndex = optionIndex, voteError = null) }
+        }
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repository.votePoll(pollId, optionIndex) }.fold(
-                onSuccess = { loadPoll(pollId) },
-                onFailure = { _ui.update { st -> st.copy(error = actionError(it, "Could not update poll")) } },
-            )
+            try {
+                val response = repository.votePoll(pollId, optionIndex)
+                check(response.ok) { "Could not update vote. Try again." }
+                // Reload identities and counts together; never fabricate voters from the mutation's id-only response.
+                val poll = try {
+                    repository.loadPoll(pollId)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    if (scope == requestScope) updatePollState(pollId) {
+                        it.copy(loadError = "Vote sent, but results could not refresh. Retry to see the latest votes.")
+                    }
+                    null
+                }
+                if (scope != requestScope) return@launch
+                if (poll != null) _ui.update { it.copy(polls = it.polls + (pollId to poll)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (scope == requestScope) updatePollState(pollId) {
+                    it.copy(voteError = pollActionError(error, "Could not update vote. Try again."))
+                }
+            } finally {
+                synchronized(pollLock) {
+                    if (scope == requestScope) {
+                        updatePollState(pollId) { it.copy(voting = false, pendingOptionIndex = null) }
+                        refreshPollAgain(pollId)
+                    }
+                }
+            }
         }
     }
+
+    private fun updatePollState(pollId: Long, change: (PollUiState) -> PollUiState) {
+        _ui.update { it.copy(pollStates = it.pollStates + (pollId to change(it.pollStates[pollId] ?: PollUiState()))) }
+    }
+
+    private fun refreshPollAgain(pollId: Long) {
+        if (synchronized(pollLock) { pollRefreshAgain.remove(pollId) }) loadPoll(pollId)
+    }
+
+    private fun pollActionError(error: Exception, fallback: String): String =
+        if (error is ApiError) userFacingMessage(error, fallback) else fallback
 
     // ---- Message selection (web Chat.tsx messageSelectionBar) ----
 

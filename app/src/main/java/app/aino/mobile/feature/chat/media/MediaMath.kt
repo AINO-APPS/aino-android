@@ -6,6 +6,45 @@ import kotlin.math.min
 /* Pure, Android-free math for the camera and image editor (unit-tested). */
 
 enum class ShutterAction { Photo, Video }
+enum class CameraMode { Photo, Video }
+
+/** Zoom ratios on the active CameraX camera, not assertions about optical lenses. */
+fun cameraZoomPresets(min: Float, max: Float): List<Float> =
+    listOf(1f, 2f, 5f).filter { it >= min && it <= max }
+
+fun cameraShutterAction(mode: CameraMode, pressDurationMs: Long, videoSupported: Boolean): ShutterAction =
+    if (videoSupported && (mode == CameraMode.Video || shutterAction(pressDurationMs) == ShutterAction.Video)) ShutterAction.Video
+    else ShutterAction.Photo
+
+internal class CaptureSession {
+    var active = true
+        private set
+    var busy = false
+        private set
+    private var generation = 0
+
+    fun begin(): Int? {
+        if (!active || busy) return null
+        busy = true
+        return ++generation
+    }
+
+    fun finish(token: Int): Boolean {
+        if (!active || !busy || token != generation) return false
+        busy = false
+        return true
+    }
+
+    fun cancel() {
+        generation++
+        busy = false
+    }
+
+    fun dispose() {
+        cancel()
+        active = false
+    }
+}
 
 /** Signal-style shutter: a short tap takes a photo, holding past the threshold records video. */
 fun shutterAction(pressDurationMs: Long, holdThresholdMs: Long = 400): ShutterAction =

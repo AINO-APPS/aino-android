@@ -809,10 +809,15 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     }
     val openGallery = { gallery.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) cameraOpen = true }
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val openCamera = {
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) cameraOpen = true
         else cameraPermission.launch(Manifest.permission.CAMERA)
     }
+    app.aino.mobile.feature.chat.media.CaptureInputBoundary(cameraOpen || sendItems != null)
     LaunchedEffect(cameraOpen) { if (cameraOpen) cameraRecent = loadRecentMedia(context, limit = 30).map(RecentMedia::uri) }
     BackHandler(enabled = ui.showInfo) { viewModel.closeInfo() }
     BackHandler(enabled = ui.selectedMessageIds.isNotEmpty()) { viewModel.clearMessageSelection() }
@@ -1022,6 +1027,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             onRetry = { viewModel.retryMedia(item.message) },
                             onVote = { option -> viewModel.votePoll(item.message, option) },
                             poll = item.message.pollId()?.let(ui.polls::get),
+                            pollState = item.message.pollId()?.let(ui.pollStates::get) ?: PollUiState(),
                             onLoadPoll = viewModel::loadPoll,
                             onOpenMedia = { viewingMediaId = it.id },
                             selectionActive = ui.selectedMessageIds.isNotEmpty(),
@@ -1093,7 +1099,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)))
             } else if (conversation.isGroup && !GroupPermissions.of(conversation, ui.members, ui.currentUserId).canSend) {
                 AdminsOnlyComposerNotice()
-            } else MessageComposer(
+            } else if (!cameraOpen && sendItems == null) MessageComposer(
                 value = ui.composer,
                 uploading = ui.uploading,
                 editingMessage = ui.editingMessage,
@@ -1110,7 +1116,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 onCancelReply = viewModel::cancelReply,
                 onPickDocument = onPickDocument,
                 onUploadVoice = viewModel::uploadVoiceNote,
-                onOpenPoll = { pollOpen = true },
+                onOpenPoll = { viewModel.resetPollCreation(); pollOpen = true },
                 onOpenCamera = openCamera,
                 onOpenGallery = openGallery,
                 onSendMedia = { sendItems = sendItems.orEmpty() + it },
@@ -1167,8 +1173,9 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     }
     if (pollOpen) {
         PollCreatorDialog(
-            onSubmit = { q, options, multi -> pollOpen = false; viewModel.createPoll(q, options, multi) },
-            onClose = { pollOpen = false },
+            onSubmit = viewModel::createPoll,
+            state = ui.pollCreation,
+            onClose = { pollOpen = false; viewModel.resetPollCreation() },
         )
     }
 }
@@ -1543,6 +1550,7 @@ private fun MessageBubble(
     /** Call-history chip tap: place the same call type again ("voice" / "video"). */
     onStartCall: (String) -> Unit = {},
     poll: ChatPoll? = null,
+    pollState: PollUiState = PollUiState(),
     onLoadPoll: (Long) -> Unit = {},
 ) {
     var actionsOpen by remember { mutableStateOf(false) }
@@ -1681,39 +1689,17 @@ private fun MessageBubble(
                                 footer(false)
                             }
                             message.formatType == "poll" -> {
-                                val pollId = message.pollId()
-                                LaunchedEffect(pollId) { if (pollId != null && poll == null) onLoadPoll(pollId) }
-                                val labels = poll?.options
-                                    ?: message.metadata?.jsonObject?.get("options")?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
-                                    .orEmpty()
-                                val tally = pollTally(poll, labels.size, currentUserId)
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(HeroIcons.ChartBar, null, Modifier.size(18.dp), tint = fg)
-                                    Text(poll?.question ?: message.body(), Modifier.padding(start = 7.dp), color = fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                                }
-                                labels.forEachIndexed { index, label ->
-                                    val option = tally.options[index]
-                                    val shape = RoundedCornerShape(10.dp)
-                                    Box(
-                                        Modifier.fillMaxWidth().clip(shape)
-                                            .border(if (option.mine) 2.dp else 1.dp, fg.copy(alpha = if (option.mine) .9f else .35f), shape)
-                                            .clickable(enabled = poll?.closedAt == null) { onVote(index) },
-                                    ) {
-                                        Box(Modifier.matchParentSize().fillMaxWidth(option.percent / 100f).background(fg.copy(alpha = .14f)))
-                                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Text(label, Modifier.weight(1f), color = fg, fontSize = 15.sp)
-                                            if (option.count > 0) Text("${option.count} (${option.percent}%)", color = fg.copy(alpha = .8f), fontSize = 13.sp)
-                                            if (option.mine) Text(" ✓", color = fg, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        "${tally.total} vote${if (tally.total == 1) "" else "s"}" + if (poll?.multiSelect == true) " · Multiple choice" else "",
-                                        Modifier.weight(1f), color = fg.copy(alpha = .7f), fontSize = 12.sp,
-                                    )
-                                    footer(false)
-                                }
+                                ChatPollCard(
+                                    message, poll, pollState, currentUserId,
+                                    onVote, { message.pollId()?.let(onLoadPoll) },
+                                    outgoing = isMine,
+                                    interactionEnabled = !selectionActive,
+                                    onSelect = onToggleSelect,
+                                    onLongPress = {
+                                        if (selectionActive) onToggleSelect() else actionsOpen = true
+                                    },
+                                    footer = { footer(false) },
+                                )
                             }
                             mediaOnly -> Box {
                                 ChatMediaPreview(

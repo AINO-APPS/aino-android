@@ -20,10 +20,8 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -404,53 +402,4 @@ fun AttachmentPreviewDialog(pending: PendingAttachment, initialCaption: String, 
             }
         }
     }
-}
-
-/** Port of web `PollCreator.tsx` (2–10 options, 500/200 char limits, multi-select). */
-@Composable
-fun PollCreatorDialog(onSubmit: (String, List<String>, Boolean) -> Unit, onClose: () -> Unit) {
-    val colors = LocalWebColors.current
-    var question by remember { mutableStateOf("") }
-    val options = remember { mutableStateListOf("", "") }
-    var multi by remember { mutableStateOf(false) }
-    val valid = question.isNotBlank() && options.count(String::isNotBlank) >= 2
-    Dialog(onDismissRequest = onClose) {
-        Column(
-            Modifier.fillMaxWidth().background(colors.bgElevated, RoundedCornerShape(14.dp)).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Create Poll", Modifier.weight(1f), color = colors.text, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                Icon(HeroIcons.XMark, "Close", Modifier.size(20.dp).clickable(onClick = onClose), tint = colors.textSecondary)
-            }
-            PollField(question, "Ask a question...", 500) { question = it }
-            options.forEachIndexed { index, value ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { PollField(value, "Option", 200) { options[index] = it } }
-                    if (options.size > 2) Icon(HeroIcons.XMark, "Remove option", Modifier.padding(start = 6.dp).size(18.dp).clickable { options.removeAt(index) }, tint = colors.textSecondary)
-                }
-            }
-            if (options.size < 10) Text("+ Add option", Modifier.clickable { options.add("") }, color = colors.primary, fontSize = 13.sp)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(multi, { multi = it })
-                Text("Allow multiple selections", color = colors.text, fontSize = 13.sp)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onClose) { Text("Cancel") }
-                TextButton(onClick = { onSubmit(question, options.toList(), multi) }, enabled = valid) { Text("Send Poll") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PollField(value: String, placeholder: String, max: Int, onChange: (String) -> Unit) {
-    val colors = LocalWebColors.current
-    BasicTextField(
-        value, { onChange(it.take(max)) },
-        Modifier.fillMaxWidth().background(colors.inputBg, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
-        singleLine = true,
-        textStyle = TextStyle(color = colors.text, fontSize = 14.sp),
-        decorationBox = { inner -> if (value.isEmpty()) Text(placeholder, color = colors.textMuted, fontSize = 14.sp); inner() },
-    )
 }

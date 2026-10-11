@@ -112,6 +112,33 @@ Material dynamic color is intentionally disabled so device wallpaper colors do
 not replace the AINO product identity. Light mode uses the platform's warm neutral
 palette and preserves the same blue accent hierarchy.
 
+## Chat camera and polls
+
+The inline camera and attachment-tray camera open the same capture screen. Opening
+it hides the keyboard and removes composer focus without discarding the typed
+message. Closing it returns to the draft; the keyboard stays closed until tapped.
+
+- **Photo:** tap the shutter for a photo; hold for a quick video and release to finish.
+- **Video:** tap to start recording and tap the stop control to finish.
+- **Controls:** gallery/recent thumbnail, camera flip, flash and pinch zoom. The
+  1×/2×/5× presets only appear when supported by the active camera's zoom range;
+  they do not imply separate optical lenses. Flash/Video/flip adapt to hardware.
+- Videos retain the existing 60-second / 25 MiB limits. The first recording asks
+  for microphone permission; when unavailable, a subsequent recording is clearly
+  marked as silent. Closing/backgrounding the camera cancels an unfinished capture.
+- Captures still go through the existing media review/edit/send screen.
+
+Group polls use the existing API and voting rules: single-choice replaces the
+previous choice, multiple-choice allows several choices, and tapping a selected
+option removes that vote. Closed polls are read-only. **View votes** shows voters
+by option, including empty options, and refreshes with the live poll. Result bars
+are shares of all selections; voter counts are distinct people, not selections.
+Voter photos use the shared authenticated image loader; missing, loading, or failed
+photos show real-name initials, including for rows labeled **You**. Older poll
+responses without a voter photo remain supported.
+Creation retains the 2–10 option, 500-character question and 200-character option
+limits, with multiple choice off by default.
+
 ## Updates
 
 There are two product flavors, built from one codebase:
