@@ -98,14 +98,14 @@ object NotificationReconciler {
         if (stale.isEmpty()) return
         val compat = NotificationManagerCompat.from(context)
         stale.forEach { n ->
-            if (n.tag == NotificationTags.CHAT || n.tag == null) ChatNotificationHistory.clear(n.id.toLong())
+            if (n.tag == NotificationTags.CHAT || n.tag == null) ChatNotifications.forget(n.id.toLong())
             runCatching { compat.cancel(n.tag, n.id) }
         }
     }
 
     /** Sign-out: nothing from the previous account may stay in the tray (calls excepted). */
     fun clearAll(context: Context) {
-        ChatNotificationHistory.clearAll()
+        ChatNotifications.clearAll()
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         val active = runCatching { manager.activeNotifications.toList() }.getOrNull() ?: return
         val compat = NotificationManagerCompat.from(context)

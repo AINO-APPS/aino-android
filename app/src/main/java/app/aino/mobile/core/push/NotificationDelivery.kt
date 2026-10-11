@@ -75,6 +75,7 @@ object NotificationDelivery {
                 "senderAvatar" to message.senderAvatar.orEmpty(), "body" to (message.content?.takeIf(String::isNotBlank) ?: message.fileName ?: "Attachment"),
                 "title" to (conversation?.groupName ?: message.senderName ?: "New message"),
                 "isGroup" to (conversation?.isGroup == true).toString(), "groupName" to conversation?.groupName.orEmpty(),
+                "groupAvatar" to (conversation ?: cachedConversation(context, message.conversationId))?.groupAvatar.orEmpty(),
             ))
         }
     }
@@ -114,7 +115,9 @@ object NotificationDelivery {
         return deliver(context, push.dedupeKey) {
             if (isRead(context, conversationId, runCatching { java.time.Instant.parse(push.data.getValue("sentAt")).toEpochMilli() }.getOrNull())) PostingOutcome.Suppressed("Message already read")
             else if (conversation?.isMuted == true) PostingOutcome.Suppressed("Muted conversation")
-            else runCatching { ChatNotifications.show(context, push) }.getOrElse { PostingOutcome.Failed("Rich notification failed") }
+            else runCatching {
+                ChatNotifications.showMessage(context, push.data + ("groupAvatar" to conversation?.groupAvatar.orEmpty()))
+            }.getOrElse { PostingOutcome.Failed("Rich notification failed") }
                 .let { outcome ->
                     if (outcome is PostingOutcome.Failed && PushNotifications.display(context, push)) PostingOutcome.Posted else outcome
                 }
