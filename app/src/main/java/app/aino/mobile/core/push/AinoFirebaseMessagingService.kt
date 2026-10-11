@@ -71,7 +71,7 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
                 displayFallback = false
             }
             // Signal-style MessagingStyle with Reply / Mark-as-read. FCM delivers
-            // onMessageReceived on a worker thread, so the avatar fetch is safe here.
+            // onMessageReceived posts immediately; contact photos enrich the notification asynchronously.
             PushKind.ChatMessage -> {
                 NotificationDelivery.onPush(applicationContext, validated)
                 displayFallback = false

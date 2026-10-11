@@ -19,6 +19,12 @@ import app.aino.mobile.R
 import app.aino.mobile.core.AppContainer
 import app.aino.mobile.core.notifications.ConversationNotifications
 import app.aino.mobile.core.notifications.NotificationSoundPrefs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import java.util.UUID
 
 /**
  * Signal-style conversation notifications (Signal `NotificationFactory`):
@@ -46,14 +52,35 @@ object ChatNotifications {
         val channelId: String,
         val shortcutId: String?,
         val largeIcon: Bitmap,
+        val account: String?,
+        val generation: String,
+        val photos: Map<String, Bitmap>,
     )
 
+    private const val EXTRA_GENERATION = "aino_avatar_generation"
     private val meta = mutableMapOf<Long, Meta>()
+    private val avatarJobs = mutableMapOf<Long, Job>()
+    private val avatarScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    internal var avatarSource: NotificationAvatarSource = NotificationAvatarLoader
+    internal var accountProvider: (Context) -> String? = ::notificationAccount
+
+    private fun ensureConversation(context: Context, data: Map<String, String>, title: String, icon: Bitmap) =
+        ConversationNotifications.ensureConversation(context, mapOf(
+            "conversationId" to data.getValue("conversationId"), "title" to title,
+            "senderId" to data.getValue("senderId"), "senderName" to data.getValue("senderName"),
+            "parentChannelId" to PushNotifications.MESSAGES,
+        ), iconBitmap = icon)
+
+    private fun cachedPhoto(context: Context, url: String?, account: String?): Bitmap? =
+        url?.takeIf(String::isNotBlank)?.let {
+            runCatching { avatarSource.cached(context, it, account) }.getOrNull()
+        }
 
     /** Shows (or restacks) the notification for a `chat_message` push. Blocking I/O: call off the main thread. */
     fun show(context: Context, push: ValidatedPush): PostingOutcome = showMessage(context, push.data)
 
     /** Internal presentation metadata, not a synthesized FCM payload. */
+    @Synchronized
     fun showMessage(context: Context, data: Map<String, String>): PostingOutcome {
         val conversationId = data.getValue("conversationId").toLong()
         // Signal DefaultMessageNotifier: the thread on screen is marked read and
@@ -68,28 +95,29 @@ object ChatNotifications {
         val senderName = data.getValue("senderName")
         val title = if (isGroup) data["groupName"]?.takeIf(String::isNotBlank) ?: data.getValue("title") else senderName
         val senderKey = "aino-user-${data.getValue("senderId")}"
-        // Delivery never waits for network image loading.
-        val avatar: Bitmap? = null
-        // Group: the conversation's own identity; 1:1: the sender's photo or initials.
+        val account = accountProvider(context)
+        val previous = meta[conversationId]?.takeIf { it.account == account }
+        if (previous == null) ChatNotificationHistory.clear(conversationId)
+        val photos = previous?.photos.orEmpty().toMutableMap()
+        val senderUrl = data["senderAvatar"]?.takeIf(String::isNotBlank)
+        val avatar = cachedPhoto(context, senderUrl, account)
+        if (senderUrl != null && avatar != null) photos[senderUrl] = avatar
+        // The group icon belongs to the conversation; each message keeps its sender icon.
         val conversationKey = if (isGroup) "aino-conversation-$conversationId" else senderKey
-        val largeIcon = if (isGroup) NotificationAvatars.fallback(title, conversationKey) else avatar ?: NotificationAvatars.fallback(title, conversationKey)
-        val conversation = ConversationNotifications.ensureConversation(
-            context,
-            mapOf(
-                "conversationId" to conversationId.toString(),
-                "title" to title,
-                "senderId" to data.getValue("senderId"),
-                "senderName" to senderName,
-                "parentChannelId" to PushNotifications.MESSAGES,
-            ),
-            // One UI draws the conversation shortcut's icon; without one it shows the app logo.
-            iconBitmap = if (isGroup || avatar == null) NotificationAvatars.fallback(title, conversationKey, adaptive = true) else avatar,
-        )
+        val conversationUrl = data[if (isGroup) "groupAvatar" else "senderAvatar"]?.takeIf(String::isNotBlank)
+        val conversationPhoto = cachedPhoto(context, conversationUrl, account) ?: photos[conversationUrl]
+        if (conversationUrl != null && conversationPhoto != null) photos[conversationUrl] = conversationPhoto
+        val largeIcon = conversationPhoto ?: NotificationAvatars.fallback(title, conversationKey)
+        val conversation = ensureConversation(context, data, title,
+            conversationPhoto ?: NotificationAvatars.fallback(title, conversationKey, adaptive = true))
         val info = Meta(
-            data, title, isGroup,
+            data.toMap(), title, isGroup,
             channelId = conversation?.get("channelId") ?: PushNotifications.MESSAGES,
             shortcutId = conversation?.get("shortcutId"),
             largeIcon = largeIcon,
+            account = account,
+            generation = previous?.generation ?: UUID.randomUUID().toString(),
+            photos = photos,
         )
         notificationBlocker(context, info.channelId)?.let { return it }
         synchronized(this) { meta[conversationId] = info }
@@ -104,10 +132,54 @@ object ChatNotifications {
                 messageId = data["messageId"]?.toLongOrNull(),
             ),
         )
-        return post(context, conversationId, info, lines, silent = !NotificationSoundPrefs.notificationAudible(context))
+        val outcome = post(context, conversationId, info, lines, silent = !NotificationSoundPrefs.notificationAudible(context))
+        if (outcome == PostingOutcome.Posted) loadPhotos(context.applicationContext, conversationId, info)
+        return outcome
+    }
+
+    private fun loadPhotos(context: Context, conversationId: Long, info: Meta) {
+        avatarJobs.remove(conversationId)?.cancel()
+        val source = avatarSource
+        val urls = (ChatNotificationHistory.get(conversationId).mapNotNull { it.senderAvatar } +
+            listOfNotNull(info.data[if (info.isGroup) "groupAvatar" else "senderAvatar"]))
+            .filter(String::isNotBlank).distinct().filterNot(info.photos::containsKey)
+        if (urls.isEmpty()) return
+        avatarJobs[conversationId] = avatarScope.launch {
+            for (url in urls) {
+                if (accountProvider(context) != info.account) break
+                val photo = try {
+                    source.load(context, url, info.account)
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    android.util.Log.w("AinoPush", "Notification avatar unavailable: ${error.javaClass.simpleName}")
+                    null
+                } ?: continue
+                synchronized(this@ChatNotifications) {
+                    val current = meta[conversationId]
+                    val active = runCatching {
+                        context.getSystemService(android.app.NotificationManager::class.java)?.activeNotifications
+                            ?.any { it.tag == NotificationTags.CHAT && it.id == conversationId.hashCode() &&
+                                it.notification.extras.getString(EXTRA_GENERATION) == info.generation } == true
+                    }.getOrDefault(false)
+                    if (current?.generation != info.generation || accountProvider(context) != info.account ||
+                        VisibleThread.isVisible(conversationId) || !active ||
+                        notificationBlocker(context, current.channelId) != null) return@launch
+                    val lines = ChatNotificationHistory.get(conversationId)
+                    if (lines.isEmpty()) return@launch
+                    val conversationUrl = current.data[if (current.isGroup) "groupAvatar" else "senderAvatar"]
+                    val updated = current.copy(photos = current.photos + (url to photo),
+                        largeIcon = if (url == conversationUrl) photo else current.largeIcon)
+                    meta[conversationId] = updated
+                    if (url == conversationUrl) ensureConversation(context, updated.data, updated.title, photo)
+                    post(context, conversationId, updated, lines, silent = true, onlyAlertOnce = true)
+                }
+            }
+        }
     }
 
     /** Adds the user's inline reply to the thread (as Signal does) and re-posts silently. */
+    @Synchronized
     fun appendReply(context: Context, conversationId: Long, text: String, failed: Boolean) {
         val info = synchronized(this) { meta[conversationId] } ?: return
         val lines = ChatNotificationHistory.append(
@@ -123,6 +195,7 @@ object ChatNotifications {
     }
 
     /** Dismisses a conversation's notification (mark-read action, or the thread was opened in-app). */
+    @Synchronized
     fun cancel(context: Context, conversationId: Long) {
         forget(conversationId)
         val manager = NotificationManagerCompat.from(context)
@@ -136,20 +209,33 @@ object ChatNotifications {
      * message starts a fresh notification instead of resurrecting (and
      * re-counting) the dismissed ones. Nothing is marked read.
      */
+    @Synchronized
     fun forget(conversationId: Long) {
+        avatarJobs.remove(conversationId)?.cancel()
         ChatNotificationHistory.clear(conversationId)
-        synchronized(this) { meta.remove(conversationId) }
+        meta.remove(conversationId)
     }
 
-    private fun post(context: Context, conversationId: Long, info: Meta, lines: List<ChatNotificationLine>, silent: Boolean): PostingOutcome {
+    @Synchronized
+    fun clearAll() {
+        avatarJobs.values.forEach(Job::cancel)
+        avatarJobs.clear()
+        meta.clear()
+        ChatNotificationHistory.clearAll()
+    }
+
+    private fun post(context: Context, conversationId: Long, info: Meta, lines: List<ChatNotificationLine>, silent: Boolean,
+        onlyAlertOnce: Boolean = false): PostingOutcome {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return PostingOutcome.Blocked("Notification permission denied")
         notificationBlocker(context, info.channelId)?.let { return it }
-        // One icon per sender: their (disk-cached) photo, else Signal's initials fallback.
         val icons = mutableMapOf<String, IconCompat>()
+        val senders = lines.filter { it.senderKey != null }.associateBy { it.senderKey }
         fun iconFor(line: ChatNotificationLine, key: String): IconCompat = icons.getOrPut(key) {
-            IconCompat.createWithBitmap(NotificationAvatars.fallback(line.senderName, key))
+            val latest = senders[key] ?: line
+            val photo = info.photos[latest.senderAvatar] ?: cachedPhoto(context, latest.senderAvatar, info.account)
+            IconCompat.createWithBitmap(photo ?: NotificationAvatars.fallback(latest.senderName, key))
         }
         val me = Person.Builder().setKey(SELF_KEY).setName("You").build()
         val style = NotificationCompat.MessagingStyle(me)
@@ -187,6 +273,9 @@ object ChatNotifications {
             .setDeleteIntent(dismissIntent(context, conversationId, requestCode))
             .setAutoCancel(true)
             .setSilent(silent)
+            .setOnlyAlertOnce(onlyAlertOnce)
+            .setWhen(lines.lastOrNull()?.timestampMs ?: System.currentTimeMillis())
+            .addExtras(android.os.Bundle().apply { putString(EXTRA_GENERATION, info.generation) })
             // Launcher badge: one per conversation. A per-line number made One UI
             // show the stacked backlog (up to MAX_LINES, own replies aside) as
             // unread long after the messages were read.

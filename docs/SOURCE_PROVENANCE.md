@@ -109,6 +109,25 @@ paths inspected, date, behaviors derived, and how the AINO implementation differ
   - The implementation does not claim physical proximity or live notification
     delivery was verified: no Android device was attached during this work.
 
+**2026-10-11: message notification contact photos (post-0.21.9 regression fix)**
+
+- Repository: `signalapp/Signal-Android`, commit
+  `92f5ccd3a52c4780a0c916566e26280f640ba1de`.
+- Inspected `notifications/v2/NotificationConversation.kt` and
+  `notifications/v2/NotificationFactory.kt` for behavior: notifications use the
+  conversation contact image when contact display is permitted, with a fallback
+  identity when a photo is unavailable; conversation identity differs from each
+  group's message sender identity.
+- AINO independently restores photos to Android large icons, sender `Person`
+  icons and conversation shortcuts using its installed Coil loader and shared
+  authenticated media client. Cached photos or initials display immediately;
+  asynchronous photo completion silently enriches only the still-active,
+  same-account notification. This is AINO's nonblocking delivery strategy, not
+  a claim that Signal uses the same asynchronous implementation.
+- No external code, resource, palette, dimension, test, or protocol was copied.
+  AINO's existing notification privacy setting remains `VISIBILITY_PRIVATE`;
+  this change adds no new notification privacy setting or dependency.
+
 ## Runtime dependencies
 
 Dependencies are declared in `gradle/libs.versions.toml` and resolved from Google

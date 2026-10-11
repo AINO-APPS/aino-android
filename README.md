@@ -135,6 +135,17 @@ and FCM share tenant/user-scoped event identities and separate receipt/presentat
 state. Blocked or failed posting is retryable; visible, muted, self and already-read
 messages are suppressed. Inline Reply and Mark as read remain available.
 
+Message notifications show contact photos in the large icon, sender `Person`, and
+conversation shortcut. A group uses its own photo when available, with separate
+member photos in the message stack. Memory-cached photos render immediately;
+otherwise initials appear first while the shared authenticated Coil loader checks
+disk cache or fetches the image. Successful loading silently updates the existing
+notification without a second sound, duplicate message, changed timestamp, or lost
+Reply / Mark as read actions. Failed loads keep the initials. Dismissal, read,
+visible-thread suppression, sign-out and account changes prevent late photo loads
+from restoring old notifications. The tiny status-bar icon remains monochrome as
+required by Android.
+
 Android advertises `pushVersion: 3`. `chat_reaction` data-only pushes carry
 conversation/message/owner/actor IDs, actor name/avatar, emoji, addition
 `reactionId`, `action: added`, `dedupeKey: reaction:<id>`, tenant ID, ISO-8601
