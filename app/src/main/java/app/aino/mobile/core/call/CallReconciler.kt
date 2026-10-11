@@ -27,6 +27,7 @@ object CallReconciler {
         if (!running.compareAndSet(false, true)) return
         try {
             val appContext = context.applicationContext
+            reconcileSavedRing(appContext, nowMs)
             val session = CallSessionRuntime.get(appContext)
             val state = session.state.value
             if (state.phase == CallPhase.Idle || state.phase.isTerminal()) return
@@ -51,7 +52,23 @@ object CallReconciler {
         val appContext = context.applicationContext
         // Reading drops a pending Answer/Decline older than its TTL.
         PendingCallActionStore.read(appContext)
-        RingingCallStore.clearIfStale(appContext, nowMs) ?: return
+        val record = RingingCallStore.read(appContext) ?: return
+        if (record.expiresAtMs > nowMs) return
         IncomingCallNotifications.cancel(appContext)
+    }
+
+    private suspend fun reconcileSavedRing(context: Context, nowMs: Long) {
+        val record = RingingCallStore.read(context) ?: return
+        if (record.expiresAtMs > nowMs || record.info.meetingCode != null) return
+        val status = withContext(Dispatchers.IO) {
+            runCatching { CallApi(AppContainer.get(context).api).status(record.info.callId) }.getOrNull()
+        } ?: return // Keep the record for retry when the server is reachable.
+        when (status.status) {
+            "missed" -> MissedCallNotifier.post(context, record.info)
+            "answered", "declined" -> MissedCallNotifier.markHandled(context, record.info.callId)
+            "ended" -> if (status.startedAt != null || (status.duration ?: 0) > 0) {
+                MissedCallNotifier.markHandled(context, record.info.callId)
+            }
+        }
     }
 }

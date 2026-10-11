@@ -10,6 +10,19 @@ plugins {
 // omit it; Firebase APIs fail closed at runtime while the rest of the app still
 // builds and remains testable.
 val hasFirebaseConfig = file("google-services.json").exists()
+val verifyReleaseFirebase = tasks.register("verifyReleaseFirebase") {
+    val firebaseFile = layout.projectDirectory.file("google-services.json").asFile
+    doLast {
+        check(firebaseFile.isFile) {
+            "Production release requires app/google-services.json. Local debug builds may omit Firebase configuration."
+        }
+    }
+}
+tasks.configureEach {
+    if (name.endsWith("ReleaseBuild") && name.startsWith("pre")) {
+        dependsOn(verifyReleaseFirebase)
+    }
+}
 if (hasFirebaseConfig) {
     apply(plugin = "com.google.gms.google-services")
     // Uploads R8 mapping files so Play-build crash stacks are readable.
@@ -76,8 +89,8 @@ android {
         // version: X.Y.Z -> X*1_000_000 + Y*1_000 + Z (each part 0..999).
         // `android-release.yml` re-derives this from the tag and fails on a mismatch.
         // Written without digit separators so the release workflow can parse it.
-        versionCode = 21008 // 0.21.8
-        versionName = "0.21.8"
+        versionCode = 21009 // 0.21.9
+        versionName = "0.21.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())

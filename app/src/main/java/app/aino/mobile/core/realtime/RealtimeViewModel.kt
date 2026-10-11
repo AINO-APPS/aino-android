@@ -74,6 +74,7 @@ class RealtimeViewModel(
             networkResets.collect {
                 // Closing pooled TLS sockets does network I/O: never on the main thread.
                 withContext(Dispatchers.IO) { runCatching(onNetworkReset) }
+                if (conditions.value.authenticated) refreshPushRegistration()
                 client.forceReconnect()
             }
         }
@@ -100,6 +101,7 @@ class RealtimeViewModel(
 
     fun setAuthenticatedTenant(active: Boolean) {
         conditions.update { it.copy(authenticated = active, pushAvailable = pushAvailable()) }
+        if (active) refreshPushRegistration()
     }
 
     fun setForeground(foreground: Boolean) {
@@ -107,10 +109,25 @@ class RealtimeViewModel(
             if (it.foreground == foreground) it
             else it.copy(foreground = foreground, backgroundedAtMs = if (foreground) null else clock(), pushAvailable = pushAvailable())
         }
+        if (foreground && conditions.value.authenticated) refreshPushRegistration()
     }
 
     fun setInCall(inCall: Boolean) {
         conditions.update { it.copy(inCall = inCall) }
+    }
+
+    private var registerPush: (suspend () -> Unit)? = null
+
+    fun refreshPushReadiness() {
+        conditions.update { it.copy(pushAvailable = pushAvailable()) }
+    }
+
+    private fun refreshPushRegistration() {
+        val register = registerPush ?: return
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { register() }
+            refreshPushReadiness()
+        }
     }
 
     /** The shell verified the session after a terminal close: try once more. */
@@ -141,7 +158,9 @@ class RealtimeViewModel(
                     networkResets = container.connectivity.resets,
                     onNetworkReset = container::resetConnections,
                     pushAvailable = { pushCanWake(appContext) },
-                ) as T
+                ).also { model ->
+                    model.registerPush = { app.aino.mobile.core.push.PushTokenRegistrar(appContext).syncCurrentToken() }
+                } as T
             }
         }
 
@@ -152,6 +171,7 @@ class RealtimeViewModel(
          */
         private fun pushCanWake(context: Context): Boolean = runCatching {
             com.google.firebase.FirebaseApp.getApps(context).isNotEmpty() &&
+                app.aino.mobile.core.push.PushTokenRegistrar.isRegistered(context) &&
                 com.google.android.gms.common.GoogleApiAvailability.getInstance()
                     .isGooglePlayServicesAvailable(context) == com.google.android.gms.common.ConnectionResult.SUCCESS &&
                 androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()

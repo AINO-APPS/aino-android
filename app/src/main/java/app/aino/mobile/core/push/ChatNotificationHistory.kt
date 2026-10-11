@@ -8,6 +8,7 @@ data class ChatNotificationLine(
     val senderKey: String?,
     val senderName: String,
     val senderAvatar: String? = null,
+    val messageId: Long? = null,
 )
 
 /**
@@ -40,7 +41,8 @@ internal fun appendLine(
     current: List<ChatNotificationLine>,
     line: ChatNotificationLine,
     max: Int = ChatNotificationHistory.MAX_LINES,
-): List<ChatNotificationLine> = (current + line).takeLast(max)
+): List<ChatNotificationLine> =
+    (current.filterNot { line.messageId != null && it.messageId == line.messageId } + line).takeLast(max)
 
 /** Group pushes carry "{sender}: {preview}"; the MessagingStyle row already shows the sender. */
 internal fun stripSenderPrefix(body: String, senderName: String, isGroup: Boolean): String {

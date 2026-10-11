@@ -35,4 +35,12 @@ class CallScreenAwakeTest {
     fun ringingIncomingCallKeepsScreenOn() {
         assertTrue(CallScreenAwake.shouldKeepScreenOn(idle, meetingActive = false, incomingRinging = true))
     }
+
+    @Test
+    fun proximityReplacesTheDisplayFlagButNeverSuppressesIncomingRinging() {
+        val active = idle.copy(visible = true, connectedAt = 1L)
+        assertFalse(CallScreenAwake.shouldKeepScreenOn(active, false, false, proximityActive = true))
+        assertTrue(CallScreenAwake.shouldKeepScreenOn(active, false, true, proximityActive = true))
+        assertTrue(CallScreenAwake.shouldKeepScreenOn(active, false, false, proximityActive = false))
+    }
 }

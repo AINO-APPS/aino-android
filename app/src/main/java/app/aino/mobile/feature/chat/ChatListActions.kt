@@ -93,7 +93,6 @@ internal fun RecipientSheet(
     onDismiss: () -> Unit,
 ) {
     val signal = signalColors
-    val withCallPermissions = app.aino.mobile.core.call.rememberCallPermissions()
     var muteOpen by remember { mutableStateOf(false) }
     var confirmBlock by remember { mutableStateOf(false) }
     val oneToOne = !conversation.isGroup && !conversation.isMeetingChat && !conversation.isSelfChat && conversation.otherUserId != null
@@ -113,10 +112,10 @@ internal fun RecipientSheet(
                 SheetButton(HeroIcons.ChatBubbleOvalLeft, "Message", Modifier.weight(1f)) { onDismiss(); onOpen() }
                 if (canCall) {
                     SheetButton(HeroIcons.Phone, "Voice", Modifier.weight(1f)) {
-                        withCallPermissions(false) { onDismiss(); viewModel.startCall(conversation, "voice") }
+                        onDismiss(); viewModel.startCall(conversation, "voice")
                     }
                     SheetButton(HeroIcons.VideoCamera, "Video", Modifier.weight(1f)) {
-                        withCallPermissions(true) { onDismiss(); viewModel.startCall(conversation, "video") }
+                        onDismiss(); viewModel.startCall(conversation, "video")
                     }
                 }
                 Box(Modifier.weight(1f)) {

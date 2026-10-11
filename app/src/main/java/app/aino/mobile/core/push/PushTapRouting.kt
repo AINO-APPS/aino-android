@@ -53,6 +53,7 @@ fun Intent.putPushTapExtras(push: ValidatedPush): Intent = apply {
         putExtra(EXTRA_NOTIFICATION, push.data["notificationId"])
         putExtra(EXTRA_TITLE, push.data["title"])
     }
+
     if (push.kind == PushKind.ChatMessage) {
         val isGroup = push.data["isGroup"] == "true"
         putExtra(EXTRA_TITLE, if (isGroup) push.data["groupName"]?.takeIf(String::isNotBlank) ?: push.data["title"] else push.data["senderName"])
@@ -60,6 +61,16 @@ fun Intent.putPushTapExtras(push: ValidatedPush): Intent = apply {
         if (!isGroup) putExtra(EXTRA_AVATAR, push.data["senderAvatar"])
         putExtra(EXTRA_UNREAD, push.data["unreadCount"])
     }
+}
+
+internal fun Intent.putChatNotificationTapExtras(data: Map<String, String>): Intent = apply {
+    putExtra(EXTRA_TYPE, "chat_message")
+    putExtra(EXTRA_CONVERSATION, data["conversationId"])
+    putExtra(EXTRA_DEDUPE, "msg:${data["messageId"]}")
+    putExtra(EXTRA_MESSAGE, data["messageId"])
+    putExtra(EXTRA_TITLE, data["groupName"]?.takeIf(String::isNotBlank) ?: data["senderName"])
+    putExtra(EXTRA_IS_GROUP, data["isGroup"])
+    putExtra(EXTRA_AVATAR, data["senderAvatar"])
 }
 
 /**

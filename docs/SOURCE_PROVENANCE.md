@@ -74,6 +74,41 @@ paths inspected, date, behaviors derived, and how the AINO implementation differ
     its `clientMsgId`. Otherwise it is sent again over REST, where the server
     dedupes by `clientMsgId`.
 
+**2026-10-11: call confirmation, independent cameras, proximity and notification reliability**
+
+- Repository: `signalapp/Signal-Android`, commit
+  `92f5ccd3a52c4780a0c916566e26280f640ba1de` (`AGPL-3.0-only`).
+- Call references consulted by the implementation coordinator:
+  `CommunicationActions.java`, `WebRtcCallActivity.kt`, `ProximityLock.java`,
+  `LockManager.java`, and `ActiveCallManager.kt`.
+- Notification references: the existing behavioral references
+  `app/src/main/java/org/thoughtcrime/securesms/notifications/v2/DefaultMessageNotifier.kt`
+  and `v2/NotificationFactory.kt`; notification directory entries and
+  `app/src/main/java/org/thoughtcrime/securesms/notifications/MarkReadReceiver.java`
+  and `DeleteNotificationReceiver.java` were checked at the same commit.
+- Behaviors derived:
+  - Outgoing voice calls have a confirmation step in Signal. AINO deliberately
+    confirms **both voice and video**, as explicitly requested; this is not a
+    claim that Signal confirms its direct video path.
+  - Local camera permission and capture state are independently controlled:
+    enabling one participant's camera does not enable the peer's camera.
+  - Android SDK proximity behavior distinguishes handset/audio-only state from
+    hands-free routes and video presentation. End-of-call, route changes and
+    lifecycle disposal release device resources.
+  - Visible conversations do not produce tray alerts; dismissing, marking read
+    and replying are different notification actions. Notification delivery must
+    not be mistaken for the original message's read state.
+- How AINO differs:
+  - AINO's own Compose confirmation, WebRTC negotiation/media ownership, Android
+    audio routing, SDK wake locks, FCM data payloads, scoped caches and notification
+    presentation ledger are independently implemented. No RingRTC assumptions,
+    Signal protocol, source code, tests, constants, resources or assets are copied.
+  - Socket and FCM share AINO tenant/user event identities and explicit
+    posted/suppressed/blocked/failed outcomes. Reactions use AINO's persisted
+    addition IDs; missed-call recovery uses AINO server call-history/status APIs.
+  - The implementation does not claim physical proximity or live notification
+    delivery was verified: no Android device was attached during this work.
+
 ## Runtime dependencies
 
 Dependencies are declared in `gradle/libs.versions.toml` and resolved from Google

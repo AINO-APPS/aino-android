@@ -48,7 +48,7 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         scope.launch {
             runCatching { PushTokenRegistrar(applicationContext).register(token) }
-                .onFailure { android.util.Log.w("AinoPush", "Push token registration failed", it) }
+                .onFailure { android.util.Log.w("AinoPush", "Push token registration failed: ${it.javaClass.simpleName}; retry on foreground/network recovery") }
         }
     }
 
@@ -57,23 +57,23 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
             android.util.Log.w("AinoPush", "Dropped push type=${message.data["type"]}: ${it.message}")
             return
         }
-        if (!PushDeduplicator(applicationContext).accept(validated.dedupeKey)) return
-        val hasStoredCredential = validated.kind != PushKind.ChatMessage ||
-            !KeystoreTokenStore(applicationContext).getToken().isNullOrBlank()
+        val presentation = validated.kind in setOf(PushKind.ChatMessage, PushKind.ChatReaction)
+        if (!presentation && !PushDeduplicator(applicationContext).accept("${notificationAccount(applicationContext)}:${validated.dedupeKey}")) return
+        val hasStoredCredential = !KeystoreTokenStore(applicationContext).getToken().isNullOrBlank()
         if (!shouldHandlePush(validated, hasStoredCredential)) {
             android.util.Log.i("AinoPush", "Dropped chat push while signed out")
             return
         }
         var displayFallback = true
         when (validated.kind) {
+            PushKind.ChatReaction -> {
+                NotificationDelivery.onPush(applicationContext, validated)
+                displayFallback = false
+            }
             // Signal-style MessagingStyle with Reply / Mark-as-read. FCM delivers
             // onMessageReceived on a worker thread, so the avatar fetch is safe here.
             PushKind.ChatMessage -> {
-                val shown = runCatching { ChatNotifications.show(applicationContext, validated) }
-                    .onFailure { android.util.Log.w("AinoPush", "Conversation notification failed", it) }
-                    .isSuccess
-                // The alert never waits on the network: post it (or the plain fallback) first.
-                if (!shown) PushNotifications.display(applicationContext, validated)
+                NotificationDelivery.onPush(applicationContext, validated)
                 displayFallback = false
                 // Signal: a message that reached the device is "delivered" even if the app is closed.
                 validated.data["messageId"]?.toLongOrNull()?.let { id ->

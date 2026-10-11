@@ -12,6 +12,7 @@ import androidx.core.app.NotificationManagerCompat
  * cancelled) each other.
  */
 object NotificationTags {
+    const val REACTION = "aino_reaction"
     const val CHAT = "aino_chat"
     const val ALERT = "aino_alert"
     const val CALL = "aino_call"

@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +40,9 @@ import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.notifications.NotificationSoundPrefs
 import app.aino.mobile.core.push.PushNotifications
 import app.aino.mobile.core.designsystem.icons.HeroIcons
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Web `NotificationSoundsModal` as a full page. Prefs sync with the web; tone
@@ -51,6 +55,7 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = LocalWebColors.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val prefs = ui.prefs
     val muted = prefs.muteAll
     // Bumped on resume and after the ringtone picker so the current sound names re-read.
@@ -70,6 +75,32 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
     LaunchedEffect(Unit) { PushNotifications.createChannels(context) }
 
     ProfilePage("Notification sounds", onBack) {
+        ProfileSection("Notification delivery") {
+            val ready = remember(revision) { app.aino.mobile.core.push.PushTokenRegistrar.isRegistered(context) }
+            ProfileRow(HeroIcons.ChatBubbleOvalLeft, "Background push",
+                onClick = {
+                    scope.launch {
+                        withContext(Dispatchers.IO) { app.aino.mobile.core.push.PushTokenRegistrar(context.applicationContext).syncCurrentToken() }
+                        revision++
+                    }
+                },
+                supporting = if (ready) "Registered for this account" else "Not registered — tap to retry. Local debug builds may lack Firebase.")
+            ProfileRow(HeroIcons.ChatBubbleOvalLeft, "App notifications",
+                onClick = { context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)) },
+                supporting = if (androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()) "Allowed" else "Disabled — tap to open Android settings")
+            listOf("Messages" to PushNotifications.MESSAGES, "Reactions" to PushNotifications.REACTIONS, "Missed calls" to PushNotifications.MISSED_CALLS).forEach { (name, channel) ->
+                ProfileRow(HeroIcons.ChatBubbleOvalLeft, name, { openChannelSettings(context, channel) },
+                    supporting = remember(revision) { app.aino.mobile.core.push.notificationBlocker(context, channel)?.reason ?: "Channel allowed" })
+            }
+            val conversations = remember(revision) {
+                context.getSystemService(NotificationManager::class.java)?.notificationChannels?.filter {
+                    android.os.Build.VERSION.SDK_INT >= 30 && it.parentChannelId == PushNotifications.MESSAGES
+                }.orEmpty()
+            }
+            conversations.filter { it.importance == NotificationManager.IMPORTANCE_NONE }.forEach { channel ->
+                ProfileRow(HeroIcons.ChatBubbleOvalLeft, channel.name.toString(), { openChannelSettings(context, channel.id) }, supporting = "Conversation channel disabled")
+            }
+        }
         ProfileSection {
             ProfileRow(
                 icon = if (muted) HeroIcons.SpeakerXMark else HeroIcons.SpeakerWave,

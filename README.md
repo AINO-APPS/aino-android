@@ -43,6 +43,25 @@ Keystore key. Every decrypt requires `BIOMETRIC_STRONG`; weak-only biometric dev
 continue to use password login rather than storing a credential behind a weaker
 app-level check. No face, fingerprint, or biometric template leaves the device.
 
+## Calling behavior
+
+- Direct voice and video calls ask for **Call / Cancel** before permissions, camera
+  capture, or signaling. Group calls retain their existing Start / Join lobby.
+- Each participant can enable or disable their own camera during a voice or video
+  call. Camera permission and foreground-service promotion happen before capture;
+  camera failures leave audio running and appear in the call controls.
+- The live media state drives the call layout and picture-in-picture, not the
+  invitation's original call type. Turning both cameras off returns the audio UI.
+- Video activation moves the earpiece route to speaker without replacing an active
+  headset. Turning video off does not automatically change the chosen audio route.
+- Connected audio-only calls use Android's proximity screen-off wake lock only on
+  the earpiece. Speaker, headsets, ringing, video, and teardown release it. Devices
+  without a supported proximity wake lock retain normal screen behavior.
+
+Automated tests cover confirmation/cancellation and proximity eligibility/lifecycle.
+Camera negotiation, physical ear-proximity behavior, headset routing, and
+cross-platform picture-in-picture still require a real-device smoke test.
+
 ## Local development
 
 1. Install JDK 21 and Android SDK Platform 35.
@@ -96,6 +115,51 @@ authenticated user, attendance state, work mode, live work/break duration,
 target progress, and task summary, and refreshes after relevant realtime events.
 Clock-in/out controls are intentionally deferred until the attendance feature can
 satisfy each tenant's face, location, accuracy and office Wi-Fi policy.
+
+## Android notification delivery
+
+Production APK/AAB publication requires the `ANDROID_GOOGLE_SERVICES_JSON` CI
+secret for `app.aino.mobile`. Missing, malformed or mismatched configuration fails
+the release workflow; local debug builds remain usable without Firebase. The
+Firebase project must match the backend sender's service account. Do not paste
+configuration, tokens or service-account credentials into logs or source.
+
+Notification settings show account token-registration state, app permission and
+disabled message, reaction, missed-call and conversation channels. Retry registers
+the current token; sign-in, foreground and network reconnect also retry. The
+background socket is paused only after successful account-scoped FCM registration,
+available Play services and enabled notifications. Settings never override user choices.
+
+Socket messages post locally without waiting for FCM or avatar downloads. Socket
+and FCM share tenant/user-scoped event identities and separate receipt/presentation
+state. Blocked or failed posting is retryable; visible, muted, self and already-read
+messages are suppressed. Inline Reply and Mark as read remain available.
+
+Android advertises `pushVersion: 3`. `chat_reaction` data-only pushes carry
+conversation/message/owner/actor IDs, actor name/avatar, emoji, addition
+`reactionId`, `action: added`, `dedupeKey: reaction:<id>`, tenant ID, ISO-8601
+`sentAt` and epoch-second `expiresAt`. Realtime addition timestamps are numeric
+epoch seconds. Only another person's addition to your message alerts; self
+reactions, removals, muted conversations and the visible thread do not. Reactions
+have their own channel and do not change message unread counts or disappear just
+because the original message was read. Opening the conversation handles them.
+
+Missed-call handled and successfully posted IDs persist separately per account.
+An expired saved ring is reconciled with server call status before notification;
+offline failure retains it for retry. The first successful call-history load
+establishes a baseline to avoid flooding old history. Subsequent new incoming
+`missed` rows catch up after reconnect, including posting retries. The current
+history API has no unread/read field, so explicitly handled local calls and server
+answered/declined status are used, not invented unread state. Call back opens the
+existing confirmation flow.
+
+Device verification for this change is **not performed** (no attached device).
+Check Android 13+ permission and channel disable/re-enable; message/reaction
+foreground-other-screen, visible-thread suppression, background/swipe-away and
+offline restart; socket-first/FCM-first duplicates; tap, reply, read and missed-call
+catch-up. Record status-bar icon, shade entry, heads-up, sound and launcher badge
+separately. Local Firebase configuration is absent, so installed-release packaging,
+live registration/dispatch and server project agreement remain unverified.
 
 ## Visual system
 

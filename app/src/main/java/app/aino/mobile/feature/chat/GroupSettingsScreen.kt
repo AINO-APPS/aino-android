@@ -191,7 +191,6 @@ private fun GroupMainPage(
     onLeave: () -> Unit,
 ) {
     val signal = signalColors
-    val withCallPermissions = app.aino.mobile.core.call.rememberCallPermissions()
     var confirmLeave by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
     var muteOpen by remember { mutableStateOf(false) }
@@ -229,8 +228,8 @@ private fun GroupMainPage(
         item {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (ui.callsEnabled) {
-                    QuickAction(Icons.Outlined.Videocam, "Video", Modifier.weight(1f)) { withCallPermissions(true) { chat.closeInfo(); chat.startCall("video") } }
-                    QuickAction(Icons.Outlined.Call, "Audio", Modifier.weight(1f)) { withCallPermissions(false) { chat.closeInfo(); chat.startCall("voice") } }
+                    QuickAction(Icons.Outlined.Videocam, "Video", Modifier.weight(1f)) { chat.closeInfo(); chat.startCall("video") }
+                    QuickAction(Icons.Outlined.Call, "Audio", Modifier.weight(1f)) { chat.closeInfo(); chat.startCall("voice") }
                 }
                 Box(Modifier.weight(1f)) {
                     QuickAction(

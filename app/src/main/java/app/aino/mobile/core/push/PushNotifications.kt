@@ -22,6 +22,7 @@ object PushNotifications {
     const val ASSIGNMENTS = "aino_assignments"
     const val APPROVALS = "aino_approvals"
     const val MISSED_CALLS = "aino_missed_calls"
+    const val REACTIONS = "aino_reactions"
 
     /**
      * Channel ids are never renamed or deleted: Android keeps the user's
@@ -33,6 +34,7 @@ object PushNotifications {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannels(
             listOf(
+                NotificationChannel(REACTIONS, "Reactions", NotificationManager.IMPORTANCE_DEFAULT),
                 NotificationChannel(MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH),
                 NotificationChannel(MENTIONS, "Mentions", NotificationManager.IMPORTANCE_HIGH).apply {
                     description = "When someone @-mentions you in a chat, task or note"
@@ -82,6 +84,7 @@ object PushNotifications {
         val title = if (privateCall) push.data.getValue("title") else push.data["title"] ?: push.data["callerName"] ?: "AINO"
         val body = if (privateCall) "Tap to answer" else push.data["body"].orEmpty()
         val channel = when (push.kind) {
+            PushKind.ChatReaction -> REACTIONS
             PushKind.ChatMessage -> MESSAGES
             PushKind.IncomingCall -> CALLS
             else -> generalPushChannel(push.data["type"])
@@ -121,6 +124,7 @@ object PushNotifications {
             .setCategory(if (push.kind == PushKind.IncomingCall) NotificationCompat.CATEGORY_CALL else NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(if (privateCall) NotificationCompat.VISIBILITY_PRIVATE else NotificationCompat.VISIBILITY_PUBLIC)
             .build()
+        if (notificationBlocker(context, channel) != null) return false
         if (Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         ) {

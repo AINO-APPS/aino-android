@@ -115,6 +115,18 @@ class MeetingSession(context: Context) {
     /** Injected by the shell's realtime ViewModel. */
     @Volatile var send: (RealtimeEnvelope) -> Boolean = { false }
 
+    init {
+        scope.launch {
+            state.collect { current ->
+                audio.setVideoActive(current != null && (!current.videoOff || current.peers.any { !it.videoOff || it.screenSharing }))
+                audio.setProximityEligible(current?.status == MeetingStatus.Joined)
+            }
+        }
+        scope.launch {
+            audio.speakerState.collect { on -> _state.update { it?.copy(speakerOn = on) } }
+        }
+    }
+
     private var media: LocalMedia? = null
     private var ice: IceConfigDto? = null
     private val peers = mutableMapOf<Long, RtcPeer>()

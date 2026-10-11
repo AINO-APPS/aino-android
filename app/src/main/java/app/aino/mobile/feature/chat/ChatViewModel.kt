@@ -148,10 +148,13 @@ internal fun actionError(error: Throwable, fallback: String): String = when (err
     else -> error.message ?: fallback
 }
 
+data class OutgoingCallRequest(val conversation: ChatConversation, val callType: String, val account: CacheScope)
+
 data class ChatUiState(
     val currentUserId: Long? = null,
     /** Tenant plan `calls` (1:1 and group calls); web hides the call buttons when off. */
     val callsEnabled: Boolean = false,
+    val pendingCall: OutgoingCallRequest? = null,
     /** Loaded poll tallies by poll id, refreshed on `chat_poll_vote`. */
     val polls: Map<Long, ChatPoll> = emptyMap(),
     val pollStates: Map<Long, PollUiState> = emptyMap(),
@@ -356,7 +359,12 @@ class ChatViewModel(
     fun onThreadVisible(conversationId: Long) {
         if (_ui.value.selectedConversation?.id != conversationId) return
         app.aino.mobile.core.push.VisibleThread.set(conversationId)
-        context?.let { app.aino.mobile.core.push.ChatNotifications.cancel(it, conversationId) }
+        val current = scope
+        context?.let { appContext ->
+            viewModelScope.launch(Dispatchers.IO) {
+                if (scope == current) app.aino.mobile.core.push.NotificationDelivery.onConversationVisible(appContext, conversationId)
+            }
+        }
         scheduleMarkRead(conversationId)
     }
 
@@ -365,12 +373,18 @@ class ChatViewModel(
      * per burst of messages instead of one request per message.
      */
     private fun scheduleMarkRead(conversationId: Long) {
+        val readAtMs = System.currentTimeMillis()
+        val readingScope = scope
         _ui.update { st -> st.copy(conversations = zeroUnread(st.conversations, conversationId)) }
         synchronized(markReadJobs) {
             markReadJobs.remove(conversationId)?.cancel()
             markReadJobs[conversationId] = viewModelScope.launch(Dispatchers.IO) {
                 delay(MARK_READ_DEBOUNCE_MS)
-                runCatching { repository.markRead(conversationId) }
+                runCatching { repository.markRead(conversationId) }.onSuccess {
+                    if (scope == readingScope) context?.let {
+                        app.aino.mobile.core.push.NotificationDelivery.markConversationRead(it, conversationId, readAtMs)
+                    }
+                }
                 synchronized(markReadJobs) { markReadJobs.remove(conversationId) }
             }
         }
@@ -390,14 +404,35 @@ class ChatViewModel(
 
     fun startCall(conversation: ChatConversation, callType: String) {
         if (!_ui.value.callsEnabled) return
+        if (callType !in setOf("voice", "video") || conversation.isBlocked || conversation.isSelfChat || conversation.isMeetingChat) {
+            _ui.update { it.copy(error = "This conversation cannot be called") }
+            return
+        }
         if (conversation.isGroup) {
             startGroupCall(conversation, callType)
             return
         }
+        val account = scope ?: return
+        _ui.update { it.copy(pendingCall = OutgoingCallRequest(conversation, callType, account)) }
+    }
+
+    fun cancelPendingCall() {
+        _ui.update { it.copy(pendingCall = null) }
+    }
+
+    fun takePendingCall(): OutgoingCallRequest? {
+        val request = _ui.value.pendingCall ?: return null
+        cancelPendingCall()
+        return request
+    }
+
+    fun placeConfirmedCall(request: OutgoingCallRequest) {
+        if (scope != request.account || !_ui.value.callsEnabled) return
+        val conversation = request.conversation
         val appContext = context ?: return
         app.aino.mobile.core.call.ActiveCallRuntime.get(appContext).startOutgoing(
             conversationId = conversation.id,
-            callType = callType,
+            callType = request.callType,
             peerName = conversation.title(),
             peerAvatar = conversation.avatar(),
             peerUserId = conversation.otherUserId,
@@ -417,6 +452,9 @@ class ChatViewModel(
         // In-flight texts of the previous account stop at their next attempt; its durable worker takes them over.
         scope?.let { previous -> viewModelScope.launch(Dispatchers.IO) { runCatching { outbox.recover(previous) } } }
         scope = next
+        callsCatchup?.cancel()
+        callsCaughtUpFor = null
+        callsCaughtUpAt = 0L
         synchronized(pollLock) { pollRefreshAgain.clear() }
         cache = next?.let(cacheFactory)
         threadCache.clear()
@@ -439,7 +477,34 @@ class ChatViewModel(
         }
     }
 
-    fun refresh() = refreshList(retrying = false)
+    fun refresh() {
+        reconcileMissedCalls(force = true)
+        refreshList(retrying = false)
+    }
+
+    private var callsCatchup: Job? = null
+    @Volatile private var callsCaughtUpFor: CacheScope? = null
+    @Volatile private var callsCaughtUpAt = 0L
+
+    private fun reconcileMissedCalls(force: Boolean = false) {
+        val appContext = context ?: return
+        val current = scope ?: return
+        if (!force && callsCatchup?.isActive == true) return
+        if (!force && callsCaughtUpFor == current && System.currentTimeMillis() - callsCaughtUpAt < 30_000) return
+        if (force) callsCatchup?.cancel()
+        callsCatchup = viewModelScope.launch(Dispatchers.IO) {
+            runCatching(repository::loadCalls).fold(
+                onSuccess = { calls ->
+                    if (scope == current && coroutineContext[Job]?.isActive == true) {
+                        app.aino.mobile.core.call.MissedCalls.reconcileHistory(appContext, calls, current.userId)
+                        callsCaughtUpFor = current
+                        callsCaughtUpAt = System.currentTimeMillis()
+                    }
+                },
+                onFailure = { android.util.Log.w("AinoPush", "Could not reconcile missed-call history", it) },
+            )
+        }
+    }
 
     private fun refreshList(retrying: Boolean) {
         val scopedCache = cache ?: return
@@ -468,6 +533,7 @@ class ChatViewModel(
                 repository.loadConversations()
             }.fold(
                 onSuccess = { conversations ->
+                    reconcileMissedCalls()
                     scopedCache.replace(conversations)
                     val userIds = conversations.mapNotNull { it.otherUserId }.distinct()
                     val presence = runCatching { repository.loadPresence(userIds) }.getOrDefault(emptyMap())
@@ -504,7 +570,7 @@ class ChatViewModel(
                     ) }
                 },
             )
-            if (refreshAgain) refresh()
+            if (refreshAgain) refreshList(retrying = false)
         }
     }
 
@@ -543,6 +609,21 @@ class ChatViewModel(
             }
             RealtimeEvent.ChatReadReceipt -> {
                 val receipt = decodeChatRealtime<ChatReadReceiptEvent>(event.data) ?: return
+                val appContext = context
+                val current = scope
+                if (appContext != null && receipt.userId == current?.userId) {
+                    val readAtMs = try {
+                        java.time.Instant.parse(receipt.readAt).toEpochMilli()
+                    } catch (error: java.time.format.DateTimeParseException) {
+                        android.util.Log.w("AinoPush", "Ignoring invalid read-receipt timestamp", error)
+                        null
+                    }
+                    if (readAtMs != null) viewModelScope.launch(Dispatchers.IO) {
+                        if (scope == current) app.aino.mobile.core.push.NotificationDelivery.markConversationRead(
+                            appContext, receipt.conversationId, readAtMs,
+                        )
+                    }
+                }
                 _ui.update { st -> st.copy(conversations = applyListRead(st.conversations, receipt, scope?.userId)) }
                 if (_ui.value.selectedConversation?.id == receipt.conversationId) {
                     _ui.update { st -> st.copy(receipts = applyRealtimeReceipt(st.receipts, receipt)) }
@@ -551,6 +632,17 @@ class ChatViewModel(
             }
             RealtimeEvent.ChatReaction -> {
                 val reaction = decodeChatRealtime<ChatReactionEvent>(event.data) ?: return
+                val appContext = context
+                val current = scope
+                val conversation = _ui.value.conversations.firstOrNull { it.id == reaction.conversationId }
+                val ownerId = _ui.value.messages.takeIf { isOpen(reaction.conversationId) }
+                    ?.firstOrNull { it.id == reaction.messageId }?.senderId
+                    ?: threadCache.get(reaction.conversationId)?.messages?.firstOrNull { it.id == reaction.messageId }?.senderId
+                if (appContext != null && current != null) viewModelScope.launch(Dispatchers.IO) {
+                    if (scope == current) app.aino.mobile.core.push.NotificationDelivery.onReaction(
+                        appContext, reaction, ownerId, conversation,
+                    )
+                }
                 if (_ui.value.selectedConversation?.id == reaction.conversationId) {
                     _ui.update { st -> st.copy(messages = applyRealtimeReaction(st.messages, reaction)) }
                 }
@@ -614,6 +706,16 @@ class ChatViewModel(
                 // clientMsgId, so the optimistic bubble is swapped in place instead
                 // of sitting next to the persisted row until the thread reloads.
                 val incoming = decodeChatRealtime<ChatRealtimeMessage>(event.data)
+                val appContext = context
+                val current = scope
+                val conversation = incoming?.let { message ->
+                    _ui.value.conversations.firstOrNull { it.id == message.conversationId }
+                }
+                if (incoming != null && appContext != null && current != null) viewModelScope.launch(Dispatchers.IO) {
+                    if (scope == current) app.aino.mobile.core.push.NotificationDelivery.onMessage(
+                        appContext, incoming, conversation,
+                    )
+                }
                 incoming?.clientMsgId?.let { socketEchoes[it]?.complete(Unit) }
                 if (incoming != null && incoming.formatType != "system") {
                     _ui.update { st -> st.copy(conversations = applyListLastMessage(st.conversations, incoming)) }
@@ -692,7 +794,8 @@ class ChatViewModel(
         realtimeRefresh?.cancel()
         realtimeRefresh = viewModelScope.launch {
             delay(150)
-            refresh()
+            reconcileMissedCalls()
+            refreshList(retrying = false)
             if (_ui.value.selectedConversation != null) refreshThread()
         }
     }
@@ -784,12 +887,19 @@ class ChatViewModel(
     fun markRead(conversation: ChatConversation) {
         if (conversation.unreadCount == 0) return
         val original = _ui.value.conversations
+        val readAtMs = System.currentTimeMillis()
+        val readingScope = scope
         _ui.update { st -> st.copy(
             conversations = original.map { if (it.id == conversation.id) it.copy(unreadCount = 0) else it },
         ) }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.markRead(conversation.id) }.fold(
-                onSuccess = { refresh() },
+                onSuccess = {
+                    if (scope == readingScope) context?.let {
+                        app.aino.mobile.core.push.NotificationDelivery.markConversationRead(it, conversation.id, readAtMs)
+                    }
+                    refresh()
+                },
                 onFailure = {
                     _ui.update { st -> st.copy(conversations = original, error = actionError(it, "Could not mark conversation read")) }
                 },
@@ -824,9 +934,16 @@ class ChatViewModel(
         val ids = conversations.filter { it.unreadCount > 0 }.map(ChatConversation::id).toSet()
         if (ids.isEmpty()) return
         val original = _ui.value.conversations
+        val readAtMs = System.currentTimeMillis()
+        val readingScope = scope
         _ui.update { st -> st.copy(conversations = st.conversations.map { if (it.id in ids) it.copy(unreadCount = 0) else it }) }
         viewModelScope.launch(Dispatchers.IO) {
             val failed = ids.filter { id -> runCatching { repository.markRead(id) }.isFailure }.toSet()
+            if (scope == readingScope) context?.let { appContext ->
+                (ids - failed).forEach {
+                    app.aino.mobile.core.push.NotificationDelivery.markConversationRead(appContext, it, readAtMs)
+                }
+            }
             if (failed.isNotEmpty()) {
                 val restore = original.filter { it.id in failed }.associateBy(ChatConversation::id)
                 _ui.update { st -> st.copy(
@@ -2048,13 +2165,18 @@ class ChatViewModel(
 
     fun loadCalls() {
         if (_ui.value.callsLoading) return
+        val loadingScope = scope ?: return
         _ui.update { st -> st.copy(callsLoading = true, error = null) }
-        val loadingScope = scope
         viewModelScope.launch(Dispatchers.IO) {
             runCatching(repository::loadCalls).fold(
                 onSuccess = {
-                    callsLoadedFor = loadingScope
-                    _ui.update { st -> st.copy(callsLoading = false, calls = it) }
+                    if (scope == loadingScope) {
+                        callsLoadedFor = loadingScope
+                        context?.let { appContext ->
+                            app.aino.mobile.core.call.MissedCalls.reconcileHistory(appContext, it, loadingScope.userId)
+                        }
+                        _ui.update { st -> st.copy(callsLoading = false, calls = it) }
+                    }
                 },
                 onFailure = { _ui.update { st -> st.copy(callsLoading = false, error = actionError(it, "Could not load calls")) } },
             )
@@ -2077,9 +2199,16 @@ class ChatViewModel(
             val current = scope ?: return@launch
             val infoConversation = _ui.value.selectedConversation?.takeIf { _ui.value.showInfo }
             kotlinx.coroutines.withContext(Dispatchers.IO) {
-                if (callsLoadedFor == current) {
+                if (callsLoadedFor == current || context != null) {
                     runCatching(repository::loadCalls).onSuccess { calls ->
-                        if (scope == current) _ui.update { st -> st.copy(calls = calls) }
+                        if (scope == current) {
+                            context?.let { appContext ->
+                                app.aino.mobile.core.call.MissedCalls.reconcileHistory(appContext, calls, current.userId)
+                            }
+                            if (callsLoadedFor == current) _ui.update { st -> st.copy(calls = calls) }
+                        }
+                    }.onFailure {
+                        android.util.Log.w("AinoPush", "Could not refresh call history after call activity", it)
                     }
                 }
                 if (infoConversation != null) {

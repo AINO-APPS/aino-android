@@ -20,6 +20,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
+import app.aino.mobile.core.push.PostingOutcome
+import app.aino.mobile.core.push.notificationBlocker
+import app.aino.mobile.core.push.notificationAccount
+import app.aino.mobile.feature.chat.CallLog
+
+internal class MissedCallStateStore(context: Context, account: String) {
+    private val prefs = context.getSharedPreferences("aino_missed_calls_$account", Context.MODE_PRIVATE)
+    fun handled(id: Long) = prefs.getBoolean("handled:$id", false)
+    fun posted(id: Long) = prefs.getBoolean("posted:$id", false)
+    fun markHandled(id: Long) { prefs.edit().putBoolean("handled:$id", true).commit() }
+    fun recordPosting(id: Long, outcome: PostingOutcome) {
+        if (outcome == PostingOutcome.Posted) prefs.edit().putBoolean("posted:$id", true).commit()
+    }
+}
 
 /** The caller identity a missed-call notification needs, kept from the ring (route / ring-service extras). */
 data class MissedCallInfo(
@@ -29,6 +43,7 @@ data class MissedCallInfo(
     val callerName: String,
     val callType: String,
     val meetingCode: String? = null,
+    val isGroup: Boolean = meetingCode != null,
 ) {
     companion object {
         fun of(route: IncomingCallRoute) = MissedCallInfo(
@@ -63,7 +78,8 @@ object RingingCallStore {
 
     data class Record(val info: MissedCallInfo, val expiresAtMs: Long)
 
-    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(
+        "${FILE}_${notificationAccount(context) ?: "signed_out"}", Context.MODE_PRIVATE)
 
     fun save(context: Context, info: MissedCallInfo, expiresAtMs: Long) {
         runCatching {
@@ -119,25 +135,27 @@ object MissedCallNotifier {
     const val EXTRA_CALL_BACK = "aino_call_back_type"
     const val EXTRA_MISSED_CALL_ID = "aino_missed_call_id"
 
-    private val handled = RecentCallIds(128)
+    private fun store(context: Context) = MissedCallStateStore(context, notificationAccount(context) ?: "signed_out")
 
     /** The user answered or declined [callId] on this device: it can never become a missed call here. */
     fun markHandled(context: Context, callId: Long) {
-        handled.add(callId)
+        store(context).markHandled(callId)
+        cancel(context, callId)
         RingingCallStore.clear(context, callId)
     }
 
-    fun isHandled(callId: Long): Boolean = handled.contains(callId)
+    fun isHandled(context: Context, callId: Long): Boolean = store(context).handled(callId)
 
-    fun post(context: Context, info: MissedCallInfo) {
-        if (!handled.add(info.callId)) return
-        RingingCallStore.clear(context, info.callId)
+    fun post(context: Context, info: MissedCallInfo): PostingOutcome {
+        if (notificationAccount(context) == null) return PostingOutcome.Suppressed("Signed out")
+        if (isHandled(context, info.callId) || store(context).posted(info.callId)) return PostingOutcome.Suppressed("Call already handled or posted")
         PushNotifications.createChannels(context)
+        notificationBlocker(context, PushNotifications.MISSED_CALLS)?.let { return it }
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) return
+        ) return PostingOutcome.Blocked("Notification permission denied")
         val name = info.callerName.ifBlank { "Missed call" }
-        val text = missedCallText(info.callType, group = info.meetingCode != null)
+        val text = missedCallText(info.callType, group = info.isGroup)
         val builder = NotificationCompat.Builder(context, PushNotifications.MISSED_CALLS)
             .setSmallIcon(R.drawable.ic_stat_aino)
             .setColor(ChatNotifications.brandColor(context))
@@ -152,12 +170,15 @@ object MissedCallNotifier {
         runCatching {
             NotificationAvatars.fallback(name, info.callerId?.let { "aino-user-$it" } ?: name)
         }.getOrNull()?.let(builder::setLargeIcon)
-        if (info.meetingCode == null) builder.addAction(0, "Call back", threadPendingIntent(context, info, slot = 1, callBack = info.callType))
+        if (!info.isGroup) builder.addAction(0, "Call back", threadPendingIntent(context, info, slot = 1, callBack = info.callType))
         builder.addAction(0, "Message", threadPendingIntent(context, info, slot = 2, callBack = null))
-        runCatching {
-            context.getSystemService(NotificationManager::class.java)
-                ?.notify(NotificationTags.MISSED_CALL, info.callId.hashCode(), builder.build())
-        }
+        return runCatching {
+            val manager = context.getSystemService(NotificationManager::class.java) ?: return PostingOutcome.Failed("No notification manager")
+            manager.notify(NotificationTags.MISSED_CALL, info.callId.hashCode(), builder.build())
+            store(context).recordPosting(info.callId, PostingOutcome.Posted)
+            RingingCallStore.clear(context, info.callId)
+            PostingOutcome.Posted
+        }.getOrElse { PostingOutcome.Failed("Missed-call posting failed") }
     }
 
     fun cancel(context: Context, callId: Long) {
@@ -168,6 +189,7 @@ object MissedCallNotifier {
     fun consumeIntent(context: Context, intent: Intent?): Boolean {
         val callId = intent?.getLongExtra(EXTRA_MISSED_CALL_ID, 0L)?.takeIf { it > 0 } ?: return false
         cancel(context, callId)
+        markHandled(context, callId)
         val conversationId = intent.getStringExtra("conversation_id")?.toLongOrNull()
         val callBack = intent.getStringExtra(EXTRA_CALL_BACK)
         if (conversationId != null && callBack != null) PendingCallBack.set(conversationId, callBack)
@@ -178,6 +200,7 @@ object MissedCallNotifier {
 
     private fun threadPendingIntent(context: Context, info: MissedCallInfo, slot: Int, callBack: String?): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
+            action = "app.aino.mobile.notification.MISSED_CALL.${notificationAccount(context)}.${info.callId}.$slot"
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putMissedCallTapExtras(info.conversationId, info.callId)
             putExtra(EXTRA_MISSED_CALL_ID, info.callId)
@@ -199,6 +222,23 @@ fun missedCallText(callType: String, group: Boolean = false): String {
 
 /** Ring endings that do not pass through a realtime `call_ended` on this device. */
 object MissedCalls {
+    /** First successful history load establishes a baseline, not a backlog of old notifications. */
+    fun reconcileHistory(context: Context, calls: List<CallLog>, currentUserId: Long) {
+        val account = notificationAccount(context) ?: return
+        if (account.substringAfter(':').toLongOrNull() != currentUserId) return
+        val prefs = context.getSharedPreferences("aino_call_history_$account", Context.MODE_PRIVATE)
+        if (!prefs.contains("baseline")) {
+            prefs.edit().putLong("baseline", calls.maxOfOrNull { it.id } ?: 0)
+                .putStringSet("pending", calls.filter { it.status == "ringing" && it.callerId != currentUserId }.map { it.id.toString() }.toSet()).commit()
+            return
+        }
+        val baseline = prefs.getLong("baseline", 0)
+        val pending = prefs.getStringSet("pending", emptySet()).orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+        calls.filter { missedHistoryEligible(it, currentUserId, baseline, pending) }.forEach { call ->
+            MissedCallNotifier.post(context, MissedCallInfo(call.id, call.conversationId, call.callerId,
+                call.callerName.orEmpty(), call.callType, isGroup = call.isGroup))
+        }
+    }
     /** The local ring timer ran out: expire a still-ringing session and leave a missed call. */
     fun onLocalRingTimeout(context: Context, info: MissedCallInfo) {
         val session = CallSessionRuntime.get(context)
@@ -219,25 +259,30 @@ object MissedCalls {
     fun onRingEndedRemotely(context: Context, callId: Long, conversationId: Long, reason: String?) {
         val session = CallSessionRuntime.get(context)
         if (session.acceptedHere(callId)) return
+        if (reason in setOf("accepted", "rejected", "handled_elsewhere")) MissedCallNotifier.markHandled(context, callId)
         val record = RingingCallStore.read(context)?.info?.takeIf { it.callId == callId }
         val state = session.state.value
         val ringingRoute = state.route?.takeIf { it.callId == callId && state.incoming && state.phase == CallPhase.Ringing }
         if (ringingRoute != null) {
             // Bring the session in line with the server (the socket may be down).
-            if (reason == "accepted" || reason == "rejected") {
+            if (reason == "accepted" || reason == "rejected" || reason == "handled_elsewhere") {
                 session.handle(CallRealtimeEvent.HandledElsewhere(callId, conversationId, reason))
             } else {
                 session.handle(CallRealtimeEvent.Ended(callId, conversationId, reason))
             }
         }
         val info = record ?: ringingRoute?.let(MissedCallInfo::of)
-        if (info != null && shouldNotifyMissedCall(ringingHere = true, handledHere = MissedCallNotifier.isHandled(callId), reason = reason)) {
+        if (info != null && shouldNotifyMissedCall(ringingHere = true, handledHere = MissedCallNotifier.isHandled(context, callId), reason = reason)) {
             MissedCallNotifier.post(context, info)
         } else {
             RingingCallStore.clear(context, callId)
         }
+
     }
 }
+
+internal fun missedHistoryEligible(call: CallLog, userId: Long, baseline: Long, pending: Set<Long> = emptySet()): Boolean =
+    (call.id > baseline || call.id in pending) && call.callerId != userId && call.status == "missed" && call.conversationId > 0
 
 /** "Call back" from a missed-call notification, consumed by the chat thread once it is open. */
 object PendingCallBack {

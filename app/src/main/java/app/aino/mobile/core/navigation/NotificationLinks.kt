@@ -25,7 +25,7 @@ fun legacyNotificationLink(type: String?, title: String?): String? = when (type)
  * a type-based fallback, and finally the notifications page.
  */
 fun pushTapRoute(tap: PushTap, linkRoute: (String) -> String? = { webLinkToRoute(it) }): String {
-    if ((tap.type == "chat_message" || tap.type == "missed_call") && tap.conversationId != null) return chatThreadRoute(tap.conversationId)
+    if (tap.type in setOf("chat_message", "chat_reaction", "missed_call") && tap.conversationId != null) return chatThreadRoute(tap.conversationId)
     tap.link?.takeIf { it.startsWith("/") }?.let(linkRoute)?.let { return it }
     tap.taskId?.takeIf { it > 0 }?.let { linkRoute("/tasks?task=$it") }?.let { return it }
     legacyNotificationLink(tap.type, tap.title)?.let(linkRoute)?.let { return it }
