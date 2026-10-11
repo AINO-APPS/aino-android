@@ -1,5 +1,6 @@
 package app.aino.mobile.core.call.webrtc
 
+import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlinx.coroutines.sync.Mutex
@@ -46,7 +47,7 @@ class EncodingParameterApplier {
     private val mutexByPeer = ConcurrentHashMap<PeerConnection, Mutex>()
 
     suspend fun applyVideoTier(peer: PeerConnection, tier: VideoEncodingTier): Boolean = lock(peer) {
-        var applied = false
+        var applied = true
         peer.senders.filter { it.track()?.kind() == "video" }.forEach { sender ->
             val params = sender.parameters
             if (params.encodings.isEmpty()) params.encodings.add(RtpParameters.Encoding(null, true, 1.0))
@@ -54,7 +55,9 @@ class EncodingParameterApplier {
             params.encodings[0].maxFramerate = tier.maxFramerate
             params.encodings[0].scaleResolutionDownBy = tier.scaleResolutionDownBy
             params.degradationPreference = RtpParameters.DegradationPreference.BALANCED
-            applied = sender.setParameters(params) || applied
+            val success = sender.setParameters(params)
+            if (!success) Log.w("AinoCallQuality", "Video encoder rejected tier $tier; will retry")
+            applied = success && applied
         }
         applied
     }
@@ -65,7 +68,9 @@ class EncodingParameterApplier {
             val params = sender.parameters
             if (params.encodings.isEmpty()) params.encodings.add(RtpParameters.Encoding(null, true, 1.0))
             params.encodings[0].maxBitrateBps = maxBitrate
-            applied = sender.setParameters(params) || applied
+            val success = sender.setParameters(params)
+            if (!success) Log.w("AinoCallQuality", "Audio encoder rejected bitrate cap; will retry")
+            applied = success || applied
         }
         applied
     }
@@ -74,4 +79,14 @@ class EncodingParameterApplier {
         mutexByPeer.getOrPut(peer) { Mutex() }.withLock { action() }
 
     fun clear(peer: PeerConnection) { mutexByPeer.remove(peer) }
+}
+
+/** Both writes must run; accepting audio alone must not suppress a video retry. */
+internal suspend fun applyEncodingCaps(
+    audio: suspend () -> Boolean,
+    video: suspend () -> Boolean,
+): Boolean {
+    val audioApplied = audio()
+    val videoApplied = video()
+    return audioApplied && videoApplied
 }

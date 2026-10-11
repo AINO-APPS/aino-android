@@ -217,9 +217,10 @@ class RtcPeer(
 
     private suspend fun applyQuality(tier: VideoEncodingTier): Boolean {
         if (closed) return false
-        val audio = encodings.applyAudioCap(peer)
-        if (!closed) encodings.applyVideoTier(peer, tier)
-        return audio
+        return applyEncodingCaps(
+            audio = { encodings.applyAudioCap(peer) },
+            video = { !closed && encodings.applyVideoTier(peer, tier) },
+        )
     }
 
     private suspend fun stats(): RTCStatsReport? {
