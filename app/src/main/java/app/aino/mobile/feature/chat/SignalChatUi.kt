@@ -67,12 +67,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -488,7 +490,7 @@ private fun AttachButton(icon: ImageVector, label: String, onClick: () -> Unit) 
     }
 }
 
-/** Signal unread badge: blue pill with 12.5dp radius and a bold count. */
+/** Unread pill with a tight text line box so counts stay centered at both 18dp and 22dp. */
 @Composable
 fun SignalUnreadBadge(count: Int, muted: Boolean = false, modifier: Modifier = Modifier) {
     val signal = signalColors
@@ -497,5 +499,19 @@ fun SignalUnreadBadge(count: Int, muted: Boolean = false, modifier: Modifier = M
             .background(if (muted) signal.textSecondary else signal.primary, RoundedCornerShape(12.5.dp))
             .padding(horizontal = 6.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(if (count > 999) "999+" else count.toString(), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+    ) {
+        Text(
+            if (count > 999) "999+" else count.toString(),
+            color = Color.White,
+            style = TextStyle(
+                fontSize = 12.sp,
+                lineHeight = 12.sp,
+                fontWeight = FontWeight.Bold,
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.Both),
+            ),
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
 }
