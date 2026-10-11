@@ -47,6 +47,8 @@ class RtcPeer(
     @Volatile private var makingOffer = false
     @Volatile private var remoteDescriptionSet = false
     @Volatile private var closed = false
+    @Volatile private var pendingOffer = false
+    @Volatile private var acceptingOffer = false
 
     val peer: PeerConnection = requireNotNull(
         runtime.factory.createPeerConnection(
@@ -73,11 +75,26 @@ class RtcPeer(
         video?.let { peer.addTrack(it, listOf(STREAM_ID)) }
     }
 
+    fun addLocalVideo(video: VideoTrack) {
+        if (closed || peer.senders.any { it.track()?.id() == video.id() }) return
+        if (peer.addTrack(video, listOf(STREAM_ID)) == null) {
+            listener.onFailure("Could not attach the camera to the call")
+            return
+        }
+        createOffer()
+    }
+
     val connectionState: PeerConnection.PeerConnectionState get() =
         if (closed) PeerConnection.PeerConnectionState.CLOSED else peer.connectionState()
 
+    @Synchronized
     fun createOffer(iceRestart: Boolean = false) {
         if (closed) return
+        if (makingOffer || acceptingOffer || peer.signalingState() != PeerConnection.SignalingState.STABLE) {
+            pendingOffer = true
+            return
+        }
+        pendingOffer = false
         makingOffer = true
         val constraints = MediaConstraints().apply {
             if (iceRestart) mandatory.add(MediaConstraints.KeyValuePair("IceRestart", "true"))
@@ -133,6 +150,7 @@ class RtcPeer(
     }
 
     private fun acceptOffer(sdp: String) {
+        acceptingOffer = true
         peer.setRemoteDescription(object : Observer() {
             override fun onSetSuccess() {
                 drainCandidates()
@@ -141,7 +159,9 @@ class RtcPeer(
                         val answer = preferOpusFec(description.description)
                         peer.setLocalDescription(object : Observer() {
                             override fun onSetSuccess() {
+                                acceptingOffer = false
                                 if (!closed) listener.onLocalDescription("answer", answer)
+                                flushPendingOffer()
                             }
                         }, SessionDescription(SessionDescription.Type.ANSWER, answer))
                     }
@@ -154,8 +174,15 @@ class RtcPeer(
         if (closed || sdp.isBlank()) return
         if (peer.signalingState() != PeerConnection.SignalingState.HAVE_LOCAL_OFFER) return
         peer.setRemoteDescription(object : Observer() {
-            override fun onSetSuccess() = drainCandidates()
+            override fun onSetSuccess() {
+                drainCandidates()
+                flushPendingOffer()
+            }
         }, SessionDescription(SessionDescription.Type.ANSWER, sdp))
+    }
+
+    private fun flushPendingOffer() {
+        if (pendingOffer && !closed) createOffer()
     }
 
     fun handleCandidate(candidate: IceCandidateSignal?) {
@@ -242,8 +269,14 @@ class RtcPeer(
     private open inner class Observer : SdpObserver {
         override fun onCreateSuccess(description: SessionDescription) = Unit
         override fun onSetSuccess() = Unit
-        override fun onCreateFailure(error: String) { if (!closed) listener.onFailure(error) }
-        override fun onSetFailure(error: String) { if (!closed) listener.onFailure(error) }
+        override fun onCreateFailure(error: String) {
+            acceptingOffer = false
+            if (!closed) listener.onFailure(error)
+        }
+        override fun onSetFailure(error: String) {
+            acceptingOffer = false
+            if (!closed) listener.onFailure(error)
+        }
     }
 
     private companion object {

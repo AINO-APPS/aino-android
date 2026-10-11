@@ -13,6 +13,8 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import app.aino.mobile.MainActivity
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * ActiveCallService
@@ -43,6 +45,7 @@ class ActiveCallService : Service() {
     const val EXTRA_TITLE = "title"
     const val EXTRA_BODY = "body"
     const val EXTRA_CALL_TYPE = "callType" // "voice" | "video"
+    const val EXTRA_CAMERA_ACTIVE = "cameraActive"
     const val EXTRA_SCHEME = "scheme"
 
     private const val CHANNEL_ID = "active_call_fgs_v1"
@@ -54,29 +57,35 @@ class ActiveCallService : Service() {
     const val OWNER_CALL = "call"
     const val OWNER_MEETING = "meeting"
     private val owners = mutableSetOf<String>()
+    private val cameraOwners = mutableSetOf<String>()
+    private val _cameraReady = MutableStateFlow(false)
+    val cameraReady = _cameraReady.asStateFlow()
 
-    fun start(context: Context, extras: Map<String, String>, owner: String = OWNER_CALL) {
+    fun start(context: Context, extras: Map<String, String>, owner: String = OWNER_CALL): Boolean {
       // startForegroundService() obliges startForeground(), which needs a granted
       // microphone/camera type on API 34+; without one, never start at all.
       val mic = context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
-      val cam = extras[EXTRA_CALL_TYPE] == "video" &&
+      val cam = (extras[EXTRA_CAMERA_ACTIVE] == "true" || extras[EXTRA_CALL_TYPE] == "video") &&
         context.checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED
-      if (!mic && !cam) return
-      synchronized(owners) { owners += owner }
+      if (!mic && !cam) return false
+      synchronized(owners) { owners += owner; if (cam) cameraOwners += owner }
       val intent = Intent(context, ActiveCallService::class.java).apply {
         action = ACTION_START
         for ((k, v) in extras) putExtra(k, v)
       }
       try {
         context.startForegroundService(intent)
-      } catch (_: Throwable) {
-        // Background FGS-start restriction: the call continues without the priority boost.
+        return true
+      } catch (error: RuntimeException) {
+        android.util.Log.w("AinoCall", "Could not start active call service", error)
+        return false
       }
     }
 
     fun stop(context: Context, owner: String = OWNER_CALL) {
       val remaining = synchronized(owners) {
         owners -= owner
+        cameraOwners -= owner
         owners.isNotEmpty()
       }
       if (remaining) return
@@ -128,7 +137,8 @@ class ActiveCallService : Service() {
         if (granted(android.Manifest.permission.RECORD_AUDIO)) {
           type = type or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         }
-        if (callType == "video" && granted(android.Manifest.permission.CAMERA)) {
+        val camera = synchronized(owners) { cameraOwners.isNotEmpty() } && granted(android.Manifest.permission.CAMERA)
+        if (camera) {
           type = type or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
         }
         if (type == 0) {
@@ -136,18 +146,14 @@ class ActiveCallService : Service() {
           return
         }
         startForeground(NOTIFICATION_ID, notification, type)
-      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        startForeground(
-          NOTIFICATION_ID,
-          notification,
-          android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
-        )
+        _cameraReady.value = camera
       } else {
         startForeground(NOTIFICATION_ID, notification)
+        _cameraReady.value = granted(android.Manifest.permission.CAMERA)
       }
-    } catch (_: Throwable) {
-      // Background FGS-start restrictions or a revoked permission: the call
-      // still works in the foreground, it just loses process priority.
+    } catch (error: RuntimeException) {
+      _cameraReady.value = false
+      android.util.Log.w("AinoCall", "Foreground call service was refused", error)
       stopSelf()
     }
   }
@@ -222,6 +228,7 @@ class ActiveCallService : Service() {
   }
 
   private fun stopEverything() {
+    _cameraReady.value = false
     try {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -233,5 +240,10 @@ class ActiveCallService : Service() {
       // ignore
     }
     stopSelf()
+  }
+
+  override fun onDestroy() {
+    _cameraReady.value = false
+    super.onDestroy()
   }
 }

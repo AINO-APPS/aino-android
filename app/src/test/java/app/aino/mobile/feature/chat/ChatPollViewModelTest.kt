@@ -88,6 +88,35 @@ class ChatPollViewModelTest {
         Dispatchers.resetMain()
     }
 
+    @Test fun `outgoing calls capture the target and wait for single confirmation`() {
+        vm.setCallsEnabled(true)
+        val target = ChatConversation(8, otherUserId = 2, otherFullName = "Sam")
+        vm.startCall(target, "voice")
+        assertEquals(target, vm.ui.value.pendingCall?.conversation)
+        assertEquals("voice", vm.ui.value.pendingCall?.callType)
+        assertTrue(paths.none { it.contains("call") })
+        val accepted = vm.takePendingCall()
+        assertEquals(target, accepted?.conversation)
+        assertNull(vm.takePendingCall())
+        vm.startCall(target, "video")
+        vm.cancelPendingCall()
+        assertNull(vm.ui.value.pendingCall)
+        assertTrue(paths.none { it.contains("call") })
+    }
+
+    @Test fun `disabled and blocked calls never create requests and account changes clear them`() {
+        val target = ChatConversation(8, otherUserId = 2)
+        vm.startCall(target, "voice")
+        assertNull(vm.ui.value.pendingCall)
+        vm.setCallsEnabled(true)
+        vm.startCall(target.copy(isBlocked = true), "video")
+        assertNull(vm.ui.value.pendingCall)
+        vm.startCall(target, "video")
+        assertNotNull(vm.ui.value.pendingCall)
+        vm.setScope(null, null)
+        assertNull(vm.ui.value.pendingCall)
+    }
+
     @Test fun `failed load stays disabled and retry clears error using server data`() {
         loadFailure = true
         vm.loadPoll(42)

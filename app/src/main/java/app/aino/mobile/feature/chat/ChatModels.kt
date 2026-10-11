@@ -308,6 +308,8 @@ data class ChatReactionEvent(
     val emoji: String,
     val action: String,
     val avatar: String? = null,
+    val reactionId: Long? = null,
+    val sentAt: Long? = null,
 )
 
 @Serializable

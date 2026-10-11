@@ -9,8 +9,8 @@ import android.view.WindowManager
  * Without it the system screen timeout blanks the screen mid-call when nobody touches it.
  */
 object CallScreenAwake {
-    fun shouldKeepScreenOn(call: ActiveCallUi, meetingActive: Boolean, incomingRinging: Boolean): Boolean =
-        (call.visible && call.endMessage == null) || meetingActive || incomingRinging
+    fun shouldKeepScreenOn(call: ActiveCallUi, meetingActive: Boolean, incomingRinging: Boolean, proximityActive: Boolean = false): Boolean =
+        incomingRinging || (!proximityActive && ((call.visible && call.endMessage == null) || meetingActive))
 
     /** Applies [FLAG_KEEP_SCREEN_ON][WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON]; no wake lock permission needed. */
     fun apply(activity: Activity, keepOn: Boolean) {

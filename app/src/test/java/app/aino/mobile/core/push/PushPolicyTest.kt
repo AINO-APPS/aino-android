@@ -21,8 +21,8 @@ class PushPolicyTest {
         val encoded = encodeDeviceTokenRequest("fcm-token").toString(Charsets.UTF_8)
         assertTrue(encoded.contains("\"deviceToken\":\"fcm-token\""))
         assertTrue(encoded.contains("\"platform\":\"android\""))
-        // Tells the server this app accepts `link` / `linkTaskId` on general alerts.
-        assertTrue(encoded.contains("\"pushVersion\":2"))
+        // Version 3 retains general links and adds reaction notifications.
+        assertTrue(encoded.contains("\"pushVersion\":3"))
     }
 
     @Test
@@ -32,6 +32,8 @@ class PushPolicyTest {
         assertEquals(a, registrationKey("fcm-1", jwt("""{"id":1,"iat":2}""")))
         assertTrue(a != registrationKey("fcm-1", jwt("""{"id":2,"iat":1}""")))
         assertTrue(a != registrationKey("fcm-2", jwt("""{"id":1,"iat":1}""")))
+        assertTrue(registrationKey("fcm-1", jwt("""{"id":1,"tenant_id":2}""")) !=
+            registrationKey("fcm-1", jwt("""{"id":1,"tenant_id":3}""")))
     }
 
     @Test

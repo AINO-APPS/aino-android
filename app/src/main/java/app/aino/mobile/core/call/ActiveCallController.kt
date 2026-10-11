@@ -29,10 +29,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -44,6 +46,7 @@ import org.webrtc.VideoTrack
 
 data class ActiveCallUi(
     val visible: Boolean = false,
+    val sessionKey: String = "",
     val callType: String = "voice",
     val incoming: Boolean = false,
     val peerName: String = "",
@@ -55,16 +58,18 @@ data class ActiveCallUi(
     val remoteRinging: Boolean = false,
     val connectedAt: Long? = null,
     val muted: Boolean = false,
-    val videoOff: Boolean = false,
+    val videoOff: Boolean = true,
     val speakerOn: Boolean = false,
     val remoteMuted: Boolean = false,
-    val remoteVideoOff: Boolean = false,
+    val remoteVideoOff: Boolean = true,
+    val controlError: String? = null,
     /** `No answer` / `Couldn't connect` / `{name} is on another call`, shown 1.8 s before closing. */
     val endMessage: String? = null,
     val localVideo: VideoTrack? = null,
     val remoteVideo: VideoTrack? = null,
 ) {
     val isVideo: Boolean get() = callType == "video"
+    val hasVideo: Boolean get() = (!videoOff && localVideo != null) || (!remoteVideoOff && remoteVideo != null)
 
     /** `CallOverlay` status line (three ASCII dots, verbatim); Signal/WhatsApp "Calling..." until the callee rings. */
     val statusText: String get() = endMessage ?: when {
@@ -103,9 +108,24 @@ class ActiveCallController(private val context: Context, private val session: Ca
     private var closing: Job? = null
     private val earlySignals = mutableListOf<JsonObject>()
     private var ringback: android.media.ToneGenerator? = null
+    private var videoToggleInProgress = false
 
     init {
-        scope.launch { session.state.collect(::onSessionState) }
+        scope.launch {
+            ui.collect { state ->
+                audio.setVideoActive(state.visible && state.endMessage == null && state.hasVideo)
+                audio.setProximityEligible(state.visible && state.connectedAt != null && state.endMessage == null)
+            }
+        }
+        scope.launch {
+            audio.speakerState.collect { speaker -> _ui.update { it.copy(speakerOn = speaker) } }
+        }
+        scope.launch {
+            session.state.collect { state ->
+                CallAudio.setIncomingRinging(state.incoming && state.phase == CallPhase.Ringing)
+                onSessionState(state)
+            }
+        }
         // Answering from the notification can run before the socket is up (cold
         // start) or just before a stale socket is replaced; frames sent then are
         // lost. Like Signal's call manager, re-announce once the socket is open so
@@ -201,7 +221,8 @@ class ActiveCallController(private val context: Context, private val session: Ca
         val local = LocalMedia(context, WebRtcRuntime.shared(context), withVideo = video).also { media = it }
         val cameraOn = video && !startVideoOff && local.setVideoEnabled(true)
         audio.start(speaker = video)
-        _ui.value = initial.copy(localVideo = local.videoTrack, videoOff = video && !cameraOn, speakerOn = video)
+        _ui.value = initial.copy(sessionKey = UUID.randomUUID().toString(), localVideo = local.videoTrack, videoOff = !cameraOn, speakerOn = audio.speakerOn,
+            controlError = local.videoError)
         ActiveCallService.start(
             context,
             mapOf(
@@ -266,20 +287,26 @@ class ActiveCallController(private val context: Context, private val session: Ca
             }
             "audio-state" -> (signal["muted"] as? JsonPrimitive)?.booleanOrNull?.let { m -> _ui.update { it.copy(remoteMuted = m) } }
             "video-state" -> (signal["videoOff"] as? JsonPrimitive)?.booleanOrNull?.let { v -> _ui.update { it.copy(remoteVideoOff = v) } }
+            "request-video-state" -> sendSignal(CallSignal("video-state", videoOff = _ui.value.videoOff))
         }
     }
 
     private suspend fun ensurePeer(): RtcPeer? = peer ?: newPeer(offer = false)
 
     private suspend fun newPeer(offer: Boolean): RtcPeer? {
+        val sessionKey = _ui.value.sessionKey
         val config = ice.await()
         val local = media ?: return null
-        if (!_ui.value.visible) return null
+        if (!_ui.value.visible || _ui.value.sessionKey != sessionKey) return null
         peer?.close()
         _ui.update { it.copy(remoteVideo = null) }
         val created = runCatching {
-            RtcPeer(WebRtcRuntime.shared(context), config, polite = _ui.value.incoming, listener = Listener())
-        }.getOrElse { return null }
+            RtcPeer(WebRtcRuntime.shared(context), config, polite = _ui.value.incoming, listener = Listener(sessionKey))
+        }.getOrElse {
+            android.util.Log.e("AinoCall", "Could not create call peer", it)
+            _ui.update { state -> state.copy(controlError = "Could not initialize call media") }
+            return null
+        }
         created.addLocalTracks(local.audioTrack, local.videoTrack)
         created.startQualityAdaptation(scope)
         peer = created
@@ -287,21 +314,29 @@ class ActiveCallController(private val context: Context, private val session: Ca
         return created
     }
 
-    private inner class Listener : RtcPeer.Listener {
+    private inner class Listener(private val sessionKey: String) : RtcPeer.Listener {
+        private fun current() = _ui.value.visible && _ui.value.sessionKey == sessionKey
+
         override fun onLocalDescription(type: String, sdp: String) {
-            scope.launch { sendSignal(CallSignal(type, sdp = sdp)) }
+            scope.launch { if (current()) sendSignal(CallSignal(type, sdp = sdp)) }
         }
 
         override fun onLocalCandidate(candidate: IceCandidateSignal) {
-            scope.launch { sendSignal(CallSignal("ice-candidate", candidate = candidate)) }
+            scope.launch { if (current()) sendSignal(CallSignal("ice-candidate", candidate = candidate)) }
         }
 
         override fun onRemoteTrack(track: MediaStreamTrack) {
-            if (track is VideoTrack) scope.launch { _ui.update { it.copy(remoteVideo = track) } }
+            if (track is VideoTrack) scope.launch {
+                if (current()) _ui.update { it.copy(remoteVideo = track) }
+            }
+        }
+
+        override fun onFailure(message: String) {
+            scope.launch { if (current()) _ui.update { it.copy(controlError = message) } }
         }
 
         override fun onConnectionState(state: PeerConnection.PeerConnectionState) {
-            scope.launch { onPeerState(state) }
+            scope.launch { if (current()) onPeerState(state) }
         }
     }
 
@@ -373,7 +408,7 @@ class ActiveCallController(private val context: Context, private val session: Ca
     private fun sendMediaState() {
         val ui = _ui.value
         sendSignal(CallSignal("audio-state", muted = ui.muted))
-        if (ui.isVideo) sendSignal(CallSignal("video-state", videoOff = ui.videoOff))
+        sendSignal(CallSignal("video-state", videoOff = ui.videoOff))
     }
 
     fun toggleMute() {
@@ -385,10 +420,35 @@ class ActiveCallController(private val context: Context, private val session: Ca
 
     fun toggleVideo() {
         val ui = _ui.value
-        if (!ui.isVideo) return
-        val on = media?.setVideoEnabled(ui.videoOff) ?: false
-        _ui.update { it.copy(videoOff = !on) }
-        if (ui.connectedAt != null) sendSignal(CallSignal("video-state", videoOff = !on))
+        if (!ui.visible || ui.endMessage != null || videoToggleInProgress) return
+        val local = media ?: return
+        videoToggleInProgress = true
+        scope.launch {
+            try {
+                if (ui.videoOff && (!ActiveCallService.start(
+                context,
+                mapOf(ActiveCallService.EXTRA_TITLE to ui.peerName.ifBlank { "Ongoing call" },
+                    ActiveCallService.EXTRA_CALL_TYPE to ui.callType,
+                    ActiveCallService.EXTRA_CAMERA_ACTIVE to "true"),
+                ) || withTimeoutOrNull(2_000) { ActiveCallService.cameraReady.first { it } } != true)) {
+                    if (media === local) _ui.update { it.copy(controlError = "Could not enable camera service. Return to the app and try again.") }
+                    return@launch
+                }
+                signalLock.withLock {
+                    if (media !== local || !_ui.value.visible) return@withLock
+                    val on = local.setVideoEnabled(ui.videoOff)
+                    if (on) local.videoTrack?.let { peer?.addLocalVideo(it) }
+                    _ui.update { it.copy(videoOff = !on, localVideo = local.videoTrack, controlError = local.videoError) }
+                    if (ui.connectedAt != null) sendSignal(CallSignal("video-state", videoOff = !on))
+                }
+            } finally {
+                videoToggleInProgress = false
+            }
+        }
+    }
+
+    fun showCameraPermissionError() {
+        _ui.update { it.copy(controlError = "Camera permission is required to turn on video") }
     }
 
     fun switchCamera() {
@@ -396,9 +456,7 @@ class ActiveCallController(private val context: Context, private val session: Ca
     }
 
     fun toggleSpeaker() {
-        val on = !_ui.value.speakerOn
-        audio.setSpeaker(on)
-        _ui.update { it.copy(speakerOn = on) }
+        audio.setSpeaker(!_ui.value.speakerOn)
     }
 
     /** End call (E): `call_end` once the server assigned an id, `call_cancel` before that. */

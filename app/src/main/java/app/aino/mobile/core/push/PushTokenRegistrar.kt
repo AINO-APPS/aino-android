@@ -13,11 +13,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** `pushVersion` 2: general alerts may carry `link` / `linkTaskId` (older apps reject unknown keys). */
+/** Version 3 retains general-alert links and supports own-message reaction additions. */
 @Serializable
 data class DeviceTokenRequest(val deviceToken: String, val platform: String = "android", val pushVersion: Int = PUSH_PAYLOAD_VERSION)
 
-const val PUSH_PAYLOAD_VERSION = 2
+const val PUSH_PAYLOAD_VERSION = 3
 
 private val DEVICE_TOKEN_JSON = Json { encodeDefaults = true }
 
@@ -37,7 +37,7 @@ class PushTokenRegistrar(private val context: Context) {
         runCatching {
             val fcm = Tasks.await(FirebaseMessaging.getInstance().token, 20, TimeUnit.SECONDS)
             register(fcm)
-        }.onFailure { android.util.Log.w(TAG, "Push token sync failed", it) }
+        }.onFailure { android.util.Log.w(TAG, "Push token sync failed: ${it.javaClass.simpleName}; retry on foreground/network recovery") }
     }
 
     companion object {
@@ -48,6 +48,12 @@ class PushTokenRegistrar(private val context: Context) {
         /** Sign-out: the next sign-in must register again. */
         fun forget(context: Context) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+        }
+
+        fun isRegistered(context: Context): Boolean {
+            val account = notificationAccount(context) ?: return false
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            return prefs.getString("account", null) == account && System.currentTimeMillis() - prefs.getLong("at", 0) < TTL_MS
         }
     }
 
@@ -62,8 +68,11 @@ class PushTokenRegistrar(private val context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         if (prefs.getString("key", null) == key && now - prefs.getLong("at", 0) < TTL_MS) return
+        val account = notificationAccount(context)
+        prefs.edit().remove("account").apply()
         container.api.execute(ApiRequest("POST", "auth/device-token", body = encodeDeviceTokenRequest(fcmToken)))
-        prefs.edit().putString("key", key).putLong("at", now).apply()
+        if (account != notificationAccount(context)) return
+        prefs.edit().putString("key", key).putLong("at", now).putString("account", account).apply()
     }
 }
 
@@ -74,5 +83,6 @@ internal fun registrationKey(fcmToken: String, jwt: String): String {
         Json.parseToJsonElement(payload).let { it as kotlinx.serialization.json.JsonObject }
             .let { (it["id"] ?: it["userId"] ?: it["sub"])?.toString() }
     }.getOrNull() ?: jwt.hashCode().toString()
-    return "${fcmToken.hashCode()}:$user:v$PUSH_PAYLOAD_VERSION"
+    val tenant = jwtLongClaim(jwt, "tenant_id") ?: jwtLongClaim(jwt, "tenantId") ?: 0
+    return "${fcmToken.hashCode()}:$tenant:$user:v$PUSH_PAYLOAD_VERSION"
 }

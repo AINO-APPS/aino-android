@@ -21,6 +21,7 @@ class ChatNotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val conversationId = intent.getLongExtra(ChatNotifications.EXTRA_CONVERSATION_ID, -1L)
         if (conversationId <= 0) return
+        if (intent.getStringExtra("notification_account") != notificationAccount(context)) return
         // Swipe-away needs no network: just forget the stacked lines.
         if (intent.action == ChatNotifications.ACTION_DISMISSED) {
             ChatNotifications.forget(conversationId)
@@ -39,11 +40,15 @@ class ChatNotificationActionReceiver : BroadcastReceiver() {
                         val sent = runCatching {
                             repository.sendMessage(conversationId, text, clientMessageId = UUID.randomUUID().toString())
                         }.isSuccess
-                        if (sent) runCatching { repository.markRead(conversationId) }
+                        if (sent) runCatching { repository.markRead(conversationId) }.onSuccess {
+                            NotificationDelivery.markConversationRead(app, conversationId)
+                        }
                         ChatNotifications.appendReply(app, conversationId, text, failed = !sent)
                     }
                     ChatNotifications.ACTION_MARK_READ -> {
-                        runCatching { repository.markRead(conversationId) }
+                        runCatching { repository.markRead(conversationId) }.onSuccess {
+                            NotificationDelivery.markConversationRead(app, conversationId)
+                        }
                         ChatNotifications.cancel(app, conversationId)
                     }
                 }

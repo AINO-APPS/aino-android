@@ -92,7 +92,10 @@ class MainActivity : FragmentActivity() {
     private val locationResolution = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         if (result.resultCode == RESULT_OK) resumeAfterLocationEnabled(locationEnabled = true)
     }
-    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        realtimeViewModel.refreshPushReadiness()
+        if (granted) chatViewModel.refresh()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -174,18 +177,19 @@ class MainActivity : FragmentActivity() {
                 val meeting = app.aino.mobile.feature.meeting.MeetingRuntime.get(applicationContext).state
                 // Keep the display on for the whole call / meeting, not only while it rings.
                 launch {
-                    kotlinx.coroutines.flow.combine(activeCall, meeting, incomingCallViewModel.ui) { call, live, incoming ->
+                    kotlinx.coroutines.flow.combine(activeCall, meeting, incomingCallViewModel.ui, app.aino.mobile.core.call.CallAudio.proximityActive) { call, live, incoming, proximity ->
                         CallScreenAwake.shouldKeepScreenOn(
                             call = call,
                             meetingActive = live != null,
                             incomingRinging = incoming.route != null && incoming.state != IncomingCallState.Ended,
+                            proximityActive = proximity,
                         )
                     }.distinctUntilChanged().collect { keepOn -> CallScreenAwake.apply(this@MainActivity, keepOn) }
                 }
                 // Leaving the app during a connected call or a meeting enters system PiP.
                 kotlinx.coroutines.flow.combine(activeCall, meeting) { call, live ->
                     when {
-                        call.visible && call.connectedAt != null -> if (call.isVideo) 9 to 16 else 1 to 1
+                        call.visible && call.connectedAt != null -> if (call.hasVideo) 9 to 16 else 1 to 1
                         live != null -> 9 to 16
                         else -> null
                     }
@@ -245,7 +249,13 @@ class MainActivity : FragmentActivity() {
         consumePendingCallAction()
         resumeAfterLocationEnabled()
         appUpdater.check(this)
-        Thread { runCatching { PushTokenRegistrar(applicationContext).syncCurrentToken() } }.start()
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { PushTokenRegistrar(applicationContext).syncCurrentToken() }
+                .onFailure { android.util.Log.w("AinoPush", "Could not refresh push registration on resume", it) }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                realtimeViewModel.refreshPushReadiness()
+            }
+        }
     }
 
     override fun onDestroy() {

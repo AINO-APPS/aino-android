@@ -3,6 +3,8 @@ package app.aino.mobile.core.call
 import android.app.Activity
 import android.app.PictureInPictureParams
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -71,6 +73,22 @@ fun ActiveCallScreen(controller: ActiveCallController) {
     var chromeVisible by remember { mutableStateOf(true) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
+    val context = LocalContext.current
+    var cameraRequestSession by remember { mutableStateOf<String?>(null) }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (controller.ui.value.sessionKey != cameraRequestSession) return@rememberLauncherForActivityResult
+        cameraRequestSession = null
+        if (granted) {
+            if (controller.ui.value.visible && controller.ui.value.videoOff) controller.toggleVideo()
+        } else controller.showCameraPermissionError()
+    }
+    val toggleCamera = {
+        if (!ui.videoOff || hasPermission(context, android.Manifest.permission.CAMERA)) controller.toggleVideo()
+        else {
+            cameraRequestSession = ui.sessionKey
+            cameraPermission.launch(android.Manifest.permission.CAMERA)
+        }
+    }
     // A short buzz when the peer picks up, like Signal's "connected" cue.
     LaunchedEffect(ui.connectedAt != null) { if (ui.connectedAt != null) haptics.confirm() }
     LaunchedEffect(connected) {
@@ -79,7 +97,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
             delay(1_000)
         }
     }
-    val showRemoteVideo = ui.isVideo && connected && ui.remoteVideo != null && !ui.remoteVideoOff
+    val showRemoteVideo = connected && ui.remoteVideo != null && !ui.remoteVideoOff
     // Signal hides the controls a few seconds into a video call; a tap brings them back.
     LaunchedEffect(showRemoteVideo, chromeVisible) {
         if (showRemoteVideo && chromeVisible) {
@@ -107,7 +125,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
         ) { if (showRemoteVideo) chromeVisible = !chromeVisible },
     ) {
         // Signal: a ringing video call shows your own camera full-screen.
-        val localBackdrop = ui.isVideo && !connected && !ui.videoOff && ui.localVideo != null
+        val localBackdrop = !connected && !ui.videoOff && ui.localVideo != null
         if (showRemoteVideo) {
             Box(Modifier.matchParentSize().background(Color.Black))
             VideoRenderer(if (swapped) ui.localVideo else ui.remoteVideo, Modifier.fillMaxSize(), mirror = swapped)
@@ -144,6 +162,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
                             if (ui.remoteMuted && connected) Icon(HeroIcons.MicrophoneSlash, "Muted", Modifier.size(15.dp), tint = Color.White)
                             Text(status, color = Color.White.copy(alpha = .85f), fontSize = 14.sp)
                         }
+                        ui.controlError?.let { Text(it, color = CallRed, fontSize = 14.sp) }
                     }
                 }
                 // Bottom controls.
@@ -155,14 +174,12 @@ fun ActiveCallScreen(controller: ActiveCallController) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CallToggle(HeroIcons.SpeakerWave, "Speaker", ui.speakerOn, controller::toggleSpeaker)
-                    if (ui.isVideo) {
-                        CallToggle(
+                    CallToggle(
                             if (ui.videoOff) HeroIcons.VideoCameraSlash else HeroIcons.VideoCamera,
                             if (ui.videoOff) "Turn on camera (V)" else "Turn off camera (V)",
                             !ui.videoOff,
-                            controller::toggleVideo,
+                            toggleCamera,
                         )
-                    }
                     CallToggle(HeroIcons.MicrophoneSlash, if (ui.muted) "Unmute (M)" else "Mute (M)", ui.muted, controller::toggleMute)
                     Box(
                         Modifier.size(56.dp).clip(CircleShape).background(CallRed).clickable(onClickLabel = "End call (E)") { haptics.reject(); controller.hangUp() },
@@ -173,7 +190,7 @@ fun ActiveCallScreen(controller: ActiveCallController) {
         }
 
         // Self preview: a rounded card snapping to the nearest corner (Signal's PiP tile).
-        if (ui.isVideo && ui.localVideo != null && !ui.videoOff && !localBackdrop) {
+        if (ui.localVideo != null && !ui.videoOff && !localBackdrop) {
             SelfPreview(ui, swapped, onSwap = { swapped = !swapped }, onFlip = controller::switchCamera, maxWidthPx = constraints.maxWidth, maxHeightPx = constraints.maxHeight)
         }
     }

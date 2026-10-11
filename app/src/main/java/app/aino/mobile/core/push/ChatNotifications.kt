@@ -17,10 +17,8 @@ import androidx.core.graphics.drawable.IconCompat
 import app.aino.mobile.MainActivity
 import app.aino.mobile.R
 import app.aino.mobile.core.AppContainer
-import app.aino.mobile.core.call.AvatarLoader
 import app.aino.mobile.core.notifications.ConversationNotifications
 import app.aino.mobile.core.notifications.NotificationSoundPrefs
-import app.aino.mobile.feature.chat.resolveChatMediaUrl
 
 /**
  * Signal-style conversation notifications (Signal `NotificationFactory`):
@@ -42,7 +40,7 @@ object ChatNotifications {
 
     /** What is needed to re-post a conversation after an inline reply. */
     private data class Meta(
-        val push: ValidatedPush,
+        val data: Map<String, String>,
         val title: String,
         val isGroup: Boolean,
         val channelId: String,
@@ -53,8 +51,10 @@ object ChatNotifications {
     private val meta = mutableMapOf<Long, Meta>()
 
     /** Shows (or restacks) the notification for a `chat_message` push. Blocking I/O: call off the main thread. */
-    fun show(context: Context, push: ValidatedPush) {
-        val data = push.data
+    fun show(context: Context, push: ValidatedPush): PostingOutcome = showMessage(context, push.data)
+
+    /** Internal presentation metadata, not a synthesized FCM payload. */
+    fun showMessage(context: Context, data: Map<String, String>): PostingOutcome {
         val conversationId = data.getValue("conversationId").toLong()
         // Signal DefaultMessageNotifier: the thread on screen is marked read and
         // never notifies; only the short in-conversation tone may play.
@@ -62,16 +62,14 @@ object ChatNotifications {
             cancel(context, conversationId)
             VisibleThread.reportSuppressed(conversationId)
             if (NotificationSoundPrefs.notificationAudible(context)) playInThreadTone(context)
-            return
+            return PostingOutcome.Suppressed("Visible conversation")
         }
         val isGroup = data["isGroup"] == "true"
         val senderName = data.getValue("senderName")
         val title = if (isGroup) data["groupName"]?.takeIf(String::isNotBlank) ?: data.getValue("title") else senderName
         val senderKey = "aino-user-${data.getValue("senderId")}"
-        val token = AppContainer.get(context).tokens.getToken()
-        val avatar = data["senderAvatar"]?.takeIf(String::isNotBlank)?.let {
-            AvatarLoader.load(context, resolveChatMediaUrl(it), token)
-        }
+        // Delivery never waits for network image loading.
+        val avatar: Bitmap? = null
         // Group: the conversation's own identity; 1:1: the sender's photo or initials.
         val conversationKey = if (isGroup) "aino-conversation-$conversationId" else senderKey
         val largeIcon = if (isGroup) NotificationAvatars.fallback(title, conversationKey) else avatar ?: NotificationAvatars.fallback(title, conversationKey)
@@ -88,11 +86,12 @@ object ChatNotifications {
             iconBitmap = if (isGroup || avatar == null) NotificationAvatars.fallback(title, conversationKey, adaptive = true) else avatar,
         )
         val info = Meta(
-            push, title, isGroup,
+            data, title, isGroup,
             channelId = conversation?.get("channelId") ?: PushNotifications.MESSAGES,
             shortcutId = conversation?.get("shortcutId"),
             largeIcon = largeIcon,
         )
+        notificationBlocker(context, info.channelId)?.let { return it }
         synchronized(this) { meta[conversationId] = info }
         val lines = ChatNotificationHistory.append(
             conversationId,
@@ -102,9 +101,10 @@ object ChatNotifications {
                 senderKey = senderKey,
                 senderName = senderName,
                 senderAvatar = data["senderAvatar"],
+                messageId = data["messageId"]?.toLongOrNull(),
             ),
         )
-        post(context, conversationId, info, lines, silent = !NotificationSoundPrefs.notificationAudible(context))
+        return post(context, conversationId, info, lines, silent = !NotificationSoundPrefs.notificationAudible(context))
     }
 
     /** Adds the user's inline reply to the thread (as Signal does) and re-posts silently. */
@@ -141,16 +141,15 @@ object ChatNotifications {
         synchronized(this) { meta.remove(conversationId) }
     }
 
-    private fun post(context: Context, conversationId: Long, info: Meta, lines: List<ChatNotificationLine>, silent: Boolean) {
+    private fun post(context: Context, conversationId: Long, info: Meta, lines: List<ChatNotificationLine>, silent: Boolean): PostingOutcome {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) return
-        val token = runCatching { AppContainer.get(context).tokens.getToken() }.getOrNull()
+        ) return PostingOutcome.Blocked("Notification permission denied")
+        notificationBlocker(context, info.channelId)?.let { return it }
         // One icon per sender: their (disk-cached) photo, else Signal's initials fallback.
         val icons = mutableMapOf<String, IconCompat>()
         fun iconFor(line: ChatNotificationLine, key: String): IconCompat = icons.getOrPut(key) {
-            val photo = line.senderAvatar?.takeIf(String::isNotBlank)?.let { AvatarLoader.load(context, resolveChatMediaUrl(it), token) }
-            IconCompat.createWithBitmap(photo ?: NotificationAvatars.fallback(line.senderName, key))
+            IconCompat.createWithBitmap(NotificationAvatars.fallback(line.senderName, key))
         }
         val me = Person.Builder().setKey(SELF_KEY).setName("You").build()
         val style = NotificationCompat.MessagingStyle(me)
@@ -171,7 +170,7 @@ object ChatNotifications {
             context, requestCode,
             Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putPushTapExtras(info.push)
+                putChatNotificationTapExtras(info.data)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -197,7 +196,13 @@ object ChatNotifications {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
         info.shortcutId?.let(builder::setShortcutId)
-        runCatching { NotificationManagerCompat.from(context).notify(NotificationTags.CHAT, requestCode, builder.build()) }
+        return runCatching {
+            NotificationManagerCompat.from(context).notify(NotificationTags.CHAT, requestCode, builder.build())
+            PostingOutcome.Posted
+        }.getOrElse {
+            android.util.Log.w("AinoPush", "Message notification posting failed: ${it.javaClass.simpleName}")
+            PostingOutcome.Failed("Message notification posting failed")
+        }
     }
 
     /** Swipe-away / clear-all: forget the stacked lines (Signal `DeleteNotificationReceiver`). */
@@ -236,6 +241,7 @@ object ChatNotifications {
         Intent(context, ChatNotificationActionReceiver::class.java)
             .setAction(action)
             .putExtra(EXTRA_CONVERSATION_ID, conversationId)
+            .putExtra("notification_account", notificationAccount(context))
 
     @Volatile private var cachedLogo: Bitmap? = null
 

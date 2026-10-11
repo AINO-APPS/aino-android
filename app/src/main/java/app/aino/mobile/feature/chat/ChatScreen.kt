@@ -123,6 +123,22 @@ fun ChatScreen(
     onNewGroup: () -> Unit = {},
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val confirmCallPermissions = app.aino.mobile.core.call.rememberCallPermissions()
+    ui.pendingCall?.let { request ->
+        AlertDialog(
+            onDismissRequest = viewModel::cancelPendingCall,
+            title = { Text(if (request.callType == "video") "Start video call?" else "Start voice call?") },
+            text = { Text("Call ${request.conversation.title()}?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.takePendingCall()?.let { accepted ->
+                        confirmCallPermissions(accepted.callType == "video") { viewModel.placeConfirmedCall(accepted) }
+                    }
+                }) { Text("Call") }
+            },
+            dismissButton = { TextButton(onClick = viewModel::cancelPendingCall) { Text("Cancel") } },
+        )
+    }
     val colors = LocalWebColors.current
     var activeTab by remember { mutableStateOf(ChatListTab.Chat) }
     var searchOpen by remember { mutableStateOf(false) }
@@ -900,7 +916,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         kotlinx.coroutines.withTimeoutOrNull(10_000) {
             while (!app.aino.mobile.core.call.CallRealtimeLink.connected.value) kotlinx.coroutines.delay(250)
         } ?: return@LaunchedEffect
-        withCallPermissions(request.callType == "video") { viewModel.startCall(request.callType) }
+        viewModel.startCall(request.callType)
     }
     BackHandler(enabled = allMediaOpen) { allMediaOpen = false }
     if (ui.showInfo) {
@@ -930,7 +946,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 when (bar) {
                     ThreadBar.Selection -> MessageSelectionBar(ui, viewModel) { deleteTargets = it }
                     ThreadBar.Search -> ThreadSearchToolbar(ui.threadSearchQuery, viewModel::updateThreadSearch, viewModel::closeThreadSearch)
-                    ThreadBar.Header -> ThreadHeader(conversation, ui, viewModel, onNavigateBack, withCallPermissions, onOpenAllMedia = { allMediaOpen = true })
+                    ThreadBar.Header -> ThreadHeader(conversation, ui, viewModel, onNavigateBack, onOpenAllMedia = { allMediaOpen = true })
                 }
             }
             // The live link's status replaces per-request "offline" warnings.
@@ -1048,7 +1064,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                                     if (url != null) viewOnceOpen = item.message.copy(fileUrl = url)
                                 }
                             },
-                            onStartCall = { type -> withCallPermissions(type == "video") { viewModel.startCall(type) } },
+                            onStartCall = viewModel::startCall,
                         )
                         is ThreadItem.Queued -> QueuedBubble(item.message)
                         is ThreadItem.PendingUpload -> pendingById[item.localId]?.let { media ->
@@ -1319,7 +1335,6 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
             else -> Unit
         }
     }
-    val withCallPermissions = app.aino.mobile.core.call.rememberCallPermissions()
     // Groups get the Signal-style settings screen; its media/pinned/saved/search rows reuse the pages below.
     if (conversation.isGroup && !conversation.isMeetingChat && (page == InfoPage.Main || page == InfoPage.Group)) {
         GroupSettingsScreen(ui, viewModel, onOpenAllMedia = onOpenAllMedia, onOpenInfoPage = ::open)
@@ -1356,8 +1371,8 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                     item {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (!conversation.isSelfChat && ui.callsEnabled) {
-                                InfoAction(HeroIcons.Phone, "Call", Modifier.weight(1f)) { withCallPermissions(false) { viewModel.closeInfo(); viewModel.startCall("voice") } }
-                                InfoAction(HeroIcons.VideoCamera, "Video", Modifier.weight(1f)) { withCallPermissions(true) { viewModel.closeInfo(); viewModel.startCall("video") } }
+                                InfoAction(HeroIcons.Phone, "Call", Modifier.weight(1f)) { viewModel.closeInfo(); viewModel.startCall("voice") }
+                                InfoAction(HeroIcons.VideoCamera, "Video", Modifier.weight(1f)) { viewModel.closeInfo(); viewModel.startCall("video") }
                             }
                             InfoAction(HeroIcons.MagnifyingGlass, "Search", Modifier.weight(1f)) { open(InfoPage.Search) }
                         }
@@ -2690,7 +2705,6 @@ private fun ThreadHeader(
     ui: ChatUiState,
     viewModel: ChatViewModel,
     onNavigateBack: (() -> Unit)?,
-    withCallPermissions: (Boolean, () -> Unit) -> Unit,
     onOpenAllMedia: () -> Unit = {},
 ) {
     val signal = signalColors
@@ -2723,8 +2737,8 @@ private fun ThreadHeader(
             }
         }
         if (ui.callsEnabled) {
-            Icon(HeroIcons.VideoCamera, "Video call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(true) { viewModel.startCall("video") } }.padding(12.dp), tint = signal.text)
-            Icon(HeroIcons.Phone, "Voice call", Modifier.size(48.dp).clip(CircleShape).clickable { withCallPermissions(false) { viewModel.startCall("voice") } }.padding(12.dp), tint = signal.text)
+            Icon(HeroIcons.VideoCamera, "Video call", Modifier.size(48.dp).clip(CircleShape).clickable { viewModel.startCall("video") }.padding(12.dp), tint = signal.text)
+            Icon(HeroIcons.Phone, "Voice call", Modifier.size(48.dp).clip(CircleShape).clickable { viewModel.startCall("voice") }.padding(12.dp), tint = signal.text)
         }
         Box {
             Icon(HeroIcons.EllipsisVertical, "More options", Modifier.size(48.dp).clip(CircleShape).clickable { menuOpen = true }.padding(12.dp), tint = signal.text)

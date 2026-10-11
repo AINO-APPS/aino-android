@@ -2,7 +2,7 @@ package app.aino.mobile.core.push
 
 import java.time.Instant
 
-enum class PushKind { ChatMessage, IncomingCall, CallHandledElsewhere, SessionRevoked, General }
+enum class PushKind { ChatMessage, ChatReaction, IncomingCall, CallHandledElsewhere, SessionRevoked, General }
 
 data class ValidatedPush(
     val kind: PushKind,
@@ -12,7 +12,7 @@ data class ValidatedPush(
 )
 
 internal fun shouldHandlePush(push: ValidatedPush, hasStoredCredential: Boolean): Boolean =
-    push.kind != PushKind.ChatMessage || hasStoredCredential
+    push.kind !in setOf(PushKind.ChatMessage, PushKind.ChatReaction) || hasStoredCredential
 
 fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now()): Result<ValidatedPush> = runCatching {
     fun required(name: String): String = data[name]?.takeIf(String::isNotBlank)
@@ -30,6 +30,16 @@ fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now())
 
     val type = required("type")
     val kind = when (type) {
+        "chat_reaction" -> {
+            exact(setOf("type", "title", "body", "conversationId", "messageId", "messageOwnerId", "actorId", "actorName", "actorAvatar", "emoji", "reactionId", "action", "dedupeKey", "tenantId", "sentAt", "expiresAt"))
+            positive("conversationId"); positive("messageId"); positive("messageOwnerId"); positive("actorId"); positive("reactionId")
+            required("title"); required("actorName"); required("emoji")
+            require(data.getValue("body").length <= 400 && data.getValue("emoji").length <= 64)
+            require(data["action"] == "added" && data["messageOwnerId"] != data["actorId"])
+            require(required("dedupeKey") == "reaction:${data["reactionId"]}")
+            require(required("expiresAt").toLongOrNull()?.let { Instant.ofEpochSecond(it).isAfter(now) } == true) { "Push payload expired" }
+            PushKind.ChatReaction
+        }
         "chat_message" -> {
             exact(setOf("type", "title", "body", "conversationId", "messageId", "senderId", "senderName", "isGroup", "groupName", "senderAvatar", "unreadCount", "badgeCount", "dedupeKey", "expiresAt", "tenantId", "sentAt"))
             positive("conversationId"); positive("messageId"); positive("senderId")
@@ -94,6 +104,7 @@ fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now())
 }
 
 fun notificationId(push: ValidatedPush): Int = when (push.kind) {
+    PushKind.ChatReaction -> push.data.getValue("reactionId").toLong().hashCode()
     PushKind.ChatMessage -> push.data.getValue("conversationId").toLong().hashCode()
     PushKind.IncomingCall, PushKind.CallHandledElsewhere -> push.data.getValue("callId").toLong().hashCode()
     PushKind.General -> push.data.getValue("notificationId").toLong().hashCode()
@@ -102,6 +113,7 @@ fun notificationId(push: ValidatedPush): Int = when (push.kind) {
 
 /** Tray tag for [push]: keeps chat, alert and call ids in separate namespaces (see [NotificationTags]). */
 fun notificationTag(push: ValidatedPush): String = when (push.kind) {
+    PushKind.ChatReaction -> NotificationTags.REACTION
     PushKind.ChatMessage -> NotificationTags.CHAT
     PushKind.IncomingCall, PushKind.CallHandledElsewhere -> NotificationTags.CALL
     PushKind.General, PushKind.SessionRevoked -> NotificationTags.ALERT
