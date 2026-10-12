@@ -24,8 +24,7 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 
 /** Web `ProfileMenu` initials: first letter of each word, max two, uppercase. */
-fun avatarInitials(name: String?): String = name.orEmpty().trim().split(Regex("\\s+"))
-    .mapNotNull { it.firstOrNull()?.uppercaseChar() }.take(2).joinToString("").ifEmpty { "?" }
+fun avatarInitials(name: String?): String = app.aino.mobile.core.avatar.avatarInitials(name)
 
 /**
  * A user's photo loaded through the shared authenticated Coil loader

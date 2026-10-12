@@ -41,7 +41,16 @@ fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now())
             PushKind.ChatReaction
         }
         "chat_message" -> {
-            exact(setOf("type", "title", "body", "conversationId", "messageId", "senderId", "senderName", "isGroup", "groupName", "senderAvatar", "unreadCount", "badgeCount", "dedupeKey", "expiresAt", "tenantId", "sentAt"))
+            exact(setOf("type", "title", "body", "conversationId", "messageId", "senderId", "senderName", "isGroup", "groupName", "senderAvatar", "unreadCount", "badgeCount", "dedupeKey", "expiresAt", "tenantId", "sentAt"),
+                setOf("groupAvatar", "groupMemberPreviews"))
+            if ("groupAvatar" in data || "groupMemberPreviews" in data) {
+                require(data["isGroup"] == "true") { "Group avatar metadata requires a group" }
+                require(data["groupAvatar"].orEmpty().toByteArray(Charsets.UTF_8).size <= 2048)
+                data["groupMemberPreviews"]?.let { parseGroupMemberPreviews(it) }
+                require(kotlinx.serialization.json.JsonObject(data.mapValues {
+                    kotlinx.serialization.json.JsonPrimitive(it.value)
+                }).toString().toByteArray(Charsets.UTF_8).size <= 3800) { "Chat push exceeds byte budget" }
+            }
             positive("conversationId"); positive("messageId"); positive("senderId")
             nonNegative("unreadCount"); nonNegative("badgeCount"); required("title"); required("senderName")
             // Group bodies are "{sender}: {150-char preview}" (server pushNotifications.ts).

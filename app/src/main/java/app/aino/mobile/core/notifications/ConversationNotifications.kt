@@ -55,7 +55,7 @@ object ConversationNotifications {
                 )
                 .setName(senderName)
 
-            val icon = loadLocalIcon(avatarUri) ?: iconBitmap?.let(IconCompat::createWithAdaptiveBitmap)
+            val icon = loadLocalIcon(avatarUri) ?: iconBitmap?.let(IconCompat::createWithBitmap)
             icon?.let { personBuilder.setIcon(it) }
             val person = personBuilder.build()
 
@@ -169,7 +169,7 @@ object ConversationNotifications {
             if (!file.exists() || !file.isFile) return null
 
             val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
-            IconCompat.createWithAdaptiveBitmap(bitmap)
+            IconCompat.createWithBitmap(bitmap)
         } catch (_: Throwable) {
             null
         }

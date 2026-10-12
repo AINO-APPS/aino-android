@@ -11,6 +11,7 @@ import androidx.core.app.NotificationManagerCompat
 import app.aino.mobile.MainActivity
 import app.aino.mobile.R
 import app.aino.mobile.core.AppContainer
+import app.aino.mobile.core.avatar.AvatarMemberPreview
 import app.aino.mobile.feature.chat.ChatConversation
 import app.aino.mobile.feature.chat.ChatReactionEvent
 import app.aino.mobile.feature.chat.ChatRealtimeMessage
@@ -20,6 +21,7 @@ import app.aino.mobile.core.db.ScopedCache
 import app.aino.mobile.core.db.SessionScopeStore
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 
 internal fun reactionEligible(action: String, ownerId: Long?, actorId: Long, userId: Long, muted: Boolean, visible: Boolean): Boolean =
     action == "added" && ownerId == userId && actorId != userId && !muted && !visible
@@ -66,17 +68,24 @@ object NotificationDelivery {
 
     fun onMessage(context: Context, message: ChatRealtimeMessage, conversation: ChatConversation?): PostingOutcome {
         if (message.senderId == notificationUser(context)) return PostingOutcome.Suppressed("Own message")
+        val resolved = conversation ?: cachedConversation(context, message.conversationId)
+        val avatarData = if (resolved?.isGroup == true) buildMap {
+            put("groupAvatar", resolved.groupAvatar.orEmpty())
+            resolved.groupMemberPreviews?.let { members ->
+                val previews = Json.encodeToString(members.map { AvatarMemberPreview(it.name, it.avatar) })
+                if (runCatching { parseGroupMemberPreviews(previews) }.isSuccess) put("groupMemberPreviews", previews)
+            }
+        } else emptyMap()
         return deliver(context, "msg:${message.id}") {
             if (isRead(context, message.conversationId, runCatching { java.time.Instant.parse(message.createdAt).toEpochMilli() }.getOrNull())) PostingOutcome.Suppressed("Message already read")
-            else if ((conversation ?: cachedConversation(context, message.conversationId))?.isMuted == true) PostingOutcome.Suppressed("Muted conversation")
+            else if (resolved?.isMuted == true) PostingOutcome.Suppressed("Muted conversation")
             else ChatNotifications.showMessage(context, mapOf(
                 "conversationId" to message.conversationId.toString(), "messageId" to message.id.toString(),
                 "senderId" to message.senderId.toString(), "senderName" to (message.senderName ?: message.senderUsername ?: "New message"),
                 "senderAvatar" to message.senderAvatar.orEmpty(), "body" to (message.content?.takeIf(String::isNotBlank) ?: message.fileName ?: "Attachment"),
-                "title" to (conversation?.groupName ?: message.senderName ?: "New message"),
-                "isGroup" to (conversation?.isGroup == true).toString(), "groupName" to conversation?.groupName.orEmpty(),
-                "groupAvatar" to (conversation ?: cachedConversation(context, message.conversationId))?.groupAvatar.orEmpty(),
-            ))
+                "title" to (resolved?.groupName ?: message.senderName ?: "New message"),
+                "isGroup" to (resolved?.isGroup == true).toString(), "groupName" to resolved?.groupName.orEmpty(),
+            ) + avatarData)
         }
     }
 
@@ -116,7 +125,7 @@ object NotificationDelivery {
             if (isRead(context, conversationId, runCatching { java.time.Instant.parse(push.data.getValue("sentAt")).toEpochMilli() }.getOrNull())) PostingOutcome.Suppressed("Message already read")
             else if (conversation?.isMuted == true) PostingOutcome.Suppressed("Muted conversation")
             else runCatching {
-                ChatNotifications.showMessage(context, push.data + ("groupAvatar" to conversation?.groupAvatar.orEmpty()))
+                ChatNotifications.showMessage(context, push.data)
             }.getOrElse { PostingOutcome.Failed("Rich notification failed") }
                 .let { outcome ->
                     if (outcome is PostingOutcome.Failed && PushNotifications.display(context, push)) PostingOutcome.Posted else outcome

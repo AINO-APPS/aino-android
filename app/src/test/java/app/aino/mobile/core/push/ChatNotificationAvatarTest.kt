@@ -41,6 +41,7 @@ class ChatNotificationAvatarTest {
         VisibleThread.clear()
         PushNotifications.createChannels(context)
         ChatNotifications.accountProvider = { account }
+        ChatNotifications.groupAvatarProvider = { _, _, _ -> null }
         ChatNotifications.avatarSource = object : NotificationAvatarSource {
             override fun cached(context: Context, url: String, account: String?) = cached[url]
             override suspend fun load(context: Context, url: String, account: String?): Bitmap? {
@@ -57,6 +58,7 @@ class ChatNotificationAvatarTest {
         VisibleThread.clear()
         ChatNotifications.avatarSource = NotificationAvatarLoader
         ChatNotifications.accountProvider = ::notificationAccount
+        ChatNotifications.groupAvatarProvider = ::loadNotificationGroupAvatar
     }
 
     private fun data(id: Long = 1, avatar: String = "photo") = mapOf(
@@ -83,6 +85,13 @@ class ChatNotificationAvatarTest {
             .dynamicShortcuts.first { it.shortLabel == "Asha Kumar" }
         val shortcutIcon = android.content.pm.ShortcutInfo::class.java.getDeclaredMethod("getIcon").invoke(shortcut)
         assertNotNull(shortcutIcon)
+        val icon = shortcutIcon as android.graphics.drawable.Icon
+        assertEquals(androidx.core.graphics.drawable.IconCompat.TYPE_BITMAP, icon.type)
+        val shortcutBitmap = org.robolectric.Shadows.shadowOf(icon).bitmap
+        val personBitmap = org.robolectric.Shadows.shadowOf(person.icon!!.toIcon(context)).bitmap
+        assertTrue(shortcutBitmap.sameAs(personBitmap))
+        assertEquals(Color.TRANSPARENT, shortcutBitmap.getPixel(0, 0))
+        assertEquals(Color.RED, shortcutBitmap.getPixel(shortcutBitmap.width / 2, 16))
         assertTrue(requested.isEmpty())
     }
 
@@ -112,6 +121,75 @@ class ChatNotificationAvatarTest {
         val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(shown()!!)!!
         assertEquals("Team", style.conversationTitle)
         assertEquals("Asha Kumar", style.messages.single().person!!.name)
+    }
+
+    @Test fun groupGlyphPaletteAndSenderInitialsMatchChatWithItsConversationKey() {
+        ChatNotifications.showMessage(context, data(avatar = "") + mapOf("isGroup" to "true", "groupName" to "Team",
+            "groupAvatar" to "", "groupMemberPreviews" to "[]"))
+        val bitmap = org.robolectric.Shadows.shadowOf(shown()!!.getLargeIcon()).bitmap
+        assertEquals(app.aino.mobile.core.designsystem.component.groupAvatarColors("conv-7").first,
+            bitmap.getPixel(bitmap.width / 8, bitmap.height / 2))
+        val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(shown()!!)!!
+        val personBitmap = org.robolectric.Shadows.shadowOf(style.messages.single().person!!.icon!!.toIcon(context)).bitmap
+        assertTrue(personBitmap.sameAs(app.aino.mobile.core.avatar.ChatAvatarBitmaps.user("Asha Kumar", ChatNotifications.brandColor(context))))
+    }
+
+    @Test fun memberPhotosSilentlyReplaceCollageTilesAndShortcutWithoutChangingSenderIdentity() {
+        cached["photo"] = photo
+        loads["member"] = CompletableDeferred()
+        val previews = """[{"name":"Asha Kumar","avatar":"photo"},{"name":"Bob","avatar":"member"}]"""
+        ChatNotifications.showMessage(context, data() + mapOf("isGroup" to "true", "groupName" to "Team",
+            "groupAvatar" to "", "groupMemberPreviews" to previews))
+        val initial = shown()!!
+        await { "member" in requested }
+        loads.getValue("member").complete(groupPhoto)
+        await { shown() !== initial }
+        val bitmap = org.robolectric.Shadows.shadowOf(shown()!!.getLargeIcon()).bitmap
+        assertEquals(Color.RED, bitmap.getPixel(bitmap.width / 4, bitmap.height / 2))
+        assertEquals(Color.BLUE, bitmap.getPixel(bitmap.width * 3 / 4, bitmap.height / 2))
+        assertEquals(Color.TRANSPARENT, bitmap.getPixel(0, 0))
+        val shortcut = context.getSystemService(android.content.pm.ShortcutManager::class.java).dynamicShortcuts.first { it.shortLabel == "Team" }
+        val shortcutIcon = android.content.pm.ShortcutInfo::class.java.getDeclaredMethod("getIcon").invoke(shortcut) as android.graphics.drawable.Icon
+        assertEquals(android.graphics.drawable.Icon.TYPE_BITMAP, shortcutIcon.type)
+        val shortcutBitmap = org.robolectric.Shadows.shadowOf(shortcutIcon).bitmap
+        assertEquals(Color.RED, shortcutBitmap.getPixel(shortcutBitmap.width / 4, shortcutBitmap.height / 2))
+        assertEquals(Color.BLUE, shortcutBitmap.getPixel(shortcutBitmap.width * 3 / 4, shortcutBitmap.height / 2))
+        assertEquals(Color.TRANSPARENT, shortcutBitmap.getPixel(0, 0))
+        val style = NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(shown()!!)!!
+        assertEquals("aino-user-3", style.messages.single().person!!.key)
+        assertEquals(initial.`when`, shown()!!.`when`)
+        assertTrue(shown()!!.flags and Notification.FLAG_ONLY_ALERT_ONCE != 0)
+        assertEquals(listOf("Reply", "Mark as read"), shown()!!.actions.map { it.title.toString() })
+    }
+
+    @Test fun omittedOrLegacyGroupMetadataUsesAccountScopedProviderAfterImmediateGlyphPosting() {
+        val pending = CompletableDeferred<app.aino.mobile.core.avatar.GroupAvatarMetadata?>()
+        ChatNotifications.groupAvatarProvider = { _, id, user ->
+            assertEquals(7L, id); assertEquals("1:2", user)
+            withContext(NonCancellable) { pending.await() }
+        }
+        cached["group"] = groupPhoto
+        ChatNotifications.showMessage(context, data(avatar = "") + mapOf("isGroup" to "true", "groupName" to "Team"))
+        val initial = shown()!!
+        pending.complete(app.aino.mobile.core.avatar.GroupAvatarMetadata("group", emptyList()))
+        await { "group" in requested || shown() !== initial }
+        // Metadata updates first; the shared memory cache should supply the group photo.
+        await {
+            val bitmap = org.robolectric.Shadows.shadowOf(shown()!!.getLargeIcon()).bitmap
+            bitmap.getPixel(bitmap.width / 2, bitmap.height / 2) == Color.BLUE
+        }
+        assertEquals(1, ChatNotificationHistory.get(7).size)
+        assertEquals(initial.`when`, shown()!!.`when`)
+    }
+
+    @Test fun lateGroupMetadataAfterDismissalDoesNotRecreateNotificationOrShortcut() {
+        val pending = CompletableDeferred<app.aino.mobile.core.avatar.GroupAvatarMetadata?>()
+        ChatNotifications.groupAvatarProvider = { _, _, _ -> withContext(NonCancellable) { pending.await() } }
+        ChatNotifications.showMessage(context, data(avatar = "") + mapOf("isGroup" to "true", "groupName" to "Team"))
+        ChatNotifications.cancel(context, 7)
+        pending.complete(app.aino.mobile.core.avatar.GroupAvatarMetadata("group", emptyList()))
+        Thread.sleep(100)
+        assertNull(shown())
     }
 
     @Test fun failedOrMissingPhotoKeepsFallbackAndMessage() {
