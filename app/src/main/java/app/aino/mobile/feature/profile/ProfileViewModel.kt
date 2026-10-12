@@ -8,6 +8,8 @@ import android.provider.OpenableColumns
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.aino.mobile.core.network.isTransientFailure
+import app.aino.mobile.core.network.userFacingMessage
 import app.aino.mobile.core.notifications.NotificationSoundPrefs
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicLong
@@ -72,6 +74,8 @@ class ProfileViewModel(
     private val repository: ProfileRepository,
     private val context: Context,
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
+    /** Same `profile` read served from the last response: the page opens with the last known user. */
+    private val warm: ProfileRepository? = null,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(ProfileUiState())
     val ui: StateFlow<ProfileUiState> = _ui.asStateFlow()
@@ -111,22 +115,27 @@ class ProfileViewModel(
         if (_ui.value.loading) return
         _ui.update { it.copy(loading = true, loadError = null) }
         io {
+            if (_ui.value.user == null && warm != null) {
+                runCatching(warm::load).getOrNull()?.let { cached -> _ui.update { if (it.user == null) it.withUser(cached) else it } }
+            }
             runCatching(repository::load).fold(
-                onSuccess = { user ->
+                onSuccess = { user -> _ui.update { it.withUser(user).copy(loading = false) } },
+                onFailure = { error ->
                     _ui.update {
-                        it.copy(
-                            loading = false,
-                            user = user,
-                            draftName = user.fullName.orEmpty(),
-                            draftUsername = user.username,
-                            draftEmail = user.email.orEmpty(),
-                        )
+                        val keep = it.user != null && isTransientFailure(error)
+                        it.copy(loading = false, loadError = if (keep) null else userFacingMessage(error, "Could not load your profile"))
                     }
                 },
-                onFailure = { error -> _ui.update { it.copy(loading = false, loadError = error.message ?: "Could not load your profile") } },
             )
         }
     }
+
+    private fun ProfileUiState.withUser(user: ProfileUser) = copy(
+        user = user,
+        draftName = user.fullName.orEmpty(),
+        draftUsername = user.username,
+        draftEmail = user.email.orEmpty(),
+    )
 
     // ── Status (StatusPicker / StatusContext) ────────────────────────────────
 
@@ -186,7 +195,7 @@ class ProfileViewModel(
             }.fold(
                 onSuccess = { response -> applyAvatar(response.avatar, onChanged) },
                 onFailure = { error ->
-                    _ui.update { it.copy(avatarUploading = false, alert = error.message ?: "Avatar upload failed. Please try again.") }
+                    _ui.update { it.copy(avatarUploading = false, alert = userFacingMessage(error, "Avatar upload failed. Please try again.")) }
                 },
             )
         }
@@ -199,7 +208,7 @@ class ProfileViewModel(
         io {
             runCatching(repository::removeAvatar).fold(
                 onSuccess = { applyAvatar(null, onChanged) },
-                onFailure = { error -> _ui.update { it.copy(alert = error.message.takeUnless { it == "An error occurred" } ?: "Failed to remove photo. Please try again.") } },
+                onFailure = { error -> _ui.update { it.copy(alert = userFacingMessage(error, "").takeUnless { it.isEmpty() || it == "An error occurred" } ?: "Failed to remove photo. Please try again.") } },
             )
         }
     }
@@ -391,7 +400,7 @@ class ProfileViewModel(
                             main { onSignOut() }
                         },
                         onFailure = { error ->
-                            val text = error.message.takeUnless { it == "An error occurred" }
+                            val text = userFacingMessage(error, "").takeUnless { it.isEmpty() || it == "An error occurred" }
                                 ?: "Clock-out failed. Please clock out from the Work Timer before signing out."
                             _ui.update { it.copy(signingOut = false, signOutConfirming = false, alert = text) }
                         },
@@ -411,7 +420,7 @@ class ProfileViewModel(
             _ui.update { it.copy(busy = it.busy - form) }
             result.fold(
                 onSuccess = { text -> text?.let { notice(form, true, it) } },
-                onFailure = { error -> notice(form, false, errorText ?: error.message ?: "An error occurred") },
+                onFailure = { error -> notice(form, false, errorText ?: userFacingMessage(error, "An error occurred")) },
             )
         }
     }
@@ -440,7 +449,11 @@ class ProfileViewModel(
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val container = app.aino.mobile.core.AppContainer.get(context)
-                return ProfileViewModel(ProfileRepository(container.api, container.tokens), context.applicationContext) as T
+                return ProfileViewModel(
+                    ProfileRepository(container.api, container.tokens),
+                    context.applicationContext,
+                    warm = ProfileRepository(container.cachedApi),
+                ) as T
             }
         }
     }

@@ -43,11 +43,12 @@ class RealtimeConnectionPolicyTest {
         assertEquals(RealtimeLinkDecision.Open, realtimeLinkDecision(background.copy(inCall = true), nowMs = 999_999))
     }
 
-    @Test fun `indicator reflects the network first, then the socket`() {
+    @Test fun `indicator only reports a device without network, never socket reconnects`() {
         assertEquals(ConnectionIndicator.WaitingForNetwork, connectionIndicator(RealtimeState.Connected, NetworkStatus.Unavailable))
+        assertEquals(ConnectionIndicator.WaitingForNetwork, connectionIndicator(RealtimeState.Connecting(3), NetworkStatus.Unavailable))
         assertEquals(ConnectionIndicator.Connected, connectionIndicator(RealtimeState.Connected, NetworkStatus.Unknown))
-        assertEquals(ConnectionIndicator.Connecting, connectionIndicator(RealtimeState.Connecting(2), NetworkStatus.Available(true)))
-        assertEquals(ConnectionIndicator.Connecting, connectionIndicator(RealtimeState.Disconnected, NetworkStatus.Available(false)))
+        assertEquals(ConnectionIndicator.Connected, connectionIndicator(RealtimeState.Connecting(2), NetworkStatus.Available(true)))
+        assertEquals(ConnectionIndicator.Connected, connectionIndicator(RealtimeState.Disconnected, NetworkStatus.Available(false)))
         assertEquals(ConnectionIndicator.Connected, connectionIndicator(RealtimeState.Stopped(4001, "Unauthorized"), NetworkStatus.Available(true)))
     }
 

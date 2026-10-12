@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.aino.mobile.core.network.userFacingMessage
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -213,7 +214,7 @@ class NotificationsViewModel(
                         set(_ui.value.copy(notifications = page.notifications, unread = page.unread, loaded = true, error = null, syncedAtMs = startedAt))
                     },
                     onFailure = { error ->
-                        if (!_ui.value.loaded) set(_ui.value.copy(error = error.message ?: "Failed to fetch notifications"))
+                        if (!_ui.value.loaded) set(_ui.value.copy(error = userFacingMessage(error, "Failed to fetch notifications")))
                     },
                 )
             } while (fetchAgain)

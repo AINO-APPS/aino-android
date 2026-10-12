@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.aino.mobile.core.network.isTransientFailure
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -531,7 +532,7 @@ class ManagerViewModel(
                         s,
                         result.fold(
                             onSuccess = { Section(data = it) },
-                            onFailure = { current.copy(loading = false, error = it.managerMessage(fallback)) },
+                            onFailure = { current.copy(loading = false, error = it.loadError(current.data != null, fallback)) },
                         ),
                     )
                 }
@@ -562,7 +563,7 @@ class ManagerViewModel(
                     state,
                     result.fold(
                         onSuccess = { Section(data = it) },
-                        onFailure = { current.copy(loading = false, error = it.managerMessage(fallback)) },
+                        onFailure = { current.copy(loading = false, error = it.loadError(current.data != null, fallback)) },
                     ),
                 )
             }
@@ -595,3 +596,7 @@ class ManagerViewModel(
 }
 
 private fun today(): String = LocalDate.now().toString()
+
+/** A transient failure behind data already on screen stays silent; the next refresh revalidates. */
+private fun Throwable.loadError(hasData: Boolean, fallback: String): String? =
+    if (hasData && isTransientFailure(this)) null else managerMessage(fallback)

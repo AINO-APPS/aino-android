@@ -377,6 +377,19 @@ class ChatCache(
         cache.messageSnapshot(conversationId).filter { it.messageId < before }.takeLast(limit)
             .map { it.decodeMessage() ?: return emptyList() }
 
+    /** Signal searches its local database: saved rows match even with no network. Newest first. */
+    suspend fun searchMessages(term: String, conversationIds: Collection<Long>, limit: Int = 50): List<ChatMessage> {
+        val needle = term.trim()
+        if (needle.length < 2) return emptyList()
+        return conversationIds.filter { it > 0 }.flatMap { id ->
+            cache.messageSnapshot(id).asSequence()
+                .filter { it.body.contains(needle, ignoreCase = true) }
+                .map { (it.decodeMessage() ?: it.toCachedMessage()).let { m -> if (m.conversationId == null) m.copy(conversationId = id) else m } }
+                .filter { it.deletedAt == null && it.formatType != "system" && !it.content.isNullOrBlank() }
+                .toList()
+        }.sortedByDescending { parseEpoch(it.createdAt) }.take(limit)
+    }
+
     private fun MessageEntity.decodeMessage(): ChatMessage? =
         payloadJson?.let { runCatching { json.decodeFromString<ChatMessage>(it) }.getOrNull() }
 }

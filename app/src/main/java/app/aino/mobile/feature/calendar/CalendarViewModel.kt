@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.aino.mobile.core.network.userFacingMessage
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -255,7 +256,7 @@ class CalendarViewModel(
                 }
             }.fold(
                 onSuccess = { closeEditor(); refresh() },
-                onFailure = { error -> editEditor { it.copy(saving = false, error = error.message) } },
+                onFailure = { error -> editEditor { it.copy(saving = false, error = userFacingMessage(error, "Could not save event")) } },
             )
         }
     }
@@ -268,7 +269,7 @@ class CalendarViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.delete(id) }.fold(
                 onSuccess = { closeEditor(); refresh() },
-                onFailure = { error -> editEditor { it.copy(saving = false, error = error.message) } },
+                onFailure = { error -> editEditor { it.copy(saving = false, error = userFacingMessage(error, "Could not delete event")) } },
             )
         }
     }

@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import app.aino.mobile.core.auth.KeystoreTokenStore
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
+import app.aino.mobile.core.network.isTransientFailure
+import app.aino.mobile.core.network.userFacingMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -53,7 +55,10 @@ class DashboardViewModel(
             }
             runCatching { repository.load(isManager) }.fold(
                 onSuccess = { snapshot -> _ui.value = DashboardUiState(false, snapshot) },
-                onFailure = { _ui.value = _ui.value.copy(loading = false, error = app.aino.mobile.core.network.userFacingMessage(it, "Could not load dashboard")) },
+                onFailure = {
+                    val keep = _ui.value.snapshot != null && isTransientFailure(it)
+                    _ui.value = _ui.value.copy(loading = false, error = if (keep) null else userFacingMessage(it, "Could not load dashboard"))
+                },
             )
             if (refreshAgain) { refreshAgain = false; refresh() }
         }

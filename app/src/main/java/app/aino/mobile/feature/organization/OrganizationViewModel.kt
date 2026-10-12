@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import app.aino.mobile.core.network.isTransientFailure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -123,7 +124,10 @@ class OrganizationViewModel(
             _ui.update { state ->
                 result.fold(
                     onSuccess = { state.copy(orgLoading = false, orgLoaded = true, org = it, orgError = null) },
-                    onFailure = { state.copy(orgLoading = false, orgLoaded = true, orgError = it.orgMessage("Failed to fetch organization")) },
+                    onFailure = {
+                        val keep = state.org != null && isTransientFailure(it)
+                        state.copy(orgLoading = false, orgLoaded = true, orgError = if (keep) null else it.orgMessage("Failed to fetch organization"))
+                    },
                 )
             }
             loadTab(_ui.value.tab)
@@ -228,7 +232,10 @@ class OrganizationViewModel(
                     state,
                     result.fold(
                         onSuccess = { Section(data = it) },
-                        onFailure = { current.copy(loading = false, error = it.orgMessage(fallback)) },
+                        onFailure = {
+                            val keep = current.data != null && isTransientFailure(it)
+                            current.copy(loading = false, error = if (keep) null else it.orgMessage(fallback))
+                        },
                     ),
                 )
             }

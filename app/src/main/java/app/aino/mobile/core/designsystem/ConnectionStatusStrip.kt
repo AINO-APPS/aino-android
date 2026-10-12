@@ -10,8 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,24 +37,21 @@ fun ConnectionStatusStrip(
 ) {
     val colors = LocalWebColors.current
     AnimatedVisibility(
-        visible = indicator != ConnectionIndicator.Connected,
+        // Only "no network at all": socket reconnects never show a spinner (Signal shows nothing).
+        visible = indicator == ConnectionIndicator.WaitingForNetwork,
         enter = expandVertically() + fadeIn(),
         exit = shrinkVertically() + fadeOut(),
         modifier = modifier,
     ) {
-        val label = if (indicator == ConnectionIndicator.WaitingForNetwork) "Waiting for network…" else "Connecting…"
         Row(
             Modifier.fillMaxWidth()
-                .background(colors.warningGlow)
-                .padding(horizontal = 12.dp, vertical = 6.dp)
+                .background(colors.bgSecondary)
+                .padding(horizontal = 12.dp, vertical = 4.dp)
                 .semantics { liveRegion = LiveRegionMode.Polite },
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (indicator == ConnectionIndicator.Connecting) {
-                CircularProgressIndicator(Modifier.padding(end = 8.dp).size(12.dp), color = colors.warning, strokeWidth = 1.5.dp)
-            }
-            Text(label, color = colors.textSecondary, style = MaterialTheme.typography.labelMedium)
+            Text("No internet connection · showing saved messages", color = colors.textSecondary, style = MaterialTheme.typography.labelSmall)
         }
     }
 }

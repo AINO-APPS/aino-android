@@ -104,6 +104,16 @@ class ChatListActionsTest {
         assertEquals("Server said no", vm.ui.value.error)
     }
 
+    @Test fun `the conversations deleted notice goes away on its own`() {
+        val vm = viewModel()
+        vm.toggleConversationSelection(1)
+        vm.toggleConversationSelection(2)
+        vm.deleteSelectedConversations()
+        await { vm.ui.value.message == "2 conversations deleted" }
+        assertTrue(vm.ui.value.conversations.isEmpty())
+        await(timeoutMs = ChatViewModel.TRANSIENT_ERROR_DISPLAY_MS + 3_000) { vm.ui.value.message == null }
+    }
+
     @Test fun `mark as unread flags the row`() {
         val vm = viewModel()
         val gate = java.util.concurrent.CountDownLatch(1).also { hold = it }

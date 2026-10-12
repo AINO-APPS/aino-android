@@ -171,7 +171,7 @@ internal fun listDeliveryTick(conversation: ChatConversation, pending: Boolean =
     else -> DeliveryTick.Sent
 }
 
-private fun parseEpoch(value: String?): Long = runCatching {
+internal fun parseEpoch(value: String?): Long = runCatching {
     value?.let(Instant::parse)?.toEpochMilli()
 }.getOrNull() ?: 0L
 

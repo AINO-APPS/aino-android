@@ -130,6 +130,29 @@ class NotificationsViewModelTest {
     }
 
     @Test
+    fun offlinePollKeepsTheListAndColdFailureNeverShowsTransportText() {
+        var offline = false
+        val vm = NotificationsViewModel(
+            NotificationsRepository(
+                ApiClient { request ->
+                    if (offline) throw ApiError.Network(request.method, "https://x/api/${request.path}", java.io.IOException("offline"))
+                    ApiResponse(200, emptyMap(), listBody.toByteArray())
+                },
+            ),
+            io = dispatcher,
+        )
+        offline = true
+        vm.refresh()
+        assertEquals(app.aino.mobile.core.network.NETWORK_ERROR_MESSAGE, vm.ui.value.error)
+        offline = false
+        vm.refresh()
+        offline = true
+        vm.refresh()
+        assertEquals(null, vm.ui.value.error)
+        assertEquals(2, vm.ui.value.notifications.size)
+    }
+
+    @Test
     fun pushTapMarksTheRowReadById() {
         val vm = viewModel()
         vm.refresh()

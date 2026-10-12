@@ -337,7 +337,10 @@ fun ChatScreen(
                         items(ui.messageResults, key = { "s-msg-${it.id}" }) { message ->
                             val conversation = ui.conversations.firstOrNull { it.id == message.conversationId }
                             MessageResultRow(message, conversation, query) {
-                                if (conversation != null) { viewModel.rememberJump(message); openConversation(conversation) }
+                                val targetId = message.conversationId ?: return@MessageResultRow
+                                viewModel.rememberJump(message)
+                                if (onOpenConversation != null) onOpenConversation(targetId)
+                                else viewModel.openConversationById(targetId, jumpTo = message.id)
                             }
                         }
                     }
@@ -707,6 +710,15 @@ private suspend fun androidx.compose.foundation.lazy.LazyListState.scrollToUnrea
     if (lift > 0) scrollBy(-lift.toFloat())
 }
 
+/** Reversed thread: [index] first lands on the bottom edge, then is lifted to the middle of the viewport (Signal jump). */
+private suspend fun androidx.compose.foundation.lazy.LazyListState.scrollToCentered(index: Int) {
+    scrollToItem(index)
+    val info = layoutInfo
+    val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return
+    val lift = (info.viewportSize.height - item.size) / 2 - info.afterContentPadding
+    if (lift > 0) scrollBy(-lift.toFloat())
+}
+
 private enum class ThreadBar { Header, Search, Selection }
 
 private fun threadItemsOf(ui: ChatUiState, pending: List<PendingMedia>): List<ThreadItem> = buildThreadItems(
@@ -842,19 +854,26 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
     BackHandler(enabled = sendItems != null) { sendItems = null }
     // Web `handleJumpTo`: scroll to a pinned/saved/search hit and flash it; page older history until it's loaded.
     var highlightedId by remember { mutableStateOf<Long?>(null) }
-    LaunchedEffect(ui.jumpToMessageId, newestFirst.size, ui.loadingOlder) {
+    // A jump owns the position: the open sequence must not pull the thread back to the bottom afterwards.
+    var jumped by remember(conversation.id) { mutableStateOf(false) }
+    LaunchedEffect(ui.jumpToMessageId, newestFirst.size, ui.loadingOlder, ui.olderMessagesError) {
         val target = ui.jumpToMessageId ?: return@LaunchedEffect
         val index = newestFirst.indexOfFirst { it.key == "server-$target" }
         if (index < 0) {
-            if (ui.hasOlderMessages && !ui.loadingOlder && newestFirst.isNotEmpty()) viewModel.loadOlderMessages()
-            else if (!ui.hasOlderMessages) viewModel.consumeJump()
+            when {
+                // Offline or the page failed: stop instead of retrying the same page in a loop.
+                ui.olderMessagesError != null || !ui.hasOlderMessages -> viewModel.jumpMissed()
+                !ui.loadingOlder && newestFirst.isNotEmpty() -> viewModel.loadOlderMessages()
+            }
             return@LaunchedEffect
         }
+        jumped = true
         viewModel.consumeJump()
-        listState.animateScrollToItem(index)
+        stickToBottom = false
+        listState.scrollToCentered(index)
         highlightedId = target
         kotlinx.coroutines.delay(2_000)
-        highlightedId = null
+        if (highlightedId == target) highlightedId = null
     }
     val newestKey = newestFirst.firstOrNull()?.key
     val newestMine = (newestFirst.firstOrNull() as? ThreadItem.Message)?.message?.senderId == ui.currentUserId ||
@@ -888,7 +907,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         dividerKey = unreadDividerKey(newestFirst, unreadAtOpen, latestUi.currentUserId)
         val target = initialThreadScroll(
             newestFirst.map(ThreadItem::key), dividerKey,
-            jumpPending = latestUi.jumpToMessageId != null, userScrolled = userScrolled,
+            jumpPending = jumped || latestUi.jumpToMessageId != null, userScrolled = userScrolled,
         )
         // Not tied to this effect: a later row change must not cancel the positioning half way.
         scope.launch {
@@ -983,7 +1002,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                     onRetry = viewModel::refreshThread,
                 )
             }
-            ui.olderMessagesError?.let { failure ->
+            ui.olderMessagesError?.takeUnless { it.transient }?.let { failure ->
                 ThreadLoadWarning(
                     text = "Couldn't refresh older messages.\n${failure.message}",
                     retryLabel = "Retry older messages",
@@ -994,6 +1013,8 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
             // One failure, one banner: a thread load and a side request failing for the same reason showed it twice.
             ui.error?.takeUnless { it == ui.threadRefreshError || it == ui.olderMessagesError?.message }
                 ?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
+            ui.message?.takeIf { it == ChatViewModel.JUMP_MISSED_NOTICE }
+                ?.let { AinoAlert(it, AlertTone.Warning, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
             Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(
                 Modifier.fillMaxSize(),
@@ -1065,6 +1086,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                                 }
                             },
                             onStartCall = viewModel::startCall,
+                            onOpenQuote = viewModel::jumpToQuoted,
                         )
                         is ThreadItem.Queued -> QueuedBubble(item.message)
                         is ThreadItem.PendingUpload -> pendingById[item.localId]?.let { media ->
@@ -1567,6 +1589,8 @@ private fun MessageBubble(
     poll: ChatPoll? = null,
     pollState: PollUiState = PollUiState(),
     onLoadPoll: (Long) -> Unit = {},
+    /** Quote tap: scroll to the original message (Signal). */
+    onOpenQuote: (Long) -> Unit = {},
 ) {
     var actionsOpen by remember { mutableStateOf(false) }
     var reactionsOpen by remember { mutableStateOf(false) }
@@ -1688,7 +1712,10 @@ private fun MessageBubble(
                                 Text("Forwarded", color = fgMuted, fontSize = 13.sp, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
                             }
                         }
-                        if (!deleted && message.hasQuotedReply()) SignalQuote(message, isMine, fg)
+                        if (!deleted && message.hasQuotedReply()) SignalQuote(
+                            message, isMine, fg,
+                            onClick = message.replyToId?.takeIf { !selectionActive }?.let { id -> { onOpenQuote(id) } },
+                        )
                         when {
                             deleted -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Icon(HeroIcons.NoSymbol, null, Modifier.size(16.dp), tint = signal.textSecondary)
@@ -1865,12 +1892,13 @@ private fun MessageBubble(
 
 /** Signal quote block inside a bubble: accent bar, author, 2-line text, optional 60dp thumbnail. */
 @Composable
-private fun SignalQuote(message: ChatMessage, isMine: Boolean, fg: Color) {
+private fun SignalQuote(message: ChatMessage, isMine: Boolean, fg: Color, onClick: (() -> Unit)? = null) {
     val signal = signalColors
     val quoteShape = RoundedCornerShape(SignalDimens.quoteCorner)
     Row(
         // Web ReplyPreview: neutral wash + org-accent rule on both sides (bubbles are no longer solid blue).
         Modifier.clip(quoteShape).background(if (signal.isDark) Color.White.copy(alpha = .08f) else Color.Black.copy(alpha = .05f))
+            .let { if (onClick != null) it.clickable(onClickLabel = "Go to original message", onClick = onClick) else it }
             .height(androidx.compose.foundation.layout.IntrinsicSize.Min),
     ) {
         Box(Modifier.width(4.dp).fillMaxHeight().background(signal.primary))

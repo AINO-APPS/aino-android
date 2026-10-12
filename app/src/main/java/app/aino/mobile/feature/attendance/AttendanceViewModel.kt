@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import app.aino.mobile.core.auth.KeystoreTokenStore
 import app.aino.mobile.core.network.OkHttpApiClient
 import app.aino.mobile.core.network.RefreshingApiClient
+import app.aino.mobile.core.network.isTransientFailure
+import app.aino.mobile.core.network.userFacingMessage
 import app.aino.mobile.core.common.TrackerStatus
 import app.aino.mobile.core.common.preferredWorkMode
 import app.aino.mobile.core.common.reanchor
@@ -328,18 +330,17 @@ class AttendanceViewModel(
             }
             val policy = runCatching(repository::loadPolicy)
             val status = runCatching(repository::loadStatus)
-            val history = runCatching { repository.loadHistory(range) }
-                .getOrDefault(emptyList())
-                .associateBy { LocalDate.parse(it.date.take(10)) }
-            val leaves = runCatching { repository.loadLeaves(range) }
-                .getOrDefault(emptyList())
-                .associateBy { LocalDate.parse(it.date.take(10)) }
-            val holidays = runCatching { repository.loadHolidays(_ui.value.month.year) }
-                .getOrDefault(emptyList())
-                .associateBy { LocalDate.parse(it.date.take(10)) }
-            val manual = runCatching(repository::loadManualRequests).getOrDefault(emptyList())
-            val overtime = runCatching(repository::loadOvertimeRequests).getOrDefault(emptyList())
-            val loadedPolicy = policy.getOrDefault(AttendancePolicy())
+            // Offline / server blip: keep what is already on screen for the same month.
+            val sameMonth = _ui.value.historyMonth == loadMonth
+            val history = runCatching { repository.loadHistory(range).associateBy { LocalDate.parse(it.date.take(10)) } }
+                .orKeep(_ui.value.history.takeIf { sameMonth }, emptyMap())
+            val leaves = runCatching { repository.loadLeaves(range).associateBy { LocalDate.parse(it.date.take(10)) } }
+                .orKeep(_ui.value.leaves.takeIf { sameMonth }, emptyMap())
+            val holidays = runCatching { repository.loadHolidays(_ui.value.month.year).associateBy { LocalDate.parse(it.date.take(10)) } }
+                .orKeep(_ui.value.holidays.takeIf { sameMonth }, emptyMap())
+            val manual = runCatching(repository::loadManualRequests).orKeep(_ui.value.manualRequests, emptyList())
+            val overtime = runCatching(repository::loadOvertimeRequests).orKeep(_ui.value.overtimeRequests, emptyList())
+            val loadedPolicy = policy.orKeep(_ui.value.policy, AttendancePolicy())
             // A clock action that finished while this load was in flight owns
             // the newer status; never overwrite it with the pre-action snapshot.
             val statusFresh = _ui.value.statusVersion == startVersion
@@ -355,7 +356,9 @@ class AttendanceViewModel(
                 overtimeRequests = overtime,
                 manualClockIn = if (_ui.value.manualEditMode) _ui.value.manualClockIn
                     else loadedPolicy.officeStartTime?.takeIf(::validOfficeStart) ?: _ui.value.manualClockIn,
-                error = if (statusFresh) status.exceptionOrNull()?.let { app.aino.mobile.core.network.userFacingMessage(it, "Could not load attendance status") } else _ui.value.error,
+                error = if (statusFresh) status.exceptionOrNull()
+                    ?.takeUnless { _ui.value.status != null && isTransientFailure(it) }
+                    ?.let { userFacingMessage(it, "Could not load attendance status") } else _ui.value.error,
             )
             if (refreshAgain) { refreshAgain = false; refresh() }
         }
@@ -400,7 +403,7 @@ class AttendanceViewModel(
                 onFailure = { error ->
                     _ui.value = _ui.value.copy(modeChange = _ui.value.modeChange?.copy(
                         sending = false,
-                        error = error.message ?: "Could not send the request. Please try again.",
+                        error = userFacingMessage(error, "Could not send the request. Please try again."),
                     ))
                 },
             )
@@ -462,7 +465,9 @@ class AttendanceViewModel(
                 dayDetail = current.copy(
                     loading = false,
                     entries = result.getOrDefault(current.entries),
-                    error = result.exceptionOrNull()?.let { app.aino.mobile.core.network.userFacingMessage(it, "Could not load this day") },
+                    error = result.exceptionOrNull()
+                        ?.takeUnless { current.entries.isNotEmpty() && isTransientFailure(it) }
+                        ?.let { userFacingMessage(it, "Could not load this day") },
                 ),
             )
         }
@@ -518,9 +523,9 @@ class AttendanceViewModel(
             val month = _ui.value.leavesMonth
             val from = month.atDay(1).toString()
             val to = month.atEndOfMonth().toString()
-            val leaves = runCatching { repository.loadLeaves(from, to) }.getOrDefault(emptyList())
-            val balances = runCatching { repository.loadLeaveBalances(month.year) }.getOrDefault(emptyList())
-            val policies = runCatching(repository::loadLeavePolicies).getOrDefault(emptyList())
+            val leaves = runCatching { repository.loadLeaves(from, to) }.orKeep(_ui.value.monthLeaves, emptyList())
+            val balances = runCatching { repository.loadLeaveBalances(month.year) }.orKeep(_ui.value.leaveBalances, emptyList())
+            val policies = runCatching(repository::loadLeavePolicies).orKeep(_ui.value.leavePolicies, emptyList())
             _ui.value = _ui.value.copy(
                 leavesLoading = false,
                 monthLeaves = leaves,
@@ -648,7 +653,7 @@ class AttendanceViewModel(
                     loadLeavesTab()
                 },
                 onFailure = {
-                    _ui.value = _ui.value.copy(leaveSubmitting = false, leaveError = it.message ?: "Failed to submit leave request")
+                    _ui.value = _ui.value.copy(leaveSubmitting = false, leaveError = userFacingMessage(it, "Failed to submit leave request"))
                 },
             )
         }
@@ -669,7 +674,7 @@ class AttendanceViewModel(
                     loadLeavesTab()
                 },
                 onFailure = {
-                    _ui.value = _ui.value.copy(leavesLoading = false, leaveError = it.message ?: "Failed to withdraw leave")
+                    _ui.value = _ui.value.copy(leavesLoading = false, leaveError = userFacingMessage(it, "Failed to withdraw leave"))
                 },
             )
         }
@@ -681,8 +686,8 @@ class AttendanceViewModel(
 
     private fun refreshRequests() {
         viewModelScope.launch(Dispatchers.IO) {
-            val manual = runCatching(repository::loadManualRequests).getOrDefault(emptyList())
-            val overtime = runCatching(repository::loadOvertimeRequests).getOrDefault(emptyList())
+            val manual = runCatching(repository::loadManualRequests).orKeep(_ui.value.manualRequests, emptyList())
+            val overtime = runCatching(repository::loadOvertimeRequests).orKeep(_ui.value.overtimeRequests, emptyList())
             _ui.value = _ui.value.copy(manualRequests = manual, overtimeRequests = overtime)
         }
     }
@@ -766,7 +771,7 @@ class AttendanceViewModel(
                         )
                     }
                 },
-                onFailure = { _ui.value = _ui.value.copy(checkingManualDate = false, error = it.message ?: "Could not check this date") },
+                onFailure = { _ui.value = _ui.value.copy(checkingManualDate = false, error = userFacingMessage(it, "Could not check this date")) },
             )
         }
     }
@@ -818,7 +823,7 @@ class AttendanceViewModel(
                         sheet = if (_ui.value.sheet == AttendanceSheet.ManualEntry) null else _ui.value.sheet,
                     )
                 },
-                onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Manual entry failed") },
+                onFailure = { _ui.value = _ui.value.copy(loading = false, error = userFacingMessage(it, "Manual entry failed")) },
             )
         }
     }
@@ -846,7 +851,7 @@ class AttendanceViewModel(
                         sheet = if (_ui.value.sheet == AttendanceSheet.Overtime) null else _ui.value.sheet,
                     )
                 },
-                onFailure = { _ui.value = _ui.value.copy(loading = false, error = it.message ?: "Overtime request failed") },
+                onFailure = { _ui.value = _ui.value.copy(loading = false, error = userFacingMessage(it, "Overtime request failed")) },
             )
         }
     }
@@ -889,7 +894,10 @@ class AttendanceViewModel(
             val rangeTo = to.takeIf { days == null } ?: LocalDate.now().toString()
             val history = runCatching { repository.loadHistory(MonthRange(LocalDate.parse(rangeFrom), LocalDate.parse(rangeTo))) }
             val widgets = runCatching(repository::loadWidgets).getOrNull()
+            val shown = _ui.value.analyticsData.isNotEmpty() || _ui.value.analyticsHistory.isNotEmpty()
+            val transient = listOf(analytics, history).mapNotNull { it.exceptionOrNull() }.let { errors -> errors.isNotEmpty() && errors.all(::isTransientFailure) }
             when {
+                shown && transient -> _ui.value = _ui.value.copy(analyticsLoading = false, analyticsError = null)
                 analytics.isFailure -> _ui.value = _ui.value.copy(
                     analyticsLoading = false, analyticsError = "Failed to load analytics chart data.",
                 )
@@ -1125,7 +1133,7 @@ class AttendanceViewModel(
                 },
                 onFailure = { error ->
                     val failure = error as? AttendanceFailure
-                    val message = error.message ?: "Attendance action failed"
+                    val message = userFacingMessage(error, "Attendance action failed")
                     val current = _ui.value.verifySession
                     if (failure?.code == WORK_MODE_LOCKED) {
                         // Today's first clock-in fixed the mode: offer the approval request instead.
@@ -1285,7 +1293,7 @@ class AttendanceViewModel(
                     )
                 },
                 onFailure = {
-                    _ui.value = _ui.value.copy(clockBusy = false, error = it.message ?: "Break action failed")
+                    _ui.value = _ui.value.copy(clockBusy = false, error = userFacingMessage(it, "Break action failed"))
                     resyncStatus()
                 },
             )
@@ -1309,3 +1317,7 @@ class AttendanceViewModel(
         }
     }
 }
+
+/** A transient failure keeps [current] (data already on screen); any other failure falls back to [empty]. */
+private fun <T> Result<T>.orKeep(current: T?, empty: T): T =
+    getOrElse { if (current != null && isTransientFailure(it)) current else empty }

@@ -2,6 +2,7 @@ package app.aino.mobile.feature.notes
 
 import android.content.Context
 import app.aino.mobile.core.AppContainer
+import app.aino.mobile.core.network.isTransientFailure
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -62,6 +63,8 @@ class NotesViewModel(
     private val drafts: NotesDraftStore? = null,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val clock: () -> NotesClock = { NotesClock() },
+    /** Same `GET notes` served from the last response: the notebook opens offline. */
+    private val warm: NotesRepository? = null,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(NotesUiState())
     val ui: StateFlow<NotesUiState> = _ui.asStateFlow()
@@ -106,6 +109,14 @@ class NotesViewModel(
         val gen = generation
         _ui.update { it.copy(loading = true) }
         loadJob = viewModelScope.launch {
+            if (!_ui.value.loaded && warm != null) {
+                runCatching { withContext(io) { warm.load() } }.getOrNull()?.let { cached ->
+                    if (gen == generation && !_ui.value.loaded) {
+                        applyFresh(cached)
+                        _ui.update { it.copy(loaded = true, error = null) }
+                    }
+                }
+            }
             try {
                 val fresh = withContext(io) { repository.load() }
                 if (gen != generation) return@launch
@@ -645,7 +656,10 @@ class NotesViewModel(
                 if (gen != generation) return
                 persistDraft()
                 val tooLarge = error is NotesFailure && error.statusCode == 400
-                _ui.update { it.copy(save = SaveStatus.Failed, saveError = error.message ?: "Failed to save notes") }
+                _ui.update {
+                    if (isTransientFailure(error)) it.copy(save = SaveStatus.Pending, saveError = null)
+                    else it.copy(save = SaveStatus.Failed, saveError = error.message ?: "Failed to save notes")
+                }
                 if (!tooLarge) scheduleRetry()
             }
         }
@@ -697,6 +711,7 @@ class NotesViewModel(
                 return NotesViewModel(
                     NotesRepository(AppContainer.get(appContext).api),
                     FileNotesDraftStore(appContext.filesDir),
+                    warm = NotesRepository(AppContainer.get(appContext).cachedApi),
                 ) as T
             }
         }

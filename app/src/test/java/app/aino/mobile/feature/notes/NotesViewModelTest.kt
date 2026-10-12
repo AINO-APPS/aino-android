@@ -148,4 +148,30 @@ class NotesViewModelTest {
         assertEquals(true, server.pages().first { it.id == "a" }.pinned)
         assertTrue(drafts.saved.isEmpty())
     }
+
+    @Test
+    fun offlineAutosaveStaysPendingWithoutAnErrorAndRetries() = runTest(dispatcher) {
+        failPut = ApiError.Network("PUT", "https://x/api/notes", java.io.IOException("offline"))
+        val vm = vm()
+        vm.bindUser(7)
+        advanceUntilIdle()
+        vm.togglePin("a")
+        advanceTimeBy(1_000)
+        assertEquals(SaveStatus.Pending, vm.ui.value.save)
+        assertEquals(null, vm.ui.value.saveError)
+        failPut = null
+        advanceUntilIdle()
+        assertEquals(true, server.pages().first { it.id == "a" }.pinned)
+    }
+
+    @Test
+    fun offlineStartPaintsTheCachedNotebookWithoutAnError() = runTest(dispatcher) {
+        val offline = ApiClient { request -> throw ApiError.Network(request.method, request.path, java.io.IOException("offline")) }
+        val vm = NotesViewModel(NotesRepository(offline), null, dispatcher, warm = NotesRepository(api))
+        vm.bindUser(7)
+        advanceUntilIdle()
+        assertTrue(vm.ui.value.loaded)
+        assertEquals(null, vm.ui.value.error)
+        assertEquals(listOf("a", "b"), vm.ui.value.pages.map { it.id })
+    }
 }

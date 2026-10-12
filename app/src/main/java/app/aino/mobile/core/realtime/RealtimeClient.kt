@@ -155,12 +155,14 @@ class RealtimeClient(
         lastInboundAt.set(System.currentTimeMillis())
         // The provider may refresh a near-expired token over the network: never on the caller's thread.
         reconnect = scope.launch {
-            val token = tokens.getToken()
+            val token = runCatching { tokens.getToken() }.getOrNull()
             synchronized(this@RealtimeClient) {
                 reconnect = null
                 if (!shouldRun || connectionGeneration != generation || socket != null) return@launch
                 if (token.isNullOrBlank()) {
-                    _state.value = RealtimeState.Disconnected
+                    // The refresh failed (offline, server busy): back off and try again. A real
+                    // sign-out reaches us as disconnect() from the shell, which stops this loop.
+                    scheduleReconnect(connectionGeneration, 1006)
                     return@launch
                 }
                 val request = Request.Builder().url(realtimeUrl(baseUrl, token)).build()

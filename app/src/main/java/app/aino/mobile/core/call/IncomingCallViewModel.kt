@@ -160,7 +160,7 @@ class IncomingCallViewModel(
                         _ui.value = IncomingCallUiState()
                     }
                 },
-                onFailure = { _ui.value = _ui.value.copy(state = IncomingCallState.Error, error = it.message ?: "Call action failed") },
+                onFailure = { _ui.value = _ui.value.copy(state = IncomingCallState.Error, error = app.aino.mobile.core.network.userFacingMessage(it, "Call action failed")) },
             )
         }
     }

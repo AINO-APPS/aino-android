@@ -55,15 +55,14 @@ fun realtimeLinkDecision(
 /** The one connection status chat surfaces show instead of per-request errors. */
 enum class ConnectionIndicator { Connected, Connecting, WaitingForNetwork }
 
-fun connectionIndicator(state: RealtimeState, network: NetworkStatus): ConnectionIndicator = when {
-    !network.usable -> ConnectionIndicator.WaitingForNetwork
-    state == RealtimeState.Connected -> ConnectionIndicator.Connected
-    // Stopped is not "connecting": nothing is in flight, and the shell either retries
-    // it (live session) or signs out. A spinner there never resolved. Chat still
-    // loads and sends over HTTP and catches up on resync, as Signal does.
-    state is RealtimeState.Stopped -> ConnectionIndicator.Connected
-    else -> ConnectionIndicator.Connecting
-}
+/**
+ * Signal shows no "connecting" chrome: screens keep their saved state, sends wait
+ * with a clock icon and everything catches up when the link returns. The socket's
+ * own reconnects (server deploys, captive Wi-Fi, a slow handshake) are never news,
+ * so only a device with no network at all is surfaced, as one quiet line.
+ */
+fun connectionIndicator(@Suppress("UNUSED_PARAMETER") state: RealtimeState, network: NetworkStatus): ConnectionIndicator =
+    if (network.usable) ConnectionIndicator.Connected else ConnectionIndicator.WaitingForNetwork
 
 /** A routine reconnect finishes in a moment: only a problem that outlasts [delayMs] is shown. */
 @OptIn(ExperimentalCoroutinesApi::class)

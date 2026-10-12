@@ -133,7 +133,8 @@ data class InviteSheetState(
     val error: String? = null,
 )
 
-data class OlderMessagesFailure(val before: Long, val message: String)
+/** [transient]: offline / server busy; kept for the retry window but not shown as a warning. */
+data class OlderMessagesFailure(val before: Long, val message: String, val transient: Boolean = false)
 
 private fun messageLoadFailure(error: Throwable, fallback: String): String = when (error) {
     is CancellationException -> throw error
@@ -325,17 +326,25 @@ class ChatViewModel(
         viewModelScope.launch {
             storedThreadUpdates.collect { id -> mergeStoredThread(id) }
         }
-        // "Can't reach the server" after a tap is a hint, not a state: the connection strip
-        // carries the ongoing status. An empty list that could not load keeps its error.
+        // A failed action is a hint, not a state (Signal shows a toast): it clears itself.
+        // An empty list that could not load keeps its error as the empty state.
         // Off Main: `_ui` is updated from IO threads, and this must not hop to the UI thread for each.
         viewModelScope.launch(Dispatchers.Default) {
             _ui.map { it.error }.distinctUntilChanged().collectLatest { error ->
-                if (error != NETWORK_ERROR_MESSAGE) return@collectLatest
+                if (error == null) return@collectLatest
                 delay(TRANSIENT_ERROR_DISPLAY_MS)
                 _ui.update { st ->
                     val hasContent = st.conversations.isNotEmpty() || st.selectedConversation != null
                     if (st.error == error && hasContent) st.copy(error = null) else st
                 }
+            }
+        }
+        // "3 conversations deleted", "Forwarded to …": confirmations disappear like Signal's snackbar.
+        viewModelScope.launch(Dispatchers.Default) {
+            _ui.map { it.message }.distinctUntilChanged().collectLatest { message ->
+                if (message == null || message == STALE_LIST_NOTICE) return@collectLatest
+                delay(TRANSIENT_ERROR_DISPLAY_MS)
+                _ui.update { st -> if (st.message == message) st.copy(message = null) else st }
             }
         }
     }
@@ -562,7 +571,8 @@ class ChatViewModel(
                         loading = false,
                         conversations = zeroUnread(cached, visibleConversationId()),
                         fromCache = cached.isNotEmpty(),
-                        error = if (cached.isEmpty()) userFacingMessage(error, "Could not load conversations") else null,
+                        // Offline with nothing saved yet: an empty list that fills in on its own, not an error.
+                        error = if (cached.isEmpty() && !transient) userFacingMessage(error, "Could not load conversations") else null,
                         message = when {
                             cached.isEmpty() || transient -> st.message.takeUnless { it == STALE_LIST_NOTICE }
                             else -> STALE_LIST_NOTICE
@@ -825,7 +835,10 @@ class ChatViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.searchUsers(query) }.fold(
                 onSuccess = { _ui.update { st -> st.copy(searching = false, userResults = it) } },
-                onFailure = { _ui.update { st -> st.copy(searching = false, error = actionError(it, "User search failed")) } },
+                // Offline: chats and saved messages still match locally; no error while typing.
+                onFailure = { error ->
+                    _ui.update { st -> st.copy(searching = false, error = if (isTransientSendFailure(error)) null else actionError(error, "User search failed")) }
+                },
             )
         }
     }
@@ -900,8 +913,11 @@ class ChatViewModel(
                     }
                     refresh()
                 },
-                onFailure = {
-                    _ui.update { st -> st.copy(conversations = original, error = actionError(it, "Could not mark conversation read")) }
+                onFailure = { error ->
+                    // Offline: stay read here (Signal marks locally); the next list refresh reconciles.
+                    if (!isTransientSendFailure(error)) {
+                        _ui.update { st -> st.copy(conversations = original, error = actionError(error, "Could not mark conversation read")) }
+                    }
                 },
             )
         }
@@ -1323,7 +1339,9 @@ class ChatViewModel(
                     _ui.update {
                         if (it.selectedConversation?.id != id) it else it.copy(
                             loadingOlder = false,
-                            olderMessagesError = if (canMergeOlderPage(it.messages, oldestId)) OlderMessagesFailure(oldestId, failure) else null,
+                            olderMessagesError = if (canMergeOlderPage(it.messages, oldestId)) {
+                                OlderMessagesFailure(oldestId, failure, transient = isTransientSendFailure(error))
+                            } else null,
                         )
                     }
                 },
@@ -1820,6 +1838,18 @@ class ChatViewModel(
 
     fun consumeJump() { _ui.update { st -> st.copy(jumpToMessageId = null) } }
 
+    /** Quote tap: scroll to the replied-to message in this thread (older pages load until it is found). */
+    fun jumpToQuoted(messageId: Long) {
+        if (_ui.value.selectedConversation == null || messageId <= 0) return
+        if (messageId in _ui.value.hiddenMessageIds) { jumpMissed(); return }
+        _ui.update { st -> st.copy(jumpToMessageId = messageId) }
+    }
+
+    /** The jump target is not in this thread (deleted, cleared, or history unreachable offline). */
+    fun jumpMissed() {
+        _ui.update { st -> st.copy(jumpToMessageId = null, message = JUMP_MISSED_NOTICE) }
+    }
+
     fun unstarFromList(message: ChatMessage) {
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repository.toggleStar(message.id) }.onSuccess {
@@ -2110,16 +2140,25 @@ class ChatViewModel(
         }
         threadSearchJob = viewModelScope.launch(Dispatchers.IO) {
             delay(300)
-            runCatching { repository.searchMessages(term.trim(), conversation.id) }.onSuccess { found ->
-                val newestFirst = found.filter { it.id !in _ui.value.hiddenMessageIds }.sortedByDescending { it.createdAt }.map { it.id }
-                _ui.update { st -> st.copy(
-                    threadSearchMatches = newestFirst,
-                    threadSearchIndex = if (newestFirst.isEmpty()) -1 else 0,
-                    jumpToMessageId = newestFirst.firstOrNull(),
-                ) }
-            }
+            val local = localMessageMatches(term, listOf(conversation.id)) + _ui.value.messages.filter { it.matches(term) }
+            val remote = runCatching { repository.searchMessages(term.trim(), conversation.id) }.getOrNull()
+            if (_ui.value.threadSearchQuery != term || !isOpen(conversation.id)) return@launch
+            val newestFirst = (remote.orEmpty() + local).distinctBy(ChatMessage::id)
+                .filter { it.id !in _ui.value.hiddenMessageIds }
+                .sortedByDescending { parseEpoch(it.createdAt) }.map { it.id }
+            _ui.update { st -> st.copy(
+                threadSearchMatches = newestFirst,
+                threadSearchIndex = if (newestFirst.isEmpty()) -1 else 0,
+                jumpToMessageId = newestFirst.firstOrNull(),
+            ) }
         }
     }
+
+    private suspend fun localMessageMatches(term: String, conversationIds: Collection<Long>): List<ChatMessage> =
+        runCatching { cache?.searchMessages(term, conversationIds) }.getOrNull().orEmpty()
+
+    private fun ChatMessage.matches(term: String): Boolean =
+        deletedAt == null && formatType != "system" && content?.contains(term.trim(), ignoreCase = true) == true
 
     /** delta = +1 walks to older matches (Signal "up"), -1 to newer. */
     fun stepThreadSearch(delta: Int) {
@@ -2134,8 +2173,13 @@ class ChatViewModel(
         globalSearchJob?.cancel()
         if (term.trim().length < 2) { _ui.update { st -> st.copy(messageResults = emptyList()) }; return }
         globalSearchJob = viewModelScope.launch(Dispatchers.IO) {
-            delay(300)
-            runCatching { repository.searchMessages(term.trim()) }.onSuccess { _ui.update { st -> st.copy(messageResults = it) } }
+            // Saved rows answer at once (and offline); the server adds what this device never stored.
+            val local = localMessageMatches(term, _ui.value.conversations.map(ChatConversation::id))
+            if (local.isNotEmpty()) _ui.update { st -> st.copy(messageResults = local) }
+            val remote = runCatching { repository.searchMessages(term.trim()) }.getOrNull() ?: return@launch
+            _ui.update { st ->
+                st.copy(messageResults = (remote + local).distinctBy(ChatMessage::id).sortedByDescending { parseEpoch(it.createdAt) }.take(MESSAGE_RESULTS_LIMIT))
+            }
         }
     }
 
@@ -2178,7 +2222,9 @@ class ChatViewModel(
                         _ui.update { st -> st.copy(callsLoading = false, calls = it) }
                     }
                 },
-                onFailure = { _ui.update { st -> st.copy(callsLoading = false, error = actionError(it, "Could not load calls")) } },
+                onFailure = { error ->
+                    _ui.update { st -> st.copy(callsLoading = false, error = if (isTransientSendFailure(error)) null else actionError(error, "Could not load calls")) }
+                },
             )
         }
     }
@@ -2634,6 +2680,8 @@ class ChatViewModel(
         internal const val SOCKET_ECHO_TIMEOUT_MS = 8_000L
         /** A transient action failure is a hint, not a state: it clears itself. */
         internal const val TRANSIENT_ERROR_DISPLAY_MS = 4_000L
+        internal const val MESSAGE_RESULTS_LIMIT = 100
+        internal const val JUMP_MISSED_NOTICE = "Original message not found"
 
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")

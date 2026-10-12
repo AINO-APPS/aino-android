@@ -106,6 +106,27 @@ class ManagerRequestDetailTest {
     }
 
     @Test
+    fun offlineRefreshKeepsTheTabDataWithoutAnError() {
+        var offline = false
+        val vm = ManagerViewModel(
+            ManagerRepository(
+                ApiClient { request: ApiRequest ->
+                    if (offline) throw ApiError.Network(request.method, "https://x/api/${request.path}", java.io.IOException("offline"))
+                    ApiResponse(200, emptyMap(), """[{"id":3,"full_name":"Asha"}]""".toByteArray())
+                },
+            ),
+            ioDispatcher = dispatcher,
+        )
+        vm.bind("manager", 1)
+        assertEquals(3L, vm.ui.value.attendance.data?.single()?.id)
+        offline = true
+        vm.refresh()
+        assertEquals(3L, vm.ui.value.attendance.data?.single()?.id)
+        assertNull(vm.ui.value.attendance.error)
+        assertFalse(vm.ui.value.attendance.loading)
+    }
+
+    @Test
     fun deepLinkOpensAPendingApprovalWithActions() {
         val vm = viewModel()
         vm.openDeepLink("approvals", "5")

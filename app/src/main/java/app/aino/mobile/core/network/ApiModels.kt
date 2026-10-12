@@ -59,6 +59,19 @@ fun userFacingMessage(error: Throwable, fallback: String): String = when (error)
     else -> error.message?.takeUnless { it.startsWith("HTTP ") } ?: fallback
 }
 
+/**
+ * Offline or a briefly unreachable/overloaded server: worth a silent retry
+ * later rather than an error on screen. Feature repositories wrap [ApiError]
+ * in their own failure types, so the cause chain is searched too.
+ */
+fun isTransientFailure(error: Throwable): Boolean = generateSequence(error) { it.cause }.take(8).any {
+    when (it) {
+        is ApiError.Network -> true
+        is ApiError.Http -> it.statusCode >= 500 || it.statusCode == 408 || it.statusCode == 429
+        else -> false
+    }
+}
+
 const val NETWORK_ERROR_MESSAGE = "Can't reach the server. Check your connection and try again."
 
 private val ERROR_FIELD = Regex("\"(?:error|message)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")

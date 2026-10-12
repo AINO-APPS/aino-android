@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import app.aino.mobile.core.network.ApiError
+import app.aino.mobile.core.network.isTransientFailure
+import app.aino.mobile.core.network.userFacingMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -205,8 +207,15 @@ class TaskViewModel(
         }
     }
 
+    /** Background list reloads: a transient failure behind data already on screen stays silent. */
+    private fun loadFailed(e: Throwable, hasData: Boolean, message: String) {
+        if (hasData && isTransientFailure(e)) _ui.update { if (it.error == message) it.copy(error = null) else it }
+        else fail(message)
+    }
+
     private fun failure(e: Throwable, fallback: String): String =
-        e.message?.takeIf { it.isNotBlank() && it != "Task action failed" && !it.startsWith("HTTP ") } ?: fallback
+        if (e is ApiError) userFacingMessage(e, fallback)
+        else e.message?.takeIf { it.isNotBlank() && it != "Task action failed" && !it.startsWith("HTTP ") } ?: fallback
 
     private fun confirm(title: String, message: String, confirmText: String, danger: Boolean = false, action: () -> Unit) {
         _ui.update { it.copy(confirm = ConfirmRequest(title, message, confirmText, danger, action)) }
@@ -463,8 +472,9 @@ class TaskViewModel(
                 onSuccess = { list -> if (gen == scheduledGen.get()) _ui.update { it.copy(scheduled = list, scheduledLoading = false, scheduledLoaded = true) } },
                 onFailure = {
                     if (gen != scheduledGen.get()) return@fold
+                    val hadData = _ui.value.scheduledLoaded
                     _ui.update { it.copy(scheduledLoading = false) }
-                    fail("Failed to load scheduled tasks")
+                    loadFailed(it, hadData, "Failed to load scheduled tasks")
                 },
             )
         }
@@ -489,7 +499,9 @@ class TaskViewModel(
                     notify("${result.carried} incomplete item${if (result.carried > 1) "s" else ""} from yesterday carried forward")
                 }
             },
-            onFailure = { fail("Failed to carry forward tasks") },
+            onFailure = {
+                if (isTransientFailure(it)) carriedOn = null else fail("Failed to carry forward tasks")
+            },
         )
     }
 
@@ -578,8 +590,9 @@ class TaskViewModel(
                     _ui.update { if (it.selectedSprintId == sprintId) it.copy(tasks = result.tasks, stats = result.stats, sprintLoading = false) else it }
                 },
                 onFailure = {
+                    val hadData = _ui.value.tasks.isNotEmpty()
                     _ui.update { it.copy(sprintLoading = false) }
-                    fail("Failed to load tasks")
+                    loadFailed(it, hadData, "Failed to load tasks")
                 },
             )
             refreshSprintStats()
@@ -774,8 +787,9 @@ class TaskViewModel(
                 },
                 onFailure = {
                     if (gen != backlogGen.get()) return@fold
+                    val hadData = _ui.value.backlog.isNotEmpty()
                     _ui.update { it.copy(backlogLoading = false) }
-                    fail("Failed to load backlog")
+                    loadFailed(it, hadData, "Failed to load backlog")
                 },
             )
         }
@@ -804,7 +818,7 @@ class TaskViewModel(
                 onFailure = {
                     if (gen != backlogGen.get()) return@fold
                     _ui.update { it.copy(backlogLoadingMore = false) }
-                    fail("Failed to load more tickets")
+                    loadFailed(it, hasData = true, "Failed to load more tickets")
                 },
             )
         }
