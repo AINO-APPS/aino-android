@@ -11,6 +11,24 @@ class PushPayloadTest {
     private val fixtureTime = Instant.parse("2026-06-17T02:42:45Z")
 
     @Test
+    fun groupMetadataIsOptionalBoundedAndStrictWhileLegacyMessagesRemainValid() {
+        val legacy = chat() + mapOf("isGroup" to "true", "groupName" to "Team")
+        val previews = """[{"name":"Alice Lee Ng","avatar":"/uploads/a.png"},{"name":null,"avatar":null}]"""
+        val current = legacy + mapOf("groupAvatar" to "", "groupMemberPreviews" to previews)
+        assertTrue(validatePushPayload(legacy, fixtureTime).isSuccess)
+        assertTrue(validatePushPayload(current, fixtureTime).isSuccess)
+        assertTrue(validatePushPayload(chat() + ("groupAvatar" to ""), fixtureTime).isFailure)
+        for (invalid in listOf("not JSON", "{}", """[{"name":3,"avatar":null}]""",
+            """[{"name":"A","avatar":null,"unknown":"x"}]""", """[{"name":"A"}]""",
+            (1..5).joinToString(",", "[", "]") { """{"name":"A","avatar":null}""" },
+            """[{"name":"${"界".repeat(800)}","avatar":null}]""")) {
+            assertTrue(invalid.take(20), validatePushPayload(legacy + ("groupMemberPreviews" to invalid), fixtureTime).isFailure)
+        }
+        assertTrue(validatePushPayload(legacy + ("groupAvatar" to "界".repeat(700)), fixtureTime).isFailure)
+        assertTrue(validatePushPayload(current + ("senderAvatar" to "界".repeat(1400)), fixtureTime).isFailure)
+    }
+
+    @Test
     fun validatesAllFivePlatformFixtures() {
         assertEquals(PushKind.ChatMessage, validatePushPayload(chat(), fixtureTime).getOrThrow().kind)
         assertEquals(PushKind.General, validatePushPayload(general(), fixtureTime).getOrThrow().kind)

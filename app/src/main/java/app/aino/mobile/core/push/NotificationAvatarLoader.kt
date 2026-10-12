@@ -23,7 +23,7 @@ internal object NotificationAvatarLoader : NotificationAvatarSource {
 
     override fun cached(context: Context, url: String, account: String?): Bitmap? =
         AppContainer.get(context).imageLoader.memoryCache?.get(MemoryCache.Key(cacheKey(url, account)))
-            ?.image?.let { NotificationAvatars.circle(it.toBitmap(SIZE, SIZE)) }
+            ?.image?.toBitmap()
 
     override suspend fun load(context: Context, url: String, account: String?): Bitmap? = withTimeoutOrNull(5_000) {
         val key = cacheKey(url, account)
@@ -35,7 +35,8 @@ internal object NotificationAvatarLoader : NotificationAvatarSource {
             .scale(Scale.FILL)
             .allowHardware(false)
             .build()
-        AppContainer.get(context).imageLoader.execute(request).image
-            ?.let { NotificationAvatars.circle(it.toBitmap(SIZE, SIZE)) }
-    }
+        val result = AppContainer.get(context).imageLoader.execute(request)
+        if (result.image == null) android.util.Log.w("AinoPush", "Notification avatar image load failed")
+        result.image?.toBitmap()
+    }.also { if (it == null) android.util.Log.w("AinoPush", "Notification avatar unavailable or timed out") }
 }

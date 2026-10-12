@@ -13,11 +13,11 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** Version 3 retains general-alert links and supports own-message reaction additions. */
+/** Version 4 adds group-avatar metadata, retaining alert links and reactions. */
 @Serializable
 data class DeviceTokenRequest(val deviceToken: String, val platform: String = "android", val pushVersion: Int = PUSH_PAYLOAD_VERSION)
 
-const val PUSH_PAYLOAD_VERSION = 3
+const val PUSH_PAYLOAD_VERSION = 4
 
 private val DEVICE_TOKEN_JSON = Json { encodeDefaults = true }
 
@@ -53,7 +53,8 @@ class PushTokenRegistrar(private val context: Context) {
         fun isRegistered(context: Context): Boolean {
             val account = notificationAccount(context) ?: return false
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            return prefs.getString("account", null) == account && System.currentTimeMillis() - prefs.getLong("at", 0) < TTL_MS
+            return prefs.getString("account", null) == account && prefs.getInt("version", 0) == PUSH_PAYLOAD_VERSION &&
+                System.currentTimeMillis() - prefs.getLong("at", 0) < TTL_MS
         }
     }
 
@@ -72,7 +73,7 @@ class PushTokenRegistrar(private val context: Context) {
         prefs.edit().remove("account").apply()
         container.api.execute(ApiRequest("POST", "auth/device-token", body = encodeDeviceTokenRequest(fcmToken)))
         if (account != notificationAccount(context)) return
-        prefs.edit().putString("key", key).putLong("at", now).putString("account", account).apply()
+        prefs.edit().putString("key", key).putLong("at", now).putString("account", account).putInt("version", PUSH_PAYLOAD_VERSION).apply()
     }
 }
 

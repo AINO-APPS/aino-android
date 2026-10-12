@@ -26,39 +26,24 @@ import app.aino.mobile.core.designsystem.icons.HeroIcons
 import app.aino.mobile.core.media.resolveServerMediaUrl
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
-import kotlin.math.abs
 
 /** One member's slot in the automatic group avatar: a photo, else initials. */
-data class GroupAvatarMember(val name: String?, val avatarUrl: String?)
+typealias GroupAvatarMember = app.aino.mobile.core.avatar.GroupAvatarMember
 
 /** A tile in unit coordinates (0..1) of the avatar's square. */
-data class AvatarTile(val x: Float, val y: Float, val width: Float, val height: Float)
+typealias AvatarTile = app.aino.mobile.core.avatar.AvatarTile
 
 /**
  * Collage layout for [count] members: 1 fills the circle, 2 split vertically,
  * 3 put one on the left and two stacked on the right, 4+ use quadrants.
  */
-fun groupAvatarTiles(count: Int): List<AvatarTile> = when {
-    count <= 0 -> emptyList()
-    count == 1 -> listOf(AvatarTile(0f, 0f, 1f, 1f))
-    count == 2 -> listOf(AvatarTile(0f, 0f, .5f, 1f), AvatarTile(.5f, 0f, .5f, 1f))
-    count == 3 -> listOf(AvatarTile(0f, 0f, .5f, 1f), AvatarTile(.5f, 0f, .5f, .5f), AvatarTile(.5f, .5f, .5f, .5f))
-    else -> listOf(AvatarTile(0f, 0f, .5f, .5f), AvatarTile(.5f, 0f, .5f, .5f), AvatarTile(0f, .5f, .5f, .5f), AvatarTile(.5f, .5f, .5f, .5f))
-}
-
-/** AINO avatar hues (background, foreground), picked by a stable key such as the conversation id. */
-private val GROUP_AVATAR_PALETTE = listOf(
-    0xFF2383E2 to 0xFFFFFFFF, 0xFF0F9D7A to 0xFFFFFFFF, 0xFF8B5CF6 to 0xFFFFFFFF, 0xFFE0702B to 0xFFFFFFFF,
-    0xFFD9466F to 0xFFFFFFFF, 0xFF4F6BED to 0xFFFFFFFF, 0xFF2E9E5B to 0xFFFFFFFF, 0xFF8A6D3B to 0xFFFFFFFF,
-)
+fun groupAvatarTiles(count: Int): List<AvatarTile> = app.aino.mobile.core.avatar.groupAvatarTiles(count)
 
 /** Deterministic avatar colours for [key]; ARGB ints so notifications can share them. */
-fun groupAvatarColors(key: String): Pair<Int, Int> =
-    GROUP_AVATAR_PALETTE[abs(key.hashCode() % GROUP_AVATAR_PALETTE.size)].let { (bg, fg) -> bg.toInt() to fg.toInt() }
+fun groupAvatarColors(key: String): Pair<Int, Int> = app.aino.mobile.core.avatar.groupAvatarColors(key)
 
 /** The members shown in the collage: photos first (they read best small), then initials, at most four. */
-fun collageMembers(members: List<GroupAvatarMember>): List<GroupAvatarMember> =
-    members.sortedBy { it.avatarUrl.isNullOrBlank() }.take(4)
+fun collageMembers(members: List<GroupAvatarMember>): List<GroupAvatarMember> = app.aino.mobile.core.avatar.collageMembers(members)
 
 /**
  * The automatic group avatar: the uploaded group photo when there is one,

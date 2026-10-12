@@ -21,8 +21,8 @@ class PushPolicyTest {
         val encoded = encodeDeviceTokenRequest("fcm-token").toString(Charsets.UTF_8)
         assertTrue(encoded.contains("\"deviceToken\":\"fcm-token\""))
         assertTrue(encoded.contains("\"platform\":\"android\""))
-        // Version 3 retains general links and adds reaction notifications.
-        assertTrue(encoded.contains("\"pushVersion\":3"))
+        // Version 4 retains general links/reactions and adds group avatar metadata.
+        assertTrue(encoded.contains("\"pushVersion\":4"))
     }
 
     @Test

@@ -135,18 +135,34 @@ and FCM share tenant/user-scoped event identities and separate receipt/presentat
 state. Blocked or failed posting is retryable; visible, muted, self and already-read
 messages are suppressed. Inline Reply and Mark as read remain available.
 
-Message notifications show contact photos in the large icon, sender `Person`, and
-conversation shortcut. A group uses its own photo when available, with separate
-member photos in the message stack. Memory-cached photos render immediately;
-otherwise initials appear first while the shared authenticated Coil loader checks
-disk cache or fetches the image. Successful loading silently updates the existing
+Message notifications use chat's first-two-word initials, organization primary
+colour/white text, and aspect-preserving centre-cropped photos. Groups use their
+uploaded photo, otherwise chat's photo-first member collage/layout/palette, otherwise
+the same group glyph. Each message retains its separate sender `Person` icon.
+Large icons and conversation shortcuts use ordinary bitmap icons for already-cropped
+avatars, avoiding an extra adaptive-icon safe-zone crop. Memory-cached photos render
+immediately; otherwise matching initials/collage/glyph appear while the shared
+authenticated Coil loader checks disk cache or fetches the image. Successful loading silently updates the existing
 notification without a second sound, duplicate message, changed timestamp, or lost
-Reply / Mark as read actions. Failed loads keep the initials. Dismissal, read,
+Reply / Mark as read actions. Failed loads keep the matching fallback and are logged
+without URLs, credentials or message content. Dismissal, read,
 visible-thread suppression, sign-out and account changes prevent late photo loads
 from restoring old notifications. The tiny status-bar icon remains monochrome as
-required by Android.
+required by Android. OS/OEM notification templates still control banner/shade geometry;
+avatar content and crop match chat, not every pixel of system chrome.
 
-Android advertises `pushVersion: 3`. `chat_reaction` data-only pushes carry
+Android advertises `pushVersion: 4`, retaining general-alert links and reactions.
+Only Android v4+ receives optional `groupAvatar` and stringified `groupMemberPreviews`
+on group message pushes. Previews contain at most four `{name, avatar}` members
+(strings or null), in conversation-list order. Each metadata value is bounded to
+2048 UTF-8 bytes and the full JSON data record to 3800 bytes, below FCM's 4096-byte
+limit. The backend omits over-budget URLs/collages intact, never truncates URLs,
+and logs omissions. Android resolves missing metadata asynchronously from the
+account-scoped conversation response cache or authenticated conversation list.
+Legacy message maps remain accepted; Android v1–3, iOS and web keep legacy keys.
+Calls, missed calls and reactions retain their previous fallback rendering.
+
+`chat_reaction` data-only pushes carry
 conversation/message/owner/actor IDs, actor name/avatar, emoji, addition
 `reactionId`, `action: added`, `dedupeKey: reaction:<id>`, tenant ID, ISO-8601
 `sentAt` and epoch-second `expiresAt`. Realtime addition timestamps are numeric
@@ -165,6 +181,8 @@ answered/declined status are used, not invented unread state. Call back opens th
 existing confirmation flow.
 
 Device verification for this change is **not performed** (no attached device).
+Compare the same photo, three-word name, uploaded group photo and 2/3/4-member
+collage in chat, heads-up and expanded shade on Android 11+ and an OEM handset.
 Check Android 13+ permission and channel disable/re-enable; message/reaction
 foreground-other-screen, visible-thread suppression, background/swipe-away and
 offline restart; socket-first/FCM-first duplicates; tap, reply, read and missed-call
