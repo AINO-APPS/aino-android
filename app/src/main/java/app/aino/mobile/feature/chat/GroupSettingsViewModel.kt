@@ -42,6 +42,8 @@ class GroupSettingsViewModel(
     private val repository: ChatRepository,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val prepareAvatar: (Uri) -> app.aino.mobile.core.media.PreparedAvatar? = { null },
+    /** Same reads served from saved responses (offline members). */
+    private val warm: ChatRepository? = null,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(GroupSettingsUiState())
     val ui: StateFlow<GroupSettingsUiState> = _ui.asStateFlow()
@@ -62,8 +64,16 @@ class GroupSettingsViewModel(
     }
 
     fun loadMembers() = launchFor { id ->
-        _ui.update { it.copy(membersLoading = true) }
-        val members = repository.loadMembers(id)
+        // Saved members first (Signal keeps membership locally), so offline settings are complete.
+        if (_ui.value.members.isEmpty()) warm?.let { runCatching { it.loadMembers(id) }.getOrNull() }?.takeIf { it.isNotEmpty() }?.let { saved ->
+            _ui.update { if (it.members.isEmpty()) it.copy(members = sortMembers(saved)) else it }
+        }
+        _ui.update { it.copy(membersLoading = it.members.isEmpty()) }
+        val members = runCatching { repository.loadMembers(id) }.getOrElse { error ->
+            // Offline with saved members on screen: nothing to report.
+            if (_ui.value.members.isNotEmpty()) { _ui.update { it.copy(membersLoading = false) }; return@launchFor }
+            throw error
+        }
         _ui.update { it.copy(members = sortMembers(members), membersLoading = false) }
     }
 
@@ -232,9 +242,11 @@ class GroupSettingsViewModel(
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val appContext = context.applicationContext
+                val container = app.aino.mobile.core.AppContainer.get(appContext)
                 return GroupSettingsViewModel(
-                    ChatRepository(app.aino.mobile.core.AppContainer.get(appContext).api),
+                    ChatRepository(container.api),
                     prepareAvatar = { uri -> app.aino.mobile.core.media.prepareSquareAvatar(appContext, uri) },
+                    warm = ChatRepository(container.cachedApi),
                 ) as T
             }
         }

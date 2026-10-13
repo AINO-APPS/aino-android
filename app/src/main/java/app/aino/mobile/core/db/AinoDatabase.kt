@@ -8,9 +8,9 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [ConversationEntity::class, MessageEntity::class, OutboxEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class AinoDatabase : RoomDatabase() {
     abstract fun dao(): AinoDao

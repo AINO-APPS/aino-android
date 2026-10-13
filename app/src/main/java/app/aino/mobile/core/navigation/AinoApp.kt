@@ -362,6 +362,36 @@ fun AinoApp(
     }
     // Catch-up after a reconnect (or a dropped event): the server keeps no
     // replay log, so every session-scoped screen revalidates silently.
+    // Signal syncs the moment the OS reports a usable network again (or a Wi-Fi ↔ mobile
+    // handover), without waiting for the socket's handshake or a backoff timer.
+    LaunchedEffect(tenantAuthenticated) {
+        if (!tenantAuthenticated) return@LaunchedEffect
+        val container = app.aino.mobile.core.AppContainer.get(appContext)
+        val connectivity = container.connectivity
+        // Pooled sockets of the dropped path would stall the first catch-up request.
+        suspend fun catchUp(onlyIfBehind: Boolean = false) {
+            withContext(Dispatchers.IO) { runCatching(container::resetConnections) }
+            chat.onNetworkRestored(onlyIfBehind)
+        }
+        kotlinx.coroutines.coroutineScope {
+            launch {
+                var previous = connectivity.status.value
+                connectivity.status.collect { status ->
+                    val validatedNow = (status as? app.aino.mobile.core.network.NetworkStatus.Available)?.validated == true
+                    val wasValidated = (previous as? app.aino.mobile.core.network.NetworkStatus.Available)?.validated == true
+                    when {
+                        // Back from no network at all.
+                        status.usable && !previous.usable -> { realtime.reconnectNow(); catchUp() }
+                        // Internet confirmed (also an app launched offline): catch up only what failed meanwhile.
+                        validatedNow && !wasValidated -> { realtime.reconnectNow(); catchUp(onlyIfBehind = true) }
+                    }
+                    previous = status
+                }
+            }
+            // Wi-Fi ↔ mobile handover: requests in flight belong to the old path.
+            launch { connectivity.resets.collect { catchUp() } }
+        }
+    }
     val resync by realtime.resync.collectAsStateWithLifecycle()
     LaunchedEffect(resync) {
         if (resync == 0L || !tenantAuthenticated) return@LaunchedEffect

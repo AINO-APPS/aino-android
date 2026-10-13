@@ -144,6 +144,37 @@ class ChatRefreshNoticeTest {
         assertEquals(presence, vm.ui.value.presence)
     }
 
+    @Test fun `offline cold start paints the full saved rows`() {
+        viewModel().settled()
+        // A fresh process with no network: the list comes back from Room with every field.
+        listFailures += network
+        listFailures += network
+        val vm = viewModel()
+        await { !vm.ui.value.loading && vm.ui.value.conversations.isNotEmpty() }
+        val row = vm.ui.value.conversations.single()
+        assertEquals(false, row.isGroup)
+        assertEquals(8L, row.otherUserId)
+        assertEquals("Asha Kumar", row.title())
+        assertNull(vm.ui.value.message)
+    }
+
+    @Test fun `network restore refreshes at once even while a load is stuck`() {
+        val vm = viewModel(retryDelaysMs = listOf(60_000)).settled()
+        val before = listLoads()
+        val gate = CountDownLatch(1)
+        listGate = gate
+        listFailures += network
+        vm.refresh()
+        await { vm.ui.value.loading && listLoads() == before + 1 }
+        listGate = null
+        vm.onNetworkRestored()
+        await { listLoads() >= before + 2 && !vm.ui.value.loading }
+        gate.countDown()
+        Thread.sleep(100)
+        assertEquals(1, vm.ui.value.conversations.size)
+        assertNull(vm.ui.value.message)
+    }
+
     private fun await(timeoutMs: Long = 10_000, condition: () -> Boolean) {
         val end = System.currentTimeMillis() + timeoutMs
         while (!condition()) {

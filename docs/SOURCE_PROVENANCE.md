@@ -21,6 +21,29 @@ paths inspected, date, behaviors derived, and how the AINO implementation differ
 
 ### Consultation log
 
+**2026-10-13: chat search and back navigation**
+
+- Repository: `signalapp/Signal-Android`, commit
+  `92f5ccd3a52c4780a0c916566e26280f640ba1de` (`AGPL-3.0-only`).
+- Behavioral references inspected: `ConversationListFragment.java`,
+  `MainToolbarViewModel.kt`, `MainToolbar.kt`, `MainActivity.kt`,
+  `MainNavigator.java`, `ListDetailNavDisplay.kt`,
+  `conversation/v2/ConversationFragment.kt` and
+  `conversation/ConversationSearchViewModel.java`.
+- Behaviors derived: opening list-search results preserves search; returning
+  from the conversation reveals the same search session; explicitly closing
+  search clears the toolbar query and restores the normal list. Clearing only
+  the field leaves search open. In-conversation search closes before back leaves
+  the conversation, and match/quote selections scroll within the current thread.
+- How AINO differs: independently written Compose state and coroutine cleanup
+  in the existing `ChatUiState`/`ChatViewModel`, using AINO people/message APIs
+  and local cached messages. No Signal source, tests, constants, resources or
+  navigation implementation were copied. AINO cancels and guards asynchronous
+  search publication and keeps list search separate from thread search.
+- Source inspection establishes the search state transitions, not a runtime
+  guarantee about Signal's Navigation3 callback order or retained-entry disposal.
+  AINO's own navigation tests verify its back-stack behavior.
+
 **2026-10-08: group settings, group links, chat-list receipts, group calls (0.18.x)**
 
 - Repository: `signalapp/Signal-Android`. We used the public app's screens and

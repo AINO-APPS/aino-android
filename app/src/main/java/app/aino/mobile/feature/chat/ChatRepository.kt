@@ -344,10 +344,16 @@ class ChatCache(
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
     suspend fun replace(conversations: List<ChatConversation>) =
-        cache.replaceConversations(conversations.map { it.toEntity(scope) })
+        cache.replaceConversations(conversations.map { conversation ->
+            conversation.toEntity(scope).copy(payloadJson = runCatching { json.encodeToString(conversation) }.getOrNull())
+        })
 
+    /** Signal paints its list from the local thread table: the full stored row, never a reduced one. */
     suspend fun snapshot(): List<ChatConversation> =
-        cache.conversationSnapshot().map { it.toCachedConversation() }
+        cache.conversationSnapshot().map { entity ->
+            entity.payloadJson?.let { runCatching { json.decodeFromString<ChatConversation>(it) }.getOrNull() }
+                ?: entity.toCachedConversation()
+        }
 
     suspend fun replaceMessages(conversationId: Long, messages: List<ChatMessage>) =
         cache.replaceMessages(conversationId, messages.map { message ->

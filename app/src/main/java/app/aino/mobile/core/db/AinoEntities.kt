@@ -16,6 +16,8 @@ data class ConversationEntity(
     val avatarUrl: String?,
     val unreadCount: Int,
     val updatedAtEpochMs: Long,
+    /** Full server row, so the offline list shows previews, group collages and member counts. */
+    val payloadJson: String? = null,
 )
 
 @Entity(

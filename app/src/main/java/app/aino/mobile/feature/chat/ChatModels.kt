@@ -102,12 +102,15 @@ data class ChatConversation(
     )
 }
 
+/**
+ * Legacy row saved before the full payload was stored: only title / avatar are
+ * known, so it must not pretend to be a group ("0 members"). The next sync rewrites it.
+ */
 fun ConversationEntity.toCachedConversation(): ChatConversation = ChatConversation(
     id = conversationId,
     updatedAt = Instant.ofEpochMilli(updatedAtEpochMs).toString(),
-    groupName = title,
-    isGroup = true,
-    groupAvatar = avatarUrl,
+    otherFullName = title,
+    otherAvatar = avatarUrl,
     unreadCount = unreadCount,
 )
 

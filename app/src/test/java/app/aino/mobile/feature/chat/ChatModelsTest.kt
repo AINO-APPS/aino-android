@@ -12,6 +12,35 @@ import kotlinx.serialization.json.jsonObject
 
 class ChatModelsTest {
     @Test
+    fun cachedConversationKeepsPreviewCollageAndMemberCount() = kotlinx.coroutines.runBlocking {
+        val scope = CacheScope(1, 7)
+        val cache = ChatCache(scope, app.aino.mobile.core.db.ScopedCache(scope, app.aino.mobile.core.db.InMemoryAinoDao()))
+        val group = ChatConversation(
+            id = 3, isGroup = true, groupName = "Design", lastMessage = "Ship it", memberCount = 5,
+            groupMemberPreviews = listOf(GroupMemberPreview("Asha", "/a.png")),
+        )
+        cache.replace(listOf(group, ChatConversation(id = 4, otherUserId = 8, otherFullName = "Ravi", lastMessage = "Hi")))
+        val restored = cache.snapshot().associateBy(ChatConversation::id)
+        assertEquals(group, restored[3])
+        assertEquals("Ship it", restored[3]?.preview())
+        assertFalse(restored[4]!!.isGroup)
+        assertEquals("Hi", restored[4]?.preview())
+    }
+
+    @Test
+    fun legacyCachedRowIsNotAGroup() {
+        val row = app.aino.mobile.core.db.ConversationEntity(1, 7, 4, "Ravi", null, 0, 0).toCachedConversation()
+        assertFalse(row.isGroup)
+        assertEquals("Ravi", row.title())
+    }
+
+    @Test
+    fun groupMemberLabelNeverSaysZero() {
+        assertNull(groupMemberLabel(ChatConversation(1, isGroup = true), emptyList()))
+        assertEquals("5 members", groupMemberLabel(ChatConversation(1, isGroup = true, memberCount = 5), emptyList()))
+    }
+
+    @Test
     fun decodesRealtimeChatPayloadsAndRejectsMalformedFrames() {
         val typing = decodeChatRealtime<ChatTypingEvent>(
             Json.parseToJsonElement("""{"conversationId":9,"userId":4}"""),

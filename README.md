@@ -43,6 +43,23 @@ Keystore key. Every decrypt requires `BIOMETRIC_STRONG`; weak-only biometric dev
 continue to use password login rather than storing a credential behind a weaker
 app-level check. No face, fingerprint, or biometric template leaves the device.
 
+## Chat search and back navigation
+
+- Chat-list search keeps its toolbar, query and results when a chat, person or
+  message result opens. Back from the conversation returns to that search;
+  the next back or the search toolbar's leading arrow closes it and restores
+  the normal list for the current Chats/Meet and archive view.
+- The search field's clear icon empties the query and results without closing
+  search. Requests from a cleared or superseded search cannot restore old results.
+- Search inside a conversation is independent. Back first closes that search
+  and restores the composer; another back leaves the conversation. Selecting
+  a match or a quoted message scrolls in place. Reopening a closed conversation
+  starts with its in-conversation search closed.
+
+Regression tests cover result navigation, search close/clear, late responses and
+independent in-conversation search. Physical predictive-back and keyboard behavior
+still require a device smoke test.
+
 ## Calling behavior
 
 - Direct voice and video calls ask for **Call / Cancel** before permissions, camera

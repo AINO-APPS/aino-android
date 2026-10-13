@@ -173,9 +173,13 @@ class ChatLocalSyncTest {
         vm.onRealtimeEvent(event(RealtimeEvent.ChatCleared, """{"conversationId":5}"""))
         await { storedIds(5).isEmpty() && forgotten.contains(5L) }
         offline = true
+        val before = requests.count { "/messages" in it.path }
         vm.prepareConversation(5)
-        await { !vm.ui.value.threadLoading }
+        // Offline with nothing saved: the thread stays blank (no "No messages yet", no banner).
+        await { requests.count { "/messages" in it.path } > before }
+        Thread.sleep(100)
         assertTrue(vm.ui.value.messages.isEmpty())
+        assertNull(vm.ui.value.threadRefreshError)
     }
 
     @Test fun `chat_conv_deleted closes the open thread and forgets the conversation`() {

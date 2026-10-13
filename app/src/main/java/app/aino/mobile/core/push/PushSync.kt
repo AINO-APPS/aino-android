@@ -119,7 +119,7 @@ internal suspend fun syncConversationRow(api: ApiClient, cache: ScopedCache, con
     }.getOrNull() ?: return
     val unread = row["unread_count"]?.jsonPrimitive?.intOrNull ?: stored.unreadCount
     val updatedAt = (row.string("last_message_at") ?: row.string("updated_at"))?.let(::epochMs) ?: stored.updatedAtEpochMs
-    cache.upsertConversations(listOf(stored.copy(unreadCount = unread.coerceAtLeast(0), updatedAtEpochMs = updatedAt)))
+    cache.upsertConversations(listOf(stored.copy(unreadCount = unread.coerceAtLeast(0), updatedAtEpochMs = updatedAt, payloadJson = row.toString())))
 }
 
 /**

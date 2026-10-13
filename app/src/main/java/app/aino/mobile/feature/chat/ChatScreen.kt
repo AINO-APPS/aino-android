@@ -140,10 +140,18 @@ fun ChatScreen(
         )
     }
     val colors = LocalWebColors.current
-    var activeTab by remember { mutableStateOf(ChatListTab.Chat) }
-    var searchOpen by remember { mutableStateOf(false) }
-    var archivedOpen by remember { mutableStateOf(false) }
-    val query = ui.userSearch.trim()
+    var activeTab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(ChatListTab.Chat) }
+    val searchOpen = ui.listSearchOpen
+    var focusSearch by remember { mutableStateOf(false) }
+    var archivedOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val query = if (searchOpen) ui.userSearch.trim() else ""
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val hideSearchKeyboard = {
+        focusSearch = false
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+    }
     // Deep links and notification taps open by id at once (placeholder header, stored rows)
     // instead of waiting for the conversation list.
     LaunchedEffect(conversationId) {
@@ -158,7 +166,8 @@ fun ChatScreen(
         when {
             openId != null -> {
                 viewModel.consumeNavigation()
-                if (onOpenConversation != null) onOpenConversation(openId)
+                hideSearchKeyboard()
+                if (onOpenConversation != null) onOpenConversation(openId) else viewModel.openConversationById(openId)
             }
             ui.closeThread -> { viewModel.consumeNavigation(); onNavigateBack?.invoke() }
         }
@@ -201,10 +210,19 @@ fun ChatScreen(
         viewModel.searchUsers()
         viewModel.searchAllMessages(query)
     }
-    BackHandler(enabled = searchOpen) { searchOpen = false; viewModel.updateUserSearch("") }
+    val closeSearch = {
+        hideSearchKeyboard()
+        viewModel.closeListSearch()
+    }
+    val openSearch = {
+        focusSearch = true
+        viewModel.openListSearch()
+    }
+    BackHandler(enabled = searchOpen, onBack = closeSearch)
     BackHandler(enabled = archivedOpen && !searchOpen && !ui.selectingConversations) { archivedOpen = false }
-    val openConversation: (ChatConversation) -> Unit = { conversation ->
-        if (onOpenConversation != null) onOpenConversation(conversation.id) else viewModel.openConversation(conversation)
+    val openSearchConversation: (Long) -> Unit = { id ->
+        hideSearchKeyboard()
+        if (onOpenConversation != null) onOpenConversation(id) else viewModel.openConversationById(id)
     }
 
     val listState = rememberLazyListState()
@@ -258,17 +276,15 @@ fun ChatScreen(
                     onTab = { tab -> activeTab = tab; if (tab == ChatListTab.Calls) viewModel.loadCalls() },
                     elevated = listScrolled,
                     searchOpen = searchOpen,
+                    focusSearch = focusSearch,
                     query = ui.userSearch,
                     onQuery = viewModel::updateUserSearch,
-                    onSearchOpen = { open ->
-                        searchOpen = open
-                        if (!open) viewModel.updateUserSearch("")
-                    },
+                    onSearchOpen = { open -> if (open) openSearch() else closeSearch() },
                     onNewGroup = onNewGroup,
                     menu = when (activeTab) {
                         ChatListTab.Chat -> buildList {
                             if (!archivedOpen) {
-                                add(ChatMenuItem("New chat", HeroIcons.PencilSquare) { searchOpen = true })
+                                add(ChatMenuItem("New chat", HeroIcons.PencilSquare, onClick = openSearch))
                                 add(ChatMenuItem("New group", HeroIcons.UserGroup, onClick = onNewGroup))
                                 add(null)
                             }
@@ -295,7 +311,7 @@ fun ChatScreen(
                 )
             }
 
-            app.aino.mobile.core.designsystem.ConnectionStatusStrip()
+            // Signal shows no offline / connecting chrome: saved chats stay as they are.
             app.aino.mobile.core.designsystem.component.AinoPullToRefreshBox(
                 loading = if (activeTab == ChatListTab.Calls) ui.callsLoading else ui.loading,
                 onRefresh = { if (activeTab == ChatListTab.Calls) viewModel.loadCalls() else viewModel.refresh() },
@@ -325,13 +341,13 @@ fun ChatScreen(
                     if (visibleConversations.isNotEmpty()) {
                         item(key = "s-chats") { SectionHeader("Chats") }
                         items(visibleConversations, key = { "s-chat-${it.id}" }) {
-                            ConversationRow(it, ui.presence[it.otherUserId], false, viewModel, onOpenConversation, highlight = query, currentUserId = ui.currentUserId)
+                            ConversationRow(it, ui.presence[it.otherUserId], false, viewModel, openSearchConversation, highlight = query, currentUserId = ui.currentUserId)
                         }
                     }
                     val contacts = ui.userResults.filter { it.id != ui.currentUserId }
                     if (contacts.isNotEmpty() || ui.searching) item(key = "s-contacts") { SectionHeader("Contacts") }
                     if (ui.searching && contacts.isEmpty()) item(key = "s-searching") { SearchHint("Searching…", true) }
-                    items(contacts, key = { "s-user-${it.id}" }) { user -> UserResultRow(user, query) { viewModel.startDirect(user) } }
+                    items(contacts, key = { "s-user-${it.id}" }) { user -> UserResultRow(user, query) { hideSearchKeyboard(); viewModel.startDirect(user) } }
                     if (ui.messageResults.isNotEmpty()) {
                         item(key = "s-messages") { SectionHeader("Messages") }
                         items(ui.messageResults, key = { "s-msg-${it.id}" }) { message ->
@@ -339,6 +355,7 @@ fun ChatScreen(
                             MessageResultRow(message, conversation, query) {
                                 val targetId = message.conversationId ?: return@MessageResultRow
                                 viewModel.rememberJump(message)
+                                hideSearchKeyboard()
                                 if (onOpenConversation != null) onOpenConversation(targetId)
                                 else viewModel.openConversationById(targetId, jumpTo = message.id)
                             }
@@ -385,7 +402,7 @@ fun ChatScreen(
                             else if (archivedOpen) ChatListEmpty(HeroIcons.ArchiveBox, "No archived chats", "Swipe a chat left to archive it.")
                             else ChatListEmpty(
                                 HeroIcons.ChatBubbleOvalLeft, "No conversations yet", "Start a chat with a colleague or create a group.",
-                                actionLabel = "Start a chat", onAction = { searchOpen = true },
+                                actionLabel = "Start a chat", onAction = openSearch,
                             )
                         }
                         items(ordered, key = { it.id }) { conversation ->
@@ -408,7 +425,7 @@ fun ChatScreen(
         // Signal compose FAB (new chat → people search, with "New group" on top).
         NewChatFab(
             visible = !searchOpen && activeTab != ChatListTab.Calls && !selecting,
-            onClick = { searchOpen = true },
+            onClick = openSearch,
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         )
         // Signal "Chat archived" snackbar with Undo.
@@ -426,7 +443,7 @@ fun ChatScreen(
 @Composable
 private fun ChatHeader(
     tabs: List<ChatListTabItem>, activeTab: ChatListTab, onTab: (ChatListTab) -> Unit,
-    elevated: Boolean, searchOpen: Boolean, query: String,
+    elevated: Boolean, searchOpen: Boolean, focusSearch: Boolean, query: String,
     onQuery: (String) -> Unit, onSearchOpen: (Boolean) -> Unit, onNewGroup: () -> Unit,
     menu: List<ChatMenuItem?> = listOf(ChatMenuItem("New group", HeroIcons.UserGroup, onClick = onNewGroup)),
 ) {
@@ -441,7 +458,7 @@ private fun ChatHeader(
     ) {
         if (searchOpen) {
             val focus = remember { androidx.compose.ui.focus.FocusRequester() }
-            LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+            LaunchedEffect(focusSearch) { if (focusSearch) runCatching { focus.requestFocus() } }
             Icon(HeroIcons.ArrowLeft, "Close search", Modifier.size(48.dp).clip(CircleShape).clickable { onSearchOpen(false) }.padding(12.dp), tint = signal.text)
             Row(
                 Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(22.dp)).background(signal.searchPill).padding(horizontal = 14.dp),
@@ -968,8 +985,6 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                     ThreadBar.Header -> ThreadHeader(conversation, ui, viewModel, onNavigateBack, onOpenAllMedia = { allMediaOpen = true })
                 }
             }
-            // The live link's status replaces per-request "offline" warnings.
-            app.aino.mobile.core.designsystem.ConnectionStatusStrip()
             // Signal pinned-message bar: newest pin shown; tap jumps and cycles to the next.
             androidx.compose.animation.AnimatedVisibility(
                 visible = ui.pinnedMessages.isNotEmpty() && ui.selectedMessageIds.isEmpty() && !ui.threadSearchOpen,
@@ -1382,10 +1397,10 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
                 InfoPage.Main -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item {
                         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(Modifier.size(88.dp)) { ConversationAvatar(conversation, ui.presence[conversation.otherUserId], 88.dp) }
+                            Box(Modifier.size(88.dp)) { ConversationAvatar(conversation, ui.presence[conversation.otherUserId], 88.dp, members = ui.members) }
                             Text(conversation.title(), Modifier.padding(top = 12.dp), color = colors.text, fontSize = 21.sp, fontWeight = FontWeight.Bold)
                             Text(
-                                if (conversation.isGroup) conversation.memberCount?.let { "$it members" } ?: "Group" else presenceLabel(ui.presence[conversation.otherUserId]),
+                                if (conversation.isGroup) groupMemberLabel(conversation, ui.members) ?: "Group" else presenceLabel(ui.presence[conversation.otherUserId]),
                                 color = colors.textSecondary, fontSize = 13.sp,
                             )
                         }
@@ -2602,6 +2617,11 @@ internal fun ConversationAvatar(
     }
 }
 
+/** "N members" from the row or the saved member list; null while neither is known (never "0 members"). */
+internal fun groupMemberLabel(conversation: ChatConversation, members: List<ConversationMember>): String? =
+    (conversation.memberCount?.takeIf { it > 0 } ?: members.size.takeIf { it > 0 })
+        ?.let { "$it member${if (it == 1) "" else "s"}" }
+
 @Composable
 private fun statusColor(presence: ChatPresence?): Color = when {
     presence == null || presence.presence != "online" -> LocalWebColors.current.textMuted
@@ -2753,12 +2773,12 @@ private fun ThreadHeader(
             Modifier.weight(1f).clip(RoundedCornerShape(20.dp)).clickable(onClick = viewModel::openInfo).padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            ConversationAvatar(conversation, ui.presence[conversation.otherUserId], 40.dp)
+            ConversationAvatar(conversation, ui.presence[conversation.otherUserId], 40.dp, members = ui.members)
             Column(Modifier.padding(start = 12.dp)) {
                 Text(conversation.title(), color = signal.text, fontSize = 18.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val subtitle = when {
                     ui.typingUserId != null -> "typing…"
-                    conversation.isGroup -> "${conversation.memberCount ?: 0} members"
+                    conversation.isGroup -> groupMemberLabel(conversation, ui.members).orEmpty()
                     else -> presenceLabel(ui.presence[conversation.otherUserId])
                 }
                 if (subtitle.isNotBlank()) Text(subtitle, color = signal.textSecondary, fontSize = 13.sp, maxLines = 1)

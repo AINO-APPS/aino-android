@@ -47,6 +47,8 @@ class AppContainer private constructor(private val context: Context) {
      * call deadline bounds a request that would otherwise hang across retries.
      */
     private val apiHttp: OkHttpClient = http.newBuilder()
+        // A dead route right after a network toggle fails fast and the catch-up retries on the new path.
+        .connectTimeout(10, TimeUnit.SECONDS)
         .pingInterval(15, TimeUnit.SECONDS)
         .callTimeout(90, TimeUnit.SECONDS)
         .build()
