@@ -334,6 +334,9 @@ class AuthViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching(action).fold(
                 onSuccess = { state ->
+                    // A new session re-registers its push token: sign-in clears the old
+                    // credential (KeystoreTokenStore.clearToken forgets the registration)
+                    // and AinoApp syncs it once the authenticated user appears.
                     if (state is AuthState.Authenticated) SessionRevocation.clearPendingMessage(context)
                     persistOrClearScope(state)
                     _ui.value = AuthUiState(

@@ -162,7 +162,7 @@ object MissedCallNotifier {
             .setContentTitle(name)
             .setContentText(text)
             .setCategory(NotificationCompat.CATEGORY_MISSED_CALL)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setWhen(System.currentTimeMillis())
             .setShowWhen(true)
             .setAutoCancel(true)

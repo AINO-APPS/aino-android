@@ -17,6 +17,8 @@ class RefreshingApiClient(
     private val delegate: ApiClient,
     private val tokens: TokenStore,
     private val json: Json = Json { ignoreUnknownKeys = true },
+    /** The server refused the refresh: the session is over, the UI must show sign-in. */
+    private val onSessionEnded: () -> Unit = {},
 ) : ApiClient {
     private val refreshLock = Any()
 
@@ -88,7 +90,10 @@ class RefreshingApiClient(
         } catch (error: Exception) {
             // Only a refused refresh ends the session; a network blip or a 5xx
             // must not sign the user out (the next request simply retries).
-            if (error is ApiError.Http && (error.statusCode == 401 || error.statusCode == 403)) tokens.clearToken()
+            if (error is ApiError.Http && (error.statusCode == 401 || error.statusCode == 403)) {
+                tokens.clearToken()
+                runCatching(onSessionEnded)
+            }
             throw error
         }
     }

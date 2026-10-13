@@ -43,6 +43,20 @@ Keystore key. Every decrypt requires `BIOMETRIC_STRONG`; weak-only biometric dev
 continue to use password login rather than storing a credential behind a weaker
 app-level check. No face, fingerprint, or biometric template leaves the device.
 
+## Push registration (Signal `FcmRefreshJob` parity)
+
+- The FCM token is registered per **session** (tenant, user, JWT `sid`): every
+  sign-in posts `auth/device-token` again, because the server deletes a revoked
+  session's push tokens.
+- Any credential clear (sign-out, refused refresh, revocation, 401) forgets the
+  local registration; a refused refresh also returns the UI to sign-in.
+- `PushTokenRefreshWorker` re-posts the token daily and retries a failed
+  registration with backoff, so a dropped token heals without opening the app.
+- The background socket is only closed when the server acked the current
+  session's token within 24 hours; otherwise it stays the delivery path.
+- Reactions read "Reacted ❤️ to: "message"". Missed calls use the
+  high-importance `aino_missed_calls_v2` channel (heads-up, like Signal's calls channel).
+
 ## Sharing into Aino
 
 - Aino is a system share target for text/links, photos, videos, audio and any

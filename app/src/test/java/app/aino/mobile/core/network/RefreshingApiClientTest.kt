@@ -89,10 +89,25 @@ class RefreshingApiClientTest {
         val tokens = MemoryTokens("old").apply { refresh = "3.sid.stolen" }
         val delegate = ApiClient { request -> throw ApiError.Http(401, """{"code":"REFRESH_REUSED"}""", request.method, request.path) }
 
-        runCatching { RefreshingApiClient(delegate, tokens).execute(ApiRequest(path = "profile")) }
+        var ended = 0
+        runCatching { RefreshingApiClient(delegate, tokens, onSessionEnded = { ended++ }).execute(ApiRequest(path = "profile")) }
 
         assertNull(tokens.value)
         assertNull(tokens.refresh)
+        assertEquals(1, ended)
+    }
+
+    @Test
+    fun aNetworkFailedRefreshDoesNotEndTheSession() {
+        val tokens = MemoryTokens("old").apply { refresh = "3.sid.r1" }
+        var ended = 0
+        val delegate = ApiClient { request ->
+            if (request.path == "sessions/token") throw ApiError.Network(request.method, request.path, java.io.IOException("offline"))
+            throw http401(request)
+        }
+        runCatching { RefreshingApiClient(delegate, tokens, onSessionEnded = { ended++ }).execute(ApiRequest(path = "profile")) }
+        assertEquals(0, ended)
+        assertEquals("3.sid.r1", tokens.refresh)
     }
 
     private fun response(text: String) = ApiResponse(200, emptyMap(), text.toByteArray())

@@ -29,6 +29,15 @@ object SessionRevocation {
     /** Emits the user-facing message when a push signed this device out while the UI runs. */
     val revoked: SharedFlow<String> = _revoked.asSharedFlow()
 
+    /**
+     * The server refused to refresh this session (credential already cleared by
+     * `RefreshingApiClient`). Without this the UI stayed "signed in" with no
+     * working token, no socket and no push registration.
+     */
+    fun onRefreshRefused() {
+        _revoked.tryEmit(AuthViewModel.SIGNED_IN_ELSEWHERE)
+    }
+
     fun messageFor(closeReason: String?): String =
         if (closeReason == SIGNED_IN_ELSEWHERE_REASON) SIGNED_IN_ELSEWHERE_MESSAGE else AuthViewModel.SIGNED_IN_ELSEWHERE
 

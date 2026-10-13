@@ -70,7 +70,7 @@ class AppContainer private constructor(private val context: Context) {
 
     /** Last successful GET bodies of the signed-in user (scope set by AuthViewModel). */
     val responses = app.aino.mobile.core.network.ResponseCache(context.cacheDir.resolve("api-cache"))
-    private val refreshing = RefreshingApiClient(rawApi, tokens)
+    private val refreshing = RefreshingApiClient(rawApi, tokens, onSessionEnded = app.aino.mobile.core.auth.SessionRevocation::onRefreshRefused)
     val api: ApiClient = app.aino.mobile.core.network.CachingApiClient(refreshing, responses)
 
     /** For clients outside [api] (media, realtime): a valid token, refreshed when the 15-minute one was refused. */

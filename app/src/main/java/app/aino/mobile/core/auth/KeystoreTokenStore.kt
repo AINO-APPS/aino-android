@@ -12,7 +12,8 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** Stores only AES-GCM ciphertext in private app preferences; the key never leaves Android Keystore. */
 class KeystoreTokenStore(context: Context) : TokenStore {
-    private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
 
     @Synchronized
     override fun saveToken(token: String) = save(token, IV, CIPHERTEXT)
@@ -23,7 +24,10 @@ class KeystoreTokenStore(context: Context) : TokenStore {
     /** Ends the session on this device: both the access and the refresh token go. */
     @Synchronized
     override fun clearToken() {
-        preferences.edit().remove(IV).remove(CIPHERTEXT).remove(REFRESH_IV).remove(REFRESH_CIPHERTEXT).apply()
+        preferences.edit().remove(IV).remove(CIPHERTEXT).remove(REFRESH_IV).remove(REFRESH_CIPHERTEXT).commit()
+        // However the session ended (refresh refused, 401, revocation), the server
+        // may have dropped this phone's push token: the next sign-in must re-post it.
+        app.aino.mobile.core.push.PushTokenRegistrar.forget(appContext)
     }
 
     @Synchronized
@@ -54,10 +58,13 @@ class KeystoreTokenStore(context: Context) : TokenStore {
             init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         }
         val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        // Synchronous: a rotated refresh token lost to process death (apply() is
+        // async) makes the next start replay the old one, which the server treats
+        // as theft and signs the phone out, deleting its push token.
         preferences.edit()
             .putString(ivKey, encode(cipher.iv))
             .putString(ciphertextKey, encode(encrypted))
-            .apply()
+            .commit()
     }
 
     private fun read(ivKey: String, ciphertextKey: String): String? {

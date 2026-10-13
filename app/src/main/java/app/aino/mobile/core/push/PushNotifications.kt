@@ -21,7 +21,13 @@ object PushNotifications {
     const val MENTIONS = "aino_mentions"
     const val ASSIGNMENTS = "aino_assignments"
     const val APPROVALS = "aino_approvals"
-    const val MISSED_CALLS = "aino_missed_calls"
+    /**
+     * Signal posts missed calls on its HIGH-importance calls channel (heads-up).
+     * Importance of an existing channel can't be raised, so v2 replaces the old
+     * DEFAULT `aino_missed_calls` (deleted on upgrade; it only ever held missed calls).
+     */
+    const val MISSED_CALLS = "aino_missed_calls_v2"
+    private const val LEGACY_MISSED_CALLS = "aino_missed_calls"
     const val REACTIONS = "aino_reactions"
 
     /**
@@ -32,6 +38,8 @@ object PushNotifications {
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java)
+        // The one exception to "never renamed": carry the user's choices over to v2.
+        val legacyMissed = manager.getNotificationChannel(LEGACY_MISSED_CALLS)
         manager.createNotificationChannels(
             listOf(
                 NotificationChannel(REACTIONS, "Reactions", NotificationManager.IMPORTANCE_DEFAULT),
@@ -50,11 +58,23 @@ object PushNotifications {
                     description = "Incoming AINO voice and video calls"
                     lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
                 },
-                NotificationChannel(MISSED_CALLS, "Missed calls", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                NotificationChannel(
+                    MISSED_CALLS,
+                    "Missed calls",
+                    if (legacyMissed?.importance == NotificationManager.IMPORTANCE_NONE) NotificationManager.IMPORTANCE_NONE
+                    else NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
                     description = "Calls that rang on this device and were not answered"
+                    legacyMissed?.let { old ->
+                        setSound(old.sound, old.audioAttributes)
+                        enableVibration(old.shouldVibrate())
+                        old.vibrationPattern?.let { vibrationPattern = it }
+                        lockscreenVisibility = old.lockscreenVisibility
+                    }
                 },
             ),
         )
+        if (legacyMissed != null) manager.deleteNotificationChannel(LEGACY_MISSED_CALLS)
     }
 
     /** Posts [push]; true when a notification is now showing for it. */

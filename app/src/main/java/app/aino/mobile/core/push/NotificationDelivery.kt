@@ -23,6 +23,14 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 
+/** Signal's `MessageNotifier_reacted_s_to_s`: "Reacted ❤️ to: "<message>"", or "your message" when unknown. */
+internal fun reactionText(emoji: String, messagePreview: String?): String {
+    val preview = messagePreview?.replace(Regex("\\s+"), " ")?.trim()?.takeIf(String::isNotEmpty)
+        ?: return "Reacted $emoji to your message"
+    val clipped = if (preview.length > 60) preview.take(59).trimEnd() + "…" else preview
+    return "Reacted $emoji to: \"$clipped\""
+}
+
 internal fun reactionEligible(action: String, ownerId: Long?, actorId: Long, userId: Long, muted: Boolean, visible: Boolean): Boolean =
     action == "added" && ownerId == userId && actorId != userId && !muted && !visible
 
@@ -158,7 +166,8 @@ object NotificationDelivery {
                 })
                 .setSmallIcon(R.drawable.ic_stat_aino).setColor(ChatNotifications.brandColor(context))
                 .setLargeIcon(NotificationAvatars.fallback(name, "aino-user-$actor"))
-                .setContentTitle(name).setContentText("Reacted $emoji to your message")
+                .setContentTitle(name).setContentText(reactionText(emoji, cachedMessageBody(context, conversationId, messageId)))
+                .setCategory(NotificationCompat.CATEGORY_SOCIAL)
                 .setContentIntent(PendingIntent.getActivity(context, id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
                 .setAutoCancel(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
                 .setSilent(!app.aino.mobile.core.notifications.NotificationSoundPrefs.notificationAudible(context)).build()
@@ -213,11 +222,17 @@ object NotificationDelivery {
     }.getOrNull()
 
     private fun cachedMessageOwner(context: Context, conversationId: Long, messageId: Long): Long? =
+        cachedMessage(context, conversationId, messageId)?.senderId
+
+    private fun cachedMessageBody(context: Context, conversationId: Long, messageId: Long): String? =
+        cachedMessage(context, conversationId, messageId)?.body
+
+    private fun cachedMessage(context: Context, conversationId: Long, messageId: Long): app.aino.mobile.core.db.MessageEntity? =
         runCatching {
             runBlocking {
                 val scope = SessionScopeStore(context).read() ?: return@runBlocking null
                 ScopedCache(scope, AinoDatabase.get(context).dao()).messageSnapshot(conversationId)
-                    .firstOrNull { it.messageId == messageId }?.senderId
+                    .firstOrNull { it.messageId == messageId }
             }
         }.getOrNull()
 }
