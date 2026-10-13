@@ -31,6 +31,12 @@ internal fun reactionText(emoji: String, messagePreview: String?): String {
     return "Reacted $emoji to: \"$clipped\""
 }
 
+/**
+ * System rows (call history, group events) are thread tombstones, never message alerts.
+ * Signal's missed-call alert comes from the call path (MissedCalls), not from the row.
+ */
+internal fun messageNotificationEligible(formatType: String?): Boolean = formatType != "system"
+
 internal fun reactionEligible(action: String, ownerId: Long?, actorId: Long, userId: Long, muted: Boolean, visible: Boolean): Boolean =
     action == "added" && ownerId == userId && actorId != userId && !muted && !visible
 
@@ -75,6 +81,7 @@ object NotificationDelivery {
     }
 
     fun onMessage(context: Context, message: ChatRealtimeMessage, conversation: ChatConversation?): PostingOutcome {
+        if (!messageNotificationEligible(message.formatType)) return PostingOutcome.Suppressed("System message")
         if (message.senderId == notificationUser(context)) return PostingOutcome.Suppressed("Own message")
         val resolved = conversation ?: cachedConversation(context, message.conversationId)
         val avatarData = if (resolved?.isGroup == true) buildMap {

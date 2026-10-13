@@ -57,6 +57,15 @@ class PushPolicyTest {
     }
 
     @Test
+    fun systemRowsNeverPostMessageNotifications() {
+        // Call-history ("Video call", "Missed voice call") and group-event rows.
+        assertFalse(messageNotificationEligible("system"))
+        assertTrue(messageNotificationEligible(null))
+        assertTrue(messageNotificationEligible("text"))
+        assertTrue(messageNotificationEligible("poll"))
+    }
+
+    @Test
     fun reactionTextQuotesTheMessageLikeSignal() {
         assertEquals("Reacted ❤️ to your message", reactionText("❤️", null))
         assertEquals("Reacted ❤️ to your message", reactionText("❤️", "  "))

@@ -56,6 +56,9 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
   session's token within 24 hours; otherwise it stays the delivery path.
 - Reactions read "Reacted ❤️ to: "message"". Missed calls use the
   high-importance `aino_missed_calls_v2` channel (heads-up, like Signal's calls channel).
+- Call-history and group-event rows (`formatType: "system"`) never post a message
+  notification. An answered call shows no alert; a missed call alerts only through
+  the missed-call notifier.
 
 ## Sharing into Aino
 
