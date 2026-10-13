@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Adaptive launcher background: the app's dark background (AinoDarkBackground #131314),
-     so launchers that fill the icon shape never fall back to pitch black. -->
+<!-- Adaptive launcher background: plain white, so the emerald/amber mark reads clearly
+     on every wallpaper and launcher shape. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="#3a3939" />
+    <solid android:color="#FFFFFFFF" />
 </shape>
