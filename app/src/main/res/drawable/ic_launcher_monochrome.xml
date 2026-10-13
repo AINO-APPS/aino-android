@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Brand mark from aino-platform/desktop/icons/icon-source.svg, translated +28 and scaled to 80% so it
+     is centred in the 108dp adaptive canvas and stays inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1080"
+    android:viewportHeight="1080">
+    <group android:pivotX="540" android:pivotY="540" android:scaleX="0.8" android:scaleY="0.8">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M276,260h288a76,76 0,0 1,0 152h-288a76,76 0,0 1,0 -152z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M436,464h368a76,76 0,0 1,0 152h-368a76,76 0,0 1,0 -152z" />
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M276,668h408a76,76 0,0 1,0 152h-408a76,76 0,0 1,0 -152z" />
+    </group>
+</vector>
