@@ -78,7 +78,7 @@ object ConversationNotifications {
                 .setIntent(launchIntent)
                 .setLongLived(true)
                 .setPersons(arrayOf(person))
-                .setCategories(setOf("android.shortcut.conversation"))
+                .setCategories(setOf("android.shortcut.conversation", app.aino.mobile.core.share.SHARE_TARGET_CATEGORY))
 
             icon?.let { shortcutBuilder.setIcon(it) }
 
@@ -108,6 +108,42 @@ object ConversationNotifications {
             null
         }
     }
+
+    /**
+     * Direct Share: the most recent chats become share-sheet targets (Signal/WhatsApp publish
+     * their top conversations the same way). Same ids as the notification shortcuts, so a
+     * notified conversation keeps a single shortcut.
+     */
+    fun publishShareTargets(context: Context, targets: List<ShareTargetInfo>) {
+        runCatching {
+            val max = ShortcutManagerCompat.getMaxShortcutCountPerActivity(context).coerceIn(1, MAX_SHARE_SHORTCUTS)
+            val primary = app.aino.mobile.core.push.ChatNotifications.brandColor(context)
+            val shortcuts = targets.take(max).map { target ->
+                val id = target.conversationId.toString()
+                val icon = IconCompat.createWithBitmap(app.aino.mobile.core.avatar.ChatAvatarBitmaps.user(target.title, primary))
+                ShortcutInfoCompat.Builder(context, "wp-conversation-${conversationStableId(id)}")
+                    .setShortLabel(target.title.take(40))
+                    .setLongLabel(target.title.take(80))
+                    .setIcon(icon)
+                    .setIntent(
+                        Intent(Intent.ACTION_VIEW, Uri.parse("aino://chat/$id"))
+                            .setPackage(context.packageName)
+                            .putExtra("conversationId", id),
+                    )
+                    .setLongLived(true)
+                    .setRank(0)
+                    .setPerson(Person.Builder().setName(target.title).setKey("conversation-$id").build())
+                    .setCategories(setOf("android.shortcut.conversation", app.aino.mobile.core.share.SHARE_TARGET_CATEGORY))
+                    .build()
+            }
+            // Each push ranks first, so push oldest → newest to leave the latest chat on top.
+            shortcuts.asReversed().forEach { ShortcutManagerCompat.pushDynamicShortcut(context, it) }
+        }
+    }
+
+    data class ShareTargetInfo(val conversationId: Long, val title: String)
+
+    private const val MAX_SHARE_SHORTCUTS = 4
 
     private fun ensureConversationChannel(
         context: Context,

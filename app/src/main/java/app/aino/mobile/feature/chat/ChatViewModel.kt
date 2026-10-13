@@ -1453,17 +1453,49 @@ class ChatViewModel(
         saveDraftTarget("reply", null)
         mentionedIds.clear()
         linkPreviewJob?.cancel()
-        context?.let(app.aino.mobile.core.notifications.NotificationSoundPrefs::playSendConfirmation)
-        // Durable right away (leased: the worker won't overtake media queued ahead of it).
-        val persisted = viewModelScope.async(Dispatchers.IO) {
-            runCatching { outbox.persist(currentScope, conversation.id, content, replyToId, now, clientId) }.isSuccess
-        }
         // Mentions and link previews only travel on the web's WS `chat_message`
         // frame (the REST send route drops them).
         val socketEnvelope = if (preview != null || mentions.isNotEmpty()) {
             chatMessageEnvelope(conversation.id, content, clientId, replyToId, mentions, preview)
         } else null
-        sendQueue.submit(conversation.id) {
+        dispatchText(currentScope, conversation.id, content, replyToId, socketEnvelope, clientId, now)
+    }
+
+    /** Share sheet text: queued and sent to [conversationId] like a composer send, whichever thread is open. */
+    fun sendSharedText(conversationId: Long, text: String) {
+        val currentScope = scope ?: return
+        val content = text.trim().take(5_000).ifEmpty { return }
+        val clientId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val queued = QueuedMessage(clientId, conversationId, currentScope.userId, content, now, sendSequence.incrementAndGet())
+        _ui.update { st -> st.copy(queuedMessages = st.queuedMessages + queued, error = null) }
+        dispatchText(currentScope, conversationId, content, null, null, clientId, now)
+    }
+
+    /** Share sheet files/media: same upload pipeline as the composer, targeted at [conversationId]. */
+    fun sendSharedMedia(conversationId: Long, items: List<MediaUploadSpec>, caption: String?, viewOnce: Boolean = false, highQuality: Boolean = false) {
+        if (items.isEmpty()) return
+        uploadAll(
+            items, caption?.trim()?.ifBlank { null }?.takeUnless { viewOnce }, clearComposer = false,
+            viewOnce = viewOnce, quality = if (highQuality) "hd" else "standard", conversationId = conversationId,
+        )
+    }
+
+    private fun dispatchText(
+        currentScope: CacheScope,
+        conversationId: Long,
+        content: String,
+        replyToId: Long?,
+        socketEnvelope: RealtimeEnvelope?,
+        clientId: String,
+        now: Long,
+    ) {
+        context?.let(app.aino.mobile.core.notifications.NotificationSoundPrefs::playSendConfirmation)
+        // Durable right away (leased: the worker won't overtake media queued ahead of it).
+        val persisted = viewModelScope.async(Dispatchers.IO) {
+            runCatching { outbox.persist(currentScope, conversationId, content, replyToId, now, clientId) }.isSuccess
+        }
+        sendQueue.submit(conversationId) {
             val stored = persisted.await()
             if (scope != currentScope) return@submit
             // A queued frame is not a delivered one: a half-open socket accepts it and drops it.
@@ -1477,12 +1509,12 @@ class ChatViewModel(
                 withSendRetries(attempts = TEXT_SEND_ATTEMPTS) {
                     // Signed out / switched tenant meanwhile: setScope released the row to the durable worker.
                     if (scope != currentScope) throw ScopeChanged()
-                    repository.sendMessage(conversation.id, content, replyToId, clientId)
+                    repository.sendMessage(conversationId, content, replyToId, clientId)
                 }
             }
             send.fold(
                 onSuccess = { row ->
-                    onOwnMessageSent(row.copy(conversationId = row.conversationId ?: conversation.id), clientId)
+                    onOwnMessageSent(row.copy(conversationId = row.conversationId ?: conversationId), clientId)
                     if (stored) runCatching { outbox.delivered(currentScope, clientId) }
                 },
                 onFailure = { error ->
@@ -1492,7 +1524,7 @@ class ChatViewModel(
                     if (stored) runCatching { outbox.delivered(currentScope, clientId) }
                     _ui.update { st -> st.copy(
                         queuedMessages = st.queuedMessages.filterNot { it.clientMessageId == clientId },
-                        composer = if (st.selectedConversation?.id == conversation.id && st.composer.isBlank()) content else st.composer,
+                        composer = if (st.selectedConversation?.id == conversationId && st.composer.isBlank()) content else st.composer,
                         error = userFacingMessage(error, "Could not send message"),
                     ) }
                 },
@@ -2014,9 +2046,10 @@ class ChatViewModel(
         clearComposer: Boolean,
         viewOnce: Boolean = false,
         quality: String? = null,
+        conversationId: Long? = null,
     ) {
         val currentScope = scope ?: return
-        val conversation = _ui.value.selectedConversation ?: return
+        val targetId = conversationId ?: _ui.value.selectedConversation?.id ?: return
         val resolver = context?.contentResolver
         val now = System.currentTimeMillis()
         // Signal: every item gets its own outgoing bubble immediately, in send order.
@@ -2029,7 +2062,7 @@ class ChatViewModel(
             }
             val mime = item.mimeType ?: resolver?.getType(item.uri) ?: "application/octet-stream"
             PendingMedia(
-                localId = "media-${UUID.randomUUID()}", conversationId = conversation.id,
+                localId = "media-${UUID.randomUUID()}", conversationId = targetId,
                 uri = item.uri, mimeType = mime, fileName = name,
                 caption = caption.takeIf { index == 0 }, createdAtEpochMs = now + index,
                 width = item.width, height = item.height, sequence = sendSequence.incrementAndGet(),
@@ -2041,7 +2074,7 @@ class ChatViewModel(
             composer = if (clearComposer) "" else st.composer,
             error = null,
         ) }
-        if (clearComposer) saveDraft(conversation.id, "")
+        if (clearComposer) saveDraft(targetId, "")
         context?.let(app.aino.mobile.core.notifications.NotificationSoundPrefs::playSendConfirmation)
         pending.forEach { enqueueUpload(currentScope, it) }
     }

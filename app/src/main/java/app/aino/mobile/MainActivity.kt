@@ -158,6 +158,8 @@ class MainActivity : FragmentActivity() {
         }
         consumeCallIntent(intent)
         if (savedInstanceState == null) consumePushTap(intent)
+        if (savedInstanceState == null) consumeShare(intent)
+        lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO) { app.aino.mobile.core.share.pruneStagedShares(applicationContext) }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 launch {
@@ -205,6 +207,24 @@ class MainActivity : FragmentActivity() {
         setIntent(intent)
         consumeCallIntent(intent)
         consumePushTap(intent)
+        consumeShare(intent)
+    }
+
+    /** Another app's share sheet: copy the content while our read grant lasts, then the shell shows the picker. */
+    private fun consumeShare(intent: android.content.Intent?) {
+        val share = app.aino.mobile.core.share.parseShareIntent(intent) ?: return
+        // Recreation must not replay the share.
+        intent?.action = android.content.Intent.ACTION_MAIN
+        lifecycleScope.launch {
+            val staged = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                app.aino.mobile.core.share.stage(applicationContext, share)
+            }
+            if (staged.items.isEmpty() && staged.text == null) {
+                android.widget.Toast.makeText(this@MainActivity, "Couldn't read the shared content", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            app.aino.mobile.core.share.PendingShare.set(staged)
+        }
     }
 
     /** A tapped notification is routed by the signed-in shell (see `PendingPushTap`). */

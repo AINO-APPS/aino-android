@@ -1259,6 +1259,44 @@ private fun AuthenticatedShell(
         tasks,
         modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = if (fullScreen) 8.dp else 72.dp),
     )
+    // Direct Share: keep the latest chats published as share-sheet targets.
+    val shareTargets = androidx.compose.runtime.remember(chatUi.conversations) {
+        app.aino.mobile.feature.chat.shareDestinations(chatUi.conversations, "").take(4)
+            .map { app.aino.mobile.core.notifications.ConversationNotifications.ShareTargetInfo(it.id, it.title()) }
+    }
+    LaunchedEffect(shareTargets) {
+        if (shareTargets.isEmpty()) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            app.aino.mobile.core.notifications.ConversationNotifications.publishShareTargets(shellContext, shareTargets)
+        }
+    }
+    // Content shared from another app (system share sheet / Direct Share): pick chats, then send.
+    val pendingShare by app.aino.mobile.core.share.PendingShare.share.collectAsStateWithLifecycle()
+    pendingShare?.let { share ->
+        val chatEnabled = user.tenantFeatures["chat"] == true
+        LaunchedEffect(share) {
+            if (!chatEnabled) {
+                android.widget.Toast.makeText(shellContext, "Chat isn't enabled for your account", android.widget.Toast.LENGTH_SHORT).show()
+                app.aino.mobile.core.share.PendingShare.clear()
+            } else if (chatUi.conversations.isEmpty()) {
+                chat.refresh()
+            }
+        }
+        if (chatEnabled) {
+            app.aino.mobile.feature.chat.ShareTargetScreen(
+                share = share,
+                viewModel = chat,
+                onClose = app.aino.mobile.core.share.PendingShare::clear,
+                onSent = { ids ->
+                    app.aino.mobile.core.share.PendingShare.clear()
+                    // Signal/WhatsApp: a single recipient opens its thread; several land on the chat list.
+                    val route = ids.singleOrNull()?.let { id -> chat.openConversationById(id); chatThreadRoute(id) }
+                        ?: AinoDestination.Chat.route
+                    runCatching { nav.navigate(route) { launchSingleTop = true } }
+                },
+            )
+        }
+    }
     }
     // Ring answers, chat meeting cards and group-call starts ask for routes from outside the NavHost.
     LaunchedEffect(nav) {

@@ -43,6 +43,21 @@ Keystore key. Every decrypt requires `BIOMETRIC_STRONG`; weak-only biometric dev
 continue to use password login rather than storing a credential behind a weaker
 app-level check. No face, fingerprint, or biometric template leaves the device.
 
+## Sharing into Aino
+
+- Aino is a system share target for text/links, photos, videos, audio and any
+  file (single or multiple, up to 32 items). The share opens a "Send to…"
+  picker with search and recent chats (up to 5 chats, as WhatsApp/Signal).
+- Photos/videos continue to the media send screen; text, links and files get a
+  preview with an editable message. One recipient opens its thread afterwards.
+- Direct Share: the four most recent chats are published as share-sheet
+  targets (`res/xml/shortcuts.xml`, category `app.aino.mobile.SHARE_TARGET`).
+- Shared streams are copied to `cache/shared/` immediately (the sender's read
+  grant ends with the activity) and pruned after 24 hours. A share made while
+  signed out waits for sign-in.
+- The manifest declares `android:appCategory="productivity"`; the Play Store
+  "Business" category is set in the Play Console.
+
 ## Chat search and back navigation
 
 - Chat-list search keeps its toolbar, query and results when a chat, person or
