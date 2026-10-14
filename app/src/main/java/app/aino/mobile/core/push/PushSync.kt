@@ -141,7 +141,8 @@ internal fun messageEntitiesOf(json: String, scope: CacheScope, conversationId: 
             senderId = row.long("sender_id") ?: 0,
             body = when {
                 row.string("deleted_at") != null -> "Message deleted"
-                else -> row.string("content")?.takeIf(String::isNotBlank) ?: row.string("file_name").orEmpty()
+                row.string("file_url") == null && row.string("file_name") == null -> row.string("content").orEmpty()
+                else -> app.aino.mobile.feature.chat.chatNotificationBody(row.string("content"), row.string("file_type"), row.string("file_name"), row["metadata"])
             },
             createdAtEpochMs = epochMs(createdAt) ?: 0,
             deliveryState = "sent",

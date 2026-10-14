@@ -19,6 +19,15 @@ val CHAT_ALLOWED_MIME_TYPES = setOf(
     "application/msword", "application/vnd.ms-excel", "text/plain", "text/csv",
 )
 
+/** Signal parity: any other file is sent (and served back) as an opaque download. */
+const val GENERIC_FILE_MIME = "application/octet-stream"
+
+/** The type a picked file is uploaded as: a server-known type, else [GENERIC_FILE_MIME] (SVG, HTML, APK, archives, ...). */
+fun chatUploadMimeType(mimeType: String?): String {
+    val type = mimeType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+    return if (type in CHAT_ALLOWED_MIME_TYPES) type else GENERIC_FILE_MIME
+}
+
 data class ChatUpload(
     val fileName: String,
     val mimeType: String,
@@ -38,7 +47,7 @@ data class MultipartPayload(val contentType: String, val body: ByteArray)
 
 fun validateChatUpload(fileName: String, mimeType: String, size: Long): String? = when {
     fileName.isBlank() -> "Choose a valid file"
-    mimeType !in CHAT_ALLOWED_MIME_TYPES -> "File type not allowed"
+    mimeType != GENERIC_FILE_MIME && mimeType !in CHAT_ALLOWED_MIME_TYPES -> "File type not allowed"
     size <= 0 -> "The selected file is empty"
     size > MAX_CHAT_FILE_BYTES -> "Files must be 25 MB or smaller"
     else -> null

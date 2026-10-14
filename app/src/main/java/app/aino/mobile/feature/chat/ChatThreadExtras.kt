@@ -133,7 +133,9 @@ internal fun PendingMediaBubble(media: PendingMedia, onCancel: () -> Unit, onRet
     BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp, start = SignalDimens.gutter, end = SignalDimens.gutter)) {
         val bubbleMax = maxWidth - SignalDimens.bubbleEdgeMargin
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-            if (media.isImage || media.isVideo) {
+            if (media.viewOnce) {
+                PendingViewOnce(media, failed, bubbleMax, shape, onCancel, onRetry) { footer(false) }
+            } else if (media.isImage || media.isVideo) {
                 Column(Modifier.widthIn(max = bubbleMax).clip(shape).background(signal.outgoing)) {
                     Box {
                         ChatThumbnail(media.uri, media.fileName, video = media.isVideo, shape = RoundedCornerShape(0.dp),
@@ -180,6 +182,43 @@ internal fun PendingMediaBubble(media: PendingMedia, onCancel: () -> Unit, onRet
             }
             if (failed) media.error?.let { Text(it, Modifier.padding(top = 2.dp, end = 4.dp), color = signal.danger, fontSize = 12.sp) }
         }
+    }
+}
+
+/**
+ * Signal outgoing view-once while sending: never the photo/video itself, only
+ * the "Photo"/"Video" pill whose ring shows upload progress (✕ cancels).
+ */
+@Composable
+private fun PendingViewOnce(
+    media: PendingMedia,
+    failed: Boolean,
+    maxWidth: Dp,
+    shape: Shape,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
+    footer: @Composable () -> Unit,
+) {
+    val signal = signalColors
+    val fg = signal.onOutgoing
+    Row(
+        Modifier.widthIn(max = maxWidth).clip(shape).background(signal.outgoing)
+            .padding(start = SignalDimens.bubbleHPad, end = SignalDimens.bubbleHPad, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+            if (failed) {
+                Icon(HeroIcons.ArrowPath, "Retry", Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onRetry).padding(7.dp), tint = fg)
+            } else {
+                val progress = media.progress
+                if (progress == null) CircularProgressIndicator(Modifier.size(32.dp), color = fg, strokeWidth = 2.dp)
+                else CircularProgressIndicator(progress = { progress }, modifier = Modifier.size(32.dp), color = fg, strokeWidth = 2.dp, trackColor = fg.copy(alpha = .25f))
+                Icon(HeroIcons.XMark, "Cancel", Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onCancel).padding(8.dp), tint = fg)
+            }
+        }
+        Text(if (media.isVideo) "Video" else "Photo", color = fg, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Box(Modifier.padding(start = 4.dp).align(Alignment.Bottom)) { footer() }
     }
 }
 

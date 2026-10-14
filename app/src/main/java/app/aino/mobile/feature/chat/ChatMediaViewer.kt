@@ -57,7 +57,24 @@ import kotlinx.coroutines.withContext
 import okhttp3.Request
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 
-fun ChatMessage.isImageAttachment() = fileUrl != null && fileType?.startsWith("image/") == true
+/** Signal `MediaUtil.isImageType`: SVG is never rendered inline; it is a document. */
+fun isInlineImageType(type: String?): Boolean {
+    val mime = type?.lowercase() ?: return false
+    return mime.startsWith("image/") && mime != "image/svg+xml"
+}
+
+/** Generic downloads are opened as whatever their extension says (an .svg opens in a browser, a .apk in the installer). */
+internal fun openableMimeType(
+    mimeType: String?,
+    fileName: String?,
+    forExtension: (String) -> String? = { android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) },
+): String? {
+    if (mimeType != null && !mimeType.equals(GENERIC_FILE_MIME, ignoreCase = true)) return mimeType
+    val ext = fileName?.substringAfterLast('.', "")?.lowercase()?.takeIf(String::isNotBlank)
+    return ext?.let(forExtension) ?: mimeType
+}
+
+fun ChatMessage.isImageAttachment() = fileUrl != null && isInlineImageType(fileType)
 fun ChatMessage.isVideoAttachment() = fileUrl != null && fileType?.startsWith("video/") == true
 fun ChatMessage.isViewableMedia() = isImageAttachment() || isVideoAttachment()
 
@@ -310,7 +327,7 @@ suspend fun openChatFile(context: Context, url: String, fileName: String?, mimeT
         Toast.makeText(context, "Could not download file", Toast.LENGTH_SHORT).show()
         return
     }
-    val type = mimeType ?: context.contentResolver.getType(local) ?: "*/*"
+    val type = openableMimeType(mimeType, fileName) ?: context.contentResolver.getType(local) ?: "*/*"
     val intent = if (share) {
         Intent.createChooser(Intent(Intent.ACTION_SEND).setType(type).putExtra(Intent.EXTRA_STREAM, local).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), null)
     } else {
@@ -357,49 +374,6 @@ fun LinkPreviewCard(preview: LinkPreview, modifier: Modifier = Modifier, onRemov
         }
         onRemove?.let {
             Icon(HeroIcons.XMark, "Remove preview", Modifier.padding(end = 8.dp).size(18.dp).clickable(onClick = it), tint = colors.textSecondary)
-        }
-    }
-}
-
-/** Pre-send preview for picked/captured media (web `MediaEditor`/`VideoPreview`, without editing tools). */
-@Composable
-fun AttachmentPreviewDialog(pending: PendingAttachment, initialCaption: String, onSend: (String) -> Unit, onCancel: () -> Unit) {
-    val colors = LocalWebColors.current
-    val loader = AppContainer.get(LocalContext.current).imageLoader
-    var caption by remember(pending.uri) { mutableStateOf(initialCaption) }
-    Dialog(onDismissRequest = onCancel, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Column(Modifier.fillMaxSize().background(Color.Black)) {
-            Row(Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(HeroIcons.XMark, "Cancel", Modifier.size(40.dp).clickable(onClick = onCancel).padding(8.dp), tint = Color.White)
-                Text(pending.fileName, Modifier.weight(1f), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                when {
-                    pending.isImage || pending.isVideo -> AsyncImage(
-                        model = pending.uri, imageLoader = loader, contentDescription = pending.fileName,
-                        contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize(),
-                    )
-                    else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(HeroIcons.DocumentText, null, Modifier.size(64.dp), tint = Color.White)
-                        Text(pending.fileName, color = Color.White, modifier = Modifier.padding(top = 8.dp))
-                    }
-                }
-            }
-            Row(
-                Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                BasicTextField(
-                    caption, { caption = it },
-                    Modifier.weight(1f).background(Color.White.copy(alpha = .12f), CircleShape).padding(horizontal = 16.dp, vertical = 12.dp),
-                    textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
-                    decorationBox = { inner -> if (caption.isEmpty()) Text("Add a caption...", color = Color.White.copy(alpha = .5f), fontSize = 16.sp); inner() },
-                )
-                Box(Modifier.size(48.dp).background(colors.primary, CircleShape).clickable { onSend(caption) }, contentAlignment = Alignment.Center) {
-                    Icon(HeroIcons.PaperAirplane, "Send", tint = colors.onAccent)
-                }
-            }
         }
     }
 }

@@ -12,6 +12,19 @@ import kotlinx.serialization.json.jsonObject
 
 class ChatModelsTest {
     @Test
+    fun notificationBodyNeverLeaksViewOnceFileNames() {
+        val viewOnce = Json.parseToJsonElement("""{"viewOnce":true,"viewedBy":[]}""")
+        assertEquals("📷 View-once photo", chatNotificationBody(null, "image/jpeg", "IMG_2041.jpg", viewOnce))
+        assertEquals("🎥 View-once video", chatNotificationBody("caption", "video/mp4", "VID.mp4", viewOnce))
+        assertEquals("📷 Photo", chatNotificationBody(null, "image/jpeg", "IMG_2041.jpg", null))
+        assertEquals("🎥 Look", chatNotificationBody(" Look ", "video/mp4", "v.mp4", null))
+        assertEquals("🎤 Voice message", chatNotificationBody(null, "audio/mp4", "voice.m4a", null))
+        assertEquals("🎞️ GIF", chatNotificationBody(null, "image/gif", "a.gif", null))
+        assertEquals("📎 logo.svg", chatNotificationBody(null, "application/octet-stream", "logo.svg", null))
+        assertEquals("📎 report.pdf", chatNotificationBody("", "application/pdf", "report.pdf", null))
+        assertEquals("Hello", chatNotificationBody("Hello", null, null, null))
+    }
+    @Test
     fun cachedConversationKeepsPreviewCollageAndMemberCount() = kotlinx.coroutines.runBlocking {
         val scope = CacheScope(1, 7)
         val cache = ChatCache(scope, app.aino.mobile.core.db.ScopedCache(scope, app.aino.mobile.core.db.InMemoryAinoDao()))

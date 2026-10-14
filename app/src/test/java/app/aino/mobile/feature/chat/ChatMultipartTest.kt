@@ -16,6 +16,29 @@ class ChatMultipartTest {
     }
 
     @Test
+    fun anyFileTypeIsSentAsAKnownTypeOrAGenericFile() {
+        assertEquals("image/png", chatUploadMimeType("image/png"))
+        assertEquals("text/plain", chatUploadMimeType("Text/Plain; charset=utf-8"))
+        assertEquals(GENERIC_FILE_MIME, chatUploadMimeType("image/svg+xml"))
+        assertEquals(GENERIC_FILE_MIME, chatUploadMimeType("application/vnd.android.package-archive"))
+        assertEquals(GENERIC_FILE_MIME, chatUploadMimeType(null))
+        assertNull(validateChatUpload("logo.svg", chatUploadMimeType("image/svg+xml"), 10))
+        val text = buildChatMultipart(ChatUpload("logo.svg", GENERIC_FILE_MIME, byteArrayOf(1)), "aino-boundary-123").body.toString(Charsets.ISO_8859_1)
+        assertTrue(text.contains("filename=\"logo.svg\"") && text.contains("Content-Type: application/octet-stream"))
+    }
+
+    @Test
+    fun svgIsADocumentNotAnInlineImageAndOpensByExtension() {
+        assertTrue(isInlineImageType("image/png"))
+        assertTrue(!isInlineImageType("image/svg+xml"))
+        assertTrue(!isInlineImageType(null))
+        val byExt = mapOf("svg" to "image/svg+xml")
+        assertEquals("image/svg+xml", openableMimeType(GENERIC_FILE_MIME, "Logo.SVG") { byExt[it] })
+        assertEquals("application/pdf", openableMimeType("application/pdf", "a.svg") { byExt[it] })
+        assertEquals(GENERIC_FILE_MIME, openableMimeType(GENERIC_FILE_MIME, "noext") { byExt[it] })
+    }
+
+    @Test
     fun buildsAValidMultipartFileAndOptionalCaption() {
         val payload = buildChatMultipart(
             ChatUpload("report.pdf", "application/pdf", byteArrayOf(1, 2, 3), "Please review"),

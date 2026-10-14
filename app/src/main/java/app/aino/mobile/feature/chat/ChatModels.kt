@@ -158,12 +158,33 @@ fun attachmentPreview(fileType: String?, fileName: String?, caption: String?): P
     val type = fileType.orEmpty().lowercase()
     val (kind, label) = when {
         type == "image/gif" -> PreviewKind.Gif to "GIF"
-        type.startsWith("image/") -> PreviewKind.Photo to "Photo"
+        isInlineImageType(type) -> PreviewKind.Photo to "Photo"
         type.startsWith("video/") -> PreviewKind.Video to "Video"
         type.startsWith("audio/") -> PreviewKind.Voice to "Voice message"
         else -> PreviewKind.File to (fileName?.takeIf(String::isNotBlank) ?: "File")
     }
     return PreviewSnippet(kind, caption?.trim()?.takeIf(String::isNotEmpty) ?: label)
+}
+
+/**
+ * Signal notification / quote text for a message: text as-is, otherwise a media
+ * label. A view-once message never reveals its caption or file name.
+ */
+fun chatNotificationBody(content: String?, fileType: String?, fileName: String?, metadata: JsonElement?): String {
+    val viewOnce = ((metadata as? kotlinx.serialization.json.JsonObject)?.get("viewOnce") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+    val type = fileType.orEmpty().lowercase()
+    if (viewOnce) return if (type.startsWith("video/")) "🎥 View-once video" else "📷 View-once photo"
+    val text = content?.trim()?.takeIf(String::isNotEmpty)
+    if (fileType.isNullOrBlank() && fileName.isNullOrBlank()) return text ?: "Message"
+    val emoji = when {
+        type == "image/gif" -> "🎞️"
+        isInlineImageType(type) -> "📷"
+        type.startsWith("video/") -> "🎥"
+        type.startsWith("audio/") -> "🎤"
+        else -> "📎"
+    }
+    val label = if (emoji == "📎") fileName?.takeIf(String::isNotBlank) ?: "File" else attachmentPreview(fileType, fileName, null).text
+    return "$emoji ${text ?: label}"
 }
 
 /** Chat-list tick for the current user's last message: read beats delivered beats sent. */

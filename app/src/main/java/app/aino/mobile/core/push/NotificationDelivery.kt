@@ -97,7 +97,7 @@ object NotificationDelivery {
             else ChatNotifications.showMessage(context, mapOf(
                 "conversationId" to message.conversationId.toString(), "messageId" to message.id.toString(),
                 "senderId" to message.senderId.toString(), "senderName" to (message.senderName ?: message.senderUsername ?: "New message"),
-                "senderAvatar" to message.senderAvatar.orEmpty(), "body" to (message.content?.takeIf(String::isNotBlank) ?: message.fileName ?: "Attachment"),
+                "senderAvatar" to message.senderAvatar.orEmpty(), "body" to app.aino.mobile.feature.chat.chatNotificationBody(message.content, message.fileType, message.fileName, message.metadata),
                 "title" to (resolved?.groupName ?: message.senderName ?: "New message"),
                 "isGroup" to (resolved?.isGroup == true).toString(), "groupName" to resolved?.groupName.orEmpty(),
             ) + avatarData)

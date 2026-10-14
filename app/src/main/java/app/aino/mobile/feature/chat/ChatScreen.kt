@@ -1164,7 +1164,9 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 onDismissLinkPreview = viewModel::dismissLinkPreview,
                 onMention = viewModel::addMention,
                 onChange = viewModel::updateComposer,
-                onSend = viewModel::sendMessage,
+                onSend = { if (ui.pendingAttachment != null && ui.editingMessage == null) viewModel.sendAttachment() else viewModel.sendMessage() },
+                attachment = ui.pendingAttachment,
+                onCancelAttachment = viewModel::cancelAttachment,
                 onCancelEdit = viewModel::cancelEdit,
                 onCancelReply = viewModel::cancelReply,
                 onPickDocument = onPickDocument,
@@ -1220,9 +1222,6 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
             },
             onDismiss = { deleteTargets = null },
         )
-    }
-    ui.pendingAttachment?.let { pending ->
-        AttachmentPreviewDialog(pending, ui.composer, viewModel::sendAttachment, viewModel::cancelAttachment)
     }
     if (pollOpen) {
         PollCreatorDialog(
@@ -2183,6 +2182,8 @@ private fun MessageComposer(
     onCancelReply: () -> Unit,
     onPickDocument: () -> Unit,
     onUploadVoice: (Uri) -> Unit,
+    attachment: PendingAttachment? = null,
+    onCancelAttachment: () -> Unit = {},
     onOpenPoll: () -> Unit,
     onOpenCamera: () -> Unit,
     onOpenGallery: () -> Unit,
@@ -2417,7 +2418,9 @@ private fun MessageComposer(
                 )
             }
         }
-        if (linkPreview != null && phase == VoicePhase.Idle && editingMessage == null) {
+        if (attachment != null && editingMessage == null && phase == VoicePhase.Idle) {
+            ComposerDocumentDraft(attachment, onCancelAttachment)
+        } else if (linkPreview != null && phase == VoicePhase.Idle && editingMessage == null) {
             LinkPreviewCard(linkPreview, Modifier.padding(horizontal = 12.dp, vertical = 4.dp), onRemove = onDismissLinkPreview)
         }
         Row(
@@ -2499,7 +2502,7 @@ private fun MessageComposer(
                 }
             }
             val sendMode = phase == VoicePhase.Locked || phase == VoicePhase.Paused || phase == VoicePhase.Draft ||
-                value.isNotBlank() || editingMessage != null
+                value.isNotBlank() || editingMessage != null || attachment != null
             val rotation by androidx.compose.animation.core.animateFloatAsState(if (panel == ComposerPanel.Attach && !sendMode) 45f else 0f, label = "plus")
             val sendHaptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
             Box(
@@ -2699,6 +2702,42 @@ private fun formatFileSize(bytes: Long): String = when {
     bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
     bytes >= 1024 -> "%.1f KB".format(bytes / 1024.0)
     else -> "$bytes B"
+}
+
+/** Signal `DocumentView` draft above the compose pill: the picked file waits here and goes with Send. */
+@Composable
+private fun ComposerDocumentDraft(attachment: PendingAttachment, onRemove: () -> Unit) {
+    val signal = signalColors
+    Row(
+        Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp)
+            .clip(RoundedCornerShape(SignalDimens.quoteCorner)).background(signal.surface)
+            .padding(start = 10.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.size(40.dp).background(signal.primary.copy(alpha = .15f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+            Icon(
+                when {
+                    attachment.isImage -> HeroIcons.Photo
+                    attachment.isVideo -> HeroIcons.Film
+                    attachment.mimeType.startsWith("audio/") -> HeroIcons.MusicalNote
+                    else -> HeroIcons.DocumentText
+                },
+                null, Modifier.size(22.dp), tint = signal.primary,
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(attachment.fileName, color = signal.text, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val ext = attachment.fileName.substringAfterLast('.', "").uppercase().takeIf { it.isNotBlank() && it.length <= 5 }
+            val detail = listOfNotNull(attachment.size?.let(::formatFileSize), ext).joinToString(" · ")
+            if (detail.isNotEmpty()) Text(detail, color = signal.textSecondary, fontSize = 13.sp, maxLines = 1)
+        }
+        Icon(
+            HeroIcons.XMark, "Remove attachment",
+            Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onRemove).padding(10.dp),
+            tint = signal.textSecondary,
+        )
+    }
 }
 /** Web `MeetingCard.tsx`: in-chat meeting invite with Join / "Meeting ended". */
 @Composable

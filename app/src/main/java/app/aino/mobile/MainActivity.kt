@@ -135,16 +135,8 @@ class MainActivity : FragmentActivity() {
                         enableFingerprintForAttendance = { requestBiometricEnrollment(thenClockAction = true) },
                     ),
                     onPickChatDocument = {
-                        chatDocumentPicker.launch(
-                            arrayOf(
-                                "image/*", "video/*", "audio/*", "application/pdf", "application/zip",
-                                "application/msword", "application/vnd.ms-excel",
-                                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                                "text/plain", "text/csv",
-                            ),
-                        )
+                        // Signal `AttachmentManager.selectDocument`: any file type.
+                        chatDocumentPicker.launch(arrayOf("*/*"))
                     },
                     onAuthenticatedForPush = {
                         if (android.os.Build.VERSION.SDK_INT >= 33 &&

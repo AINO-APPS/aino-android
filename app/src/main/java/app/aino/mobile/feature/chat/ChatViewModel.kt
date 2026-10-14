@@ -80,8 +80,10 @@ data class PendingMedia(
     val error: String? = null,
     /** Local send order shared with queued text (see [ChatSendQueue]). */
     val sequence: Long = 0,
+    /** Signal: a view-once send shows only the "Photo"/"Video" pill, never the media itself. */
+    val viewOnce: Boolean = false,
 ) {
-    val isImage get() = mimeType.startsWith("image/")
+    val isImage get() = isInlineImageType(mimeType)
     val isVideo get() = mimeType.startsWith("video/")
     val isAudio get() = mimeType.startsWith("audio/")
 }
@@ -114,8 +116,9 @@ fun echoedPendingMedia(pending: List<PendingMedia>, incoming: ChatMessage, curre
 private fun PendingMedia.aspect(): Float? =
     if (width != null && height != null && width > 0 && height > 0) width.toFloat() / height else null
 
-data class PendingAttachment(val uri: Uri, val mimeType: String, val fileName: String) {
-    val isImage get() = mimeType.startsWith("image/")
+/** Signal document draft: a picked file staged above the composer until Send. */
+data class PendingAttachment(val uri: Uri, val mimeType: String, val fileName: String, val size: Long? = null) {
+    val isImage get() = isInlineImageType(mimeType)
     val isVideo get() = mimeType.startsWith("video/")
 }
 
@@ -779,7 +782,7 @@ class ChatViewModel(
                 if (incoming != null && isCallHistoryMessage(incoming.formatType, incoming.metadata)) onCallActivity()
                 if (incoming != null && _ui.value.selectedConversation?.id == incoming.conversationId) {
                     val message = incoming.toChatMessage()
-                    echoedPendingMedia(_ui.value.pendingMedia, message, scope?.userId)?.let {
+                    echoedPendingMedia(_ui.value.pendingMedia, message, scope?.userId)?.takeUnless { it.viewOnce }?.let {
                         ChatMediaMemory.rememberSent(message.fileUrl, it.uri, it.aspect())
                     }
                     _ui.update { state ->
@@ -2013,18 +2016,30 @@ class ChatViewModel(
         val appContext = context ?: return
         val resolver = appContext.contentResolver
         var name = uri.lastPathSegment ?: "file"
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) name = cursor.getString(0) ?: name
+        var size: Long? = null
+        runCatching {
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    name = cursor.getString(0) ?: name
+                    if (!cursor.isNull(1)) size = cursor.getLong(1)
+                }
+            }
         }
-        val mime = resolver.getType(uri) ?: "application/octet-stream"
-        _ui.update { st -> st.copy(pendingAttachment = PendingAttachment(uri, mime, name), error = null) }
+        // Signal: anything can be attached; unknown types travel as a generic file.
+        val mime = chatUploadMimeType(resolver.getType(uri))
+        if (size != null && size!! > MAX_CHAT_FILE_BYTES) {
+            _ui.update { st -> st.copy(error = "Files must be 25 MB or smaller") }
+            return
+        }
+        _ui.update { st -> st.copy(pendingAttachment = PendingAttachment(uri, mime, name, size), error = null) }
     }
 
     fun cancelAttachment() { _ui.update { st -> st.copy(pendingAttachment = null) } }
 
-    fun sendAttachment(caption: String) {
+    /** Composer Send with a staged document: the file goes with the typed text as its caption. */
+    fun sendAttachment() {
         val pending = _ui.value.pendingAttachment ?: return
-        _ui.update { st -> st.copy(pendingAttachment = null, composer = caption) }
+        _ui.update { st -> st.copy(pendingAttachment = null) }
         upload(pending.uri, mimeOverride = pending.mimeType)
     }
 
@@ -2060,12 +2075,13 @@ class ChatViewModel(
                     if (cursor.moveToFirst()) name = cursor.getString(0) ?: name
                 }
             }
-            val mime = item.mimeType ?: resolver?.getType(item.uri) ?: "application/octet-stream"
+            val mime = chatUploadMimeType(item.mimeType ?: resolver?.getType(item.uri))
             PendingMedia(
                 localId = "media-${UUID.randomUUID()}", conversationId = targetId,
                 uri = item.uri, mimeType = mime, fileName = name,
                 caption = caption.takeIf { index == 0 }, createdAtEpochMs = now + index,
                 width = item.width, height = item.height, sequence = sendSequence.incrementAndGet(),
+                viewOnce = viewOnce && (isInlineImageType(mime) || mime.startsWith("video/")),
             )
         }
         pending.forEach { pendingOptions[it.localId] = UploadOptions(viewOnce, quality) }
@@ -2191,7 +2207,7 @@ class ChatViewModel(
             if (_ui.value.pendingMedia.none { it.localId == media.localId }) return // cancelled mid-flight
             pendingOptions.remove(media.localId)
             val message = uploaded.copy(conversationId = uploaded.conversationId ?: media.conversationId)
-            ChatMediaMemory.rememberSent(message.fileUrl, media.uri, media.aspect())
+            if (!media.viewOnce) ChatMediaMemory.rememberSent(message.fileUrl, media.uri, media.aspect())
             // Swap the local bubble for the persisted row in one atomic update.
             _ui.update { state ->
                 state.copy(
@@ -2826,4 +2842,7 @@ class ChatViewModel(
     }
 
     private var context: Context? = null
+
+    @androidx.annotation.VisibleForTesting
+    internal fun attachContext(appContext: Context) { context = appContext }
 }

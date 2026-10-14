@@ -118,6 +118,34 @@ class ChatSendOrderTest {
         assertEquals("File type not allowed", vm.ui.value.pendingMedia.single().error)
     }
 
+    @Test fun `a view-once send is marked so its bubble never shows the media`() {
+        val vm = viewModel()
+        vm.sendMedia(listOf(MediaUploadSpec(Uri.parse("content://media/photo.jpg"), "image/jpeg")), "secret", viewOnce = true, highQuality = false)
+        val pending = vm.ui.value.pendingMedia.single()
+        assertTrue(pending.viewOnce)
+        assertEquals(null, pending.caption)
+        uploadGate.countDown()
+        await { vm.ui.value.pendingMedia.isEmpty() && sent == listOf("file") }
+    }
+
+    @Test fun `any file type is staged above the composer and sent with Send`() {
+        uploadGate.countDown()
+        val vm = viewModel()
+        vm.attachContext(org.robolectric.RuntimeEnvironment.getApplication())
+        val svg = java.io.File(org.robolectric.RuntimeEnvironment.getApplication().cacheDir, "logo.svg").apply { writeText("<svg/>") }
+        vm.stageAttachment(Uri.fromFile(svg))
+        val staged = vm.ui.value.pendingAttachment!!
+        assertTrue(staged.fileName.endsWith("logo.svg"))
+        assertEquals(GENERIC_FILE_MIME, staged.mimeType)
+        vm.updateComposer("brand logo")
+        vm.sendAttachment()
+        assertEquals(null, vm.ui.value.pendingAttachment)
+        val pending = vm.ui.value.pendingMedia.single()
+        assertEquals(GENERIC_FILE_MIME, pending.mimeType)
+        assertEquals("brand logo", pending.caption)
+        await { sent == listOf("file") }
+    }
+
     @Test fun `several texts keep their order`() {
         val vm = viewModel()
         listOf("one", "two", "three").forEach { vm.type(it) }
