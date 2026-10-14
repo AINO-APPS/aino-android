@@ -550,7 +550,7 @@ private fun AuthenticatedShell(
     val moreItems = availableMoreDestinations(role, hasReports, user.tenantFeatures, user.orgId) +
         if (app.aino.mobile.BuildConfig.DEBUG) listOf(AinoDestination.ApiProbe) else emptyList()
     var moreOpen by androidx.compose.runtime.remember { mutableStateOf(false) }
-    BackHandler(enabled = moreOpen) { moreOpen = false }
+    LaunchedEffect(current) { moreOpen = false }
     val moreRoutes = moreItems.map { it.route }.toSet()
     val moreActive = currentBottomRoute != null && currentBottomRoute in moreRoutes
     fun navigate(destination: AinoDestination) {
@@ -650,8 +650,7 @@ private fun AuthenticatedShell(
         },
         bottomBar = {
             if (!fullScreen) {
-                // The More popup is drawn in the overlay layer below, never inside
-                // this slot: anything placed here changes the measured bar height.
+                // Keep the modal More sheet outside this slot so bar measurement stays fixed.
                 WebTabBar(
                     destinations = tabs,
                     currentRoute = currentBottomRoute,
@@ -1201,20 +1200,12 @@ private fun AuthenticatedShell(
             )
         }
     }
-    // Shell overlay layer, above the Scaffold so it never affects bar measurement.
-    // The scrim is composed *before* its sheet so the sheet receives its own taps.
-    ShellPopup(
-        visible = moreOpen,
-        alignment = Alignment.BottomEnd,
-        onDismiss = { moreOpen = false },
-        fromTop = false,
-        // `.mobile-more-popup { bottom: calc(100% + 10px); right: 4px }` above the 64dp bar.
-        sheetModifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = 64.dp + 10.dp, end = 4.dp),
-    ) {
+    if (moreOpen) {
         MoreSheet(
             destinations = moreItems,
             currentRoute = current,
             onNavigate = { destination -> moreOpen = false; navigate(destination) },
+            onDismiss = { moreOpen = false },
         )
     }
     // P9: a minimised meeting floats over every other route (web MeetingPiP).
@@ -1302,33 +1293,6 @@ private fun AuthenticatedShell(
     LaunchedEffect(nav) {
         RouteRequests.routes.collect { route -> runCatching { nav.navigate(route) { launchSingleTop = true } } }
     }
-}
-
-@Composable
-private fun androidx.compose.foundation.layout.BoxScope.ShellPopup(
-    visible: Boolean,
-    alignment: Alignment,
-    onDismiss: () -> Unit,
-    fromTop: Boolean,
-    sheetModifier: Modifier,
-    content: @Composable () -> Unit,
-) {
-    if (visible) {
-        Box(
-            Modifier.matchParentSize().clickable(
-                interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                indication = null,
-                onClick = onDismiss,
-            ),
-        )
-    }
-    androidx.compose.animation.AnimatedVisibility(
-        visible = visible,
-        modifier = Modifier.align(alignment).then(sheetModifier),
-        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(160)) +
-            androidx.compose.animation.slideInVertically(androidx.compose.animation.core.tween(160)) { if (fromTop) -it / 8 else it / 8 },
-        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)),
-    ) { content() }
 }
 
 @Composable

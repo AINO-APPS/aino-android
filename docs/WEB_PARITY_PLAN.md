@@ -42,6 +42,11 @@ These deliberately deviate from the web at 430px:
 - **Bottom bar is `Home · Attendance · Tasks · Chat · More`.** Attendance
   takes the web's Calendar slot, and Calendar moves into More, in the slot
   Attendance had.
+- **More uses a native bottom sheet on Android.** It keeps the existing
+  destination order and access rules, with spacious icon rows, an active-state
+  highlight, and a fixed heading and close action above scrollable content.
+  Back, scrim tap, swipe down, and Close dismiss it without resizing the navbar.
+  The anchored-popup specifications below describe the web and earlier Android UI.
 - **No touch ripple.** The square press highlight is disabled app-wide in
   `WebTheme` (`LocalRippleConfiguration = null`, no-op `LocalIndication`).
 - **No loading animations on open.** Screens paint their last known data at
@@ -426,6 +431,8 @@ The More button renders `active` when `mobileMoreOpen || moreItems.some(i => i.t
 > takes slot 2, and More lists `Notes · Calendar · Organization · My Team ·
 > Tenants`, with Calendar gated by `hasFeature("calendar")`. See
 > `AinoDestination.kt` and `AinoDestinationTest`.
+> More opens a native modal bottom sheet on Android; API Probe is still
+> debug-only. Active rows use the owning route, including My Team deep links.
 
 ### Top bar (`Navbar` at ≤768px)
 
