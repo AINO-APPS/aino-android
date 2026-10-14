@@ -26,10 +26,21 @@ class ChatListSnippetTest {
     }
 
     @Test
-    fun textPreviewStillUsesGlyphsForNotifications() {
-        assertEquals("📷 Photo", ChatConversation(1, lastFileName = "x.jpg", lastFileType = "image/jpeg").preview())
-        assertEquals("📊 Lunch?", ChatConversation(1, lastMessage = "Lunch?", lastFormatType = "poll").preview())
+    fun textPreviewIsPlainWithoutEmoji() {
+        assertEquals("Photo", ChatConversation(1, lastFileName = "x.jpg", lastFileType = "image/jpeg").preview())
+        assertEquals("Lunch?", ChatConversation(1, lastMessage = "Lunch?", lastFormatType = "poll").preview())
         assertEquals("Message deleted", ChatConversation(1, lastDeleted = "2026-10-08T00:00:00Z").preview())
+    }
+
+    @Test
+    fun messageSnippetsCarryAKindAndHideViewOnceDetails() {
+        val viewOnce = kotlinx.serialization.json.Json.parseToJsonElement("""{"viewOnce":true}""")
+        assertEquals(PreviewSnippet(PreviewKind.Photo, "Photo"), ChatMessage(1, senderId = 2, createdAt = "2026-10-08T00:00:00Z", fileUrl = "/u/a.jpg", fileName = "secret.jpg", fileType = "image/jpeg", metadata = viewOnce).snippet())
+        assertEquals(PreviewSnippet(PreviewKind.Video, "Video"), ChatMessage(1, senderId = 2, createdAt = "2026-10-08T00:00:00Z", content = "hidden", fileUrl = "/u/v.mp4", fileName = "v.mp4", fileType = "video/mp4", metadata = viewOnce).snippet())
+        assertEquals(PreviewSnippet(PreviewKind.File, "logo.svg"), ChatMessage(1, senderId = 2, createdAt = "2026-10-08T00:00:00Z", fileUrl = "/u/x.bin", fileName = "logo.svg", fileType = GENERIC_FILE_MIME).snippet())
+        assertEquals(PreviewSnippet(null, "Look"), ChatMessage(1, senderId = 2, createdAt = "2026-10-08T00:00:00Z", content = "Look", fileUrl = "/u/a.jpg", fileName = "a.jpg", fileType = "image/jpeg").snippet())
+        assertEquals(PreviewSnippet(null, "hi"), ChatMessage(1, senderId = 2, createdAt = "2026-10-08T00:00:00Z", content = "hi").snippet())
+        assertEquals(PreviewKind.Deleted, ChatMessage(1, senderId = 2, createdAt = "2026-10-08T00:00:00Z", content = "x", deletedAt = "2026-10-08T00:00:00Z").snippet().kind)
     }
 
     @Test

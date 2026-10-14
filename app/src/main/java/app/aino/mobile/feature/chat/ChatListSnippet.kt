@@ -41,6 +41,34 @@ fun previewIcon(kind: PreviewKind): ImageVector = when (kind) {
 private const val KIND_ID = "kind"
 
 /**
+ * A message label with its Material media icon inline ("[photo] Photo",
+ * "[file] report.pdf"), for quotes, pins, search and other one-line previews.
+ */
+@Composable
+fun SnippetText(
+    snippet: PreviewSnippet,
+    color: Color,
+    modifier: Modifier = Modifier,
+    fontSize: androidx.compose.ui.unit.TextUnit = 14.sp,
+    maxLines: Int = 1,
+    lineHeight: androidx.compose.ui.unit.TextUnit = androidx.compose.ui.unit.TextUnit.Unspecified,
+    highlight: String? = null,
+    highlightColor: Color = Color.Transparent,
+) {
+    val kind = snippet.kind?.takeIf { it != PreviewKind.Deleted }
+    val text = buildAnnotatedString {
+        if (kind != null) { appendInlineContent(KIND_ID, kind.label); append(" ") }
+        append(highlightTerm(snippet.text, highlight, highlightColor))
+    }
+    val inline = if (kind == null) emptyMap() else mapOf(
+        KIND_ID to InlineTextContent(Placeholder(1.1.em, 1.1.em, PlaceholderVerticalAlign.TextCenter)) {
+            Icon(previewIcon(kind), null, Modifier.padding(top = 1.dp), tint = color)
+        },
+    )
+    Text(text, modifier, color = color, fontSize = fontSize, lineHeight = lineHeight, inlineContent = inline, maxLines = maxLines, overflow = TextOverflow.Ellipsis)
+}
+
+/**
  * The chat list's second line (the receipt sits under the time instead):
  * "You:" / "Ana:" in groups, then a Material icon for media and the text, all
  * flowing as one two-line text so icons wrap and ellipsize with it.
@@ -66,7 +94,7 @@ fun ConversationSnippet(
     val color = if (unread) textColor else secondaryColor
     val text = buildAnnotatedString {
         if (sender != null) append("$sender: ")
-        if (snippet.kind != null) { appendInlineContent(KIND_ID, snippet.kind.glyph); append(" ") }
+        if (snippet.kind != null) { appendInlineContent(KIND_ID, snippet.kind.label); append(" ") }
         append(snippet.text)
     }
     val inline = buildMap {

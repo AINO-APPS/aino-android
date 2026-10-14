@@ -14,14 +14,14 @@ class ChatModelsTest {
     @Test
     fun notificationBodyNeverLeaksViewOnceFileNames() {
         val viewOnce = Json.parseToJsonElement("""{"viewOnce":true,"viewedBy":[]}""")
-        assertEquals("📷 View-once photo", chatNotificationBody(null, "image/jpeg", "IMG_2041.jpg", viewOnce))
-        assertEquals("🎥 View-once video", chatNotificationBody("caption", "video/mp4", "VID.mp4", viewOnce))
-        assertEquals("📷 Photo", chatNotificationBody(null, "image/jpeg", "IMG_2041.jpg", null))
-        assertEquals("🎥 Look", chatNotificationBody(" Look ", "video/mp4", "v.mp4", null))
-        assertEquals("🎤 Voice message", chatNotificationBody(null, "audio/mp4", "voice.m4a", null))
-        assertEquals("🎞️ GIF", chatNotificationBody(null, "image/gif", "a.gif", null))
-        assertEquals("📎 logo.svg", chatNotificationBody(null, "application/octet-stream", "logo.svg", null))
-        assertEquals("📎 report.pdf", chatNotificationBody("", "application/pdf", "report.pdf", null))
+        assertEquals("Photo", chatNotificationBody(null, "image/jpeg", "IMG_2041.jpg", viewOnce))
+        assertEquals("Video", chatNotificationBody("caption", "video/mp4", "VID.mp4", viewOnce))
+        assertEquals("Photo", chatNotificationBody(null, "image/jpeg", "IMG_2041.jpg", null))
+        assertEquals("Look", chatNotificationBody(" Look ", "video/mp4", "v.mp4", null))
+        assertEquals("Voice message", chatNotificationBody(null, "audio/mp4", "voice.m4a", null))
+        assertEquals("GIF", chatNotificationBody(null, "image/gif", "a.gif", null))
+        assertEquals("logo.svg", chatNotificationBody(null, "application/octet-stream", "logo.svg", null))
+        assertEquals("report.pdf", chatNotificationBody("", "application/pdf", "report.pdf", null))
         assertEquals("Hello", chatNotificationBody("Hello", null, null, null))
     }
     @Test
@@ -259,13 +259,13 @@ class ChatModelsTest {
     @Test
     fun derivesLastMessagePreviewWithPrivacySafeFallbacks() {
         assertEquals("hello", ChatConversation(1, lastMessage = "hello").preview())
-        assertEquals("📎 plan.pdf", ChatConversation(1, lastFileName = "plan.pdf").preview())
+        assertEquals("plan.pdf", ChatConversation(1, lastFileName = "plan.pdf").preview())
         // Signal list snippets: never the raw upload name for media.
-        assertEquals("📷 Photo", ChatConversation(1, lastFileName = "IMG_2231.jpg", lastFileType = "image/jpeg").preview())
-        assertEquals("🎥 Video", ChatConversation(1, lastFileName = "VID_1.mp4", lastFileType = "video/mp4").preview())
-        assertEquals("🎤 Voice message", ChatConversation(1, lastFileName = "voice.m4a", lastFileType = "audio/mp4").preview())
-        assertEquals("📷 Look at this", ChatConversation(1, lastMessage = "Look at this", lastFileName = "a.png", lastFileType = "image/png").preview())
-        assertEquals("📊 Lunch?", ChatConversation(1, lastMessage = "Lunch?", lastFormatType = "poll").preview())
+        assertEquals("Photo", ChatConversation(1, lastFileName = "IMG_2231.jpg", lastFileType = "image/jpeg").preview())
+        assertEquals("Video", ChatConversation(1, lastFileName = "VID_1.mp4", lastFileType = "video/mp4").preview())
+        assertEquals("Voice message", ChatConversation(1, lastFileName = "voice.m4a", lastFileType = "audio/mp4").preview())
+        assertEquals("Look at this", ChatConversation(1, lastMessage = "Look at this", lastFileName = "a.png", lastFileType = "image/png").preview())
+        assertEquals("Lunch?", ChatConversation(1, lastMessage = "Lunch?", lastFormatType = "poll").preview())
         assertEquals("Message deleted", ChatConversation(1, lastMessage = "secret", lastDeleted = "2026-09-14T00:00:00Z").preview())
         assertEquals("No messages yet", ChatConversation(1).preview())
     }
@@ -351,8 +351,8 @@ class ChatModelsTest {
     @Test
     fun threadBodyHonoursDeletedAndAttachmentPrecedence() {
         assertEquals("Message deleted", ChatMessage(1, senderId = 2, content = "hidden", createdAt = "2026-09-15T00:00:00Z", deletedAt = "2026-09-15T01:00:00Z").body())
-        assertEquals("📎 report.pdf", ChatMessage(2, senderId = 2, createdAt = "2026-09-15T00:00:00Z", fileName = "report.pdf").body())
-        assertEquals("📷 Photo", ChatMessage(3, senderId = 2, createdAt = "2026-09-15T00:00:00Z", fileName = "x.jpg", fileType = "image/jpeg").body())
+        assertEquals("report.pdf", ChatMessage(2, senderId = 2, createdAt = "2026-09-15T00:00:00Z", fileName = "report.pdf").body())
+        assertEquals("Photo", ChatMessage(3, senderId = 2, createdAt = "2026-09-15T00:00:00Z", fileName = "x.jpg", fileType = "image/jpeg").body())
     }
 
     @Test

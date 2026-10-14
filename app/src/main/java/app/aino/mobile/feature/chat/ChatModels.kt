@@ -70,10 +70,8 @@ data class ChatConversation(
             ?: "Conversation"
     }
 
-    /** Signal list snippet: media rows read "📷 Photo" etc., never the raw upload file name. */
-    fun preview(): String = previewSnippet().let { snippet ->
-        snippet.kind?.takeIf { it != PreviewKind.Deleted }?.let { "${it.glyph} ${snippet.text}" } ?: snippet.text
-    }
+    /** Plain-text list snippet: media rows read "Photo" etc., never the raw upload file name (the UI adds a Material icon). */
+    fun preview(): String = previewSnippet().text
 
     /** The list row's snippet split into a kind (drawn as an icon) and its text. */
     fun previewSnippet(): PreviewSnippet = when {
@@ -142,15 +140,8 @@ fun placeholderConversation(conversationId: Long, hint: ConversationHint?): Chat
     }
 }
 
-/**
- * Signal-style attachment label ("📷 Photo", "🎥 Video", "🎤 Voice message",
- * "🎞 GIF", "📎 report.pdf"). A caption replaces the generic word, keeping the glyph.
- */
-fun attachmentSnippet(fileType: String?, fileName: String?, caption: String?): String =
-    attachmentPreview(fileType, fileName, caption).let { "${it.kind!!.glyph} ${it.text}" }
-
-/** What a list-row snippet is about; the chat list draws [PreviewKind] as a Material icon, notifications as [glyph]. */
-enum class PreviewKind(val glyph: String) { Photo("📷"), Video("🎥"), Voice("🎤"), Gif("🎞"), File("📎"), Poll("📊"), Deleted("🚫") }
+/** What a snippet is about; drawn as a Material icon ([previewIcon]). [label] is the alt text. */
+enum class PreviewKind(val label: String) { Photo("Photo"), Video("Video"), Voice("Voice message"), Gif("GIF"), File("File"), Poll("Poll"), Deleted("Deleted") }
 
 data class PreviewSnippet(val kind: PreviewKind?, val text: String)
 
@@ -167,25 +158,25 @@ fun attachmentPreview(fileType: String?, fileName: String?, caption: String?): P
 }
 
 /**
- * Signal notification / quote text for a message: text as-is, otherwise a media
- * label. A view-once message never reveals its caption or file name.
+ * A message's media kind and label. A view-once message reads just "Photo" /
+ * "Video", never its caption or file name.
  */
-fun chatNotificationBody(content: String?, fileType: String?, fileName: String?, metadata: JsonElement?): String {
-    val viewOnce = ((metadata as? kotlinx.serialization.json.JsonObject)?.get("viewOnce") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
-    val type = fileType.orEmpty().lowercase()
-    if (viewOnce) return if (type.startsWith("video/")) "🎥 View-once video" else "📷 View-once photo"
+fun messageSnippet(content: String?, fileType: String?, fileName: String?, viewOnce: Boolean): PreviewSnippet {
     val text = content?.trim()?.takeIf(String::isNotEmpty)
-    if (fileType.isNullOrBlank() && fileName.isNullOrBlank()) return text ?: "Message"
-    val emoji = when {
-        type == "image/gif" -> "🎞️"
-        isInlineImageType(type) -> "📷"
-        type.startsWith("video/") -> "🎥"
-        type.startsWith("audio/") -> "🎤"
-        else -> "📎"
+    if (fileType.isNullOrBlank() && fileName.isNullOrBlank()) return PreviewSnippet(null, text ?: "Message")
+    if (viewOnce) {
+        return if (fileType.orEmpty().lowercase().startsWith("video/")) PreviewSnippet(PreviewKind.Video, "Video")
+        else PreviewSnippet(PreviewKind.Photo, "Photo")
     }
-    val label = if (emoji == "📎") fileName?.takeIf(String::isNotBlank) ?: "File" else attachmentPreview(fileType, fileName, null).text
-    return "$emoji ${text ?: label}"
+    return attachmentPreview(fileType, fileName, text)
 }
+
+private fun JsonElement?.isViewOnceMeta(): Boolean =
+    ((this as? kotlinx.serialization.json.JsonObject)?.get("viewOnce") as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+
+/** Plain notification text (a notification can't hold an icon): "Photo", "Video", "report.pdf", or the message. */
+fun chatNotificationBody(content: String?, fileType: String?, fileName: String?, metadata: JsonElement?): String =
+    messageSnippet(content, fileType, fileName, metadata.isViewOnceMeta()).text
 
 /** Chat-list tick for the current user's last message: read beats delivered beats sent. */
 internal fun listDeliveryTick(conversation: ChatConversation, pending: Boolean = false): DeliveryTick = when {
@@ -279,11 +270,18 @@ data class ChatMessage(
     @SerialName("conversation_name") val conversationName: String? = null,
     val deliveryState: String = "sent",
 ) {
-    fun body(): String = when {
-        deletedAt != null -> "Message deleted"
-        !content.isNullOrBlank() -> content
-        !fileName.isNullOrBlank() || !fileType.isNullOrBlank() -> attachmentSnippet(fileType, fileName, null)
-        else -> ""
+    fun body(): String = snippet().text
+
+    /** [body] with its media kind, so the UI can draw a Material icon before media labels. */
+    fun snippet(): PreviewSnippet = when {
+        deletedAt != null -> PreviewSnippet(PreviewKind.Deleted, "Message deleted")
+        !fileName.isNullOrBlank() || !fileType.isNullOrBlank() -> {
+            val viewOnce = metadata.isViewOnceMeta()
+            if (viewOnce || content.isNullOrBlank()) messageSnippet(content, fileType, fileName, viewOnce)
+            else PreviewSnippet(null, content)
+        }
+        !content.isNullOrBlank() -> PreviewSnippet(null, content)
+        else -> PreviewSnippet(null, "")
     }
 
     fun hasQuotedReply(): Boolean = replyToId != null || replyContent != null ||

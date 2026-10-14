@@ -703,12 +703,13 @@ private fun MessageResultRow(message: ChatMessage, conversation: ChatConversatio
                 Text(conversation?.title() ?: message.senderName.orEmpty(), Modifier.weight(1f), color = signal.text, fontSize = 17.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(listTime(message.createdAt), color = signal.textSecondary, fontSize = 13.sp)
             }
-            val body = message.body()
+            val found = message.snippet()
+            val body = found.text
             val hit = body.indexOf(query.trim(), ignoreCase = true)
             val snippet = if (hit > 40) "…" + body.substring(hit - 30) else body
-            Text(
-                highlightTerm(snippet, query, signal.highlight),
-                color = signal.textSecondary, fontSize = 15.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            SnippetText(
+                found.copy(text = snippet), color = signal.textSecondary, fontSize = 15.sp, maxLines = 2,
+                highlight = query, highlightColor = signal.highlight,
             )
         }
     }
@@ -1516,7 +1517,7 @@ private fun InfoMessageList(ui: ChatUiState, emptyText: String, onOpen: (ChatMes
                     Text(timeAgo(message.createdAt), color = colors.textMuted, fontSize = 11.sp)
                     onUnstar?.let { unstar -> Icon(HeroIcons.Star, "Unsave", Modifier.padding(start = 6.dp).size(18.dp).clickable { unstar(message) }, tint = colors.warning) }
                 }
-                Text(message.body(), color = colors.text, fontSize = 14.sp, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                SnippetText(message.snippet(), color = colors.text, fontSize = 14.sp, maxLines = 4)
             }
         }
     }
@@ -1889,11 +1890,12 @@ private fun MessageBubble(
                             color = fg, fontSize = SignalDimens.bodyText, maxLines = 4, overflow = TextOverflow.Ellipsis,
                         )
                     }
-                } else if (preview.isNotBlank()) Text(
-                    preview,
-                    Modifier.widthIn(max = 300.dp).clip(shape).background(bubbleColor.takeIf { it != Color.Transparent } ?: signal.incoming)
+                } else if (preview.isNotBlank()) SnippetText(
+                    message.snippet().copy(text = preview),
+                    color = fg,
+                    modifier = Modifier.widthIn(max = 300.dp).clip(shape).background(bubbleColor.takeIf { it != Color.Transparent } ?: signal.incoming)
                         .padding(horizontal = SignalDimens.bubbleHPad, vertical = SignalDimens.bubbleTopPad),
-                    color = fg, fontSize = SignalDimens.bodyText, lineHeight = SignalDimens.bodyLine, maxLines = 8, overflow = TextOverflow.Ellipsis,
+                    fontSize = SignalDimens.bodyText, lineHeight = SignalDimens.bodyLine, maxLines = 8,
                 )
             },
         )
@@ -1918,12 +1920,12 @@ private fun SignalQuote(message: ChatMessage, isMine: Boolean, fg: Color, onClic
         Box(Modifier.width(4.dp).fillMaxHeight().background(signal.primary))
         Column(Modifier.weight(1f, fill = false).padding(horizontal = 8.dp, vertical = 6.dp)) {
             Text(message.replySenderName.orEmpty(), color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(
-                message.replyContent?.takeIf(String::isNotBlank)
+            SnippetText(
+                message.replyContent?.takeIf(String::isNotBlank)?.let { PreviewSnippet(null, it) }
                     ?: if (message.replyFileType != null || message.replyFileName != null)
-                        attachmentSnippet(message.replyFileType, message.replyFileName, null)
-                    else "Original message unavailable",
-                color = fg.copy(alpha = .85f), fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        attachmentPreview(message.replyFileType, message.replyFileName, null)
+                    else PreviewSnippet(null, "Original message unavailable"),
+                color = fg.copy(alpha = .85f), fontSize = 14.sp, maxLines = 2,
             )
         }
         val thumb = message.replyFileUrl?.takeIf { message.replyFileType?.startsWith("image/") == true }
@@ -1957,12 +1959,11 @@ private fun ForwardMessageDialog(ui: ChatUiState, viewModel: ChatViewModel) {
         title = { Text("Forward message") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    message.body().take(120),
+                SnippetText(
+                    message.snippet().let { it.copy(text = it.text.take(120)) },
                     color = app.aino.mobile.core.designsystem.tokens.LocalWebColors.current.textSecondary,
-                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = MaterialTheme.typography.bodySmall.fontSize,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 BasicTextField(
                     value = ui.forwardQuery,
@@ -2390,7 +2391,7 @@ private fun MessageComposer(
             var quoted by remember { mutableStateOf<Pair<Boolean, ChatMessage>?>(null) }
             (editingMessage?.let { true to it } ?: replyingTo?.let { false to it })?.let { quoted = it }
             val (editing, target) = quoted ?: return@AnimatedVisibility
-            val banner = (if (editing) "Edit message" else target.senderName ?: target.senderUsername.orEmpty()) to target.body()
+            val banner = (if (editing) "Edit message" else target.senderName ?: target.senderUsername.orEmpty()) to target.snippet()
             Row(
                 Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 6.dp)
                     .clip(RoundedCornerShape(SignalDimens.quoteCorner)).background(signal.surface)
@@ -2400,7 +2401,7 @@ private fun MessageComposer(
                 Box(Modifier.width(4.dp).fillMaxHeight().background(signal.primary))
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp).weight(1f)) {
                     Text(banner.first, color = signal.text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    Text(banner.second, color = signal.textSecondary, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    SnippetText(banner.second, color = signal.textSecondary, fontSize = 14.sp, maxLines = 2)
                 }
                 target.fileUrl?.takeIf { !editing && target.fileType?.startsWith("image/") == true }?.let { url ->
                     coil3.compose.AsyncImage(

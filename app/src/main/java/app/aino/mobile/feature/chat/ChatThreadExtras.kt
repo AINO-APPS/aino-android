@@ -296,7 +296,7 @@ internal fun PinnedMessageBar(
                     if (count > 1) "Pinned message ${index + 1} of $count" else "Pinned message",
                     color = signal.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1,
                 )
-                Text(message.body(), color = signal.text, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                SnippetText(message.snippet(), color = signal.text, fontSize = 14.sp, maxLines = 1)
             }
             Box {
                 Icon(
