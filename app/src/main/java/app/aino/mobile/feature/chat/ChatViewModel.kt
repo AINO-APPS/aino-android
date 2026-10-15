@@ -1352,6 +1352,12 @@ class ChatViewModel(
                     else mergeLatestPage(threadCache.get(id)?.messages.orEmpty(), latest)
                     threadCache.put(id, merged)
                     scopedCache.replaceMessages(id, merged)
+                    // Deleted while this write ran (the delete flags first, then removes rows): undo it.
+                    if (id in deletedThreads) {
+                        threadCache.remove(id)
+                        runCatching { scopedCache.deleteConversation(id) }
+                        return@fold
+                    }
                     if (next.selectedConversation?.id == id) restoreDraftTargets(id, merged)
                     acknowledgeDelivery(latest.takeLast(THREAD_PAGE_SIZE))
                 },
