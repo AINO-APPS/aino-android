@@ -1728,6 +1728,8 @@ private fun MessageBubble(
                             .then(
                                 when {
                                     deleted -> Modifier.border(1.dp, signal.divider, shape)
+                                    // Web `.myBubble { border: 1px solid color-mix(--primary 16%) }`.
+                                    isMine && !mediaOnly && !jumbomoji -> Modifier.border(1.dp, signal.outgoingBorder, shape)
                                     else -> Modifier
                                 },
                             )
@@ -1945,22 +1947,21 @@ private fun MessageBubble(
 private fun SignalQuote(message: ChatMessage, isMine: Boolean, fg: Color, onClick: (() -> Unit)? = null) {
     val signal = signalColors
     val quoteShape = RoundedCornerShape(SignalDimens.quoteCorner)
-    // Signal `QuoteViewColorTheme`: translucent panel, white rule, panel-specific text colour.
-    val text = if (isMine) signal.onQuoteOutgoing else signal.onQuoteIncoming
     Row(
-        Modifier.clip(quoteShape).background(if (isMine) signal.quoteOutgoing else signal.quoteIncoming)
+        // Web ReplyPreview: neutral wash + org-accent rule on both sides (bubbles are no longer solid blue).
+        Modifier.clip(quoteShape).background(if (signal.isDark) Color.White.copy(alpha = .08f) else Color.Black.copy(alpha = .05f))
             .let { if (onClick != null) it.clickable(onClickLabel = "Go to original message", onClick = onClick) else it }
             .height(androidx.compose.foundation.layout.IntrinsicSize.Min),
     ) {
-        Box(Modifier.width(4.dp).fillMaxHeight().background(signal.quoteBar))
+        Box(Modifier.width(4.dp).fillMaxHeight().background(signal.primary))
         Column(Modifier.weight(1f, fill = false).padding(horizontal = 8.dp, vertical = 6.dp)) {
-            Text(message.replySenderName.orEmpty(), color = text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(message.replySenderName.orEmpty(), color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             SnippetText(
                 message.replyContent?.takeIf(String::isNotBlank)?.let { PreviewSnippet(null, it) }
                     ?: if (message.replyFileType != null || message.replyFileName != null)
                         attachmentPreview(message.replyFileType, message.replyFileName, null)
                     else PreviewSnippet(null, "Original message unavailable"),
-                color = text, fontSize = 14.sp, maxLines = 2,
+                color = fg.copy(alpha = .85f), fontSize = 14.sp, maxLines = 2,
             )
         }
         val thumb = message.replyFileUrl?.takeIf { message.replyFileType?.startsWith("image/") == true }
@@ -2079,13 +2080,6 @@ private fun DateSeparator(date: LocalDate) {
     }
 }
 /**
- * Web `MessageBubble.module.css`: 16px corners, with the first bubble of a
- * sender block squared on the sender's top corner (`.myBubble 16 4 16 16`,
- * `.theirBubble 4 16 16 16`); grouped continuations are fully rounded.
- * [endsGroup] is kept for call-site compatibility.
- */
-@Suppress("UNUSED_PARAMETER")
-/**
  * Signal `V2ConversationItemShape`: a lone message is round on every corner; in a
  * cluster the sender-side corners between bubbles shrink to 4dp.
  */
@@ -2140,8 +2134,9 @@ private fun DeliveryTickIcon(tick: DeliveryTick, onMedia: Boolean, plain: Boolea
         onMedia -> Color.White
         // No bubble behind (jumbomoji): chat-background colours, like the time beside it.
         plain -> if (tick == DeliveryTick.Read) signal.primary else signal.textSecondary
-        // Signal draws every receipt state in the bubble's footer colour; the shape tells them apart.
-        else -> signal.onOutgoingSecondary
+        tick == DeliveryTick.Read -> signal.tickRead
+        tick == DeliveryTick.Delivered -> signal.tickDelivered
+        else -> signal.tickMuted
     }
     SignalReceiptIcon(tick, tint, punchThrough = when {
         onMedia -> Color.Black.copy(alpha = .55f)

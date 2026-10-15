@@ -33,19 +33,20 @@ class SignalChatLogicTest {
         assertEquals(18.dp, SignalDimens.bubbleCorner)
     }
 
-    @Test fun `chat bubbles use the Signal palette while chrome keeps the org accent`() {
+    @Test fun `chat bubbles follow the org theme like the web bubbles`() {
         val accent = androidx.compose.ui.graphics.Color(0xFFE91E63)
-        val ultramarine = androidx.compose.ui.graphics.Color(0xFF315FF4)
-        val dark = orgChatColors(SignalDark, app.aino.mobile.core.designsystem.tokens.WebColorsDark.copy(primary = accent))
-        val light = orgChatColors(SignalLight, app.aino.mobile.core.designsystem.tokens.WebColorsLight.copy(primary = accent))
-        assertEquals(ultramarine, dark.outgoing)
-        assertEquals(ultramarine, light.outgoing)
-        assertEquals(androidx.compose.ui.graphics.Color(0xFF303133), dark.incoming)
-        assertEquals(androidx.compose.ui.graphics.Color(0xFFE7EBF3), light.incoming)
-        assertEquals(androidx.compose.ui.graphics.Color.White, light.onOutgoing)
-        assertEquals(androidx.compose.ui.graphics.Color.Transparent, dark.outgoingBorder)
-        assertEquals(accent, dark.primary)
-        assertEquals(accent, dark.tickRead)
+        val web = app.aino.mobile.core.designsystem.tokens.WebColorsDark.copy(primary = accent)
+        val colors = orgChatColors(SignalDark, web)
+        assertEquals(accent, colors.tickRead)
+        assertEquals(accent, colors.primary)
+        assertEquals(accent.copy(alpha = .16f), colors.outgoingBorder)
+        assertEquals(1f, colors.outgoing.alpha, 0f)
+        assertEquals(1f, colors.incoming.alpha, 0f)
+        assertTrue(colors.outgoing != colors.incoming)
+        assertTrue(colors.outgoing.red > colors.incoming.red)
+        // Bubble text is the theme text, not white on a solid fill.
+        assertEquals(colors.onIncoming, colors.onOutgoing)
+        assertTrue(colors.tickDelivered != colors.tickMuted)
     }
 
     @Test fun `group sender names keep one Signal colour per person`() {

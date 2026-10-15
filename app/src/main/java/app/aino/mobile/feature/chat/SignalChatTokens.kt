@@ -3,6 +3,7 @@ package app.aino.mobile.feature.chat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import app.aino.mobile.core.designsystem.tokens.WebColors
 import androidx.compose.ui.unit.dp
@@ -66,18 +67,14 @@ data class SignalColors(
     val danger: Color,
     val scrim: Color,
     val highlight: Color,
-    /** Outgoing bubbles have no outline in Signal. */
+    /** Web `.myBubble` 1px border: `color-mix(--primary 16%, transparent)`. */
     val outgoingBorder: Color = Color.Transparent,
-    /** Chat-list receipt colours (outside bubbles); in-bubble receipts use the footer colour. */
+    /** Web `.tickDelivered` (`--text-secondary`). */
     val tickDelivered: Color = onIncomingSecondary,
+    /** Web `.tickSent` / `.tickSending` (`--text-muted`). */
     val tickMuted: Color = onIncomingSecondary,
+    /** Web `.tickRead` (`--primary`, the org accent). */
     val tickRead: Color = primary,
-    /** Signal `QuoteViewColorTheme` (normal, no wallpaper). */
-    val quoteIncoming: Color = Color.Transparent,
-    val quoteOutgoing: Color = Color.Transparent,
-    val quoteBar: Color = Color.White,
-    val onQuoteIncoming: Color = onIncoming,
-    val onQuoteOutgoing: Color = onIncoming,
     /** Signal reaction pill (`signal_colorSurface1`). */
     val reactionPill: Color = surface,
 )
@@ -85,8 +82,9 @@ data class SignalColors(
 /**
  * Signal-Android chat colours (values re-typed from Signal's public
  * `material3_colors_*.xml`, `light_colors.xml` / `dark_colors.xml` and
- * `ChatColorsPalette`; no Signal code or assets are used). Outgoing bubbles are
- * the default chat colour, Ultramarine.
+ * `ChatColorsPalette`; no Signal code or assets are used). The bubble, bubble
+ * text and receipt colours here are base values only: [orgChatColors] replaces
+ * them with the web org theme.
  */
 val SignalLight = SignalColors(
     isDark = false,
@@ -107,10 +105,6 @@ val SignalLight = SignalColors(
     danger = Color(0xFFF44336),
     scrim = Color(0x99000000),
     highlight = Color(0x66FFD54F),
-    quoteIncoming = Color(0x8FFFFFFF),
-    quoteOutgoing = Color(0xB8FFFFFF),
-    onQuoteIncoming = Color(0xFF1B1B1D),
-    onQuoteOutgoing = Color(0xFF1B1B1D),
     reactionPill = Color(0xFFF2F5F9),
 )
 
@@ -133,10 +127,6 @@ val SignalDark = SignalColors(
     danger = Color(0xFFFF6F61),
     scrim = Color(0xB3000000),
     highlight = Color(0x80FFB300),
-    quoteIncoming = Color(0x29FFFFFF),
-    quoteOutgoing = Color(0x66000000),
-    onQuoteIncoming = Color(0xFFE2E1E5),
-    onQuoteOutgoing = Color(0xE0FFFFFF),
     reactionPill = Color(0xFF23242A),
 )
 
@@ -160,9 +150,10 @@ internal fun signalNameColor(senderId: Long?, dark: Boolean): Color {
 }
 
 /**
- * Chat palette: Signal's bubbles, text and receipts as above; only the chat
- * chrome accent (links, selection, read ticks in the chat list) follows the
- * org branding, like the rest of the app.
+ * Chat palette: Signal's layout (background, pills, bubble geometry, name
+ * colours) with the bubbles, receipts and accents taken from the web org theme
+ * (`MessageBubble.module.css`, `DeliveryStatus.tsx`), so the org branding
+ * accent flows into chat exactly like it does on desktop/web.
  */
 val signalColors: SignalColors
     @Composable @ReadOnlyComposable
@@ -171,9 +162,33 @@ val signalColors: SignalColors
         return orgChatColors(if (web.bg.luminance() < 0.5f) SignalDark else SignalLight, web)
     }
 
-internal fun orgChatColors(base: SignalColors, web: WebColors): SignalColors = base.copy(
-    primary = web.primary,
-    tickDelivered = base.onIncomingSecondary,
-    tickMuted = base.onIncomingSecondary,
-    tickRead = web.primary,
-)
+/**
+ * Web parity:
+ *  - `.myBubble`  → `color-mix(--primary 14%, --surface-hover)`, `--text`, border `--primary 16%`
+ *  - `.theirBubble` → `--surface`, `--text`
+ *  - ticks: sent/sending `--text-muted`, delivered `--text-secondary`, read `--primary`
+ * Web tokens are translucent washes, so they are composited onto the chat
+ * background to give solid bubble fills.
+ */
+internal fun orgChatColors(base: SignalColors, web: WebColors): SignalColors {
+    val page = base.background
+    val surfaceHover = web.surfaceHover.compositeOver(page)
+    val outgoing = web.primary.copy(alpha = .14f).compositeOver(surfaceHover)
+    val incoming = web.surface.compositeOver(page)
+    val text = web.text.compositeOver(page)
+    val secondary = web.textSecondary.compositeOver(page)
+    val muted = web.textMuted.compositeOver(page)
+    return base.copy(
+        outgoing = outgoing,
+        onOutgoing = text,
+        onOutgoingSecondary = muted,
+        incoming = incoming,
+        onIncoming = text,
+        onIncomingSecondary = muted,
+        primary = web.primary,
+        outgoingBorder = web.primary.copy(alpha = .16f),
+        tickDelivered = secondary,
+        tickMuted = muted,
+        tickRead = web.primary,
+    )
+}
