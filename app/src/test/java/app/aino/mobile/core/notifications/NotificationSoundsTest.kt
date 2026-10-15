@@ -42,6 +42,8 @@ class NotificationSoundsTest {
         SoundChannels.resetForTest()
     }
 
+    private fun tone(category: SoundCategory, id: String) = NotificationSounds.presetUri(context, category.preset(id))
+
     private fun messagesChannel() = manager.getNotificationChannel(PushNotifications.channel(context, PushNotifications.MESSAGES))
 
     @Test fun everyDesktopToneIdHasABundledSoundAndDefaultsMatchDesktop() {
@@ -56,7 +58,11 @@ class NotificationSoundsTest {
             assertEquals(ids, category.presets.map { it.id })
             category.presets.forEach { preset ->
                 val uri = NotificationSounds.presetUri(context, preset)
-                if (preset.id == "none") assertNull(uri) else assertTrue(uri.toString().startsWith("android.resource://${context.packageName}/raw/"))
+                if (preset.id == "none") assertNull(uri) else {
+                    assertEquals("android.resource://${context.packageName}/${preset.res}", uri.toString())
+                    assertEquals("raw", context.resources.getResourceTypeName(preset.res!!))
+                    context.resources.openRawResourceFd(preset.res!!).use { fd -> assertTrue(fd.length > 44) }
+                }
             }
         }
         assertEquals(listOf("classic", "ringback", "ding", "mention", "subtle"), SoundCategory.entries.map { it.defaultId })
@@ -65,7 +71,7 @@ class NotificationSoundsTest {
     @Test fun syncedToneIsUsedAndUnknownIdsFallBackToTheDefault() {
         assertEquals(SoundChoice.Preset("ding"), NotificationSounds.choice(context, SoundCategory.Message))
         ChatPreferences.update(context) { it.copy(messageTone = "glassy") }
-        assertTrue(NotificationSounds.uri(context, SoundCategory.Message).toString().endsWith("/raw/tone_message_glassy"))
+        assertEquals(tone(SoundCategory.Message, "glassy"), NotificationSounds.uri(context, SoundCategory.Message))
         ChatPreferences.update(context) { it.copy(messageTone = "from-a-newer-desktop") }
         assertEquals(SoundChoice.Preset("ding"), NotificationSounds.choice(context, SoundCategory.Message))
         ChatPreferences.update(context) { it.copy(mentionTone = "none") }
@@ -100,7 +106,7 @@ class NotificationSoundsTest {
         PushNotifications.createChannels(context)
         val moved = messagesChannel()
         assertEquals("aino_messages_s1", moved.id)
-        assertTrue(moved.sound.toString().endsWith("/raw/tone_message_ding"))
+        assertEquals(tone(SoundCategory.Message, "ding"), moved.sound)
         assertEquals(NotificationManager.IMPORTANCE_LOW, moved.importance)
         assertEquals(false, moved.shouldVibrate())
         assertNull(manager.getNotificationChannel(PushNotifications.MESSAGES))
@@ -117,7 +123,7 @@ class NotificationSoundsTest {
         PushNotifications.createChannels(context)
         val second = messagesChannel()
         assertTrue(second.id != first)
-        assertTrue(second.sound.toString().endsWith("/raw/tone_message_pop"))
+        assertEquals(tone(SoundCategory.Message, "pop"), second.sound)
         assertNull(manager.getNotificationChannel(first))
 
         ChatPreferences.update(context) { it.copy(reactionTone = "none") }
@@ -148,6 +154,20 @@ class NotificationSoundsTest {
         val recreated = manager.getNotificationChannel(again.getValue("channelId"))
         assertEquals(messagesChannel().id, recreated.parentChannelId)
         assertEquals(NotificationManager.IMPORTANCE_NONE, recreated.importance)
+    }
+
+    @Test fun channelsCreatedWithNameBasedTonesMoveOnceToIdBasedTones() {
+        PushNotifications.createChannels(context)
+        val before = messagesChannel().id
+        // v0.25.2 stored channel sounds as android.resource://pkg/raw/<name>.
+        context.getSharedPreferences("aino_sound_channels", Context.MODE_PRIVATE).edit()
+            .putString("sound.${PushNotifications.MESSAGES}", "android.resource://${context.packageName}/raw/tone_message_ding").commit()
+        PushNotifications.createChannels(context)
+        val after = messagesChannel()
+        assertTrue(after.id != before)
+        assertEquals(tone(SoundCategory.Message, "ding"), after.sound)
+        PushNotifications.createChannels(context)
+        assertEquals(after.id, messagesChannel().id)
     }
 
     @Test fun channelIdsAndMigrationDecisions() {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Renders the web/desktop synthesised tones (aino-platform client/src/utils/sounds.ts)
+// Renders the web/desktop synthesised tones (aino-platform client/src/utils/sounds.ts):
+// RINGTONES, OUTGOING_TONES, MESSAGE_TONES, MENTION_TONES and REACTION_TONES,
 // to 44.1 kHz mono 16-bit WAVs in app/src/main/res/raw, so Android plays the same
 // sounds the user picks on desktop. Usage: node scripts/render-tones.mjs
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -118,6 +119,17 @@ function pluck(ctx, freq, startOffset, duration, volume) {
     osc2.stop(t0 + duration + 0.05);
 }
 
+const RINGTONES = {
+    classic(ctx, vol) { tone(ctx, 440, 0, 0.4, vol * 0.6); tone(ctx, 440, 0.5, 0.4, vol * 0.6); return 2000; },
+    calm(ctx, vol) { pluck(ctx, 392, 0, 1.2, vol * 0.5); pluck(ctx, 523, 0.15, 1.2, vol * 0.4); pluck(ctx, 659, 0.3, 1.4, vol * 0.4); return 2400; },
+    dynamic(ctx, vol) { [523, 659, 784, 659].forEach((f, i) => tone(ctx, f, i * 0.18, 0.16, vol * 0.55, "square")); return 1800; },
+    urgent(ctx, vol) { for (let i = 0; i < 3; i++) tone(ctx, 880, i * 0.18, 0.13, vol * 0.7, "sawtooth"); return 1600; },
+    boop(ctx, vol) { tone(ctx, 330, 0, 0.25, vol * 0.65); tone(ctx, 247, 0.32, 0.3, vol * 0.65); return 2000; },
+    marimba(ctx, vol) { [523, 659, 784, 1046].forEach((f, i) => pluck(ctx, f, i * 0.18, 0.45, vol * 0.5)); return 2200; },
+    crystal(ctx, vol) { pluck(ctx, 659, 0, 0.9, vol * 0.48); pluck(ctx, 988, 0.1, 0.9, vol * 0.4); pluck(ctx, 1318, 0.2, 1, vol * 0.34); return 2200; },
+    vapor(ctx, vol) { [392, 523, 659, 784].forEach((f, i) => tone(ctx, f, i * 0.22, 0.2, vol * 0.5, "triangle")); return 2000; },
+};
+
 const OUTGOING = {
     ringback(ctx, vol) { tone(ctx, 440, 0, 0.9, vol * 0.35); tone(ctx, 480, 0, 0.9, vol * 0.35); return 2000; },
     pulse(ctx, vol) { tone(ctx, 523, 0, 0.45, vol * 0.45); return 1500; },
@@ -188,7 +200,8 @@ const REACTION = {
 
 mkdirSync(OUT, { recursive: true });
 const write = (name, buffer) => { writeFileSync(join(OUT, `${name}.wav`), buffer); console.log(`${name}.wav ${buffer.length} bytes`); };
-// Outgoing tones loop on Android, so they keep the desktop's re-fire gap (duration + 100 ms).
+// Ringing tones loop on Android, so they keep the desktop's re-fire gap (duration + 100 ms).
+for (const [id, synth] of Object.entries(RINGTONES)) write(`ringtone_${id}`, render(synth, 100));
 for (const [id, synth] of Object.entries(OUTGOING)) write(`tone_outgoing_${id}`, render(synth, 100));
 for (const [id, synth] of Object.entries(MESSAGE)) write(`tone_message_${id}`, render(synth));
 for (const [id, synth] of Object.entries(MENTION)) write(`tone_mention_${id}`, render(synth));

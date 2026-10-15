@@ -45,6 +45,15 @@ class NotificationAvatarAndPinRulesTest {
         assertFalse(canUnpinMessage(pinnedBy = null, currentUserId = 1, isGroup = true, isAdmin = false))
     }
 
+    @Test fun editsStillBeingSavedWinOverAServerLoadThatRacesThem() {
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        val server = NotificationPrefs(ringtone = "classic", messageTone = "pop")
+        val merged = app.aino.mobile.feature.profile.overlayPrefs(json, server, mapOf("ringtone" to kotlinx.serialization.json.JsonPrimitive("vapor")))
+        assertEquals("vapor", merged.ringtone)
+        assertEquals("pop", merged.messageTone)
+        assertEquals(server, app.aino.mobile.feature.profile.overlayPrefs(json, server, emptyMap()))
+    }
+
     @Test fun syncedTonesFromWebAndDesktopReachTheDevicePrefs() {
         val mirrored = mirrorSyncedPrefs(ChatPrefs(inChatSounds = true), NotificationPrefs(
             ringtone = "vapor", outgoingTone = "echo", messageTone = "glassy", mentionTone = "spark", reactionTone = "click",

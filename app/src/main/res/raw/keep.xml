@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification and call tones are played and used as channel sounds by URI; never shrink them. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/ringtone_*,@raw/tone_*,@raw/message_sent" />

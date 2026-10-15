@@ -113,6 +113,16 @@ data class NotificationPrefs(
     val sentMediaQuality: String = "standard",
 )
 
+/** [base] with [changes] (synced keys → values) applied; used for optimistic edits and edits still being saved. */
+fun overlayPrefs(json: kotlinx.serialization.json.Json, base: NotificationPrefs, changes: Map<String, kotlinx.serialization.json.JsonElement>): NotificationPrefs =
+    if (changes.isEmpty()) base
+    else json.decodeFromJsonElement(
+        NotificationPrefs.serializer(),
+        kotlinx.serialization.json.JsonObject(
+            (json.encodeToJsonElement(NotificationPrefs.serializer(), base) as kotlinx.serialization.json.JsonObject) + changes,
+        ),
+    )
+
 /** Copies the account's synced keys into the device chat settings (device-only keys stay). */
 fun mirrorSyncedPrefs(device: app.aino.mobile.core.settings.ChatPrefs, synced: NotificationPrefs) = device.copy(
     muteAll = synced.muteAll,

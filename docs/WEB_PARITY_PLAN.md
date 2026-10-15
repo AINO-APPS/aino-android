@@ -1078,9 +1078,13 @@ Phase 5 implementation notes (Android, 2026-09-25):
   alert uses its channel sound unless Mute all. `playWhenFocused` is ignored on
   Android. Since 0.25.2 the five tone slots are synced too (`ringtone`,
   `outgoingTone`, `messageTone`, `mentionTone`, `reactionTone`): the desktop
-  synths are rendered to `res/raw/tone_*.wav` by `scripts/render-tones.mjs`
-  (`ringtone_*.wav` for ringtones), and each slot also offers "System default"
-  and "Choose from device…" (device-only overrides). Messages, Mentions,
+  synths are rendered to `res/raw/tone_*.wav` and `res/raw/ringtone_*.wav` by
+  `scripts/render-tones.mjs` (since 0.25.3 the ringtones are exact desktop
+  renders with the desktop loop gap), and each slot also offers "System
+  default" and "Choose from device…" (device-only overrides). Tapping a tone
+  previews and saves it; tones are played by resource id and kept from
+  shrinking by `res/raw/keep.xml`; a pick still being saved wins over a racing
+  prefs load and is retried on the next resync. Messages, Mentions,
   Reactions and the fallback ringing channel are versioned Signal-style
   (`NotificationChannels.updateMessageChannel`): a new sound copies the channel
   to `<id>_s<n>` and deletes the old one, conversation channels follow their

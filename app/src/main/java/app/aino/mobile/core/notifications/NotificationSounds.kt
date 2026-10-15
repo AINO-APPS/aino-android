@@ -142,8 +142,10 @@ object NotificationSounds {
         choice(override(context, category), category.syncedId(ChatPreferences.get(context)), category)
 
     fun presetUri(context: Context, preset: SoundPreset): Uri? = preset.res?.let {
-        // By name (not id) so channels created by an older build keep resolving after an update.
-        Uri.parse("android.resource://${context.packageName}/raw/${context.resources.getResourceEntryName(it)}")
+        // By resource id: playback never depends on a name lookup. Ids can change between
+        // builds, but the URI is part of each channel's sound key, so a renumbered tone
+        // simply moves its channel to the next version on the first launch after an update.
+        Uri.parse("android.resource://${context.packageName}/$it")
     }
 
     fun systemDefaultUri(category: SoundCategory): Uri =

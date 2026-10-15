@@ -37,32 +37,40 @@ import androidx.core.content.IntentCompat
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 
 /**
- * Signal-style sound chooser for one slot: the AINO tones shared with web/desktop
- * (tap to preview), the system default, or any sound on the device. AINO tones
- * are synced through [onPreset]; device choices stay on this phone.
+ * Signal-style sound chooser for one slot: the AINO tones shared with web/desktop,
+ * the system default, or any sound on the device. Tapping a tone plays it and
+ * saves it at once; AINO tones are synced through [onPreset], device choices stay
+ * on this phone. Channels pick up the new sound when the dialog closes.
  */
 @Composable
 fun SoundPickerDialog(category: SoundCategory, onDismiss: () -> Unit, onPreset: (String) -> Unit) {
     val context = LocalContext.current
     val colors = LocalWebColors.current
     var selected by remember { mutableStateOf(NotificationSounds.choice(context, category)) }
+    val changed = remember { mutableStateOf(false) }
     val preview = remember { mutableStateOf<Ringtone?>(null) }
     fun play(uri: Uri?) {
         preview.value?.stop()
         preview.value = uri?.let { runCatching { RingtoneManager.getRingtone(context, it) }.getOrNull() }?.also { runCatching { it.play() } }
     }
-    DisposableEffect(Unit) { onDispose { preview.value?.stop() } }
-    val apply: (SoundChoice) -> Unit = { choice ->
-        preview.value?.stop()
-        NotificationSounds.setOverride(context, category, choice)
-        if (choice is SoundChoice.Preset) onPreset(choice.id)
-        applySoundChannels(context)
-        onDismiss()
+    DisposableEffect(Unit) {
+        onDispose {
+            preview.value?.stop()
+            if (changed.value) applySoundChannels(context)
+        }
+    }
+    val save: (SoundChoice) -> Unit = { choice ->
+        if (choice != selected) {
+            NotificationSounds.setOverride(context, category, choice)
+            if (choice is SoundChoice.Preset) onPreset(choice.id)
+            selected = choice
+            changed.value = true
+        }
     }
     val devicePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val picked = result.data?.let { IntentCompat.getParcelableExtra(it, RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java) }
-            apply(NotificationSettingsLinks.pickedChoice(picked, NotificationSounds.systemDefaultUri(category)))
+            save(NotificationSettingsLinks.pickedChoice(picked, NotificationSounds.systemDefaultUri(category)))
         }
     }
 
@@ -72,26 +80,32 @@ fun SoundPickerDialog(category: SoundCategory, onDismiss: () -> Unit, onPreset: 
             Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            RadioButton(selected = checked, onClick = null, colors = RadioButtonDefaults.colors(selectedColor = colors.primary))
+            RadioButton(
+                selected = checked, onClick = null,
+                colors = RadioButtonDefaults.colors(selectedColor = colors.primary, unselectedColor = colors.textSecondary),
+            )
             Text(label, Modifier.padding(start = 12.dp), color = colors.text, fontSize = 16.sp)
         }
     }
 
     AlertDialog(
-        onDismissRequest = { preview.value?.stop(); onDismiss() },
-        containerColor = colors.surface,
+        onDismissRequest = onDismiss,
+        // `surface` is a translucent overlay token; dialogs need the solid elevated colour.
+        containerColor = colors.bgElevated,
+        titleContentColor = colors.text,
+        textContentColor = colors.text,
         title = { Text(category.title, color = colors.text) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 category.presets.forEach { preset ->
                     Option(preset.label, selected == SoundChoice.Preset(preset.id)) {
-                        selected = SoundChoice.Preset(preset.id)
+                        save(SoundChoice.Preset(preset.id))
                         play(NotificationSounds.presetUri(context, preset))
                     }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp), color = colors.border)
                 Option("System default", selected == SoundChoice.SystemDefault) {
-                    selected = SoundChoice.SystemDefault
+                    save(SoundChoice.SystemDefault)
                     play(NotificationSounds.systemDefaultUri(category))
                 }
                 val device = selected as? SoundChoice.Device
@@ -104,8 +118,7 @@ fun SoundPickerDialog(category: SoundCategory, onDismiss: () -> Unit, onPreset: 
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { apply(selected) }) { Text("OK") } },
-        dismissButton = { TextButton(onClick = { preview.value?.stop(); onDismiss() }) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done", color = colors.primary) } },
     )
 }
 

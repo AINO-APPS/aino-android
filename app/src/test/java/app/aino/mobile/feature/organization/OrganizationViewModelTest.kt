@@ -44,7 +44,10 @@ class OrganizationViewModelTest {
         offline = true
         val before = requests.get()
         vm.refresh()
-        waitFor { requests.get() > before + 1 && !vm.ui.value.orgLoading && !vm.ui.value.departments.loading }
+        waitFor {
+            requests.get() > before + 1 && !vm.ui.value.orgLoading && !vm.ui.value.departments.loading &&
+                vm.ui.value.departments.data != null
+        }
         assertEquals("Acme", vm.ui.value.org?.name)
         assertNull(vm.ui.value.orgError)
         assertEquals(emptyList<Department>(), vm.ui.value.departments.data)

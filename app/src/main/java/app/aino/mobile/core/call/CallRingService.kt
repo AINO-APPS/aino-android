@@ -254,11 +254,15 @@ class CallRingService : Service() {
         isLooping = true
         setOnPreparedListener { start() }
         // If preparation/playback fails, do not crash the service.
-        setOnErrorListener { _, _, _ -> true }
+        setOnErrorListener { _, what, extra ->
+          android.util.Log.w("AinoCall", "Ringtone playback error what=$what extra=$extra")
+          true
+        }
         prepareAsync()
       }
-    } catch (_: Throwable) {
+    } catch (error: Throwable) {
       // Fall back to the system default ringtone if our bundled resource fails.
+      android.util.Log.w("AinoCall", "Chosen ringtone unavailable (${error.javaClass.simpleName}); using the system ringtone")
       try {
         val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
         mediaPlayer = MediaPlayer().apply {

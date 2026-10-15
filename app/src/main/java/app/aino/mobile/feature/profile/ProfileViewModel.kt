@@ -95,7 +95,7 @@ class ProfileViewModel(
             runCatching(repository::getStatus).onSuccess { status -> _ui.update { it.copy(status = status) } }
         }
         io {
-            runCatching(repository::notificationPrefs).onSuccess(::applyPrefs)
+            runCatching(repository::notificationPrefs).onSuccess(::applyServerPrefs)
         }
         io {
             runCatching(repository::getTheme).onSuccess { theme ->
@@ -107,6 +107,7 @@ class ProfileViewModel(
 
     fun stop() {
         myUserId = null
+        pendingPrefs.clear()
         _ui.value = ProfileUiState()
     }
 
@@ -115,7 +116,10 @@ class ProfileViewModel(
         if (_ui.value.loading) return
         _ui.update { it.copy(loading = true, loadError = null) }
         // Sound and privacy prefs changed on web/desktop reach this device on every resync.
-        if (myUserId != null) io { runCatching(repository::notificationPrefs).onSuccess(::applyPrefs) }
+        if (myUserId != null) io {
+            retryPendingPrefs()
+            runCatching(repository::notificationPrefs).onSuccess(::applyServerPrefs)
+        }
         io {
             if (_ui.value.user == null && warm != null) {
                 runCatching(warm::load).getOrNull()?.let { cached -> _ui.update { if (it.user == null) it.withUser(cached) else it } }
@@ -369,16 +373,33 @@ class ProfileViewModel(
 
     fun updatePref(key: String, value: String) = updatePref(key, JsonPrimitive(value))
 
+    /** Local changes not yet confirmed by the server; they win over any prefs load that races them. */
+    private val pendingPrefs = java.util.concurrent.ConcurrentHashMap<String, JsonPrimitive>()
+
     private fun updatePref(key: String, value: JsonPrimitive) {
-        val next = json.decodeFromJsonElement<NotificationPrefs>(
-            JsonObject(json.encodeToJsonElement(_ui.value.prefs).jsonObject + (key to value)),
-        )
-        applyPrefs(next)
-        io { runCatching { repository.updateNotificationPrefs(JsonObject(mapOf(key to value))) } }
+        pendingPrefs[key] = value
+        applyPrefs(overlayPrefs(json, _ui.value.prefs, mapOf(key to value)))
+        io { savePendingPrefs(mapOf(key to value)) }
     }
+
+    private fun savePendingPrefs(sent: Map<String, JsonPrimitive>) {
+        runCatching { repository.updateNotificationPrefs(JsonObject(sent)) }.onSuccess { saved ->
+            sent.forEach { (key, value) -> pendingPrefs.remove(key, value) }
+            applyServerPrefs(saved)
+        }
+    }
+
+    /** A save that failed (offline, server error) is sent again on the next resync instead of being reverted. */
+    private fun retryPendingPrefs() {
+        val pending = HashMap(pendingPrefs)
+        if (pending.isNotEmpty()) savePendingPrefs(pending)
+    }
+
+    private fun applyServerPrefs(server: NotificationPrefs) = applyPrefs(overlayPrefs(json, server, HashMap(pendingPrefs)))
 
     fun resetPrefs() {
         val defaults = NotificationPrefs()
+        pendingPrefs.clear()
         app.aino.mobile.core.notifications.SoundCategory.entries.forEach {
             app.aino.mobile.core.notifications.NotificationSounds.setOverride(context, it, null)
         }
