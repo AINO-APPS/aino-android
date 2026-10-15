@@ -49,6 +49,15 @@ class SignalChatLogicTest {
         assertTrue(colors.tickDelivered != colors.tickMuted)
     }
 
+    @Test fun `chat screens share the home background in both themes`() {
+        val dark = app.aino.mobile.core.designsystem.tokens.WebColorsDark
+        val light = app.aino.mobile.core.designsystem.tokens.WebColorsLight
+        assertEquals(dark.bg, orgChatColors(SignalDark, dark).background)
+        assertEquals(light.bg, orgChatColors(SignalLight, light).background)
+        assertEquals(dark.bgElevated, orgChatColors(SignalDark, dark).surface)
+        assertEquals(light.bgSecondary, orgChatColors(SignalLight, light).surface)
+    }
+
     @Test fun `group sender names keep one Signal colour per person`() {
         assertEquals(signalNameColor(42, dark = false), signalNameColor(42, dark = false))
         assertTrue(signalNameColor(42, dark = false) != signalNameColor(42, dark = true))

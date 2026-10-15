@@ -75,7 +75,7 @@ class ChatSearchUiTest {
         compose.onNodeWithText("Search").performClick()
         compose.onNode(hasSetTextAction() and isFocused()).performTextInput("launch")
         compose.waitUntil(5_000) { vm.ui.value.threadSearchMatches == listOf(105L) }
-        compose.onNodeWithText("1 of 1").assertExists()
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("1 of 1").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasSetTextAction() and hasText("launch")).assertExists()
 
         systemBack()

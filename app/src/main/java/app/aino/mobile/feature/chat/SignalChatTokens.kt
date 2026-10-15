@@ -150,10 +150,10 @@ internal fun signalNameColor(senderId: Long?, dark: Boolean): Color {
 }
 
 /**
- * Chat palette: Signal's layout (background, pills, bubble geometry, name
- * colours) with the bubbles, receipts and accents taken from the web org theme
- * (`MessageBubble.module.css`, `DeliveryStatus.tsx`), so the org branding
- * accent flows into chat exactly like it does on desktop/web.
+ * Chat palette: Signal's layout (pills, bubble geometry, name colours) with the
+ * page background, bubbles, receipts and accents taken from the web org theme
+ * (`--bg`, `MessageBubble.module.css`, `DeliveryStatus.tsx`), so chat screens
+ * share the home screen's background and the org accent like desktop/web.
  */
 val signalColors: SignalColors
     @Composable @ReadOnlyComposable
@@ -171,7 +171,7 @@ val signalColors: SignalColors
  * background to give solid bubble fills.
  */
 internal fun orgChatColors(base: SignalColors, web: WebColors): SignalColors {
-    val page = base.background
+    val page = web.bg
     val surfaceHover = web.surfaceHover.compositeOver(page)
     val outgoing = web.primary.copy(alpha = .14f).compositeOver(surfaceHover)
     val incoming = web.surface.compositeOver(page)
@@ -179,6 +179,9 @@ internal fun orgChatColors(base: SignalColors, web: WebColors): SignalColors {
     val secondary = web.textSecondary.compositeOver(page)
     val muted = web.textMuted.compositeOver(page)
     return base.copy(
+        background = web.bg,
+        // Raised panels (keyboards, selection bar, pinned bar) use the app's neutral raised colour.
+        surface = if (base.isDark) web.bgElevated else web.bgSecondary,
         outgoing = outgoing,
         onOutgoing = text,
         onOutgoingSecondary = muted,

@@ -892,7 +892,9 @@ Phase 4 implementation notes (Android, 2026-09-21):
   clusters, 6dp/1dp spacing), per-sender `ChatColorsPalette.Names` colours and
   the Signal reaction pill. Since 0.25.5 the colours stay on the web theme: the
   org-tinted outgoing bubble with its outline, the `--surface` incoming bubble,
-  the grey reply panel with the accent rule, and web receipt colours.
+  the grey reply panel with the accent rule, and web receipt colours. Since
+  0.25.6 every chat screen paints the app background (`--bg`, as on home) and
+  raised chat panels use `bgElevated` (dark) / `bgSecondary` (light).
 - All 52 operations under `/api/chat/*` are now proven by
   `scripts/check-endpoint-parity.mjs`; total Android coverage is 92/464.
 - `scripts/check-realtime-parity.mjs` proves all 73 server event names are routed.
