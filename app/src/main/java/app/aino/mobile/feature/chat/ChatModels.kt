@@ -977,7 +977,8 @@ private fun sameMessageGroup(
     return a.senderId == b.senderId &&
         Instant.ofEpochMilli(first.epochMs).atZone(zoneId).toLocalDate() == day &&
         Instant.ofEpochMilli(second.epochMs).atZone(zoneId).toLocalDate() == day &&
-        second.epochMs - first.epochMs in 0..300_000L
+        // Signal `V2ConversationItemShape.clusterTimeout`.
+        second.epochMs - first.epochMs in 0..180_000L
 }
 
 private data class PositionedThreadItem(

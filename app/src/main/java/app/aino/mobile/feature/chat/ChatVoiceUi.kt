@@ -96,9 +96,9 @@ fun ChatVoicePlayer(
     val progress = if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
     val fg = if (outgoing) signal.onOutgoing else signal.onIncoming
     val fgMuted = if (outgoing) signal.onOutgoingSecondary else signal.onIncomingSecondary
-    // Web org theme: bubbles are a light accent wash, so the play button is the accent on both sides.
-    val buttonBg = if (outgoing) signal.primary else tint
-    val buttonFg = Color.White
+    // Signal: a light play button on the solid outgoing bubble; incoming keeps the accent button.
+    val buttonBg = if (outgoing) signal.onOutgoing else tint
+    val buttonFg = if (outgoing) signal.outgoing else Color.White
     val bars = remember(waveSeed) { voiceWaveform(waveSeed) }
     Row(modifier.widthIn(min = 220.dp, max = 260.dp).padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {

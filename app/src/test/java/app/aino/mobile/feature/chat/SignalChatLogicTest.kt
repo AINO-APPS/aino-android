@@ -17,36 +17,41 @@ class SignalChatLogicTest {
         mapOf("viewOnce" to JsonPrimitive(true), "viewedBy" to JsonArray(viewers.map { JsonPrimitive(it) })),
     )
 
-    @Test fun `bubble corners follow the web notch on the first bubble of a block`() {
-        val firstMine = messageBubbleShape(isMine = true, startsGroup = true, endsGroup = false)
-        val middleMine = messageBubbleShape(isMine = true, startsGroup = false, endsGroup = false)
-        val firstTheirs = messageBubbleShape(isMine = false, startsGroup = true, endsGroup = true)
+    @Test fun `bubble corners follow Signal message clusters`() {
         val size = androidx.compose.ui.geometry.Size(100f, 100f)
         val density = androidx.compose.ui.unit.Density(1f)
-        // .myBubble { border-radius: 16px 4px 16px 16px }
-        assertEquals(16f, firstMine.topStart.toPx(size, density))
-        assertEquals(4f, firstMine.topEnd.toPx(size, density))
-        assertEquals(16f, firstMine.bottomEnd.toPx(size, density))
-        assertEquals(16f, firstMine.bottomStart.toPx(size, density))
-        // .mine.grouped .myBubble { border-radius: 16px }
-        assertEquals(16f, middleMine.topEnd.toPx(size, density))
-        assertEquals(16f, middleMine.bottomEnd.toPx(size, density))
-        // .theirBubble { border-radius: 4px 16px 16px 16px }
-        assertEquals(4f, firstTheirs.topStart.toPx(size, density))
-        assertEquals(16f, firstTheirs.topEnd.toPx(size, density))
-        assertEquals(16.dp, SignalDimens.bubbleCorner)
+        fun corners(shape: androidx.compose.foundation.shape.RoundedCornerShape) =
+            listOf(shape.topStart, shape.topEnd, shape.bottomEnd, shape.bottomStart).map { it.toPx(size, density) }
+        // topStart, topEnd, bottomEnd, bottomStart
+        assertEquals(listOf(18f, 18f, 18f, 18f), corners(messageBubbleShape(isMine = true, startsGroup = true, endsGroup = true)))
+        assertEquals(listOf(18f, 18f, 4f, 18f), corners(messageBubbleShape(isMine = true, startsGroup = true, endsGroup = false)))
+        assertEquals(listOf(18f, 4f, 4f, 18f), corners(messageBubbleShape(isMine = true, startsGroup = false, endsGroup = false)))
+        assertEquals(listOf(18f, 4f, 18f, 18f), corners(messageBubbleShape(isMine = true, startsGroup = false, endsGroup = true)))
+        assertEquals(listOf(18f, 18f, 18f, 4f), corners(messageBubbleShape(isMine = false, startsGroup = true, endsGroup = false)))
+        assertEquals(listOf(4f, 18f, 18f, 4f), corners(messageBubbleShape(isMine = false, startsGroup = false, endsGroup = false)))
+        assertEquals(listOf(4f, 18f, 18f, 18f), corners(messageBubbleShape(isMine = false, startsGroup = false, endsGroup = true)))
+        assertEquals(18.dp, SignalDimens.bubbleCorner)
     }
 
-    @Test fun `chat palette follows the org accent like the web bubbles`() {
+    @Test fun `chat bubbles use the Signal palette while chrome keeps the org accent`() {
         val accent = androidx.compose.ui.graphics.Color(0xFFE91E63)
-        val web = app.aino.mobile.core.designsystem.tokens.WebColorsDark.copy(primary = accent)
-        val colors = orgChatColors(SignalDark, web)
-        assertEquals(accent, colors.tickRead)
-        assertEquals(accent, colors.primary)
-        assertEquals(1f, colors.outgoing.alpha, 0f)
-        assertEquals(1f, colors.incoming.alpha, 0f)
-        assertTrue(colors.outgoing != colors.incoming)
-        assertTrue(colors.outgoing.red > colors.incoming.red)
+        val ultramarine = androidx.compose.ui.graphics.Color(0xFF315FF4)
+        val dark = orgChatColors(SignalDark, app.aino.mobile.core.designsystem.tokens.WebColorsDark.copy(primary = accent))
+        val light = orgChatColors(SignalLight, app.aino.mobile.core.designsystem.tokens.WebColorsLight.copy(primary = accent))
+        assertEquals(ultramarine, dark.outgoing)
+        assertEquals(ultramarine, light.outgoing)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF303133), dark.incoming)
+        assertEquals(androidx.compose.ui.graphics.Color(0xFFE7EBF3), light.incoming)
+        assertEquals(androidx.compose.ui.graphics.Color.White, light.onOutgoing)
+        assertEquals(androidx.compose.ui.graphics.Color.Transparent, dark.outgoingBorder)
+        assertEquals(accent, dark.primary)
+        assertEquals(accent, dark.tickRead)
+    }
+
+    @Test fun `group sender names keep one Signal colour per person`() {
+        assertEquals(signalNameColor(42, dark = false), signalNameColor(42, dark = false))
+        assertTrue(signalNameColor(42, dark = false) != signalNameColor(42, dark = true))
+        assertTrue((1L..36L).map { signalNameColor(it, dark = false) }.toSet().size > 20)
     }
 
     @Test fun `view once states for sender and recipient`() {

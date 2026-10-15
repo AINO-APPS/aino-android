@@ -38,7 +38,7 @@ class OrganizationViewModelTest {
     fun offlineRefreshKeepsTheOrgAndTabWithoutErrors() {
         val vm = OrganizationViewModel(OrganizationRepository(api))
         vm.bind("employee", 1)
-        waitFor { vm.ui.value.org != null && !vm.ui.value.orgLoading && !vm.ui.value.departments.loading }
+        waitFor { vm.ui.value.org != null && !vm.ui.value.orgLoading && !vm.ui.value.departments.loading && vm.ui.value.departments.data != null }
         assertEquals("Acme", vm.ui.value.org?.name)
 
         offline = true

@@ -886,6 +886,13 @@ Phase 4 implementation notes (Android, 2026-09-21):
 - Message presentation covers grouped bubbles, dates, replies, forwarding,
   system/poll formats, image/audio/video/document attachments, media-job state,
   reactions, edit/delete/star/pin/forward, read receipts and optimistic outbox rows.
+- Since 0.25.4 bubbles follow Signal-Android exactly rather than the web theme
+  (`SignalChatTokens.kt`, values re-typed from Signal's public resources):
+  Ultramarine `#315FF4` outgoing with white text and footer, `colorSurfaceVariant`
+  incoming, 18dp corners that shrink to 4dp on the sender side inside a cluster
+  (`V2ConversationItemShape`: 3-minute clusters, 6dp/1dp spacing), Signal
+  `QuoteViewColorTheme` quotes, per-sender `ChatColorsPalette.Names` colours and
+  receipts drawn in the footer colour. The org accent stays on chat chrome.
 - All 52 operations under `/api/chat/*` are now proven by
   `scripts/check-endpoint-parity.mjs`; total Android coverage is 92/464.
 - `scripts/check-realtime-parity.mjs` proves all 73 server event names are routed.

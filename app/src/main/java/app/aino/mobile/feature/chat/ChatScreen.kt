@@ -1697,7 +1697,11 @@ private fun MessageBubble(
     val startGutter = if (showAvatarColumn) SignalDimens.receivedGutter else SignalDimens.gutter
     BoxWithConstraints(
         Modifier.fillMaxWidth().background(rowTint)
-            .padding(top = if (startsGroup) 8.dp else 2.dp, start = startGutter, end = SignalDimens.gutter),
+            // Signal: 6dp around a cluster, 1dp between its bubbles.
+            .padding(
+                top = if (startsGroup) 6.dp else 1.dp, bottom = if (endsGroup) 6.dp else 1.dp,
+                start = startGutter, end = SignalDimens.gutter,
+            ),
     ) {
         val avatarSpace = if (showAvatarColumn) SignalDimens.groupAvatar + 8.dp else 0.dp
         val bubbleMax = maxWidth - SignalDimens.bubbleEdgeMargin - avatarSpace
@@ -1724,8 +1728,6 @@ private fun MessageBubble(
                             .then(
                                 when {
                                     deleted -> Modifier.border(1.dp, signal.divider, shape)
-                                    // Web `.myBubble { border: 1px solid color-mix(--primary 16%) }`.
-                                    isMine && !mediaOnly && !jumbomoji -> Modifier.border(1.dp, signal.outgoingBorder, shape)
                                     else -> Modifier
                                 },
                             )
@@ -1743,8 +1745,8 @@ private fun MessageBubble(
                     ) {
                         if (!isMine && isGroup && showSender && !deleted) Text(
                             message.senderName ?: message.senderUsername.orEmpty(),
-                            // Web `.senderName { color: var(--primary); opacity: .85 }`.
-                            color = signal.primary.copy(alpha = .85f),
+                            // Signal names each group member in their own colour.
+                            color = signalNameColor(message.senderId, signal.isDark),
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                         )
@@ -1865,7 +1867,7 @@ private fun MessageBubble(
                     Row(
                         Modifier.padding(horizontal = 8.dp).offset(y = (-4).dp)
                             .clip(RoundedCornerShape(14.dp))
-                            .background(signal.surface)
+                            .background(signal.reactionPill)
                             .border(2.dp, signal.background, RoundedCornerShape(14.dp))
                             .clickable { reactionsOpen = true }
                             .padding(horizontal = 7.dp, vertical = 3.dp),
@@ -1943,21 +1945,22 @@ private fun MessageBubble(
 private fun SignalQuote(message: ChatMessage, isMine: Boolean, fg: Color, onClick: (() -> Unit)? = null) {
     val signal = signalColors
     val quoteShape = RoundedCornerShape(SignalDimens.quoteCorner)
+    // Signal `QuoteViewColorTheme`: translucent panel, white rule, panel-specific text colour.
+    val text = if (isMine) signal.onQuoteOutgoing else signal.onQuoteIncoming
     Row(
-        // Web ReplyPreview: neutral wash + org-accent rule on both sides (bubbles are no longer solid blue).
-        Modifier.clip(quoteShape).background(if (signal.isDark) Color.White.copy(alpha = .08f) else Color.Black.copy(alpha = .05f))
+        Modifier.clip(quoteShape).background(if (isMine) signal.quoteOutgoing else signal.quoteIncoming)
             .let { if (onClick != null) it.clickable(onClickLabel = "Go to original message", onClick = onClick) else it }
             .height(androidx.compose.foundation.layout.IntrinsicSize.Min),
     ) {
-        Box(Modifier.width(4.dp).fillMaxHeight().background(signal.primary))
+        Box(Modifier.width(4.dp).fillMaxHeight().background(signal.quoteBar))
         Column(Modifier.weight(1f, fill = false).padding(horizontal = 8.dp, vertical = 6.dp)) {
-            Text(message.replySenderName.orEmpty(), color = fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(message.replySenderName.orEmpty(), color = text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
             SnippetText(
                 message.replyContent?.takeIf(String::isNotBlank)?.let { PreviewSnippet(null, it) }
                     ?: if (message.replyFileType != null || message.replyFileName != null)
                         attachmentPreview(message.replyFileType, message.replyFileName, null)
                     else PreviewSnippet(null, "Original message unavailable"),
-                color = fg.copy(alpha = .85f), fontSize = 14.sp, maxLines = 2,
+                color = text, fontSize = 14.sp, maxLines = 2,
             )
         }
         val thumb = message.replyFileUrl?.takeIf { message.replyFileType?.startsWith("image/") == true }
@@ -2082,13 +2085,19 @@ private fun DateSeparator(date: LocalDate) {
  * [endsGroup] is kept for call-site compatibility.
  */
 @Suppress("UNUSED_PARAMETER")
+/**
+ * Signal `V2ConversationItemShape`: a lone message is round on every corner; in a
+ * cluster the sender-side corners between bubbles shrink to 4dp.
+ */
 internal fun messageBubbleShape(isMine: Boolean, startsGroup: Boolean, endsGroup: Boolean): RoundedCornerShape {
-    val large = SignalDimens.bubbleCorner
-    val notch = if (startsGroup) SignalDimens.bubbleCornerCollapsed else large
+    val big = SignalDimens.bubbleCorner
+    val small = SignalDimens.bubbleCornerCollapsed
+    val top = if (startsGroup) big else small
+    val bottom = if (endsGroup) big else small
     return if (isMine) {
-        RoundedCornerShape(topStart = large, topEnd = notch, bottomStart = large, bottomEnd = large)
+        RoundedCornerShape(topStart = big, topEnd = top, bottomStart = big, bottomEnd = bottom)
     } else {
-        RoundedCornerShape(topStart = notch, topEnd = large, bottomStart = large, bottomEnd = large)
+        RoundedCornerShape(topStart = top, topEnd = big, bottomStart = bottom, bottomEnd = big)
     }
 }
 
@@ -2131,9 +2140,8 @@ private fun DeliveryTickIcon(tick: DeliveryTick, onMedia: Boolean, plain: Boolea
         onMedia -> Color.White
         // No bubble behind (jumbomoji): chat-background colours, like the time beside it.
         plain -> if (tick == DeliveryTick.Read) signal.primary else signal.textSecondary
-        tick == DeliveryTick.Read -> signal.tickRead
-        tick == DeliveryTick.Delivered -> signal.tickDelivered
-        else -> signal.tickMuted
+        // Signal draws every receipt state in the bubble's footer colour; the shape tells them apart.
+        else -> signal.onOutgoingSecondary
     }
     SignalReceiptIcon(tick, tint, punchThrough = when {
         onMedia -> Color.Black.copy(alpha = .55f)
