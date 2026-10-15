@@ -1065,13 +1065,19 @@ Phase 5 implementation notes (Android, 2026-09-25):
   sent untouched like the web, anything else (HEIC, large camera photos) is
   downscaled to 1024 px JPEG instead of rejected. Upload shows a native
   progress spinner.
-- **Notification Sounds** syncs the web prefs. Mute all / Play when focused /
-  Play on send / Read receipts apply on Android; "Incoming call ringtone" opens
-  the system ringtone picker (used by `CallRingService`), "New message" and
-  "Mention / @-tag" open the Messages channel settings. Volume sliders,
-  "Outgoing call tone" and "Reaction" have no Android counterpart and are
-  hidden. Server fix: `validateNotificationPrefs` now accepts `readReceipts`
-  (it was silently dropped although chat queries read it).
+- **Notification Sounds** (Profile) keeps push status, Mute all and the
+  "Mention / @-tag" channel. Since 0.25.0 chat settings live in **Chat ⋮ →
+  Settings** (Signal layout: profile card, Notifications, Privacy, Data and
+  storage, Chats). Synced through `profile/notification-prefs`: `playOnSend`,
+  `readReceipts`, `typingIndicators`, `linkPreviews`, `sentMediaQuality`,
+  `hideSensitiveContent` (web/desktop show the same toggles). Device-only:
+  in-chat sounds, notification "Show" level, screen lock and timeout, screen
+  security, incognito keyboard, media auto-download per network, low-data
+  calls, send with enter. Sound rules follow Signal: the open thread never
+  posts and only plays a short tone with "In-chat sounds"; every other alert
+  uses its channel sound unless Mute all. `playWhenFocused` is ignored on
+  Android. Volume sliders, "Outgoing call tone" and "Reaction" tones have no
+  Android counterpart.
 - **Theme:** server theme applied once on tenant sign-in, `PUT` on toggle,
   `theme_changed` WS applies changes from other devices.
 - **Sign out:** confirmation dialog; office sessions must clock out from the

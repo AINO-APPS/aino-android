@@ -22,6 +22,12 @@ val VIDEO_TIERS = listOf(
 
 const val MOBILE_TOP_TIER_BITRATE = 1_500_000
 const val BOTTOM_TIER_INDEX = 4
+/** "Use less data for calls" caps video at 350 kbps, 1.5× downscaled. */
+const val LOW_DATA_TIER_INDEX = 3
+
+/** The controller's rung, never better than [floorIndex] (low-data calls). */
+fun cappedTier(tierIndex: Int, floorIndex: Int, isMobile: Boolean = true): VideoEncodingTier =
+    buildTiers(isMobile)[maxOf(tierIndex, floorIndex).coerceIn(0, BOTTOM_TIER_INDEX)]
 
 /**
  * Calls start uncapped at the top rung. WebRTC's congestion controller already

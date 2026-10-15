@@ -1,43 +1,41 @@
 package app.aino.mobile.core.notifications
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.RingtoneManager
+import android.media.SoundPool
 import android.net.Uri
+import app.aino.mobile.R
+import app.aino.mobile.core.settings.ChatPreferences
 
 /**
- * Device-side mirror of the server's notification prefs that the push and
- * ring services need without a network round-trip (the web keeps the same
- * cache in localStorage). The incoming-call ringtone is a device choice made
- * through the system ringtone picker, so it lives only here.
+ * When chat alerts make a sound (Signal `DefaultMessageNotifier` /
+ * `NotificationFactory.notifyInThread`):
+ * - the thread on screen never posts; it plays a short tone only with "In-chat sounds";
+ * - everything else (chat list, other screens, background) alerts with its channel sound;
+ * - "Mute all" silences both. Calls ring through [CallRingService] and only honour mute.
+ *
+ * The incoming-call ringtone is a device choice made through the system picker.
  */
 object NotificationSoundPrefs {
     private const val FILE = "aino_notification_sounds"
-    private const val MUTE_ALL = "muteAll"
-    private const val PLAY_WHEN_FOCUSED = "playWhenFocused"
-    private const val PLAY_ON_SEND = "playOnSend"
     private const val RINGTONE_URI = "ringtoneUri"
+    /** Signal `DefaultMessageNotifier.MIN_AUDIBLE_PERIOD_MILLIS`. */
+    const val MIN_AUDIBLE_PERIOD_MS = 2_000L
 
-    /** Set by MainActivity onStart/onStop: "the window is focused" for web parity. */
+    /** Set by MainActivity onStart/onStop. */
     @Volatile var appVisible: Boolean = false
+
+    @Volatile private var lastInThreadToneAt = 0L
 
     private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
-    fun save(context: Context, muteAll: Boolean, playWhenFocused: Boolean, playOnSend: Boolean) {
-        prefs(context).edit()
-            .putBoolean(MUTE_ALL, muteAll)
-            .putBoolean(PLAY_WHEN_FOCUSED, playWhenFocused)
-            .putBoolean(PLAY_ON_SEND, playOnSend)
-            .apply()
-    }
+    fun muteAll(context: Context): Boolean = ChatPreferences.get(context).muteAll
+    fun playOnSend(context: Context): Boolean = ChatPreferences.get(context).playOnSend
 
-    fun muteAll(context: Context): Boolean = prefs(context).getBoolean(MUTE_ALL, false)
-    fun playOnSend(context: Context): Boolean = prefs(context).getBoolean(PLAY_ON_SEND, false)
-
-    /** Web `shouldPlay`: never when muted; while focused only if `playWhenFocused`. */
-    fun notificationAudible(context: Context): Boolean {
-        val p = prefs(context)
-        if (p.getBoolean(MUTE_ALL, false)) return false
-        return !appVisible || p.getBoolean(PLAY_WHEN_FOCUSED, false)
-    }
+    /** A posted (non-visible-thread) alert is audible unless everything is muted. */
+    fun notificationAudible(context: Context): Boolean = !muteAll(context)
 
     fun ringtoneUri(context: Context): Uri? = prefs(context).getString(RINGTONE_URI, null)?.let(Uri::parse)
 
@@ -49,12 +47,83 @@ object NotificationSoundPrefs {
     /** Signed-out devices must not keep the previous user's choices. */
     fun clear(context: Context) {
         prefs(context).edit().clear().apply()
+        ChatPreferences.clear(context)
     }
 
-    /** "Play a sound when I send a message": the platform's own short confirmation sound. */
+    /** Pure decision for the open-thread tone (Signal `notifyInThread` guards). */
+    internal fun inThreadToneAllowed(
+        inChatSounds: Boolean,
+        muteAll: Boolean,
+        ringerNormal: Boolean,
+        nowMs: Long,
+        lastToneMs: Long,
+    ): Boolean = inChatSounds && !muteAll && ringerNormal && nowMs - lastToneMs >= MIN_AUDIBLE_PERIOD_MS
+
+    /** Pure decision for the send confirmation tone. */
+    internal fun sendToneAllowed(playOnSend: Boolean, muteAll: Boolean, ringerNormal: Boolean): Boolean =
+        playOnSend && !muteAll && ringerNormal
+
+    private fun ringerNormal(context: Context): Boolean =
+        context.getSystemService(AudioManager::class.java)?.ringerMode == AudioManager.RINGER_MODE_NORMAL
+
+    /** A message landed in the thread on screen: short notification tone only when the user asked for it. */
+    fun playInThreadTone(context: Context): Boolean {
+        val prefs = ChatPreferences.get(context)
+        val now = System.currentTimeMillis()
+        if (!inThreadToneAllowed(prefs.inChatSounds, prefs.muteAll, ringerNormal(context), now, lastInThreadToneAt)) return false
+        lastInThreadToneAt = now
+        return inThreadToneOutput(context)
+    }
+
+    internal fun resetToneThrottleForTest() { lastInThreadToneAt = 0L }
+
+    /** Plays the default notification sound; replaceable in tests. */
+    internal var inThreadToneOutput: (Context) -> Boolean = ::playDefaultNotificationSound
+
+    private fun playDefaultNotificationSound(context: Context): Boolean = runCatching {
+        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) ?: return false
+        val ringtone = RingtoneManager.getRingtone(context, uri) ?: return false
+        ringtone.audioAttributes = AudioAttributes.Builder()
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+            .build()
+        ringtone.play()
+        true
+    }.getOrDefault(false)
+
+    @Volatile private var pool: SoundPool? = null
+    @Volatile private var sentSound = 0
+    @Volatile private var sentReady = false
+
+    /** Loads the send tone ahead of the first send so it plays without delay. */
+    fun preload(context: Context) {
+        if (pool != null) return
+        synchronized(this) {
+            if (pool != null) return
+            val created = SoundPool.Builder()
+                .setMaxStreams(2)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                .build()
+            created.setOnLoadCompleteListener { _, id, status -> if (id == sentSound && status == 0) sentReady = true }
+            sentSound = runCatching { created.load(context.applicationContext, R.raw.message_sent, 1) }.getOrDefault(0)
+            pool = created
+        }
+    }
+
+    /** "Play a sound when I send a message": the bundled confirmation tone (not the touch-click effect, which "Touch sounds" mutes). */
     fun playSendConfirmation(context: Context) {
-        if (muteAll(context) || !playOnSend(context)) return
-        val audio = context.getSystemService(android.media.AudioManager::class.java) ?: return
-        audio.playSoundEffect(android.media.AudioManager.FX_KEY_CLICK, 1f)
+        val prefs = ChatPreferences.get(context)
+        if (!sendToneAllowed(prefs.playOnSend, prefs.muteAll, ringerNormal(context))) return
+        preload(context)
+        val current = pool ?: return
+        if (sentReady) current.play(sentSound, .6f, .6f, 1, 0, 1f)
+        else current.setOnLoadCompleteListener { p, id, status ->
+            if (id == sentSound && status == 0) { sentReady = true; p.play(id, .6f, .6f, 1, 0, 1f) }
+        }
     }
 }

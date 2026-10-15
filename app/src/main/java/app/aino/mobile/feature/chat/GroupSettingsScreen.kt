@@ -160,7 +160,7 @@ internal fun GroupSettingsScreen(
 }
 
 @Composable
-private fun GroupTopBar(title: String, onBack: () -> Unit) {
+internal fun GroupTopBar(title: String, onBack: () -> Unit) {
     val signal = signalColors
     Row(
         Modifier.fillMaxWidth().background(signal.background).statusBarsPadding().height(SignalDimens.toolbarHeight).padding(horizontal = 4.dp),
@@ -278,7 +278,7 @@ private fun GroupMainPage(
 }
 
 @Composable
-private fun QuickAction(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
+internal fun QuickAction(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
     val signal = signalColors
     Column(
         modifier.clip(RoundedCornerShape(12.dp)).background(signal.surface).clickable(onClick = onClick).padding(vertical = 12.dp),
@@ -321,10 +321,10 @@ internal fun SettingsRow(
 }
 
 @Composable
-private fun SectionDivider() = HorizontalDivider(Modifier.padding(vertical = 8.dp), color = signalColors.divider, thickness = 0.5.dp)
+internal fun SectionDivider() = HorizontalDivider(Modifier.padding(vertical = 8.dp), color = signalColors.divider, thickness = 0.5.dp)
 
 @Composable
-private fun SectionTitle(text: String) {
+internal fun SectionTitle(text: String) {
     Text(text, Modifier.padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 4.dp), color = signalColors.text, fontSize = 16.sp, fontWeight = FontWeight.Medium)
 }
 

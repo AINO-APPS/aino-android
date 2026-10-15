@@ -21,7 +21,7 @@ import androidx.navigation.NavBackStackEntry
 private typealias NavTransitionScope = AnimatedContentTransitionScope<NavBackStackEntry>
 
 /** Screens pushed over the chat list with the slide-from-end transition. */
-internal val CHAT_PUSHED_ROUTES = setOf(AinoDestination.ChatThread.route, CHAT_NEW_GROUP_ROUTE)
+internal val CHAT_PUSHED_ROUTES = setOf(AinoDestination.ChatThread.route, CHAT_NEW_GROUP_ROUTE, CHAT_SETTINGS_ROUTE)
 
 private const val SLIDE_MS = 200
 private const val FADE_SCALE_MS = 150

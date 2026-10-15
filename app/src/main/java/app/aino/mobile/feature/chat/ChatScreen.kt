@@ -10,7 +10,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -90,6 +89,13 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.togetherWith
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Call
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -121,6 +127,7 @@ fun ChatScreen(
     onOpenConversation: ((Long) -> Unit)? = null,
     onNavigateBack: (() -> Unit)? = null,
     onNewGroup: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val confirmCallPermissions = app.aino.mobile.core.call.rememberCallPermissions()
@@ -295,6 +302,7 @@ fun ChatScreen(
                             else add(ChatMenuItem("Archived chats", HeroIcons.ArchiveBox, count = archivedCount) { archivedOpen = true })
                             add(null)
                             add(ChatMenuItem("Refresh", HeroIcons.ArrowPath, onClick = viewModel::refresh))
+                            add(ChatMenuItem("Settings", HeroIcons.Cog6Tooth, onClick = onOpenSettings))
                         }
                         ChatListTab.Meet -> listOf(
                             ChatMenuItem("Mark all as read", receipt = true, enabled = visibleConversations.any { it.unreadCount > 0 }) { viewModel.markAllRead(visibleConversations) },
@@ -1201,6 +1209,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                 onPrepare = { prepared, highQuality ->
                     viewModel.prewarmMedia(prepared.map { MediaUploadSpec(it.uri, it.mimeType, it.width, it.height) }, highQuality)
                 },
+                initialHighQuality = app.aino.mobile.core.settings.ChatPreferences.current.highQualityMedia,
             )
         }
     }
@@ -1377,84 +1386,88 @@ private fun ConversationInfo(ui: ChatUiState, viewModel: ChatViewModel, onOpenAl
         GroupSettingsScreen(ui, viewModel, onOpenAllMedia = onOpenAllMedia, onOpenInfoPage = ::open)
         return
     }
-    Box(Modifier.fillMaxSize().background(colors.bg)) {
+    val signal = signalColors
+    Box(Modifier.fillMaxSize().background(signal.background)) {
         Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().background(colors.bgSecondary)
-                    .border(BorderStroke(0.5.dp, colors.border))
-                    .statusBarsPadding().height(56.dp).padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    HeroIcons.ArrowLeft, "Back",
-                    Modifier.size(38.dp).padding(8.dp).clickable { if (page == InfoPage.Main) viewModel.closeInfo() else page = InfoPage.Main },
-                    tint = colors.text,
-                )
-                Text(page.title, Modifier.padding(start = 6.dp), color = colors.text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            }
+            GroupTopBar(page.title, onBack = { if (page == InfoPage.Main) viewModel.closeInfo() else page = InfoPage.Main })
             ui.error?.let { AinoAlert(it, AlertTone.Error, Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) }
             when (page) {
-                InfoPage.Main -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Signal-style conversation settings (mirrors GroupMainPage).
+                InfoPage.Main -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
                     item {
-                        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(Modifier.size(88.dp)) { ConversationAvatar(conversation, ui.presence[conversation.otherUserId], 88.dp, members = ui.members) }
-                            Text(conversation.title(), Modifier.padding(top = 12.dp), color = colors.text, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                        Column(Modifier.fillMaxWidth().padding(top = 8.dp, start = 24.dp, end = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Box(Modifier.size(112.dp)) { ConversationAvatar(conversation, ui.presence[conversation.otherUserId], 112.dp, members = ui.members) }
                             Text(
-                                if (conversation.isGroup) groupMemberLabel(conversation, ui.members) ?: "Group" else presenceLabel(ui.presence[conversation.otherUserId]),
-                                color = colors.textSecondary, fontSize = 13.sp,
+                                conversation.title(), Modifier.padding(top = 16.dp),
+                                color = signal.text, fontSize = 24.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis,
                             )
+                            Text(
+                                when {
+                                    conversation.isSelfChat -> "Note to self"
+                                    conversation.isGroup -> groupMemberLabel(conversation, ui.members) ?: "Group"
+                                    else -> presenceLabel(ui.presence[conversation.otherUserId])
+                                },
+                                Modifier.padding(top = 4.dp), color = signal.textSecondary, fontSize = 15.sp, textAlign = TextAlign.Center,
+                            )
+                            val username = conversation.otherUsername?.takeIf { it.isNotBlank() && !conversation.isSelfChat && !conversation.isGroup }
+                            if (username != null) Text("@$username", Modifier.padding(top = 2.dp), color = signal.textSecondary, fontSize = 15.sp)
                         }
                     }
                     item {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (!conversation.isSelfChat && ui.callsEnabled) {
-                                InfoAction(HeroIcons.Phone, "Call", Modifier.weight(1f)) { viewModel.closeInfo(); viewModel.startCall("voice") }
-                                InfoAction(HeroIcons.VideoCamera, "Video", Modifier.weight(1f)) { viewModel.closeInfo(); viewModel.startCall("video") }
+                        var muteOpen by remember { mutableStateOf(false) }
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (ui.callsEnabled && !conversation.isSelfChat) {
+                                QuickAction(Icons.Outlined.Videocam, "Video", Modifier.weight(1f)) { viewModel.closeInfo(); viewModel.startCall("video") }
+                                QuickAction(Icons.Outlined.Call, "Audio", Modifier.weight(1f)) { viewModel.closeInfo(); viewModel.startCall("voice") }
                             }
-                            InfoAction(HeroIcons.MagnifyingGlass, "Search", Modifier.weight(1f)) { open(InfoPage.Search) }
+                            Box(Modifier.weight(1f)) {
+                                QuickAction(
+                                    if (conversation.isMuted) Icons.Outlined.NotificationsOff else Icons.Outlined.Notifications,
+                                    if (conversation.isMuted) "Muted" else "Mute", Modifier.fillMaxWidth(),
+                                ) { if (conversation.isMuted) viewModel.muteFor(null) else muteOpen = true }
+                                MuteDurationMenu(muteOpen, { muteOpen = false }) { viewModel.muteFor(it) }
+                            }
+                            QuickAction(Icons.Outlined.Search, "Search", Modifier.weight(1f)) { open(InfoPage.Search) }
                         }
                     }
-                    if (conversation.isGroup) item { InfoRow(HeroIcons.Cog6Tooth, "Group settings & members") { open(InfoPage.Group) } }
+                    item { SectionDivider() }
+                    item { SettingsRow(HeroIcons.Photo, "All media, files & links", onClick = onOpenAllMedia) }
                     item {
                         val recent = (ui.infoContent as? InfoContent.Files)?.files.orEmpty().filter { it.isVisual() }.take(4)
-                        Column {
-                            InfoRow(HeroIcons.FolderOpen, "All media, files & links", onClick = onOpenAllMedia)
-                            if (recent.isNotEmpty()) Row(
-                                Modifier.fillMaxWidth().padding(top = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                recent.forEach { file ->
-                                    Box(Modifier.weight(1f).aspectRatio(1f)) {
-                                        ChatThumbnail(
-                                            resolveChatMediaUrl(file.fileUrl), file.fileName, video = false,
-                                            shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxSize(),
-                                        ) { onOpenAllMedia() }
-                                    }
+                        if (recent.isNotEmpty()) Row(
+                            Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            recent.forEach { file ->
+                                Box(Modifier.weight(1f).aspectRatio(1f)) {
+                                    ChatThumbnail(
+                                        resolveChatMediaUrl(file.fileUrl), file.fileName, video = false,
+                                        shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxSize(),
+                                    ) { onOpenAllMedia() }
                                 }
-                                repeat(4 - recent.size) { Spacer(Modifier.weight(1f)) }
                             }
+                            repeat(4 - recent.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
-                    item { InfoRow(HeroIcons.PushPin, "Pinned messages") { open(InfoPage.Pinned) } }
-                    item { InfoRow(HeroIcons.Star, "Saved messages") { open(InfoPage.Saved) } }
+                    item { SettingsRow(HeroIcons.PushPin, "Pinned messages") { open(InfoPage.Pinned) } }
+                    item { SettingsRow(HeroIcons.Star, "Saved messages") { open(InfoPage.Saved) } }
+                    item { SectionDivider() }
                     // The web exposes these through the conversation row's hover menu;
                     // mobile has no hover, so they live here.
-                    item {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            InfoAction(HeroIcons.PushPin, if (conversation.isPinned) "Unpin" else "Pin chat", Modifier.weight(1f), viewModel::togglePin)
-                            InfoAction(HeroIcons.Star, if (conversation.isFavourite) "Unfavourite" else "Favourite", Modifier.weight(1f), viewModel::toggleFavourite)
-                            InfoAction(if (conversation.isMuted) HeroIcons.Bell else HeroIcons.BellSlash, if (conversation.isMuted) "Unmute" else "Mute", Modifier.weight(1f), viewModel::toggleMute)
-                            InfoAction(HeroIcons.ArchiveBox, if (conversation.isArchived) "Unarchive" else "Archive", Modifier.weight(1f), viewModel::toggleArchive)
-                        }
-                    }
-                    if (!conversation.isGroup && !conversation.isSelfChat && conversation.otherUserId != null) item {
-                        InfoRow(HeroIcons.NoSymbol, if (conversation.isBlocked) "Unblock user" else "Block user", danger = !conversation.isBlocked) { confirmBlock = true }
-                    }
-                    item { InfoRow(HeroIcons.Trash, "Clear chat", danger = true) { confirmClear = true } }
+                    item { SettingsRow(HeroIcons.PushPin, "Pin chat", trailing = if (conversation.isPinned) "On" else "Off") { viewModel.togglePin() } }
+                    item { SettingsRow(HeroIcons.Star, "Favourite", trailing = if (conversation.isFavourite) "On" else "Off", onClick = viewModel::toggleFavourite) }
+                    item { SettingsRow(HeroIcons.ArchiveBox, if (conversation.isArchived) "Unarchive" else "Archive") { viewModel.toggleArchive() } }
                     if (ui.conversationCalls.isNotEmpty()) {
-                        item { SectionHeader("Call history", HeroIcons.Phone) }
+                        item { SectionDivider() }
+                        item { SectionTitle("Call history") }
                         items(ui.conversationCalls, key = { "info-call-${it.id}" }) { CallRow(it, conversation, ui.currentUserId) }
                     }
+                    item { SectionDivider() }
+                    if (!conversation.isGroup && !conversation.isSelfChat && conversation.otherUserId != null) item {
+                        SettingsRow(HeroIcons.NoSymbol, if (conversation.isBlocked) "Unblock" else "Block", danger = !conversation.isBlocked) { confirmBlock = true }
+                    }
+                    item { SettingsRow(HeroIcons.ArchiveBoxXMark, "Clear chat", danger = true) { confirmClear = true } }
                 }
                 InfoPage.Search -> Column(Modifier.fillMaxSize()) {
                     Row(
@@ -1520,15 +1533,6 @@ private fun InfoMessageList(ui: ChatUiState, emptyText: String, onOpen: (ChatMes
                 SnippetText(message.snippet(), color = colors.text, fontSize = 14.sp, maxLines = 4)
             }
         }
-    }
-}
-
-@Composable
-private fun InfoAction(icon: ImageVector, label: String, modifier: Modifier, onClick: () -> Unit) {
-    val colors = LocalWebColors.current
-    Column(modifier.clip(RoundedCornerShape(12.dp)).background(colors.surface).border(1.dp, colors.glassBorder, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Icon(icon, null, Modifier.size(20.dp), tint = colors.primary)
-        Text(label, color = colors.text, fontSize = 10.sp, maxLines = 1)
     }
 }
 
@@ -2193,6 +2197,7 @@ private fun MessageComposer(
 ) {
     val context = LocalContext.current
     val signal = signalColors
+    val composerPrefs by app.aino.mobile.core.settings.ChatPreferences.state.collectAsStateWithLifecycle()
     val player = app.aino.mobile.core.AppContainer.get(context).audio
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val density = androidx.compose.ui.platform.LocalDensity.current
@@ -2456,7 +2461,12 @@ private fun MessageComposer(
                                 .onFocusChanged { if (it.isFocused && panel != ComposerPanel.None && panel != ComposerPanel.EmojiSearch) panel = ComposerPanel.None },
                             textStyle = androidx.compose.ui.text.TextStyle(color = signal.text, fontSize = 17.sp, lineHeight = 22.sp),
                             cursorBrush = androidx.compose.ui.graphics.SolidColor(signal.primary),
-                            keyboardOptions = KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences),
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences,
+                                // Signal "Send with enter".
+                                imeAction = if (composerPrefs.enterSends) ImeAction.Send else ImeAction.Default,
+                            ),
+                            keyboardActions = KeyboardActions(onSend = { if (value.isNotBlank()) onSend() }),
                             decorationBox = { inner ->
                                 if (value.isEmpty()) Text(if (editingMessage == null) "Message" else "Edit message", color = signal.textSecondary, fontSize = 17.sp)
                                 inner()

@@ -110,7 +110,18 @@ class MainActivity : FragmentActivity() {
             val themeScope = rememberCoroutineScope()
             // P10.4: the org accent repaints the palette (web BrandingContext `--primary`).
             val branding by app.aino.mobile.core.AppContainer.get(applicationContext).branding.state.collectAsState()
+            val chatPrefs by app.aino.mobile.core.settings.ChatPreferences.state.collectAsState()
+            val locked by app.aino.mobile.core.settings.AppLock.locked.collectAsState()
+            // Signal "Screen security": no screenshots or recents preview anywhere in the app.
+            androidx.compose.runtime.DisposableEffect(chatPrefs.screenSecurity) {
+                if (chatPrefs.screenSecurity) app.aino.mobile.core.designsystem.acquireSecure(window)
+                onDispose { if (chatPrefs.screenSecurity) app.aino.mobile.core.designsystem.releaseSecure(window) }
+            }
+            androidx.compose.runtime.LaunchedEffect(chatPrefs.screenLock) { if (!chatPrefs.screenLock) app.aino.mobile.core.settings.AppLock.reset() }
+            androidx.compose.runtime.LaunchedEffect(locked) { if (locked) requestUnlock() }
             WebTheme(darkTheme = isDark, accent = branding.accentColor) {
+              app.aino.mobile.core.designsystem.IncognitoKeyboard(chatPrefs.incognitoKeyboard) {
+              androidx.compose.foundation.layout.Box {
                 AinoApp(
                     authViewModel,
                     appUpdater,
@@ -140,12 +151,15 @@ class MainActivity : FragmentActivity() {
                     },
                     onAuthenticatedForPush = {
                         if (android.os.Build.VERSION.SDK_INT >= 33 &&
-                            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
                         ) {
                             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                     },
                 )
+                if (locked) app.aino.mobile.core.designsystem.component.AppLockOverlay(onUnlock = ::requestUnlock)
+              }
+              }
             }
         }
         consumeCallIntent(intent)
@@ -249,11 +263,30 @@ class MainActivity : FragmentActivity() {
     override fun onStart() {
         super.onStart()
         app.aino.mobile.core.notifications.NotificationSoundPrefs.appVisible = true
+        val prefs = app.aino.mobile.core.settings.ChatPreferences.get(applicationContext)
+        val inCall = app.aino.mobile.core.call.ActiveCallRuntime.get(applicationContext).ui.value.visible ||
+            app.aino.mobile.feature.meeting.MeetingRuntime.get(applicationContext).state.value != null ||
+            incomingCallViewModel.ui.value.route != null
+        val signedIn = authViewModel.ui.value.state is app.aino.mobile.core.auth.AuthState.Authenticated
+        app.aino.mobile.core.settings.AppLock.onForeground(prefs, inCall, signedIn)
     }
 
     override fun onStop() {
         app.aino.mobile.core.notifications.NotificationSoundPrefs.appVisible = false
+        app.aino.mobile.core.settings.AppLock.onBackground()
         super.onStop()
+    }
+
+    /** Signal screen lock prompt; the overlay stays until it succeeds. */
+    private fun requestUnlock() {
+        if (!biometricAvailable()) {
+            // The phone's own lock was removed: nothing to verify with.
+            app.aino.mobile.core.settings.AppLock.unlock()
+            return
+        }
+        authenticate("Unlock AINO", "Use your fingerprint, face or phone PIN", onSuccess = {
+            app.aino.mobile.core.settings.AppLock.unlock()
+        }, onError = { _, _ -> })
     }
 
     override fun onResume() {

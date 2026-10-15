@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.jsonObject
@@ -657,6 +658,8 @@ class ChatViewModel(
             RealtimeEvent.ChatTyping -> {
                 val typing = decodeChatRealtime<ChatTypingEvent>(event.data) ?: return
                 if (_ui.value.selectedConversation?.id != typing.conversationId || typing.userId == scope?.userId) return
+                // Signal: typing indicators off means neither sending nor seeing them.
+                if (!chatPrefs().typingIndicators) return
                 _ui.update { st -> st.copy(typingUserId = typing.userId) }
                 typingExpiry?.cancel()
                 typingExpiry = viewModelScope.launch {
@@ -1294,11 +1297,16 @@ class ChatViewModel(
         // Match web exactly: reset on every change, then emit after 200 ms of
         // inactivity. Typing is fire-and-forget and never causes a refetch.
         typingDispatch?.cancel()
+        if (!chatPrefs().typingIndicators) return
         typingDispatch = viewModelScope.launch {
             delay(200)
             realtimeSend(typingEnvelope(conversationId))
         }
     }
+
+    /** Device + synced chat settings; defaults when no context is attached (unit tests). */
+    private fun chatPrefs(): app.aino.mobile.core.settings.ChatPrefs =
+        context?.let(app.aino.mobile.core.settings.ChatPreferences::get) ?: app.aino.mobile.core.settings.ChatPreferences.current
 
     fun refreshThread() = refreshThread(secondaryDelayMs = 0L)
 
@@ -1466,13 +1474,31 @@ class ChatViewModel(
 
     /** Share sheet text: queued and sent to [conversationId] like a composer send, whichever thread is open. */
     fun sendSharedText(conversationId: Long, text: String) {
+        sendSharedText(conversationId, text, preview = null)
+    }
+
+    /**
+     * Shared links carry a Signal-style preview card. [preview] is the card the share
+     * screen already showed; otherwise it is fetched here (briefly) before sending.
+     */
+    fun sendSharedText(conversationId: Long, text: String, preview: LinkPreview?) {
         val currentScope = scope ?: return
         val content = text.trim().take(5_000).ifEmpty { return }
         val clientId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         val queued = QueuedMessage(clientId, conversationId, currentScope.userId, content, now, sendSequence.incrementAndGet())
         _ui.update { st -> st.copy(queuedMessages = st.queuedMessages + queued, error = null) }
-        dispatchText(currentScope, conversationId, content, null, null, clientId, now)
+        val url = firstLinkIn(content)?.takeIf { chatPrefs().linkPreviews }
+        val ready = preview?.takeIf { it.url == url }
+        if (url == null || ready != null) {
+            dispatchText(currentScope, conversationId, content, null, ready?.let { chatMessageEnvelope(conversationId, content, clientId, null, emptyList(), it) }, clientId, now)
+            return
+        }
+        // The text keeps its place in the send queue: reserve it now, fill in the card when it arrives.
+        val card = viewModelScope.async(Dispatchers.IO) {
+            withTimeoutOrNull(SHARED_PREVIEW_TIMEOUT_MS) { runCatching { repository.loadLinkPreview(url) }.getOrNull() }
+        }
+        dispatchText(currentScope, conversationId, content, null, null, clientId, now, deferredPreview = card)
     }
 
     /** Share sheet files/media: same upload pipeline as the composer, targeted at [conversationId]. */
@@ -1492,6 +1518,7 @@ class ChatViewModel(
         socketEnvelope: RealtimeEnvelope?,
         clientId: String,
         now: Long,
+        deferredPreview: Deferred<LinkPreview?>? = null,
     ) {
         context?.let(app.aino.mobile.core.notifications.NotificationSoundPrefs::playSendConfirmation)
         // Durable right away (leased: the worker won't overtake media queued ahead of it).
@@ -1501,10 +1528,13 @@ class ChatViewModel(
         sendQueue.submit(conversationId) {
             val stored = persisted.await()
             if (scope != currentScope) return@submit
+            val envelope = socketEnvelope ?: deferredPreview?.await()?.let {
+                chatMessageEnvelope(conversationId, content, clientId, replyToId, emptyList(), it)
+            }
             // A queued frame is not a delivered one: a half-open socket accepts it and drops it.
             // Only the server's echo of this clientMsgId confirms it; otherwise send over REST
             // (the server dedupes clientMsgId, so a late echo can't double the message).
-            if (socketEnvelope != null && sendOverSocket(socketEnvelope, clientId)) {
+            if (envelope != null && sendOverSocket(envelope, clientId)) {
                 if (stored) runCatching { outbox.delivered(currentScope, clientId) }
                 return@submit
             }
@@ -1567,7 +1597,7 @@ class ChatViewModel(
 
     /** Web `ChatInputBar`: debounce 600 ms, fetch OpenGraph for the first URL unless dismissed. */
     private fun scheduleLinkPreview(text: String) {
-        val url = firstLinkIn(text)
+        val url = firstLinkIn(text)?.takeIf { chatPrefs().linkPreviews }
         if (url == null) {
             linkPreviewJob?.cancel()
             _ui.update { st -> st.copy(composerLinkPreview = null, dismissedPreviewUrl = null) }
@@ -1580,6 +1610,17 @@ class ChatViewModel(
             val preview = runCatching { repository.loadLinkPreview(url) }.getOrNull()
             if (firstLinkIn(_ui.value.composer) == url) _ui.update { st -> st.copy(composerLinkPreview = preview) }
         }
+    }
+
+    /** Blocking OpenGraph lookup for the share sheet; null when off, unreachable or slow. */
+    fun fetchLinkPreview(url: String): LinkPreview? =
+        if (!chatPrefs().linkPreviews) null else runCatching { repository.loadLinkPreview(url) }.getOrNull()
+
+    /** Signal Privacy → Blocked: the people this user blocked. */
+    suspend fun loadBlockedUsers(): Result<List<ChatUser>> = withContext(Dispatchers.IO) { runCatching { repository.loadBlockedUsers() } }
+
+    suspend fun unblockUser(userId: Long): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching { repository.unblockUser(userId); Unit }.onSuccess { refresh() }
     }
 
     fun dismissLinkPreview() {
@@ -2814,6 +2855,8 @@ class ChatViewModel(
         internal const val STALE_LIST_NOTICE = "Couldn't refresh chats · showing saved conversations"
         internal val TRANSIENT_RETRY_DELAYS_MS = listOf(2_000L, 5_000L, 15_000L, 30_000L, 60_000L)
         internal const val SOCKET_ECHO_TIMEOUT_MS = 8_000L
+        /** A shared link waits this long for its preview card, then sends plain. */
+        internal const val SHARED_PREVIEW_TIMEOUT_MS = 5_000L
         /** A transient action failure is a hint, not a state: it clears itself. */
         internal const val TRANSIENT_ERROR_DISPLAY_MS = 4_000L
         internal const val MESSAGE_RESULTS_LIMIT = 100

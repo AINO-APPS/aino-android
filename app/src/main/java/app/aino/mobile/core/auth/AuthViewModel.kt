@@ -110,6 +110,7 @@ class AuthViewModel(
         loader.diskCache?.clear()
         app.aino.mobile.core.media.VideoCache.clear(context)
         app.aino.mobile.core.notifications.NotificationSoundPrefs.clear(context)
+        app.aino.mobile.core.settings.AppLock.reset()
         app.aino.mobile.core.push.PushTokenRegistrar.forget(context)
         // The previous account's messages and alerts must not linger (or badge the icon).
         app.aino.mobile.core.push.NotificationReconciler.clearAll(context)

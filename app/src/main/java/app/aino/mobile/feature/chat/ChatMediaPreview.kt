@@ -186,6 +186,30 @@ fun ChatThumbnail(
     }
     val density = LocalDensity.current.density
     val (width, height) = signalMediaSize(known ?: decoded, density, withContent)
+    // Signal media auto-download: remote media not allowed on this network waits for a tap.
+    val prefs by app.aino.mobile.core.settings.ChatPreferences.state.collectAsState()
+    var tapped by remember(url) { mutableStateOf(false) }
+    val remote = url is String && (url.startsWith("http://") || url.startsWith("https://"))
+    val cached = remember(url, remote) { remote && loader.diskCache?.openSnapshot(url as String)?.use { true } == true }
+    val allowed = remember(prefs, video) {
+        prefs.autoDownload(
+            if (video) app.aino.mobile.core.settings.AutoDownloadKind.Videos else app.aino.mobile.core.settings.AutoDownloadKind.Photos,
+            app.aino.mobile.core.settings.ChatPreferences.network(context),
+        )
+    }
+    if (remote && !cached && !allowed && !tapped) {
+        Box(
+            (modifier ?: Modifier.size(width.dp, height.dp))
+                .clip(shape).background(LocalWebColors.current.surface)
+                .combinedClickable(onClickLabel = "Download media", onLongClickLabel = "Message actions", onClick = { tapped = true }, onLongClick = onLongClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(48.dp).background(Color.Black.copy(alpha = .55f), CircleShape), contentAlignment = Alignment.Center) {
+                Icon(HeroIcons.ArrowDownTray, "Download", Modifier.size(24.dp), tint = Color.White)
+            }
+        }
+        return
+    }
     Box(
         (modifier ?: Modifier.size(width.dp, height.dp))
             .clip(shape).background(LocalWebColors.current.surface)

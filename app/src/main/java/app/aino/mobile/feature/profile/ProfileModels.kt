@@ -107,6 +107,21 @@ data class NotificationPrefs(
     val playWhenFocused: Boolean = false,
     val playOnSend: Boolean = false,
     val readReceipts: Boolean = true,
+    val hideSensitiveContent: Boolean = false,
+    val typingIndicators: Boolean = true,
+    val linkPreviews: Boolean = true,
+    val sentMediaQuality: String = "standard",
+)
+
+/** Copies the account's synced keys into the device chat settings (device-only keys stay). */
+fun mirrorSyncedPrefs(device: app.aino.mobile.core.settings.ChatPrefs, synced: NotificationPrefs) = device.copy(
+    muteAll = synced.muteAll,
+    playOnSend = synced.playOnSend,
+    readReceipts = synced.readReceipts,
+    typingIndicators = synced.typingIndicators,
+    linkPreviews = synced.linkPreviews,
+    sentMediaQuality = synced.sentMediaQuality.takeIf { it == "high" } ?: "standard",
+    hideSensitiveContent = synced.hideSensitiveContent,
 )
 
 // ── Biometric devices (`GET /api/auth/biometric`) ────────────────────────────

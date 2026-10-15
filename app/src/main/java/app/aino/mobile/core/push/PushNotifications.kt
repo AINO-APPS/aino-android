@@ -120,8 +120,7 @@ object PushNotifications {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        // Notification Sounds prefs: mute-all silences everything; other
-        // alerts stay quiet while the app is open unless "play when focused".
+        // Mute all silences everything; otherwise alerts use their channel sound (Signal).
         val silent = if (push.kind == PushKind.IncomingCall) {
             app.aino.mobile.core.notifications.NotificationSoundPrefs.muteAll(context)
         } else {

@@ -231,13 +231,17 @@ class RtcPeer(
     fun startQualityAdaptation(scope: CoroutineScope, intervalMs: Long = QUALITY_STATS_INTERVAL_MS) {
         if (closed || qualityJob?.isActive == true) return
         val controller = CallQualityController()
+        // Signal "Use less data for calls": never climb above the low-data rung.
+        val prefs = app.aino.mobile.core.settings.ChatPreferences.current
+        val floor = if (prefs.lowDataFor(app.aino.mobile.core.settings.ChatPreferences.network())) LOW_DATA_TIER_INDEX else 0
+        if (floor > 0) controller.setTierIndex(floor)
         qualityJob = scope.launch {
-            var capped = applyQuality(controller.getTier())
+            var capped = applyQuality(cappedTier(controller.getTierIndex(), floor))
             while (isActive && !closed) {
                 delay(intervalMs)
                 val report = stats() ?: break
                 val decision = controller.observe(collectStatsSample(report))
-                if (decision.changed || !capped) capped = applyQuality(decision.tier)
+                if (decision.changed || !capped) capped = applyQuality(cappedTier(decision.tierIndex, floor))
             }
         }
     }

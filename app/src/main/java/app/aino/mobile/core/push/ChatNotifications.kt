@@ -89,11 +89,11 @@ object ChatNotifications {
     fun showMessage(context: Context, data: Map<String, String>): PostingOutcome {
         val conversationId = data.getValue("conversationId").toLong()
         // Signal DefaultMessageNotifier: the thread on screen is marked read and
-        // never notifies; only the short in-conversation tone may play.
+        // never notifies; the short tone plays only with "In-chat sounds".
         if (VisibleThread.isVisible(conversationId)) {
             cancel(context, conversationId)
             VisibleThread.reportSuppressed(conversationId)
-            if (NotificationSoundPrefs.notificationAudible(context)) playInThreadTone(context)
+            NotificationSoundPrefs.playInThreadTone(context)
             return PostingOutcome.Suppressed("Visible conversation")
         }
         val isGroup = data["isGroup"] == "true"
@@ -281,19 +281,22 @@ object ChatNotifications {
             val photo = info.photos[latest.senderAvatar] ?: cachedPhoto(context, latest.senderAvatar, info.account)
             IconCompat.createWithBitmap(ChatAvatarBitmaps.user(latest.senderName, info.primary, photo))
         }
+        val content = app.aino.mobile.core.settings.ChatPreferences.get(context).notificationContent
+        val showName = content != app.aino.mobile.core.settings.NotificationContent.Nothing
+        val showText = content == app.aino.mobile.core.settings.NotificationContent.NameAndMessage
         val me = Person.Builder().setKey(SELF_KEY).setName("You").build()
         val style = NotificationCompat.MessagingStyle(me)
-            .setGroupConversation(info.isGroup)
-            .setConversationTitle(if (info.isGroup) info.title else null)
+            .setGroupConversation(info.isGroup && showName)
+            .setConversationTitle(if (info.isGroup && showName) info.title else null)
         lines.forEach { line ->
             val person = line.senderKey?.let { key ->
                 Person.Builder()
                     .setKey(key)
-                    .setName(line.senderName)
-                    .setIcon(iconFor(line, key))
+                    .setName(if (showName) line.senderName else "AINO")
+                    .apply { if (showName) setIcon(iconFor(line, key)) }
                     .build()
             }
-            style.addMessage(NotificationCompat.MessagingStyle.Message(line.text, line.timestampMs, person))
+            style.addMessage(NotificationCompat.MessagingStyle.Message(if (showText) line.text else "New message", line.timestampMs, person))
         }
         val requestCode = conversationId.hashCode()
         val contentIntent = PendingIntent.getActivity(
@@ -307,10 +310,10 @@ object ChatNotifications {
         val builder = NotificationCompat.Builder(context, info.channelId)
             .setSmallIcon(R.drawable.ic_stat_aino)
             .setColor(brandColor(context))
-            .setLargeIcon(info.largeIcon)
+            .setLargeIcon(if (showName) info.largeIcon else appLogo(context))
             .setStyle(style)
-            .setContentTitle(info.title)
-            .setContentText(lines.lastOrNull()?.text.orEmpty())
+            .setContentTitle(if (showName) info.title else "AINO")
+            .setContentText(if (showText) lines.lastOrNull()?.text.orEmpty() else "New message")
             .setContentIntent(contentIntent)
             .addAction(replyAction(context, conversationId, requestCode))
             .addAction(markReadAction(context, conversationId, requestCode))
@@ -383,13 +386,6 @@ object ChatNotifications {
         BitmapFactory.decodeResource(context.resources, R.drawable.aino_icon)?.let(NotificationAvatars::circle)
     }.getOrNull()?.also { cachedLogo = it }
 
-    /** Signal's short in-conversation alert for a message landing in the thread on screen. */
-    private fun playInThreadTone(context: Context) {
-        runCatching {
-            val uri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_NOTIFICATION) ?: return
-            android.media.RingtoneManager.getRingtone(context, uri)?.play()
-        }
-    }
 
     /** Org accent (web BrandingContext `--primary`) tints the notification header; default AINO blue. */
     fun brandColor(context: Context): Int {

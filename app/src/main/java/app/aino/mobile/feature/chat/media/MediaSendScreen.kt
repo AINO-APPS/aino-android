@@ -83,6 +83,8 @@ fun MediaSendScreen(
     onSend: (items: List<MediaSendItem>, caption: String, viewOnce: Boolean, highQuality: Boolean) -> Unit,
     /** Signal pre-upload analogue: start compressing/transcoding while the user reviews and captions. */
     onPrepare: (items: List<MediaSendItem>, highQuality: Boolean) -> Unit = { _, _ -> },
+    /** Chat settings → Sent media quality. */
+    initialHighQuality: Boolean = false,
 ) {
     val items = remember { mutableStateListOf<MediaSendItem>() }
     // Uris ever merged from `initial`, so removed items are not re-added when the caller appends more.
@@ -92,7 +94,7 @@ fun MediaSendScreen(
     }
     var caption by rememberSaveable { mutableStateOf("") }
     var viewOnce by rememberSaveable { mutableStateOf(false) }
-    var highQuality by rememberSaveable { mutableStateOf(false) }
+    var highQuality by rememberSaveable { mutableStateOf(initialHighQuality) }
     LaunchedEffect(items.toList(), highQuality) { onPrepare(items.toList(), highQuality) }
     var editing by remember { mutableStateOf<Pair<Int, EditorTool>?>(null) }
     val pager = rememberPagerState { items.size }

@@ -43,6 +43,9 @@ const val CHAT_DEEP_LINK_PATTERN = "aino://chat/{$CHAT_CONVERSATION_ARGUMENT}"
 /** Full-screen new-group flow (pick members, then name and create). */
 const val CHAT_NEW_GROUP_ROUTE = "chat-new-group"
 
+/** Signal-style chat settings (chat list ⋮ → Settings). */
+const val CHAT_SETTINGS_ROUTE = "chat-settings"
+
 /** Profile sub-pages (the web's Edit Profile / Notification Sounds modals and `/profile/face`). */
 const val PROFILE_EDIT_ROUTE = "profile/edit"
 const val PROFILE_SOUNDS_ROUTE = "profile/sounds"
@@ -101,6 +104,7 @@ fun managerRoute(tab: String?, request: String?): String =
 private val FULL_SCREEN_ROUTES = setOf(
     AinoDestination.ChatThread.route,
     CHAT_NEW_GROUP_ROUTE,
+    CHAT_SETTINGS_ROUTE,
     AinoDestination.Profile.route,
     AinoDestination.Notifications.route,
     PROFILE_EDIT_ROUTE, PROFILE_SOUNDS_ROUTE, PROFILE_FACE_ROUTE,

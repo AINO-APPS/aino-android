@@ -27,6 +27,12 @@ data class IncomingShare(
     val conversationId: Long? = null,
 ) {
     val isMediaOnly: Boolean get() = items.isNotEmpty() && items.all(SharedItem::isVisualMedia)
+
+    /** First web link in the shared text (Chrome / Google share a screenshot plus the page URL). */
+    val link: String? get() = text?.let { Regex("https?://[^\\s<]+").find(it)?.value }
+
+    /** Media shared together with a link: the link is its own message, as Signal sends it. */
+    val hasLinkWithMedia: Boolean get() = items.isNotEmpty() && link != null
 }
 
 const val SHARE_TARGET_CATEGORY = "app.aino.mobile.SHARE_TARGET"

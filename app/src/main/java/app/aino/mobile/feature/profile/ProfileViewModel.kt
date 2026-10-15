@@ -363,24 +363,29 @@ class ProfileViewModel(
     // ── Notification sounds (NotificationPrefsContext) ───────────────────────
 
     /** Optimistic like the web; the server merges the partial update. */
-    fun updatePref(key: String, value: Boolean) {
+    fun updatePref(key: String, value: Boolean) = updatePref(key, JsonPrimitive(value))
+
+    fun updatePref(key: String, value: String) = updatePref(key, JsonPrimitive(value))
+
+    private fun updatePref(key: String, value: JsonPrimitive) {
         val next = json.decodeFromJsonElement<NotificationPrefs>(
-            JsonObject(json.encodeToJsonElement(_ui.value.prefs).jsonObject + (key to JsonPrimitive(value))),
+            JsonObject(json.encodeToJsonElement(_ui.value.prefs).jsonObject + (key to value)),
         )
         applyPrefs(next)
-        io { runCatching { repository.updateNotificationPrefs(JsonObject(mapOf(key to JsonPrimitive(value)))) } }
+        io { runCatching { repository.updateNotificationPrefs(JsonObject(mapOf(key to value))) } }
     }
 
     fun resetPrefs() {
         val defaults = NotificationPrefs()
         applyPrefs(defaults)
         NotificationSoundPrefs.setRingtoneUri(context, null)
+        app.aino.mobile.core.settings.ChatPreferences.update(context) { it.copy(inChatSounds = false) }
         io { runCatching { repository.updateNotificationPrefs(json.encodeToJsonElement(defaults).jsonObject) } }
     }
 
     private fun applyPrefs(prefs: NotificationPrefs) {
         _ui.update { it.copy(prefs = prefs) }
-        NotificationSoundPrefs.save(context, prefs.muteAll, prefs.playWhenFocused, prefs.playOnSend)
+        app.aino.mobile.core.settings.ChatPreferences.update(context) { mirrorSyncedPrefs(it, prefs) }
     }
 
     // ── Sign out (ProfileMenu `confirmSignOut`) ──────────────────────────────

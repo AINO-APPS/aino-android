@@ -775,6 +775,32 @@ private fun AuthenticatedShell(
                     },
                     onNavigateBack = { nav.popBackStack() },
                     onNewGroup = { nav.navigate(CHAT_NEW_GROUP_ROUTE) { launchSingleTop = true } },
+                    onOpenSettings = { nav.navigate(CHAT_SETTINGS_ROUTE) { launchSingleTop = true } },
+                )
+            }
+            composable(
+                CHAT_SETTINGS_ROUTE,
+                enterTransition = { signalSlideFromEnd() },
+                exitTransition = { signalFadeScaleOut() },
+                popEnterTransition = { signalFadeScaleIn() },
+                popExitTransition = { signalSlideToEnd() },
+            ) {
+                app.aino.mobile.feature.chat.ChatSettingsScreen(
+                    viewModel = chat,
+                    profile = app.aino.mobile.feature.chat.ChatSettingsProfile(
+                        name = user.fullName?.takeIf(String::isNotBlank) ?: user.username,
+                        username = user.username,
+                        avatar = user.avatar,
+                    ),
+                    onEditProfile = { nav.navigate(PROFILE_EDIT_ROUTE) { launchSingleTop = true } },
+                    onSyncedChange = { key, value ->
+                        when (value) {
+                            is Boolean -> profile.updatePref(key, value)
+                            is String -> profile.updatePref(key, value)
+                        }
+                    },
+                    screenLockAvailable = biometricAvailable,
+                    onBack = { nav.popBackStack() },
                 )
             }
             composable(
@@ -821,6 +847,7 @@ private fun AuthenticatedShell(
                     },
                     onNavigateBack = navigateBack,
                     onNewGroup = { nav.navigate(CHAT_NEW_GROUP_ROUTE) { launchSingleTop = true } },
+                    onOpenSettings = { nav.navigate(CHAT_SETTINGS_ROUTE) { launchSingleTop = true } },
                 )
             }
             composable(
