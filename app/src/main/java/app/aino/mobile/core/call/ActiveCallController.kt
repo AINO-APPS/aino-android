@@ -108,6 +108,7 @@ class ActiveCallController(private val context: Context, private val session: Ca
     private var closing: Job? = null
     private val earlySignals = mutableListOf<JsonObject>()
     private var ringback: android.media.ToneGenerator? = null
+    private var ringbackPlayer: android.media.MediaPlayer? = null
     private var videoToggleInProgress = false
 
     init {
@@ -170,12 +171,35 @@ class ActiveCallController(private val context: Context, private val session: Ca
         return null
     }
 
-    /** Signal plays a ringback while the callee's phone rings. */
+    /** Signal plays a ringback while the callee's phone rings; the tone is the chosen outgoing ring. */
     private fun startRingback() {
         stopRingback()
-        ringback = runCatching {
-            android.media.ToneGenerator(android.media.AudioManager.STREAM_VOICE_CALL, 70).also {
-                it.startTone(android.media.ToneGenerator.TONE_SUP_RINGTONE)
+        // "Mute all" silences the outgoing ring too, as on web/desktop.
+        if (app.aino.mobile.core.notifications.NotificationSoundPrefs.muteAll(context)) return
+        val sounds = app.aino.mobile.core.notifications.NotificationSounds
+        val choice = sounds.choice(context, app.aino.mobile.core.notifications.SoundCategory.Outgoing)
+        if (choice == app.aino.mobile.core.notifications.SoundChoice.SystemDefault) {
+            ringback = runCatching {
+                android.media.ToneGenerator(android.media.AudioManager.STREAM_VOICE_CALL, 70).also {
+                    it.startTone(android.media.ToneGenerator.TONE_SUP_RINGTONE)
+                }
+            }.getOrNull()
+            return
+        }
+        val uri = sounds.uri(context, app.aino.mobile.core.notifications.SoundCategory.Outgoing, choice) ?: return
+        ringbackPlayer = runCatching {
+            android.media.MediaPlayer().apply {
+                setAudioAttributes(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION_SIGNALLING)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                )
+                setDataSource(context, uri)
+                isLooping = true
+                setOnPreparedListener { it.start() }
+                setOnErrorListener { _, _, _ -> true }
+                prepareAsync()
             }
         }.getOrNull()
     }
@@ -183,6 +207,8 @@ class ActiveCallController(private val context: Context, private val session: Ca
     private fun stopRingback() {
         ringback?.let { runCatching { it.stopTone(); it.release() } }
         ringback = null
+        ringbackPlayer?.let { runCatching { it.stop() }; runCatching { it.release() } }
+        ringbackPlayer = null
     }
 
     /** After `POST chat/calls/:id/accept` succeeded (IncomingCallViewModel). */

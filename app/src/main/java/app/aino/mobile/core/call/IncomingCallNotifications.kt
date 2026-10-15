@@ -93,23 +93,20 @@ object IncomingCallNotifications {
                 },
             )
         }
-        if (manager.getNotificationChannel(RINGING_CHANNEL) == null) {
-            manager.createNotificationChannel(
-                NotificationChannel(RINGING_CHANNEL, "Incoming call (ringing)", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Rings when the call ringer cannot run in the background"
-                    setSound(
-                        RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                            .build(),
-                    )
-                    enableVibration(true)
-                    vibrationPattern = longArrayOf(0, 700, 1000)
-                    setBypassDnd(true)
-                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                },
-            )
+        // Rings with the chosen incoming-call ringtone; a new ringtone moves it to a new version.
+        app.aino.mobile.core.notifications.SoundChannels.ensure(
+            context,
+            app.aino.mobile.core.notifications.SoundChannels.Spec(
+                RINGING_CHANNEL, app.aino.mobile.core.notifications.SoundCategory.Ringtone, ringtoneUsage = true,
+            ),
+        ) {
+            NotificationChannel(RINGING_CHANNEL, "Incoming call (ringing)", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Rings when the call ringer cannot run in the background"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 700, 1000)
+                setBypassDnd(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
         }
     }
 
@@ -185,7 +182,7 @@ object IncomingCallNotifications {
                 NOTIFICATION_ID,
                 build(
                     context,
-                    if (silent) SERVICE_CHANNEL else RINGING_CHANNEL,
+                    if (silent) SERVICE_CHANNEL else app.aino.mobile.core.notifications.SoundChannels.current(context, RINGING_CHANNEL),
                     spec,
                     avatar,
                     timeoutAfterMs = remaining,

@@ -43,7 +43,7 @@ object ConversationNotifications {
         return try {
             val stableSuffix = conversationStableId(conversationId)
             val shortcutId = "wp-conversation-$stableSuffix"
-            val channelId = "messages_v3_conversation_$stableSuffix"
+            val channelId = app.aino.mobile.core.notifications.SoundChannels.conversationChannelId(parentChannelId, stableSuffix)
 
             val personBuilder = Person.Builder()
                 .setKey(
@@ -112,15 +112,28 @@ object ConversationNotifications {
     /**
      * Direct Share: the most recent chats become share-sheet targets (Signal/WhatsApp publish
      * their top conversations the same way). Same ids as the notification shortcuts, so a
-     * notified conversation keeps a single shortcut.
+     * notified conversation keeps a single shortcut — which is why the icon must be the real
+     * photo (or group collage): Android 11+ shows the shortcut icon on conversation
+     * notifications, and an initials icon here would replace the photo a notification set.
+     * Blocking (photo loads): call off the main thread.
      */
     fun publishShareTargets(context: Context, targets: List<ShareTargetInfo>) {
         runCatching {
             val max = ShortcutManagerCompat.getMaxShortcutCountPerActivity(context).coerceIn(1, MAX_SHARE_SHORTCUTS)
             val primary = app.aino.mobile.core.push.ChatNotifications.brandColor(context)
-            val shortcuts = targets.take(max).map { target ->
+            val shown = targets.take(max)
+            val account = app.aino.mobile.core.push.notificationAccount(context)
+            val urls = shown.flatMap { it.photoUrls() }
+            app.aino.mobile.core.push.NotificationAvatarLoader.prefetchBlocking(context, urls, account, SHARE_TARGET_PHOTO_BUDGET_MS)
+            val photos = urls.distinct().mapNotNull { url ->
+                runCatching { app.aino.mobile.core.push.NotificationAvatarLoader.cached(context, url, account) }.getOrNull()?.let { url to it }
+            }.toMap()
+            val shortcuts = shown.map { target ->
                 val id = target.conversationId.toString()
-                val icon = IconCompat.createWithBitmap(app.aino.mobile.core.avatar.ChatAvatarBitmaps.user(target.title, primary))
+                val bitmap = target.group?.let {
+                    app.aino.mobile.core.avatar.ChatAvatarBitmaps.group(target.title, it, "conv-$id", primary, photos)
+                } ?: app.aino.mobile.core.avatar.ChatAvatarBitmaps.user(target.title, primary, target.photoUrl?.let(photos::get))
+                val icon = IconCompat.createWithBitmap(bitmap)
                 ShortcutInfoCompat.Builder(context, "wp-conversation-${conversationStableId(id)}")
                     .setShortLabel(target.title.take(40))
                     .setLongLabel(target.title.take(80))
@@ -132,7 +145,7 @@ object ConversationNotifications {
                     )
                     .setLongLived(true)
                     .setRank(0)
-                    .setPerson(Person.Builder().setName(target.title).setKey("conversation-$id").build())
+                    .setPerson(Person.Builder().setName(target.title).setKey("conversation-$id").setIcon(icon).build())
                     .setCategories(setOf("android.shortcut.conversation", app.aino.mobile.core.share.SHARE_TARGET_CATEGORY))
                     .build()
             }
@@ -141,9 +154,32 @@ object ConversationNotifications {
         }
     }
 
-    data class ShareTargetInfo(val conversationId: Long, val title: String)
+    /**
+     * Pre-loads the photos recent chats would show in a notification, so a push that
+     * arrives later (even with the app closed) finds them in the disk cache.
+     */
+    fun warmNotificationAvatars(context: Context, urls: List<String>) {
+        runCatching {
+            app.aino.mobile.core.push.NotificationAvatarLoader.prefetchBlocking(
+                context, urls, app.aino.mobile.core.push.notificationAccount(context), WARM_BUDGET_MS,
+            )
+        }
+    }
+
+    data class ShareTargetInfo(
+        val conversationId: Long,
+        val title: String,
+        val photoUrl: String? = null,
+        val group: app.aino.mobile.core.avatar.GroupAvatarMetadata? = null,
+    ) {
+        fun photoUrls(): List<String> = (listOfNotNull(photoUrl, group?.photoUrl) +
+            (if (group?.photoUrl.isNullOrBlank()) group?.members?.mapNotNull { it.avatarUrl }.orEmpty() else emptyList()))
+            .filter(String::isNotBlank)
+    }
 
     private const val MAX_SHARE_SHORTCUTS = 4
+    private const val SHARE_TARGET_PHOTO_BUDGET_MS = 5_000L
+    private const val WARM_BUDGET_MS = 15_000L
 
     private fun ensureConversationChannel(
         context: Context,
@@ -169,7 +205,7 @@ object ConversationNotifications {
         val channel = NotificationChannel(
             channelId,
             channelName,
-            parent.importance,
+            SoundChannels.conversationImportance(context, shortcutId) ?: parent.importance,
         ).apply {
             description = "Messages from $channelName"
             setConversationId(parentChannelId, shortcutId)

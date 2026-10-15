@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -44,8 +45,15 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
     // Bumped on resume so the current sound names and channel states re-read.
     var revision by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(Unit) { revision++; onPauseOrDispose { } }
-    val mentionSound = remember(revision) { NotificationSettingsLinks.channelSoundTitle(context, PushNotifications.MENTIONS) }
+    var picking by remember { mutableStateOf(false) }
+    val mentionSound = remember(revision, ui.prefs.mentionTone, picking) {
+        app.aino.mobile.core.notifications.NotificationSounds.title(context, app.aino.mobile.core.notifications.SoundCategory.Mention)
+    }
     LaunchedEffect(Unit) { PushNotifications.createChannels(context) }
+    if (picking) app.aino.mobile.core.notifications.SoundPickerDialog(
+        app.aino.mobile.core.notifications.SoundCategory.Mention,
+        onDismiss = { picking = false; revision++ },
+    ) { id -> viewModel.updatePref("mentionTone", id) }
 
     ProfilePage("Notification sounds", onBack) {
         ProfileSection("Notification delivery") {
@@ -81,7 +89,7 @@ fun NotificationSoundsScreen(viewModel: ProfileViewModel, onBack: () -> Unit) {
             // Task / note / chat @-mentions post on their own channel.
             ProfileRow(
                 HeroIcons.AtSymbol, "Mention / @-tag",
-                { NotificationSettingsLinks.openChannelSettings(context, PushNotifications.MENTIONS) },
+                { picking = true },
                 supporting = mentionSound, enabled = !muted,
             )
         }

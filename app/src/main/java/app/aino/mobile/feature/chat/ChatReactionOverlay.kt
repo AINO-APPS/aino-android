@@ -53,7 +53,8 @@ data class ReactionActions(
     val onForward: () -> Unit,
     val onEdit: (() -> Unit)? = null,
     val onStar: () -> Unit,
-    val onPin: () -> Unit,
+    /** Null when this user may not unpin it (pinner or group admin only). */
+    val onPin: (() -> Unit)?,
     val onDelete: (() -> Unit)? = null,
     val onCopy: (() -> Unit)? = null,
     val pinned: Boolean = false,
@@ -170,7 +171,7 @@ fun ChatReactionOverlay(
                     actions.onCopy?.let { ReactionAction("Copy", HeroIcons.DocumentDuplicate) { it(); onDismiss() } }
         actions.onSaveToDevice?.let { ReactionAction("Save to device", HeroIcons.ArrowDownTray) { it(); onDismiss() } }
                     actions.onSelect?.let { ReactionAction("Select", HeroIcons.CheckCircle) { it(); onDismiss() } }
-                    ReactionAction(if (actions.pinned) "Unpin" else "Pin", HeroIcons.PushPin) { actions.onPin(); onDismiss() }
+                    actions.onPin?.let { pin -> ReactionAction(if (actions.pinned) "Unpin" else "Pin", HeroIcons.PushPin) { pin(); onDismiss() } }
                     ReactionAction(if (actions.starred) "Unsave" else "Save", if (actions.starred) HeroIcons.Star else HeroIcons.Star) { actions.onStar(); onDismiss() }
                     actions.onDelete?.let { ReactionAction("Delete", HeroIcons.Trash, destructive = true) { it(); onDismiss() } }
                 }

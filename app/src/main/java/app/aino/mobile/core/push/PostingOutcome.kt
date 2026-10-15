@@ -15,7 +15,7 @@ sealed interface PostingOutcome {
 fun notificationBlocker(context: Context, channelId: String): PostingOutcome.Blocked? {
     if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return PostingOutcome.Blocked("App notifications disabled")
     if (Build.VERSION.SDK_INT >= 26 &&
-        context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(channelId)?.importance == NotificationManager.IMPORTANCE_NONE
+        context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(PushNotifications.channel(context, channelId))?.importance == NotificationManager.IMPORTANCE_NONE
     ) return PostingOutcome.Blocked("Channel disabled: $channelId")
     return null
 }

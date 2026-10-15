@@ -57,7 +57,7 @@ object CallAlertReadiness {
         val manager = context.getSystemService(NotificationManager::class.java)
         val channelBlocked = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager != null &&
             listOf(IncomingCallNotifications.SERVICE_CHANNEL, IncomingCallNotifications.RINGING_CHANNEL, PushNotifications.CALLS)
-                .any { id -> manager.getNotificationChannel(id)?.importance == NotificationManager.IMPORTANCE_NONE }
+                .any { id -> manager.getNotificationChannel(PushNotifications.channel(context, id))?.importance == NotificationManager.IMPORTANCE_NONE }
         val fullScreen = if (Build.VERSION.SDK_INT >= 34) manager?.canUseFullScreenIntent() != false else true
         return callAlertIssue(
             notificationsEnabled = NotificationManagerCompat.from(context).areNotificationsEnabled(),

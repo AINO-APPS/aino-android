@@ -1,10 +1,6 @@
 package app.aino.mobile.feature.chat
 
-import android.app.Activity
-import android.net.Uri
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -53,12 +49,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.IntentCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 import app.aino.mobile.core.notifications.NotificationSettingsLinks
+import app.aino.mobile.core.notifications.NotificationSounds
+import app.aino.mobile.core.notifications.SoundCategory
+import app.aino.mobile.core.notifications.SoundPickerDialog
 import app.aino.mobile.core.push.PushNotifications
 import app.aino.mobile.core.settings.AutoDownloadKind
 import app.aino.mobile.core.settings.ChatPreferences
@@ -165,19 +163,15 @@ private fun NotificationsPage(
     var revision by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(Unit) { revision++; onPauseOrDispose { } }
     LaunchedEffect(Unit) { PushNotifications.createChannels(context) }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val picked = result.data?.let { IntentCompat.getParcelableExtra(it, android.media.RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java) }
-            NotificationSettingsLinks.onRingtonePicked(context, picked)
-            revision++
-        }
-    }
-    val messageSound = remember(revision) { NotificationSettingsLinks.channelSoundTitle(context, PushNotifications.MESSAGES) }
+    var soundSlot by remember { mutableStateOf<SoundCategory?>(null) }
+    // Re-read after a pick (prefs change) or a return from Android's settings.
+    fun sound(category: SoundCategory) = NotificationSounds.title(context, category)
+    val soundKey = listOf(revision, prefs.messageTone, prefs.mentionTone, prefs.reactionTone, prefs.ringtone, prefs.outgoingTone, soundSlot)
     val vibrates = remember(revision) { NotificationSettingsLinks.channelVibrates(context, PushNotifications.MESSAGES) }
     val messages = remember(revision) { app.aino.mobile.core.push.notificationBlocker(context, PushNotifications.MESSAGES)?.reason }
     val reactions = remember(revision) { app.aino.mobile.core.push.notificationBlocker(context, PushNotifications.REACTIONS)?.reason }
     val missed = remember(revision) { app.aino.mobile.core.push.notificationBlocker(context, PushNotifications.MISSED_CALLS)?.reason }
-    val ringtone = remember(revision) { NotificationSettingsLinks.ringtoneTitle(context) }
+    val titles = remember(soundKey) { SoundCategory.entries.associateWith(::sound) }
     val disabledChats = remember(revision) { NotificationSettingsLinks.disabledConversationChannels(context, PushNotifications.MESSAGES) }
     var showPicker by remember { mutableStateOf(false) }
     val muted = prefs.muteAll
@@ -189,7 +183,7 @@ private fun NotificationsPage(
                 NotificationSettingsLinks.openChannelSettings(context, PushNotifications.MESSAGES)
             }
         }
-        item { SettingsRow(null, "Sound", subtitle = messageSound ?: "Default") { NotificationSettingsLinks.openChannelSettings(context, PushNotifications.MESSAGES) } }
+        item { SettingsRow(null, "Sound", subtitle = titles[SoundCategory.Message]) { soundSlot = SoundCategory.Message } }
         item {
             SettingsRow(null, "Vibrate", subtitle = when (vibrates) { true -> "On"; false -> "Off"; null -> "System default" }) {
                 NotificationSettingsLinks.openChannelSettings(context, PushNotifications.MESSAGES)
@@ -197,7 +191,7 @@ private fun NotificationsPage(
         }
         item { SettingsRow(null, "Show", subtitle = prefs.notificationContent.label) { showPicker = true } }
         item {
-            ToggleRow("In-chat sounds", "Play a short sound when a message arrives in the chat you have open.", prefs.inChatSounds, enabled = !muted) { on ->
+            ToggleRow("In-chat sounds", "Play the message sound when a message arrives in the chat you have open.", prefs.inChatSounds, enabled = !muted) { on ->
                 local { it.copy(inChatSounds = on) }
             }
         }
@@ -206,7 +200,9 @@ private fun NotificationsPage(
                 synced("playOnSend", on) { it.copy(playOnSend = on) }
             }
         }
+        item { SettingsRow(null, "Mention sound", subtitle = titles[SoundCategory.Mention]) { soundSlot = SoundCategory.Mention } }
         item { SettingsRow(null, "Reactions", subtitle = reactions ?: "On") { NotificationSettingsLinks.openChannelSettings(context, PushNotifications.REACTIONS) } }
+        item { SettingsRow(null, "Reaction sound", subtitle = titles[SoundCategory.Reaction]) { soundSlot = SoundCategory.Reaction } }
         items(disabledChats, key = { it.id }) { channel ->
             SettingsRow(null, channel.name.toString(), subtitle = "Notifications off for this chat") {
                 NotificationSettingsLinks.openChannelSettings(context, channel.id)
@@ -214,8 +210,14 @@ private fun NotificationsPage(
         }
         item { SectionDivider() }
         item { SectionTitle("Calls") }
-        item { SettingsRow(Icons.Outlined.Call, "Ringtone", subtitle = ringtone ?: "Default") { picker.launch(NotificationSettingsLinks.ringtonePickerIntent(context)) } }
+        item { SettingsRow(Icons.Outlined.Call, "Ringtone", subtitle = titles[SoundCategory.Ringtone]) { soundSlot = SoundCategory.Ringtone } }
+        item { SettingsRow(null, "Outgoing call ring", subtitle = titles[SoundCategory.Outgoing]) { soundSlot = SoundCategory.Outgoing } }
         item { SettingsRow(null, "Missed calls", subtitle = missed ?: "On") { NotificationSettingsLinks.openChannelSettings(context, PushNotifications.MISSED_CALLS) } }
+    }
+    soundSlot?.let { category ->
+        SoundPickerDialog(category, onDismiss = { soundSlot = null; revision++ }) { id ->
+            synced(category.syncKey, id) { category.withSyncedId(it, id) }
+        }
     }
     if (showPicker) ChoiceDialog(
         title = "Show",

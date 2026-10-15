@@ -13,17 +13,19 @@ object NotificationSettingsLinks {
         uri?.let { runCatching { RingtoneManager.getRingtone(context, it)?.getTitle(context) }.getOrNull() }
 
     fun channelSoundTitle(context: Context, channelId: String): String? {
-        val channel = context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(channelId) ?: return null
+        val channel = context.getSystemService(NotificationManager::class.java)
+            ?.getNotificationChannel(app.aino.mobile.core.push.PushNotifications.channel(context, channelId)) ?: return null
         return soundTitle(context, channel.sound) ?: "None (silent)"
     }
 
     fun channelVibrates(context: Context, channelId: String): Boolean? =
-        context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(channelId)?.shouldVibrate()
+        context.getSystemService(NotificationManager::class.java)
+            ?.getNotificationChannel(app.aino.mobile.core.push.PushNotifications.channel(context, channelId))?.shouldVibrate()
 
     fun openChannelSettings(context: Context, channelId: String) {
         val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-            .putExtra(Settings.EXTRA_CHANNEL_ID, channelId)
+            .putExtra(Settings.EXTRA_CHANNEL_ID, app.aino.mobile.core.push.PushNotifications.channel(context, channelId))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
     }
@@ -38,32 +40,34 @@ object NotificationSettingsLinks {
         }
     }
 
-    /** System ringtone picker for the incoming-call ringtone. */
-    fun ringtonePickerIntent(context: Context): Intent =
-        Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
-            .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
-            .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Incoming call ringtone")
+    /** System sound picker for "Choose from device…" on a sound slot. */
+    fun soundPickerIntent(context: Context, category: SoundCategory): Intent {
+        val current = NotificationSounds.choice(context, category)
+        return Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, category.pickerType)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, category.title)
             .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-            .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+            .putExtra(RingtoneManager.EXTRA_RINGTONE_DEFAULT_URI, NotificationSounds.systemDefaultUri(category))
             .putExtra(
                 RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
-                NotificationSoundPrefs.ringtoneUri(context) ?: Settings.System.DEFAULT_RINGTONE_URI,
+                (current as? SoundChoice.Device)?.uri ?: NotificationSounds.systemDefaultUri(category),
             )
-
-    /** Stores the picker result; the system default is kept as "no override". */
-    fun onRingtonePicked(context: Context, picked: Uri?) {
-        val isDefault = picked == null || picked == Settings.System.DEFAULT_RINGTONE_URI
-        NotificationSoundPrefs.setRingtoneUri(context, if (isDefault) null else picked)
     }
 
-    fun ringtoneTitle(context: Context): String? =
-        soundTitle(context, NotificationSoundPrefs.ringtoneUri(context) ?: Settings.System.DEFAULT_RINGTONE_URI)
+    /** Picker result: the system default, silence (the AINO "None" tone) or a device sound. */
+    internal fun pickedChoice(picked: Uri?, systemDefault: Uri): SoundChoice = when (picked) {
+        null -> SoundChoice.Preset("none")
+        systemDefault -> SoundChoice.SystemDefault
+        else -> SoundChoice.Device(picked)
+    }
 
     /** Android 11+ per-chat channels the user switched off. */
     fun disabledConversationChannels(context: Context, parentChannelId: String): List<android.app.NotificationChannel> {
         if (android.os.Build.VERSION.SDK_INT < 30) return emptyList()
+        val parent = app.aino.mobile.core.push.PushNotifications.channel(context, parentChannelId)
         return context.getSystemService(NotificationManager::class.java)?.notificationChannels
-            ?.filter { it.parentChannelId == parentChannelId && it.importance == NotificationManager.IMPORTANCE_NONE }
+            ?.filter { it.parentChannelId == parent && it.importance == NotificationManager.IMPORTANCE_NONE }
             .orEmpty()
     }
 }

@@ -242,7 +242,8 @@ class CallRingService : Service() {
   private fun startRingtone(ringtoneRes: String) {
     stopMediaPlayer()
     try {
-      val uri: Uri = resolveRingtoneUri(ringtoneRes)
+      // "None (silent)": the ring stays visual, with vibration.
+      val uri: Uri = resolveRingtoneUri(ringtoneRes) ?: return
       val attrs = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -275,19 +276,17 @@ class CallRingService : Service() {
 
   /**
    * Resolve a bundled res/raw resource name (e.g. "ringtone_classic") to a
-   * content URI. Falls back to the system default ringtone when the name is
-   * empty or the resource cannot be found.
+   * content URI; otherwise the ringtone chosen in Chat → Settings → Notifications
+   * (synced AINO tone or a device sound). `null` means silent.
    */
-  private fun resolveRingtoneUri(ringtoneRes: String): Uri {
+  private fun resolveRingtoneUri(ringtoneRes: String): Uri? {
     if (ringtoneRes.isNotEmpty()) {
       val resId = resources.getIdentifier(ringtoneRes, "raw", packageName)
       if (resId != 0) {
         return Uri.parse("android.resource://$packageName/$resId")
       }
     }
-    // The ringtone the user picked on the Notification Sounds page, else the system default.
-    return app.aino.mobile.core.notifications.NotificationSoundPrefs.ringtoneUri(this)
-      ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+    return app.aino.mobile.core.notifications.NotificationSounds.uri(this, app.aino.mobile.core.notifications.SoundCategory.Ringtone)
   }
 
   private fun startVibration() {

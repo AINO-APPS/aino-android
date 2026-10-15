@@ -1074,10 +1074,17 @@ Phase 5 implementation notes (Android, 2026-09-25):
   in-chat sounds, notification "Show" level, screen lock and timeout, screen
   security, incognito keyboard, media auto-download per network, low-data
   calls, send with enter. Sound rules follow Signal: the open thread never
-  posts and only plays a short tone with "In-chat sounds"; every other alert
-  uses its channel sound unless Mute all. `playWhenFocused` is ignored on
-  Android. Volume sliders, "Outgoing call tone" and "Reaction" tones have no
-  Android counterpart.
+  posts and only plays the message sound with "In-chat sounds"; every other
+  alert uses its channel sound unless Mute all. `playWhenFocused` is ignored on
+  Android. Since 0.25.2 the five tone slots are synced too (`ringtone`,
+  `outgoingTone`, `messageTone`, `mentionTone`, `reactionTone`): the desktop
+  synths are rendered to `res/raw/tone_*.wav` by `scripts/render-tones.mjs`
+  (`ringtone_*.wav` for ringtones), and each slot also offers "System default"
+  and "Choose from device…" (device-only overrides). Messages, Mentions,
+  Reactions and the fallback ringing channel are versioned Signal-style
+  (`NotificationChannels.updateMessageChannel`): a new sound copies the channel
+  to `<id>_s<n>` and deletes the old one, conversation channels follow their
+  parent. Volume sliders stay web/desktop-only (Android uses system volumes).
 - **Theme:** server theme applied once on tenant sign-in, `PUT` on toggle,
   `theme_changed` WS applies changes from other devices.
 - **Sign out:** confirmation dialog; office sessions must clock out from the

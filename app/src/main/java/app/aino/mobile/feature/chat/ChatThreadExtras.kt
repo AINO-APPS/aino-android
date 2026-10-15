@@ -263,7 +263,7 @@ internal fun PinnedMessageBar(
     index: Int,
     count: Int,
     onClick: () -> Unit,
-    onUnpin: () -> Unit,
+    onUnpin: (() -> Unit)?,
     onViewAll: () -> Unit,
 ) {
     val signal = signalColors
@@ -305,7 +305,7 @@ internal fun PinnedMessageBar(
                 )
                 SignalDropdownMenu(expanded = menu, onDismiss = { menu = false }) {
                     SignalMenuItem("Go to message", HeroIcons.ChatBubbleOvalLeft) { menu = false; onClick() }
-                    SignalMenuItem("Unpin", HeroIcons.PushPin) { menu = false; onUnpin() }
+                    if (onUnpin != null) SignalMenuItem("Unpin", HeroIcons.PushPin) { menu = false; onUnpin() }
                     SignalMenuItem("View all pinned", HeroIcons.ListBullet) { menu = false; onViewAll() }
                 }
             }

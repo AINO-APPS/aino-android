@@ -12,15 +12,13 @@ import app.aino.mobile.core.settings.ChatPreferences
 /**
  * When chat alerts make a sound (Signal `DefaultMessageNotifier` /
  * `NotificationFactory.notifyInThread`):
- * - the thread on screen never posts; it plays a short tone only with "In-chat sounds";
+ * - the thread on screen never posts; it plays the message sound only with "In-chat sounds";
  * - everything else (chat list, other screens, background) alerts with its channel sound;
  * - "Mute all" silences both. Calls ring through [CallRingService] and only honour mute.
  *
- * The incoming-call ringtone is a device choice made through the system picker.
+ * Which sound each slot plays is resolved by [NotificationSounds].
  */
 object NotificationSoundPrefs {
-    private const val FILE = "aino_notification_sounds"
-    private const val RINGTONE_URI = "ringtoneUri"
     /** Signal `DefaultMessageNotifier.MIN_AUDIBLE_PERIOD_MILLIS`. */
     const val MIN_AUDIBLE_PERIOD_MS = 2_000L
 
@@ -29,24 +27,16 @@ object NotificationSoundPrefs {
 
     @Volatile private var lastInThreadToneAt = 0L
 
-    private fun prefs(context: Context) = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-
     fun muteAll(context: Context): Boolean = ChatPreferences.get(context).muteAll
     fun playOnSend(context: Context): Boolean = ChatPreferences.get(context).playOnSend
 
     /** A posted (non-visible-thread) alert is audible unless everything is muted. */
     fun notificationAudible(context: Context): Boolean = !muteAll(context)
 
-    fun ringtoneUri(context: Context): Uri? = prefs(context).getString(RINGTONE_URI, null)?.let(Uri::parse)
-
-    /** `null` restores the system default ringtone. */
-    fun setRingtoneUri(context: Context, uri: Uri?) {
-        prefs(context).edit().apply { if (uri == null) remove(RINGTONE_URI) else putString(RINGTONE_URI, uri.toString()) }.apply()
-    }
-
     /** Signed-out devices must not keep the previous user's choices. */
     fun clear(context: Context) {
-        prefs(context).edit().clear().apply()
+        NotificationSounds.clear(context)
+        SoundChannels.clear(context)
         ChatPreferences.clear(context)
     }
 
@@ -77,11 +67,12 @@ object NotificationSoundPrefs {
 
     internal fun resetToneThrottleForTest() { lastInThreadToneAt = 0L }
 
-    /** Plays the default notification sound; replaceable in tests. */
-    internal var inThreadToneOutput: (Context) -> Boolean = ::playDefaultNotificationSound
+    /** Plays the chosen message sound; replaceable in tests. */
+    internal var inThreadToneOutput: (Context) -> Boolean = { playOnce(it, NotificationSounds.uri(it, SoundCategory.Message)) }
 
-    private fun playDefaultNotificationSound(context: Context): Boolean = runCatching {
-        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION) ?: return false
+    /** One-shot playback on the notification stream (in-chat tone, picker previews). */
+    fun playOnce(context: Context, uri: Uri?): Boolean = runCatching {
+        if (uri == null) return false
         val ringtone = RingtoneManager.getRingtone(context, uri) ?: return false
         ringtone.audioAttributes = AudioAttributes.Builder()
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)

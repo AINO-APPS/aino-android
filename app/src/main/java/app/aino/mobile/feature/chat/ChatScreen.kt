@@ -92,6 +92,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Call
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Search
@@ -291,7 +292,7 @@ fun ChatScreen(
                     menu = when (activeTab) {
                         ChatListTab.Chat -> buildList {
                             if (!archivedOpen) {
-                                add(ChatMenuItem("New chat", HeroIcons.PencilSquare, onClick = openSearch))
+                                add(ChatMenuItem("New chat", Icons.Outlined.Edit, onClick = openSearch))
                                 add(ChatMenuItem("New group", HeroIcons.UserGroup, onClick = onNewGroup))
                                 add(null)
                             }
@@ -1013,7 +1014,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             viewModel.jumpToMessage(pinned)
                             pinnedIndex = (index + 1) % ui.pinnedMessages.size
                         },
-                        onUnpin = { viewModel.toggleMessagePin(pinned) },
+                        onUnpin = if (viewModel.canUnpin(pinned)) { { viewModel.toggleMessagePin(pinned) } } else null,
                         onViewAll = { viewModel.openInfo(); viewModel.loadPinnedMessages() },
                     )
                 }
@@ -1085,7 +1086,9 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             onEdit = { viewModel.beginEdit(item.message) },
                             onDelete = { deleteTargets = listOf(item.message) },
                             onStar = { viewModel.toggleStar(item.message) },
-                            onPin = { viewModel.toggleMessagePin(item.message) },
+                            onPin = if (item.message.pinnedAt == null || viewModel.canUnpin(item.message)) {
+                                { viewModel.toggleMessagePin(item.message) }
+                            } else null,
                             onForward = { viewModel.beginForward(item.message) },
                             onCancel = { viewModel.cancelMedia(item.message) },
                             onRetry = { viewModel.retryMedia(item.message) },
@@ -1589,7 +1592,7 @@ private fun MessageBubble(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onStar: () -> Unit,
-    onPin: () -> Unit,
+    onPin: (() -> Unit)?,
     onForward: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
@@ -1649,13 +1652,25 @@ private fun MessageBubble(
     val mediaOnly = !deleted && !viewOnce && message.isViewableMedia() && message.content.isNullOrBlank() &&
         !message.hasQuotedReply() && message.forwardedFromId == null && !(showSender && isGroup && !isMine)
     val shape = messageBubbleShape(isMine, startsGroup, endsGroup)
+    // Signal jumbomoji: 1–3 emoji on their own render large with no bubble.
+    val jumbomoji = !deleted && !viewOnce && message.formatType != "poll" && message.fileUrl.isNullOrBlank() &&
+        message.fileName.isNullOrBlank() && !message.hasQuotedReply() && message.forwardedFromId == null &&
+        message.linkPreview == null && emojiMessageSize(message.body()) != SignalDimens.bodyText
     val bubbleColor = when {
-        deleted -> Color.Transparent
+        deleted || jumbomoji -> Color.Transparent
         isMine -> signal.outgoing
         else -> signal.incoming
     }
-    val fg = if (isMine && !deleted) signal.onOutgoing else signal.onIncoming
-    val fgMuted = if (isMine && !deleted) signal.onOutgoingSecondary else signal.onIncomingSecondary
+    val fg = when {
+        jumbomoji -> signal.text
+        isMine && !deleted -> signal.onOutgoing
+        else -> signal.onIncoming
+    }
+    val fgMuted = when {
+        jumbomoji -> signal.textSecondary
+        isMine && !deleted -> signal.onOutgoingSecondary
+        else -> signal.onIncomingSecondary
+    }
     val rowTint by androidx.compose.animation.animateColorAsState(
         when {
             selected -> signal.primary.copy(alpha = .16f)
@@ -1675,7 +1690,7 @@ private fun MessageBubble(
             if (message.pinnedAt != null) Icon(HeroIcons.PushPin, "Pinned message", Modifier.size(12.dp), tint = tint)
             if (message.editedAt != null && !deleted) Text("Edited", color = tint, fontSize = SignalDimens.footerText)
             Text(remember(message.createdAt) { bubbleTime(message.createdAt) }, color = tint, fontSize = SignalDimens.footerText)
-            if (isMine && !deleted) DeliveryTickIcon(remember(message, receipts, participantCount) { deliveryTick(message, receipts, participantCount) }, onMedia)
+            if (isMine && !deleted) DeliveryTickIcon(remember(message, receipts, participantCount) { deliveryTick(message, receipts, participantCount) }, onMedia, plain = jumbomoji)
         }
     }
     val showAvatarColumn = isGroup && !isMine
@@ -1710,16 +1725,19 @@ private fun MessageBubble(
                                 when {
                                     deleted -> Modifier.border(1.dp, signal.divider, shape)
                                     // Web `.myBubble { border: 1px solid color-mix(--primary 16%) }`.
-                                    isMine && !mediaOnly -> Modifier.border(1.dp, signal.outgoingBorder, shape)
+                                    isMine && !mediaOnly && !jumbomoji -> Modifier.border(1.dp, signal.outgoingBorder, shape)
                                     else -> Modifier
                                 },
                             )
                             .then(
-                                if (mediaOnly) Modifier
-                                else Modifier.padding(
-                                    start = SignalDimens.bubbleHPad, end = SignalDimens.bubbleHPad,
-                                    top = SignalDimens.bubbleTopPad, bottom = SignalDimens.bubbleFooterBottomPad,
-                                ),
+                                when {
+                                    mediaOnly -> Modifier
+                                    jumbomoji -> Modifier.padding(horizontal = 2.dp, vertical = 2.dp)
+                                    else -> Modifier.padding(
+                                        start = SignalDimens.bubbleHPad, end = SignalDimens.bubbleHPad,
+                                        top = SignalDimens.bubbleTopPad, bottom = SignalDimens.bubbleFooterBottomPad,
+                                    )
+                                },
                             ),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
@@ -2107,15 +2125,21 @@ internal fun deliveryTick(message: ChatMessage, receipts: List<ReadReceipt>, par
  * pill ([onMedia]).
  */
 @Composable
-private fun DeliveryTickIcon(tick: DeliveryTick, onMedia: Boolean) {
+private fun DeliveryTickIcon(tick: DeliveryTick, onMedia: Boolean, plain: Boolean = false) {
     val signal = signalColors
     val tint = when {
         onMedia -> Color.White
+        // No bubble behind (jumbomoji): chat-background colours, like the time beside it.
+        plain -> if (tick == DeliveryTick.Read) signal.primary else signal.textSecondary
         tick == DeliveryTick.Read -> signal.tickRead
         tick == DeliveryTick.Delivered -> signal.tickDelivered
         else -> signal.tickMuted
     }
-    SignalReceiptIcon(tick, tint, punchThrough = if (onMedia) Color.Black.copy(alpha = .55f) else signal.outgoing)
+    SignalReceiptIcon(tick, tint, punchThrough = when {
+        onMedia -> Color.Black.copy(alpha = .55f)
+        plain -> signal.background
+        else -> signal.outgoing
+    })
 }
 
 private val explicitOffset = Regex("[+-]\\d{2}:?\\d{2}$")
@@ -2152,29 +2176,33 @@ private fun QueuedBubble(message: QueuedMessage) {
     }
 }
 
+/** Web `.typingDots` wave: three dots bounce in turn (1.2 s, 0.2 s apart), with no bubble behind them. */
 @Composable
 private fun TypingBubble() {
     val signal = signalColors
     val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "typing")
     Row(
-        Modifier.fillMaxWidth().padding(start = SignalDimens.gutter, top = 8.dp, bottom = 6.dp),
+        Modifier.fillMaxWidth().padding(start = SignalDimens.gutter + 4.dp, top = 12.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
-        Row(
-            Modifier.background(signal.incoming, RoundedCornerShape(SignalDimens.bubbleCorner)).padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(5.dp),
-        ) {
-            repeat(3) { index ->
-                val alpha by transition.animateFloat(
-                    initialValue = .3f, targetValue = 1f,
-                    animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                        androidx.compose.animation.core.tween(500, delayMillis = index * 160),
-                        androidx.compose.animation.core.RepeatMode.Reverse,
-                    ),
-                    label = "dot$index",
-                )
-                Box(Modifier.size(8.dp).background(signal.onIncomingSecondary.copy(alpha = alpha), CircleShape))
-            }
+        repeat(3) { index ->
+            // `typingBounce`: rest at 0–60–100 %, peak (-4 dp) at 30 % of each cycle.
+            val lift by transition.animateFloat(
+                initialValue = 0f, targetValue = 0f,
+                animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                    androidx.compose.animation.core.keyframes {
+                        durationMillis = 1200
+                        0f at 0
+                        -4f at 360 using androidx.compose.animation.core.FastOutSlowInEasing
+                        0f at 720 using androidx.compose.animation.core.FastOutSlowInEasing
+                        0f at 1200
+                    },
+                    initialStartOffset = androidx.compose.animation.core.StartOffset(index * 200),
+                ),
+                label = "dot$index",
+            )
+            Box(Modifier.offset(y = lift.dp).size(7.dp).background(signal.textSecondary, CircleShape))
         }
     }
 }

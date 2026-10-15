@@ -13,6 +13,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import app.aino.mobile.MainActivity
 import app.aino.mobile.R
+import app.aino.mobile.core.notifications.SoundCategory
+import app.aino.mobile.core.notifications.SoundChannels
 
 object PushNotifications {
     const val MESSAGES = "aino_messages"
@@ -30,23 +32,36 @@ object PushNotifications {
     private const val LEGACY_MISSED_CALLS = "aino_missed_calls"
     const val REACTIONS = "aino_reactions"
 
+    private val SOUND_CHANNELS: List<Pair<SoundChannels.Spec, () -> NotificationChannel>> by lazy {
+        listOf(
+            SoundChannels.Spec(MESSAGES, SoundCategory.Message) to { NotificationChannel(MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH) },
+            SoundChannels.Spec(MENTIONS, SoundCategory.Mention) to {
+                NotificationChannel(MENTIONS, "Mentions", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "When someone @-mentions you in a chat, task or note"
+                }
+            },
+            SoundChannels.Spec(REACTIONS, SoundCategory.Reaction) to { NotificationChannel(REACTIONS, "Reactions", NotificationManager.IMPORTANCE_DEFAULT) },
+        )
+    }
+
+    /** The live channel id for [baseId] ([MESSAGES], [MENTIONS], [REACTIONS] carry a sound version). */
+    fun channel(context: Context, baseId: String): String = SoundChannels.current(context, baseId)
+
     /**
      * Channel ids are never renamed or deleted: Android keeps the user's
      * per-channel customisation keyed by id, and re-creating an existing id
-     * only refreshes its name. New categories are added alongside.
+     * only refreshes its name. New categories are added alongside. The
+     * exception is the sound slots (messages, mentions, reactions), which move
+     * to a new version when their sound changes ([SoundChannels]).
      */
     fun createChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java)
         // The one exception to "never renamed": carry the user's choices over to v2.
         val legacyMissed = manager.getNotificationChannel(LEGACY_MISSED_CALLS)
+        SOUND_CHANNELS.forEach { (spec, template) -> SoundChannels.ensure(context, spec, template) }
         manager.createNotificationChannels(
             listOf(
-                NotificationChannel(REACTIONS, "Reactions", NotificationManager.IMPORTANCE_DEFAULT),
-                NotificationChannel(MESSAGES, "Messages", NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel(MENTIONS, "Mentions", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "When someone @-mentions you in a chat, task or note"
-                },
                 NotificationChannel(ASSIGNMENTS, "Assignments", NotificationManager.IMPORTANCE_HIGH).apply {
                     description = "Tasks assigned to you"
                 },
@@ -103,12 +118,12 @@ object PushNotifications {
         val privateCall = push.kind == PushKind.IncomingCall && !push.data.containsKey("callerName")
         val title = if (privateCall) push.data.getValue("title") else push.data["title"] ?: push.data["callerName"] ?: "AINO"
         val body = if (privateCall) "Tap to answer" else push.data["body"].orEmpty()
-        val channel = when (push.kind) {
+        val channel = channel(context, when (push.kind) {
             PushKind.ChatReaction -> REACTIONS
             PushKind.ChatMessage -> MESSAGES
             PushKind.IncomingCall -> CALLS
             else -> generalPushChannel(push.data["type"])
-        }
+        })
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putPushTapExtras(push)

@@ -114,6 +114,8 @@ class ProfileViewModel(
     fun refresh() {
         if (_ui.value.loading) return
         _ui.update { it.copy(loading = true, loadError = null) }
+        // Sound and privacy prefs changed on web/desktop reach this device on every resync.
+        if (myUserId != null) io { runCatching(repository::notificationPrefs).onSuccess(::applyPrefs) }
         io {
             if (_ui.value.user == null && warm != null) {
                 runCatching(warm::load).getOrNull()?.let { cached -> _ui.update { if (it.user == null) it.withUser(cached) else it } }
@@ -377,8 +379,10 @@ class ProfileViewModel(
 
     fun resetPrefs() {
         val defaults = NotificationPrefs()
+        app.aino.mobile.core.notifications.SoundCategory.entries.forEach {
+            app.aino.mobile.core.notifications.NotificationSounds.setOverride(context, it, null)
+        }
         applyPrefs(defaults)
-        NotificationSoundPrefs.setRingtoneUri(context, null)
         app.aino.mobile.core.settings.ChatPreferences.update(context) { it.copy(inChatSounds = false) }
         io { runCatching { repository.updateNotificationPrefs(json.encodeToJsonElement(defaults).jsonObject) } }
     }
@@ -386,6 +390,8 @@ class ProfileViewModel(
     private fun applyPrefs(prefs: NotificationPrefs) {
         _ui.update { it.copy(prefs = prefs) }
         app.aino.mobile.core.settings.ChatPreferences.update(context) { mirrorSyncedPrefs(it, prefs) }
+        // A tone picked on another device re-creates the matching notification channel.
+        runCatching { app.aino.mobile.core.push.PushNotifications.createChannels(context) }
     }
 
     // ── Sign out (ProfileMenu `confirmSignOut`) ──────────────────────────────

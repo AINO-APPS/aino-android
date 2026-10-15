@@ -1279,13 +1279,23 @@ private fun AuthenticatedShell(
     )
     // Direct Share: keep the latest chats published as share-sheet targets.
     val shareTargets = androidx.compose.runtime.remember(chatUi.conversations) {
-        app.aino.mobile.feature.chat.shareDestinations(chatUi.conversations, "").take(4)
-            .map { app.aino.mobile.core.notifications.ConversationNotifications.ShareTargetInfo(it.id, it.title()) }
+        app.aino.mobile.feature.chat.shareDestinations(chatUi.conversations, "").take(4).map { it.notificationTarget() }
     }
     LaunchedEffect(shareTargets) {
         if (shareTargets.isEmpty()) return@LaunchedEffect
         withContext(Dispatchers.IO) {
             app.aino.mobile.core.notifications.ConversationNotifications.publishShareTargets(shellContext, shareTargets)
+        }
+    }
+    // Recent chats' photos land in the notification cache, so later pushes show them at once.
+    val recentAvatarUrls = androidx.compose.runtime.remember(chatUi.conversations) {
+        chatUi.conversations.filterNot { it.isMuted }.take(RECENT_AVATAR_WARM_COUNT)
+            .flatMap { it.notificationTarget().photoUrls() }.distinct()
+    }
+    LaunchedEffect(recentAvatarUrls) {
+        if (recentAvatarUrls.isEmpty()) return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            app.aino.mobile.core.notifications.ConversationNotifications.warmNotificationAvatars(shellContext, recentAvatarUrls)
         }
     }
     // Content shared from another app (system share sheet / Direct Share): pick chats, then send.
@@ -1553,3 +1563,17 @@ private fun RefetchOnResume(refetch: () -> Unit, resync: kotlinx.coroutines.flow
         LaunchedEffect(current) { if (current != opened) refetch() }
     }
 }
+
+private const val RECENT_AVATAR_WARM_COUNT = 15
+
+/** Notification-facing avatar data for a chat (photo, or group photo / member collage). */
+private fun app.aino.mobile.feature.chat.ChatConversation.notificationTarget() =
+    app.aino.mobile.core.notifications.ConversationNotifications.ShareTargetInfo(
+        conversationId = id,
+        title = title(),
+        photoUrl = if (isGroup) null else otherAvatar,
+        group = if (!isGroup) null else app.aino.mobile.core.avatar.GroupAvatarMetadata(
+            groupAvatar,
+            groupMemberPreviews.orEmpty().take(4).map { app.aino.mobile.core.avatar.GroupAvatarMember(it.name, it.avatar) },
+        ),
+    )

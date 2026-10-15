@@ -1709,8 +1709,17 @@ class ChatViewModel(
         }
     }
 
+    /** Whether this user may unpin [message] (pinning itself is open to every participant). */
+    fun canUnpin(message: ChatMessage): Boolean {
+        val conversation = _ui.value.selectedConversation ?: return false
+        val me = scope?.userId
+        val admin = conversation.isGroup && GroupPermissions.of(conversation, _ui.value.members, me).isAdmin
+        return canUnpinMessage(message.pinnedBy, me, conversation.isGroup, admin)
+    }
+
     fun toggleMessagePin(message: ChatMessage) {
         if (message.deletedAt != null) return
+        if (message.pinnedAt != null && !canUnpin(message)) return
         val conversationId = message.conversationId ?: _ui.value.selectedConversation?.id ?: return
         val original = _ui.value.messages
         val optimisticPinned = message.pinnedAt == null

@@ -122,6 +122,11 @@ fun mirrorSyncedPrefs(device: app.aino.mobile.core.settings.ChatPrefs, synced: N
     linkPreviews = synced.linkPreviews,
     sentMediaQuality = synced.sentMediaQuality.takeIf { it == "high" } ?: "standard",
     hideSensitiveContent = synced.hideSensitiveContent,
+    ringtone = synced.ringtone,
+    outgoingTone = synced.outgoingTone,
+    messageTone = synced.messageTone,
+    mentionTone = synced.mentionTone,
+    reactionTone = synced.reactionTone,
 )
 
 // ── Biometric devices (`GET /api/auth/biometric`) ────────────────────────────

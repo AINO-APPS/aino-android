@@ -1,5 +1,7 @@
 package app.aino.mobile.feature.chat
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -220,6 +222,6 @@ internal fun NewChatFab(visible: Boolean, onClick: () -> Unit, modifier: Modifie
             shape = RoundedCornerShape(18.dp),
             containerColor = signal.primary,
             contentColor = Color.White,
-        ) { Icon(HeroIcons.PencilSquare, "New chat") }
+        ) { Icon(Icons.Outlined.Edit, "New chat") }
     }
 }

@@ -46,6 +46,11 @@ data class ChatPrefs(
     val linkPreviews: Boolean = true,
     val sentMediaQuality: String = "standard",
     val hideSensitiveContent: Boolean = false,
+    val ringtone: String = "classic",
+    val outgoingTone: String = "ringback",
+    val messageTone: String = "ding",
+    val mentionTone: String = "mention",
+    val reactionTone: String = "subtle",
     val inChatSounds: Boolean = false,
     val notificationContent: NotificationContent = NotificationContent.NameAndMessage,
     val screenLock: Boolean = false,
@@ -81,6 +86,11 @@ data class ChatPrefs(
         "linkPreviews" -> linkPreviews
         "sentMediaQuality" -> sentMediaQuality
         "hideSensitiveContent" -> hideSensitiveContent
+        "ringtone" -> ringtone
+        "outgoingTone" -> outgoingTone
+        "messageTone" -> messageTone
+        "mentionTone" -> mentionTone
+        "reactionTone" -> reactionTone
         else -> null
     }
 }

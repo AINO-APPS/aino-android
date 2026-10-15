@@ -19,6 +19,7 @@ import app.aino.mobile.feature.chat.ChatRepository
 import app.aino.mobile.core.db.AinoDatabase
 import app.aino.mobile.core.db.ScopedCache
 import app.aino.mobile.core.db.SessionScopeStore
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
@@ -39,6 +40,11 @@ internal fun messageNotificationEligible(formatType: String?): Boolean = formatT
 
 internal fun reactionEligible(action: String, ownerId: Long?, actorId: Long, userId: Long, muted: Boolean, visible: Boolean): Boolean =
     action == "added" && ownerId == userId && actorId != userId && !muted && !visible
+
+/** The reactor's photo: the event's own avatar, else the 1:1 peer's (in a 1:1 the reactor is the peer). */
+internal fun reactionAvatarUrl(eventAvatar: String?, actorId: Long, conversation: ChatConversation?): String? =
+    eventAvatar?.takeIf(String::isNotBlank)
+        ?: conversation?.takeIf { !it.isGroup && it.otherUserId == actorId }?.otherAvatar?.takeIf(String::isNotBlank)
 
 /** Resolves exact server identities before presenting a reaction in a nonselected conversation. */
 internal fun resolveReactionNotification(
@@ -91,16 +97,18 @@ object NotificationDelivery {
                 if (runCatching { parseGroupMemberPreviews(previews) }.isSuccess) put("groupMemberPreviews", previews)
             }
         } else emptyMap()
+        val data = mapOf(
+            "conversationId" to message.conversationId.toString(), "messageId" to message.id.toString(),
+            "senderId" to message.senderId.toString(), "senderName" to (message.senderName ?: message.senderUsername ?: "New message"),
+            "senderAvatar" to message.senderAvatar.orEmpty(), "body" to app.aino.mobile.feature.chat.chatNotificationBody(message.content, message.fileType, message.fileName, message.metadata),
+            "title" to (resolved?.groupName ?: message.senderName ?: "New message"),
+            "isGroup" to (resolved?.isGroup == true).toString(), "groupName" to resolved?.groupName.orEmpty(),
+        ) + avatarData
+        if (resolved?.isMuted != true) prefetchAvatars(context, notificationAvatarUrls(data))
         return deliver(context, "msg:${message.id}") {
             if (isRead(context, message.conversationId, runCatching { java.time.Instant.parse(message.createdAt).toEpochMilli() }.getOrNull())) PostingOutcome.Suppressed("Message already read")
             else if (resolved?.isMuted == true) PostingOutcome.Suppressed("Muted conversation")
-            else ChatNotifications.showMessage(context, mapOf(
-                "conversationId" to message.conversationId.toString(), "messageId" to message.id.toString(),
-                "senderId" to message.senderId.toString(), "senderName" to (message.senderName ?: message.senderUsername ?: "New message"),
-                "senderAvatar" to message.senderAvatar.orEmpty(), "body" to app.aino.mobile.feature.chat.chatNotificationBody(message.content, message.fileType, message.fileName, message.metadata),
-                "title" to (resolved?.groupName ?: message.senderName ?: "New message"),
-                "isGroup" to (resolved?.isGroup == true).toString(), "groupName" to resolved?.groupName.orEmpty(),
-            ) + avatarData)
+            else ChatNotifications.showMessage(context, data)
         }
     }
 
@@ -113,14 +121,17 @@ object NotificationDelivery {
         if (event.sentAt?.let { it + 86400 <= java.time.Instant.now().epochSecond } == true) return PostingOutcome.Suppressed("Reaction expired")
         val reactionId = event.reactionId?.takeIf { it > 0 } ?: return PostingOutcome.Suppressed("Missing addition identity")
         val user = notificationUser(context) ?: return PostingOutcome.Suppressed("Signed out")
+        val known = conversation ?: cachedConversation(context, event.conversationId)
         return resolveReactionNotification(
             ChatRepository(AppContainer.get(context).api), event,
             messageOwnerId ?: cachedMessageOwner(context, event.conversationId, event.messageId),
-            conversation ?: cachedConversation(context, event.conversationId), user,
+            known, user,
             VisibleThread.isVisible(event.conversationId),
         ) { owner, resolvedConversation ->
+            val avatar = reactionAvatarUrl(event.avatar, event.userId, resolvedConversation)
+            prefetchAvatars(context, listOfNotNull(avatar))
             reaction(context, reactionId, event.conversationId, event.messageId, owner, event.userId,
-                event.fullName.ifBlank { "Someone" }, event.emoji, event.action, resolvedConversation.isMuted)
+                event.fullName.ifBlank { "Someone" }, event.emoji, event.action, resolvedConversation.isMuted, avatar)
         }
     }
 
@@ -131,11 +142,14 @@ object NotificationDelivery {
         val conversation = cachedConversation(context, conversationId)
         if (push.kind == PushKind.ChatReaction) {
             val d = push.data
+            val avatar = reactionAvatarUrl(d["actorAvatar"], d.getValue("actorId").toLong(), conversation)
+            if (conversation?.isMuted != true) prefetchAvatars(context, listOfNotNull(avatar))
             return reaction(context, d.getValue("reactionId").toLong(), conversationId, d.getValue("messageId").toLong(),
                 d.getValue("messageOwnerId").toLong(), d.getValue("actorId").toLong(), d.getValue("actorName"),
-                d.getValue("emoji"), d.getValue("action"), conversation?.isMuted == true)
+                d.getValue("emoji"), d.getValue("action"), conversation?.isMuted == true, avatar)
         }
         if (push.data["senderId"]?.toLongOrNull() == notificationUser(context)) return PostingOutcome.Suppressed("Own message")
+        if (conversation?.isMuted != true) prefetchAvatars(context, notificationAvatarUrls(push.data))
         return deliver(context, push.dedupeKey) {
             if (isRead(context, conversationId, runCatching { java.time.Instant.parse(push.data.getValue("sentAt")).toEpochMilli() }.getOrNull())) PostingOutcome.Suppressed("Message already read")
             else if (conversation?.isMuted == true) PostingOutcome.Suppressed("Muted conversation")
@@ -149,7 +163,7 @@ object NotificationDelivery {
     }
 
     private fun reaction(context: Context, id: Long, conversationId: Long, messageId: Long, owner: Long?, actor: Long,
-        name: String, emoji: String, action: String, muted: Boolean): PostingOutcome =
+        name: String, emoji: String, action: String, muted: Boolean, avatar: String? = null): PostingOutcome =
         deliver(context, "reaction:$id") {
             val user = notificationUser(context) ?: return@deliver PostingOutcome.Suppressed("Signed out")
             if (!reactionEligible(action, owner, actor, user, muted, VisibleThread.isVisible(conversationId))) {
@@ -160,26 +174,16 @@ object NotificationDelivery {
             if (Build.VERSION.SDK_INT >= 33 &&
                 ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
             ) return@deliver PostingOutcome.Blocked("Notification permission denied")
-            val intent = Intent(context, MainActivity::class.java).apply {
-                setAction("app.aino.mobile.notification.REACTION.${notificationAccount(context)}.$id")
-                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                putExtra("push_type", "chat_reaction"); putExtra("conversation_id", conversationId.toString())
-                putExtra("push_message_id", messageId.toString()); putExtra("push_dedupe_key", "reaction:$id")
-            }
-            val notification = NotificationCompat.Builder(context, PushNotifications.REACTIONS)
-                .addExtras(android.os.Bundle().apply {
-                    putLong("conversation_id", conversationId); putLong("message_id", messageId)
-                    putLong("actor_id", actor); putString("emoji", emoji)
-                })
-                .setSmallIcon(R.drawable.ic_stat_aino).setColor(ChatNotifications.brandColor(context))
-                .setLargeIcon(NotificationAvatars.fallback(name, "aino-user-$actor"))
-                .setContentTitle(name).setContentText(reactionText(emoji, cachedMessageBody(context, conversationId, messageId)))
-                .setCategory(NotificationCompat.CATEGORY_SOCIAL)
-                .setContentIntent(PendingIntent.getActivity(context, id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-                .setAutoCancel(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
-                .setSilent(!app.aino.mobile.core.notifications.NotificationSoundPrefs.notificationAudible(context)).build()
-            runCatching {
+            val account = notificationAccount(context)
+            val photo = avatar?.let { runCatching { NotificationAvatarLoader.cached(context, it, account) }.getOrNull() }
+            val body = reactionText(emoji, cachedMessageBody(context, conversationId, messageId))
+            val post = { bitmap: android.graphics.Bitmap?, update: Boolean ->
+                val notification = buildReaction(context, id, conversationId, messageId, actor, name, emoji, body, bitmap, update)
                 NotificationManagerCompat.from(context).notify(NotificationTags.REACTION, id.hashCode(), notification)
+            }
+            runCatching {
+                post(photo, false)
+                if (photo == null && avatar != null) enrichReaction(context, id, avatar, account) { post(it, true) }
                 PostingOutcome.Posted
             }.getOrElse {
                 android.util.Log.w("AinoPush", "Reaction notification posting failed: ${it.javaClass.simpleName}")
@@ -187,6 +191,55 @@ object NotificationDelivery {
                 else PostingOutcome.Failed("Reaction notification posting failed")
             }
         }
+
+    private fun buildReaction(context: Context, id: Long, conversationId: Long, messageId: Long, actor: Long, name: String,
+        emoji: String, body: String, photo: android.graphics.Bitmap?, update: Boolean): android.app.Notification {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            setAction("app.aino.mobile.notification.REACTION.${notificationAccount(context)}.$id")
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("push_type", "chat_reaction"); putExtra("conversation_id", conversationId.toString())
+            putExtra("push_message_id", messageId.toString()); putExtra("push_dedupe_key", "reaction:$id")
+        }
+        // The reactor as a Person (Signal), so the shade and status bar show their photo, not the app icon.
+        val icon = app.aino.mobile.core.avatar.ChatAvatarBitmaps.user(name, ChatNotifications.brandColor(context), photo)
+        return NotificationCompat.Builder(context, PushNotifications.channel(context, PushNotifications.REACTIONS))
+            .addExtras(android.os.Bundle().apply {
+                putLong("conversation_id", conversationId); putLong("message_id", messageId)
+                putLong("actor_id", actor); putString("emoji", emoji)
+            })
+            .setSmallIcon(R.drawable.ic_stat_aino).setColor(ChatNotifications.brandColor(context))
+            .setLargeIcon(icon)
+            .setContentTitle(name).setContentText(body)
+            .setCategory(NotificationCompat.CATEGORY_SOCIAL)
+            .addPerson(androidx.core.app.Person.Builder().setKey("aino-user-$actor").setName(name)
+                .setIcon(androidx.core.graphics.drawable.IconCompat.createWithBitmap(icon)).build())
+            .setContentIntent(PendingIntent.getActivity(context, id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .setAutoCancel(true).setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setOnlyAlertOnce(update)
+            .setSilent(update || !app.aino.mobile.core.notifications.NotificationSoundPrefs.notificationAudible(context)).build()
+    }
+
+    private val enrichScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    /** The photo missed the pre-post budget: re-post silently once it loads, if the reaction is still shown. */
+    private fun enrichReaction(context: Context, id: Long, url: String, account: String?, repost: (android.graphics.Bitmap) -> Unit) {
+        val app = context.applicationContext
+        enrichScope.launch {
+            val photo = runCatching { NotificationAvatarLoader.load(app, url, account) }.getOrNull() ?: return@launch
+            if (notificationAccount(app) != account) return@launch
+            val showing = runCatching {
+                app.getSystemService(android.app.NotificationManager::class.java)?.activeNotifications
+                    ?.any { it.tag == NotificationTags.REACTION && it.id == id.hashCode() } == true
+            }.getOrDefault(false)
+            if (showing) runCatching { repost(photo) }
+        }
+    }
+
+    /** Blocking, bounded photo warm-up before entering the synchronized delivery path. */
+    private fun prefetchAvatars(context: Context, urls: List<String>) {
+        if (urls.isEmpty()) return
+        runCatching { NotificationAvatarLoader.prefetchBlocking(context, urls, notificationAccount(context)) }
+    }
 
     @Synchronized
     private fun deliver(context: Context, key: String, post: () -> PostingOutcome): PostingOutcome {

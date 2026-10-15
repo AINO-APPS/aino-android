@@ -59,6 +59,18 @@ import app.aino.mobile.feature.chat.ChatViewModel
 
 class MainActivity : FragmentActivity() {
     private val pipController = PipController()
+    /** FLAG_SECURE added on pause so pre-Android-13 Recents snapshots of a locked app stay blank. */
+    private var recentsGuarded = false
+
+    override fun onPause() {
+        if (android.os.Build.VERSION.SDK_INT < 33 && !recentsGuarded && !isInPictureInPictureMode &&
+            app.aino.mobile.core.settings.ChatPreferences.get(applicationContext).screenLock
+        ) {
+            recentsGuarded = true
+            app.aino.mobile.core.designsystem.acquireSecure(window)
+        }
+        super.onPause()
+    }
     private val lockScreenController = LockScreenController()
     private val authViewModel by viewModels<AuthViewModel> { AuthViewModel.factory(applicationContext) }
     private val appUpdater by lazy { createAppUpdater() }
@@ -118,6 +130,11 @@ class MainActivity : FragmentActivity() {
                 onDispose { if (chatPrefs.screenSecurity) app.aino.mobile.core.designsystem.releaseSecure(window) }
             }
             androidx.compose.runtime.LaunchedEffect(chatPrefs.screenLock) { if (!chatPrefs.screenLock) app.aino.mobile.core.settings.AppLock.reset() }
+            // A locked app must not show its content in Recents (Android 13+ hides the snapshot; older versions use onPause).
+            androidx.compose.runtime.DisposableEffect(chatPrefs.screenLock) {
+                if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(!chatPrefs.screenLock)
+                onDispose { if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(true) }
+            }
             androidx.compose.runtime.LaunchedEffect(locked) { if (locked) requestUnlock() }
             WebTheme(darkTheme = isDark, accent = branding.accentColor) {
               app.aino.mobile.core.designsystem.IncognitoKeyboard(chatPrefs.incognitoKeyboard) {
@@ -291,6 +308,10 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (recentsGuarded) {
+            recentsGuarded = false
+            app.aino.mobile.core.designsystem.releaseSecure(window)
+        }
         consumePendingCallAction()
         resumeAfterLocationEnabled()
         appUpdater.check(this)

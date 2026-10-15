@@ -45,6 +45,17 @@ data class GroupPermissions(
     }
 }
 
+/**
+ * Server `togglePin` unpin rule: whoever pinned the message may unpin it; in a group
+ * so may an admin or the owner. Legacy pins with no recorded pinner stay removable
+ * by either person in a 1:1.
+ */
+fun canUnpinMessage(pinnedBy: Long?, currentUserId: Long?, isGroup: Boolean, isAdmin: Boolean): Boolean = when {
+    currentUserId != null && pinnedBy == currentUserId -> true
+    isGroup -> isAdmin
+    else -> pinnedBy == null
+}
+
 /** Owner first, then admins, then members, each alphabetically (server order, kept after local edits). */
 fun sortMembers(members: List<ConversationMember>): List<ConversationMember> =
     members.sortedWith(compareBy<ConversationMember> { roleRank(it.role) }.thenBy { it.display().lowercase() })

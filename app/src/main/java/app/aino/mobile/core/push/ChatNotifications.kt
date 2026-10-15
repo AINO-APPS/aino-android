@@ -73,7 +73,7 @@ object ChatNotifications {
         ConversationNotifications.ensureConversation(context, mapOf(
             "conversationId" to data.getValue("conversationId"), "title" to title,
             "senderId" to data.getValue("senderId"), "senderName" to data.getValue("senderName"),
-            "parentChannelId" to PushNotifications.MESSAGES,
+            "parentChannelId" to PushNotifications.channel(context, PushNotifications.MESSAGES),
         ), iconBitmap = icon)
 
     private fun cachedPhoto(context: Context, url: String?, account: String?): Bitmap? =
@@ -119,7 +119,7 @@ object ChatNotifications {
         val conversation = ensureConversation(context, data, title, largeIcon)
         val info = Meta(
             data.toMap(), title, isGroup,
-            channelId = conversation?.get("channelId") ?: PushNotifications.MESSAGES,
+            channelId = conversation?.get("channelId") ?: PushNotifications.channel(context, PushNotifications.MESSAGES),
             shortcutId = conversation?.get("shortcutId"),
             largeIcon = largeIcon,
             account = account,
@@ -174,27 +174,32 @@ object ChatNotifications {
                 listOfNotNull(if (current.isGroup) current.groupAvatar.photoUrl else current.data["senderAvatar"]) +
                 if (current.isGroup) current.groupAvatar.members.mapNotNull { it.avatarUrl } else emptyList())
                 .filter(String::isNotBlank).distinct().filterNot(current.photos::containsKey)
-            for (url in urls) {
-                if (accountProvider(context) != info.account) break
-                val photo = try {
-                    runCatching { source.cached(context, url, info.account) }.getOrNull()
-                        ?: source.load(context, url, info.account)
-                } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    android.util.Log.w("AinoPush", "Notification avatar unavailable: ${error.javaClass.simpleName}")
-                    null
-                }
-                if (photo == null) {
-                    android.util.Log.w("AinoPush", "Notification avatar unavailable or timed out")
-                    continue
-                }
-                synchronized(this@ChatNotifications) {
-                    val latest = activeMeta(context, conversationId, info) ?: return@launch
-                    updateAvatar(context, conversationId, latest.copy(photos = latest.photos + (url to photo)))
+            // Concurrently, so one slow photo never holds back the others.
+            kotlinx.coroutines.coroutineScope {
+                urls.forEach { url ->
+                    launch photo@{
+                        if (accountProvider(context) != info.account) return@photo
+                        val photo = try {
+                            runCatching { source.cached(context, url, info.account) }.getOrNull()
+                                ?: source.load(context, url, info.account)
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            android.util.Log.w("AinoPush", "Notification avatar unavailable: ${error.javaClass.simpleName}")
+                            null
+                        }
+                        if (photo == null) {
+                            android.util.Log.w("AinoPush", "Notification avatar unavailable or timed out")
+                            return@photo
+                        }
+                        synchronized(this@ChatNotifications) {
+                            val latest = activeMeta(context, conversationId, info) ?: return@photo
+                            if (accountProvider(context) != info.account) return@photo
+                            updateAvatar(context, conversationId, latest.copy(photos = latest.photos + (url to photo)))
+                        }
+                    }
                 }
             }
-
         }
     }
 
