@@ -2256,6 +2256,7 @@ class ChatViewModel(
                     pendingMedia = state.pendingMedia.filterNot { it.localId == media.localId },
                 )
             }
+            if (!media.viewOnce) seedMediaCache(message.fileUrl, media, ready)
             refresh()
         } catch (error: CancellationException) {
             if (_ui.value.pendingMedia.any { it.localId == media.localId } && !prep.isCancelled) throw error
@@ -2266,6 +2267,24 @@ class ChatViewModel(
         } finally {
             prepJobs.remove(media.localId)
             prepared?.release()
+        }
+    }
+
+    /**
+     * Seeds Coil's disk cache with what was just sent (the image bytes under the key its
+     * network fetcher reads, or a video poster), so the persisted bubble never refetches,
+     * even after a restart. Best-effort.
+     */
+    private suspend fun seedMediaCache(fileUrl: String?, media: PendingMedia, ready: PreparedMedia) {
+        val appContext = context ?: return
+        if (fileUrl.isNullOrBlank() || !(media.isImage || media.isVideo)) return
+        val cache = runCatching { app.aino.mobile.core.AppContainer.get(appContext).imageLoader.diskCache }.getOrNull() ?: return
+        val remote = resolveChatMediaUrl(fileUrl)
+        if (media.isVideo) {
+            viewModelScope.launch(Dispatchers.IO) { runCatching { app.aino.mobile.core.media.seedVideoPoster(appContext, cache, remote, media.uri) } }
+        } else {
+            // The prepared (re-encoded) file is deleted right after this upload: copy it now.
+            kotlinx.coroutines.withContext(Dispatchers.IO) { runCatching { app.aino.mobile.core.media.seedImageCache(cache, remote, ready.open) } }
         }
     }
 
@@ -2856,7 +2875,7 @@ class ChatViewModel(
         internal val TRANSIENT_RETRY_DELAYS_MS = listOf(2_000L, 5_000L, 15_000L, 30_000L, 60_000L)
         internal const val SOCKET_ECHO_TIMEOUT_MS = 8_000L
         /** A shared link waits this long for its preview card, then sends plain. */
-        internal const val SHARED_PREVIEW_TIMEOUT_MS = 5_000L
+        internal const val SHARED_PREVIEW_TIMEOUT_MS = 10_000L
         /** A transient action failure is a hint, not a state: it clears itself. */
         internal const val TRANSIENT_ERROR_DISPLAY_MS = 4_000L
         internal const val MESSAGE_RESULTS_LIMIT = 100

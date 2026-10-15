@@ -794,6 +794,19 @@ fun groupInviteUrl(webOrigin: String, token: String): String = webOrigin.trimEnd
 /** Web `ChatInputBar` `URL_RE`: the first http(s) URL in the draft. */
 fun firstLinkIn(text: String): String? = Regex("https?://[^\\s<]+").find(text)?.value
 
+/** Every http(s) URL in [text] as index ranges (bubble linkification). */
+fun linkRangesIn(text: String): List<IntRange> = Regex("https?://[^\\s<]+").findAll(text).map { match ->
+    // Sentence punctuation right after a link isn't part of it.
+    val trimmed = match.value.trimEnd('.', ',', '!', '?', ';', ':', ')', '\'', '"')
+    match.range.first until match.range.first + trimmed.length
+}.filterNot { it.isEmpty() }.toList()
+
+/** Signal shows the link's domain under the card: host without `www.`, else the server's site name. */
+fun linkPreviewDomain(preview: LinkPreview): String {
+    val host = runCatching { java.net.URI(preview.url.trim()).host }.getOrNull()?.lowercase()?.removePrefix("www.")
+    return host?.takeIf(String::isNotBlank) ?: preview.siteName.trim()
+}
+
 /**
  * Web `useMessageActions` send path: the WS `chat_message` frame is the only
  * send route that carries `mentions` and a sender `linkPreview`.

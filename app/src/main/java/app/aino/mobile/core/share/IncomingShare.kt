@@ -33,6 +33,9 @@ data class IncomingShare(
 
     /** Media shared together with a link: the link is its own message, as Signal sends it. */
     val hasLinkWithMedia: Boolean get() = items.isNotEmpty() && link != null
+
+    /** A link with only images (Google Maps, Chrome): the images are the link's thumbnail, not content (Signal drops them). */
+    val isLinkThumbnail: Boolean get() = hasLinkWithMedia && items.all { it.mimeType.startsWith("image/") }
 }
 
 const val SHARE_TARGET_CATEGORY = "app.aino.mobile.SHARE_TARGET"

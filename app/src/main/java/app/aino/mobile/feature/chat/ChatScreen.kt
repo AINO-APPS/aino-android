@@ -812,6 +812,9 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         itemsSettled = !source.threadLoading
     }
     val pendingById = remember(threadPending) { threadPending.associateBy(PendingMedia::localId) }
+    // Warm Coil's caches for the newest photos / video posters so scrolling shows them at once.
+    val prefetchTargets = remember(ui.messages) { chatMediaPrefetchTargets(ui.messages) }
+    LaunchedEffect(conversation.id, prefetchTargets) { prefetchChatMedia(context, prefetchTargets) }
     val latestUi by androidx.compose.runtime.rememberUpdatedState(ui)
     val reactionAvatars = remember { { reactionAvatarLookup(latestUi.selectedConversation, latestUi.members, latestUi.messages) } }
     var allMediaOpen by remember(conversation.id) { mutableStateOf(false) }
@@ -1615,6 +1618,8 @@ private fun MessageBubble(
     var reactionsOpen by remember { mutableStateOf(false) }
     val signal = signalColors
     val saveMedia = rememberChatMediaSaver()
+    val linkContext = LocalContext.current
+    val openLink: (String) -> Unit = { url -> if (selectionActive) onToggleSelect() else openChatLink(linkContext, url) }
     // Web ChatMessages: `format_type 'meeting'` rows render a MeetingCard, not a bubble.
     val meetingMeta = message.metadata?.takeIf { message.formatType == "meeting" } as? kotlinx.serialization.json.JsonObject
     val meetingCode = (meetingMeta?.get("meetingCode") as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull
@@ -1771,7 +1776,7 @@ private fun MessageBubble(
                                 Box(Modifier.align(Alignment.BottomEnd).padding(8.dp)) { footer(true) }
                             }
                             !message.fileUrl.isNullOrBlank() -> {
-                                if (message.formatType != "poll") message.linkPreview?.let { LinkPreviewCard(it) }
+                                if (message.formatType != "poll") message.linkPreview?.let { LinkPreviewCard(it, contentColor = fg) }
                                 ChatMediaPreview(
                                     message = message, onOpenMedia = { if (selectionActive) onToggleSelect() else onOpenMedia(it) },
                                     onCancelProcessing = { onCancel() }, onRetryProcessing = { onRetry() },
@@ -1780,7 +1785,10 @@ private fun MessageBubble(
                                     withContent = !message.content.isNullOrBlank(),
                                 )
                                 val caption = message.content?.takeIf(String::isNotBlank)
-                                if (caption != null) BubbleTextWithFooter(highlightTerm(caption, searchTerm, signal.highlight), fg, { footer(false) })
+                                if (caption != null) BubbleTextWithFooter(
+                                    remember(caption, searchTerm, signal.highlight, selectionActive) { linkify(highlightTerm(caption, searchTerm, signal.highlight), openLink) },
+                                    fg, { footer(false) },
+                                )
                                 else Box(Modifier.align(Alignment.End)) { footer(false) }
                             }
                             !message.fileName.isNullOrBlank() -> {
@@ -1822,9 +1830,11 @@ private fun MessageBubble(
                                 Box(Modifier.align(Alignment.End)) { footer(false) }
                             }
                             else -> {
-                                message.linkPreview?.let { LinkPreviewCard(it) }
+                                message.linkPreview?.let { LinkPreviewCard(it, Modifier.padding(top = 2.dp, bottom = 4.dp), contentColor = fg) }
                                 BubbleTextWithFooter(
-                                    highlightTerm(message.body(), searchTerm, signal.highlight), fg, { footer(false) },
+                                    remember(message.body(), searchTerm, signal.highlight, selectionActive) {
+                                        linkify(highlightTerm(message.body(), searchTerm, signal.highlight), openLink)
+                                    }, fg, { footer(false) },
                                     fontSize = emojiMessageSize(message.body()),
                                 )
                             }

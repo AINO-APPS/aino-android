@@ -223,6 +223,20 @@ internal fun emojiMessageSize(text: String): TextUnit {
     }
 }
 
+/** Underlined, tappable http(s) links in bubble text (Signal linkifies message bodies). */
+fun linkify(text: AnnotatedString, onOpen: (String) -> Unit): AnnotatedString {
+    val ranges = linkRangesIn(text.text)
+    if (ranges.isEmpty()) return text
+    val style = androidx.compose.ui.text.TextLinkStyles(SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline))
+    return buildAnnotatedString {
+        append(text)
+        ranges.forEach { range ->
+            val url = text.text.substring(range)
+            addLink(androidx.compose.ui.text.LinkAnnotation.Clickable(url, style) { onOpen(url) }, range.first, range.last + 1)
+        }
+    }
+}
+
 /** Case-insensitive highlight of [term] (Signal in-chat search). */
 fun highlightTerm(text: String, term: String?, background: Color): AnnotatedString {
     val needle = term?.trim().orEmpty()

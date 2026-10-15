@@ -109,6 +109,7 @@ class AuthViewModel(
         loader.memoryCache?.clear()
         loader.diskCache?.clear()
         app.aino.mobile.core.media.VideoCache.clear(context)
+        app.aino.mobile.feature.chat.ChatMediaMemory.clear()
         app.aino.mobile.core.notifications.NotificationSoundPrefs.clear(context)
         app.aino.mobile.core.settings.AppLock.reset()
         app.aino.mobile.core.push.PushTokenRegistrar.forget(context)

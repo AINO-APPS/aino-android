@@ -139,7 +139,7 @@ internal fun PendingMediaBubble(media: PendingMedia, onCancel: () -> Unit, onRet
                 Column(Modifier.widthIn(max = bubbleMax).clip(shape).background(signal.outgoing)) {
                     Box {
                         ChatThumbnail(media.uri, media.fileName, video = media.isVideo, shape = RoundedCornerShape(0.dp),
-                            naturalSize = natural, withContent = media.caption != null,
+                            naturalSize = natural, withContent = media.caption != null, showPlay = false,
                         ) {}
                         Crossfade(failed, Modifier.matchParentSize(), label = "transfer") { isFailed ->
                             if (isFailed) TransferRetry(onRetry, Modifier.fillMaxSize())

@@ -27,6 +27,7 @@ import okhttp3.OkHttpClient
 class AppContainer private constructor(private val context: Context) {
     init {
         app.aino.mobile.core.network.DeviceId.value = app.aino.mobile.core.network.DeviceId.load(context)
+        app.aino.mobile.feature.chat.ChatMediaMemory.attach(context)
     }
 
     val tokens = KeystoreTokenStore(context)
@@ -112,9 +113,18 @@ class AppContainer private constructor(private val context: Context) {
         }
         .build()
 
+    /** [mediaHttp]'s auth headers for clients that bypass OkHttp (MediaMetadataRetriever); empty off the AINO origin. */
+    private fun mediaHeadersFor(url: String): Map<String, String> {
+        val host = runCatching { java.net.URI(url).host }.getOrNull()
+        if (!host.equals(apiHost, ignoreCase = true)) return emptyMap()
+        return standardHeaders(freshTokens.getToken(), timezoneOffsetMinutes(TimeZone.getDefault(), System.currentTimeMillis()))
+    }
+
     val imageLoader: ImageLoader = ImageLoader.Builder(context)
         .components {
             add(OkHttpNetworkFetcherFactory(callFactory = { mediaHttp }))
+            add(app.aino.mobile.core.media.VideoPosterFetcher.PosterKeyer())
+            add(app.aino.mobile.core.media.VideoPosterFetcher.Factory(context, ::mediaHeadersFor))
             add(VideoFrameDecoder.Factory())
             // GIFs / stickers from the web's GIPHY picker animate in chat.
             if (android.os.Build.VERSION.SDK_INT >= 28) add(coil3.gif.AnimatedImageDecoder.Factory()) else add(coil3.gif.GifDecoder.Factory())

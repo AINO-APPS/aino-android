@@ -285,8 +285,11 @@ private fun VideoPage(url: String, localUri: String?, label: String?, active: Bo
             modifier = Modifier.fillMaxSize(),
         )
         if (!firstFrameRendered) {
-            val request = remember(url, localUri) {
-                coil3.request.ImageRequest.Builder(context).data(localUri ?: url).videoFrameMillis(100).build()
+            var posterFailed by remember(url, localUri) { mutableStateOf(false) }
+            val request = remember(url, localUri, posterFailed) {
+                val source = localUri ?: url
+                if (posterFailed) coil3.request.ImageRequest.Builder(context).data(source).videoFrameMillis(100).build()
+                else coil3.request.ImageRequest.Builder(context).data(app.aino.mobile.core.media.VideoPoster(source.toString())).build()
             }
             AsyncImage(
                 model = request,
@@ -294,6 +297,7 @@ private fun VideoPage(url: String, localUri: String?, label: String?, active: Bo
                 contentDescription = label,
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
+                onError = { posterFailed = true },
             )
         }
     }
@@ -340,40 +344,48 @@ suspend fun openChatFile(context: Context, url: String, fileName: String?, mimeT
     }
 }
 
+/** Opens a chat link: a shared group link opens the in-app join preview instead of the browser. */
+fun openChatLink(context: Context, url: String) {
+    val invite = app.aino.mobile.core.navigation.webGroupInviteToken(url)
+    if (invite != null) app.aino.mobile.core.navigation.PendingGroupInvite.set(invite)
+    else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
+
 /**
- * Web `MessageBubble` link card (and the `ChatInputBar` compose-time card when
- * [onRemove] is set): 52dp thumb, title, 2-line description, site name, primary left rule.
+ * Signal `LinkPreviewView` (small layout) in a bubble or, with [onRemove], the composer:
+ * 72dp thumbnail on the left, title, 2-line description and the link's domain on a
+ * translucent [contentColor] tint, so it reads on outgoing and incoming bubbles alike.
  */
 @Composable
-fun LinkPreviewCard(preview: LinkPreview, modifier: Modifier = Modifier, onRemove: (() -> Unit)? = null) {
-    val colors = LocalWebColors.current
+fun LinkPreviewCard(
+    preview: LinkPreview,
+    modifier: Modifier = Modifier,
+    onRemove: (() -> Unit)? = null,
+    contentColor: Color = LocalWebColors.current.text,
+) {
     val context = LocalContext.current
     val loader = AppContainer.get(context).imageLoader
+    val domain = remember(preview.url, preview.siteName) { linkPreviewDomain(preview) }
     Row(
-        modifier.widthIn(max = 340.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = .12f))
-            .clickable {
-                // A shared group link opens the in-app join preview instead of the browser.
-                val invite = app.aino.mobile.core.navigation.webGroupInviteToken(preview.url)
-                if (invite != null) app.aino.mobile.core.navigation.PendingGroupInvite.set(invite)
-                else runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(preview.url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            },
+        modifier.widthIn(max = 340.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(contentColor.copy(alpha = .1f))
+            .clickable { openChatLink(context, preview.url) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.width(3.dp).height(60.dp).background(colors.primary))
         preview.image?.let { image ->
             AsyncImage(
                 model = resolveChatMediaUrl(image), imageLoader = loader, contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.padding(start = 8.dp).size(52.dp).clip(RoundedCornerShape(6.dp)),
+                modifier = Modifier.padding(start = 6.dp, top = 6.dp, bottom = 6.dp).size(72.dp).clip(RoundedCornerShape(8.dp))
+                    .background(contentColor.copy(alpha = .08f)),
             )
         }
-        Column(Modifier.weight(1f, fill = false).padding(horizontal = 8.dp, vertical = 6.dp)) {
-            Text(preview.title.ifBlank { preview.url }, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (preview.description.isNotBlank()) Text(preview.description, color = colors.text.copy(alpha = .75f), fontSize = 11.5.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (preview.siteName.isNotBlank()) Text(preview.siteName, color = colors.text.copy(alpha = .55f), fontSize = 11.sp, maxLines = 1)
+        Column(Modifier.weight(1f).padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(preview.title.ifBlank { domain.ifBlank { preview.url } }, color = contentColor, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (preview.description.isNotBlank()) Text(preview.description, color = contentColor.copy(alpha = .8f), fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (domain.isNotBlank()) Text(domain, color = contentColor.copy(alpha = .6f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         onRemove?.let {
-            Icon(HeroIcons.XMark, "Remove preview", Modifier.padding(end = 8.dp).size(18.dp).clickable(onClick = it), tint = colors.textSecondary)
+            Icon(HeroIcons.XMark, "Remove preview", Modifier.padding(end = 10.dp).size(18.dp).clickable(onClick = it), tint = contentColor.copy(alpha = .6f))
         }
     }
 }

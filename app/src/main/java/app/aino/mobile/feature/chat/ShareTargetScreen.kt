@@ -50,6 +50,11 @@ import app.aino.mobile.core.designsystem.AinoEmptyState
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 import app.aino.mobile.core.share.IncomingShare
 import app.aino.mobile.feature.chat.media.MediaSendItem
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** WhatsApp caps a share at 5 chats; Signal allows a handful too. */
 const val MAX_SHARE_TARGETS = 5
@@ -80,22 +85,37 @@ fun ShareTargetScreen(
 
     // The card is fetched once for the whole share and reused for every target.
     var preview by remember(share) { mutableStateOf<LinkPreview?>(null) }
+    var previewLoading by remember(share) { mutableStateOf(false) }
+    var sending by remember(share) { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val previewsOn = app.aino.mobile.core.settings.ChatPreferences.state.collectAsStateWithLifecycle().value.linkPreviews
     androidx.compose.runtime.LaunchedEffect(share, previewsOn) {
         val url = share.link?.takeIf { previewsOn } ?: return@LaunchedEffect
-        preview = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { viewModel.fetchLinkPreview(url) }
+        previewLoading = true
+        try {
+            preview = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { viewModel.fetchLinkPreview(url) }
+        } finally {
+            previewLoading = false
+        }
     }
 
     fun send(caption: String, viewOnce: Boolean = false, highQuality: Boolean = false, items: List<MediaSendItem>? = null) {
-        val targets = selected.toList()
-        val plan = sharePlan(share, caption)
-        targets.forEach { id ->
-            val media = items?.map { MediaUploadSpec(it.uri, it.mimeType, it.width, it.height) }
-                ?: share.items.map { MediaUploadSpec(it.uri, it.mimeType) }
-            if (media.isNotEmpty()) viewModel.sendSharedMedia(id, media, plan.mediaCaption, viewOnce, highQuality)
-            plan.text?.let { viewModel.sendSharedText(id, it, preview) }
+        if (sending) return
+        sending = true
+        scope.launch {
+            // Signal waits for the link card before sending (a re-hosted preview can take several seconds).
+            if (previewLoading) withTimeoutOrNull(ChatViewModel.SHARED_PREVIEW_TIMEOUT_MS) { snapshotFlow { previewLoading }.first { !it } }
+            val targets = selected.toList()
+            val plan = sharePlan(share, caption)
+            targets.forEach { id ->
+                val media = if (!plan.sendMedia) emptyList()
+                else items?.map { MediaUploadSpec(it.uri, it.mimeType, it.width, it.height) }
+                    ?: share.items.map { MediaUploadSpec(it.uri, it.mimeType) }
+                if (media.isNotEmpty()) viewModel.sendSharedMedia(id, media, plan.mediaCaption, viewOnce, highQuality)
+                plan.text?.let { viewModel.sendSharedText(id, it, preview) }
+            }
+            onSent(targets)
         }
-        onSent(targets)
     }
 
     BackHandler {
@@ -132,7 +152,7 @@ fun ShareTargetScreen(
                 onToggle = { id -> if (id in selected) selected.remove(id) else if (selected.size < MAX_SHARE_TARGETS) selected.add(id) },
                 modifier = Modifier.weight(1f),
             )
-            ShareStep.Compose -> ComposeStep(share, preview, Modifier.weight(1f), onSend = {
+            ShareStep.Compose -> ComposeStep(share, preview, previewLoading, sending, Modifier.weight(1f), onSend = {
                 send(it, highQuality = app.aino.mobile.core.settings.ChatPreferences.current.highQualityMedia)
             })
         }
@@ -158,17 +178,20 @@ fun ShareTargetScreen(
 private enum class ShareStep { Pick, Compose }
 
 /** What a share sends: media (optionally captioned) and/or a separate text message. */
-internal data class SharePlan(val mediaCaption: String?, val text: String?)
+internal data class SharePlan(val mediaCaption: String?, val text: String?, val sendMedia: Boolean = true)
 
 /**
  * A message that carries a link is sent as its own text (with its preview card) after the
- * media, so the link is never lost to a caption-less image (Chrome / Google screenshot shares).
+ * media, so the link is never lost to a caption-less image. When the images are only the
+ * link's thumbnail (Google Maps / Chrome), Signal sends just the link with its card.
  */
 internal fun sharePlan(share: IncomingShare, message: String): SharePlan {
     val text = message.trim().ifEmpty { null }
+    val hasLink = text != null && firstLinkIn(text) != null
     return when {
         share.items.isEmpty() -> SharePlan(null, text)
-        text != null && firstLinkIn(text) != null -> SharePlan(null, text)
+        hasLink && share.isLinkThumbnail -> SharePlan(null, text, sendMedia = false)
+        hasLink -> SharePlan(null, text)
         else -> SharePlan(text, null)
     }
 }
@@ -238,15 +261,31 @@ private fun PickStep(
 }
 
 @Composable
-private fun ComposeStep(share: IncomingShare, preview: LinkPreview?, modifier: Modifier, onSend: (String) -> Unit) {
+private fun ComposeStep(
+    share: IncomingShare,
+    preview: LinkPreview?,
+    previewLoading: Boolean,
+    sending: Boolean,
+    modifier: Modifier,
+    onSend: (String) -> Unit,
+) {
     val signal = signalColors
     var message by remember(share) { mutableStateOf(share.text.orEmpty()) }
+    val link = firstLinkIn(message)
+    // The link's thumbnail image is replaced by its card (see [sharePlan]).
+    val items = if (share.isLinkThumbnail && link != null) emptyList() else share.items
     Column(modifier.padding(horizontal = 16.dp)) {
         LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (preview != null && firstLinkIn(message) == preview.url) item(key = "link-preview") {
+            if (preview != null && link == preview.url) item(key = "link-preview") {
                 LinkPreviewCard(preview, Modifier.fillMaxWidth())
+            } else if (previewLoading && link == share.link) item(key = "link-preview-loading") {
+                Box(
+                    Modifier.fillMaxWidth().heightIn(min = 84.dp).clip(RoundedCornerShape(10.dp))
+                        .background(signal.text.copy(alpha = .1f)),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator(Modifier.size(24.dp), color = signal.primary, strokeWidth = 2.5.dp) }
             }
-            items(share.items, key = { it.uri.toString() }) { item ->
+            items(items, key = { it.uri.toString() }) { item ->
                 Row(
                     Modifier.fillMaxWidth().background(signal.surface, RoundedCornerShape(12.dp)).padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -280,12 +319,15 @@ private fun ComposeStep(share: IncomingShare, preview: LinkPreview?, modifier: M
                 },
             )
             Spacer(Modifier.width(8.dp))
-            val canSend = share.items.isNotEmpty() || message.isNotBlank()
+            val canSend = (share.items.isNotEmpty() || message.isNotBlank()) && !sending
             Box(
-                Modifier.size(48.dp).clip(CircleShape).background(if (canSend) signal.primary else signal.divider)
+                Modifier.size(48.dp).clip(CircleShape).background(if (canSend || sending) signal.primary else signal.divider)
                     .clickable(enabled = canSend) { onSend(message) },
                 contentAlignment = Alignment.Center,
-            ) { Icon(HeroIcons.PaperAirplane, "Send", tint = Color.White, modifier = Modifier.size(22.dp)) }
+            ) {
+                if (sending) CircularProgressIndicator(Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                else Icon(HeroIcons.PaperAirplane, "Send", tint = Color.White, modifier = Modifier.size(22.dp))
+            }
         }
     }
 }

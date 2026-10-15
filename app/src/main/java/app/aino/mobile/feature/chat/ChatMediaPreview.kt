@@ -21,12 +21,17 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.aino.mobile.core.AppContainer
+import app.aino.mobile.core.media.VideoPoster
+import app.aino.mobile.core.media.isRemoteMediaUrl
+import app.aino.mobile.core.media.videoPosterCacheKey
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.network.NetworkConfig
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.video.videoFrameMillis
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 
@@ -53,27 +58,120 @@ fun ChatMessage.mediaInFlight(): Boolean =
 fun ChatMessage.mediaFailed(): Boolean = mediaState?.lowercase() in setOf("failed", "cancelled")
 
 /**
- * Session memory for chat media. Files this device just sent map their server URL
- * to the local copy, so the delivered bubble keeps showing the already-decoded
- * image/voice note (no refetch blink). Pixel dimensions are kept per model so a
- * bubble that remounts is sized before decode and never resizes.
+ * Memory for chat media. Files this device sent map their server URL to the local
+ * copy, so the delivered bubble keeps showing the already-decoded image/voice note
+ * (no refetch blink). Pixel dimensions are kept per model so a bubble that remounts
+ * is sized before decode and never resizes. Remote dims (and mappings to app-owned
+ * local files) survive restarts in a small store, bounded to [PERSISTED_MAX] entries.
  */
 object ChatMediaMemory {
     private val localByUrl = java.util.concurrent.ConcurrentHashMap<String, String>()
     private val sizes = java.util.concurrent.ConcurrentHashMap<String, IntSize>()
+    private const val PERSISTED_MAX = 500
+    private const val STORE_NAME = "chat-media-memory.tsv"
+    private val persisted = object : LinkedHashMap<String, Pair<IntSize?, String?>>(64, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<IntSize?, String?>>) = size > PERSISTED_MAX
+    }
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "chat-media-memory").apply { isDaemon = true } }
+    private val savePending = java.util.concurrent.atomic.AtomicBoolean(false)
+    @Volatile private var store: java.io.File? = null
+    @Volatile private var appPackage: String? = null
+
+    /** Loads the persisted store off the main thread; later writes are coalesced on the same thread. */
+    fun attach(context: android.content.Context) {
+        if (store != null) return
+        val file = java.io.File(context.filesDir, STORE_NAME)
+        store = file
+        appPackage = context.packageName
+        writer.execute {
+            val lines = runCatching { if (file.exists()) file.readLines() else emptyList() }.getOrDefault(emptyList())
+            synchronized(persisted) {
+                lines.mapNotNull(::parseMediaMemoryLine).forEach { (key, dims, local) ->
+                    val usable = local?.takeIf { isLocalUsable(context, it) }
+                    dims?.let { sizes.putIfAbsent(key, it) }
+                    usable?.let { localByUrl.putIfAbsent(key, it) }
+                    if (!persisted.containsKey(key)) persisted[key] = dims to usable
+                }
+            }
+        }
+    }
+
+    /** Sign-out: the previous account's media must not be remembered. */
+    fun clear() {
+        localByUrl.clear()
+        sizes.clear()
+        synchronized(persisted) { persisted.clear() }
+        store?.let { file -> writer.execute { file.delete() } }
+    }
 
     fun rememberSent(fileUrl: String?, local: android.net.Uri, aspect: Float?) {
         if (fileUrl.isNullOrBlank()) return
         val key = local.toString()
         localByUrl[fileUrl] = key
+        if (isAppOwned(local)) remember(fileUrl) { (dims, _) -> dims to key }
         (sizes[key] ?: aspect?.let(::aspectDims))?.let { putDims(fileUrl, it) }
     }
 
     fun localFor(fileUrl: String?): String? = fileUrl?.let(localByUrl::get)
     fun dims(key: Any?): IntSize? = key?.toString()?.let(sizes::get)
     fun putDims(key: Any?, size: IntSize) {
-        if (key != null && size.width > 0 && size.height > 0) sizes.putIfAbsent(key.toString(), size)
+        if (key == null || size.width <= 0 || size.height <= 0) return
+        val name = key.toString()
+        if (sizes.putIfAbsent(name, size) == null && isPersistableKey(name)) remember(name) { (_, local) -> size to local }
     }
+
+    private fun remember(key: String, update: (Pair<IntSize?, String?>) -> Pair<IntSize?, String?>) {
+        if (store == null) return
+        synchronized(persisted) { persisted[key] = update(persisted[key] ?: (null to null)) }
+        scheduleSave()
+    }
+
+    private fun scheduleSave() {
+        if (!savePending.compareAndSet(false, true)) return
+        writer.execute {
+            Thread.sleep(500)
+            savePending.set(false)
+            val file = store ?: return@execute
+            val text = synchronized(persisted) {
+                persisted.entries.joinToString("\n") { (key, value) -> formatMediaMemoryLine(key, value.first, value.second) }
+            }
+            runCatching {
+                val tmp = java.io.File(file.parentFile, "$STORE_NAME.tmp")
+                tmp.writeText(text)
+                if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
+            }
+        }
+    }
+
+    /** Server paths and remote URLs; local URIs are session-specific. */
+    private fun isPersistableKey(key: String): Boolean = !key.startsWith("content:") && !key.startsWith("file:")
+
+    private fun isAppOwned(uri: android.net.Uri): Boolean = when (uri.scheme) {
+        "file" -> appPackage?.let { uri.path?.contains("/$it/") } == true
+        "content" -> appPackage?.let { uri.authority == "$it.fileprovider" } == true
+        else -> false
+    }
+
+    /** Staged shares / camera captures may have been pruned since; a missing copy falls back to the server URL. */
+    private fun isLocalUsable(context: android.content.Context, value: String): Boolean = runCatching {
+        val uri = android.net.Uri.parse(value)
+        if (uri.scheme == "file") java.io.File(uri.path.orEmpty()).exists()
+        else context.contentResolver.openFileDescriptor(uri, "r")?.use { true } == true
+    }.getOrDefault(false)
+}
+
+internal fun formatMediaMemoryLine(key: String, dims: IntSize?, local: String?): String =
+    listOf(key, dims?.width?.toString().orEmpty(), dims?.height?.toString().orEmpty(), local.orEmpty()).joinToString("\t")
+
+internal fun parseMediaMemoryLine(line: String): Triple<String, IntSize?, String?>? {
+    val parts = line.split('\t')
+    if (parts.size != 4 || parts[0].isBlank()) return null
+    val width = parts[1].toIntOrNull()
+    val height = parts[2].toIntOrNull()
+    val dims = if (width != null && height != null && width > 0 && height > 0) IntSize(width, height) else null
+    val local = parts[3].ifBlank { null }
+    if (dims == null && local == null) return null
+    return Triple(parts[0], dims, local)
 }
 
 @Composable
@@ -107,7 +205,6 @@ fun ChatMediaPreview(
                     onRetry = { onRetryProcessing(message) },
                     modifier = Modifier.matchParentSize().clip(shape),
                 )
-                if (message.mediaInFlight()) MediaProcessingBadge(message, Modifier.align(Alignment.TopStart).padding(8.dp))
             }
             message.fileType?.startsWith("audio/") == true -> ChatVoicePlayer(local ?: url, Modifier.fillMaxWidth(), outgoing = outgoing, waveSeed = message.fileName ?: url)
             else -> AttachmentCard(message, url, onLongPress)
@@ -173,6 +270,8 @@ fun ChatThumbnail(
     onLongClick: (() -> Unit)? = null,
     /** When set, replaces Signal's fitted bubble box (e.g. square grid cells). */
     modifier: Modifier? = null,
+    /** Off for a sending video: Signal shows only the transfer ring over the poster. */
+    showPlay: Boolean = true,
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -180,31 +279,42 @@ fun ChatThumbnail(
     val known = remember(url, naturalSize) { naturalSize?.takeIf { it.width > 0 && it.height > 0 }?.also { ChatMediaMemory.putDims(url, it) } ?: ChatMediaMemory.dims(url) }
     var decoded by remember(url) { mutableStateOf<IntSize?>(null) }
     var failed by remember(url) { mutableStateOf(false) }
-    // ponytail: Coil's VideoFrameDecoder needs the file on disk, so a poster downloads the whole video once (then disk-cached); add server-side posters if videos get large.
-    val request = remember(url, video) {
-        ImageRequest.Builder(context).data(url).apply { if (video) videoFrameMillis(100) }.build()
+    // A retriever poster reads only the first frame; a failure (or a 401 the retriever can't refresh)
+    // falls back to Coil's VideoFrameDecoder, which downloads the whole file through the authenticated client.
+    var posterFailed by remember(url) { mutableStateOf(false) }
+    val request = remember(url, video, posterFailed) {
+        ImageRequest.Builder(context).data(if (video && !posterFailed) VideoPoster(url.toString()) else url)
+            .apply { if (video && posterFailed) videoFrameMillis(100) }.build()
     }
     val density = LocalDensity.current.density
     val (width, height) = signalMediaSize(known ?: decoded, density, withContent)
     // Signal media auto-download: remote media not allowed on this network waits for a tap.
     val prefs by app.aino.mobile.core.settings.ChatPreferences.state.collectAsState()
     var tapped by remember(url) { mutableStateOf(false) }
-    val remote = url is String && (url.startsWith("http://") || url.startsWith("https://"))
-    val cached = remember(url, remote) { remote && loader.diskCache?.openSnapshot(url as String)?.use { true } == true }
+    val remote = url is String && isRemoteMediaUrl(url)
     val allowed = remember(prefs, video) {
         prefs.autoDownload(
             if (video) app.aino.mobile.core.settings.AutoDownloadKind.Videos else app.aino.mobile.core.settings.AutoDownloadKind.Photos,
             app.aino.mobile.core.settings.ChatPreferences.network(context),
         )
     }
-    if (remote && !cached && !allowed && !tapped) {
+    // Only media held back by auto-download needs the (disk) cache check; null until it ran.
+    val cached by produceState<Boolean?>(if (!remote || allowed) true else null, url, remote, allowed) {
+        if (!remote || allowed) { value = true; return@produceState }
+        value = withContext(Dispatchers.IO) {
+            val cache = loader.diskCache ?: return@withContext false
+            listOfNotNull(url as String, videoPosterCacheKey(url).takeIf { video }).any { key -> cache.openSnapshot(key)?.use { true } == true }
+        }
+    }
+    val placeholder = LocalWebColors.current.textMuted.copy(alpha = .12f)
+    if (remote && cached != true && !tapped) {
         Box(
             (modifier ?: Modifier.size(width.dp, height.dp))
-                .clip(shape).background(LocalWebColors.current.surface)
+                .clip(shape).background(placeholder)
                 .combinedClickable(onClickLabel = "Download media", onLongClickLabel = "Message actions", onClick = { tapped = true }, onLongClick = onLongClick),
             contentAlignment = Alignment.Center,
         ) {
-            Box(Modifier.size(48.dp).background(Color.Black.copy(alpha = .55f), CircleShape), contentAlignment = Alignment.Center) {
+            if (cached == false) Box(Modifier.size(48.dp).background(Color.Black.copy(alpha = .55f), CircleShape), contentAlignment = Alignment.Center) {
                 Icon(HeroIcons.ArrowDownTray, "Download", Modifier.size(24.dp), tint = Color.White)
             }
         }
@@ -212,7 +322,7 @@ fun ChatThumbnail(
     }
     Box(
         (modifier ?: Modifier.size(width.dp, height.dp))
-            .clip(shape).background(LocalWebColors.current.surface)
+            .clip(shape).background(placeholder)
             .combinedClickable(onClickLabel = "Open media", onLongClickLabel = "Message actions", onClick = onClick, onLongClick = onLongClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -232,11 +342,11 @@ fun ChatThumbnail(
                     }
                 }
             },
-            onError = { failed = true },
+            onError = { if (video && !posterFailed) posterFailed = true else failed = true },
         )
         when {
             failed -> Icon(HeroIcons.Photo, "Media unavailable", tint = LocalWebColors.current.textMuted)
-            video -> Box(Modifier.size(46.dp).background(Color.Black.copy(alpha = .55f), CircleShape), contentAlignment = Alignment.Center) {
+            video && showPlay -> Box(Modifier.size(46.dp).background(Color.Black.copy(alpha = .55f), CircleShape), contentAlignment = Alignment.Center) {
                 Icon(HeroIcons.Play, "Play video", Modifier.size(28.dp), tint = Color.White)
             }
         }
@@ -245,6 +355,32 @@ fun ChatThumbnail(
 
 /** Long side used when only an aspect ratio is known, so it sizes like a camera photo. */
 private const val ASPECT_ONLY_LONG_SIDE_PX = 4000
+private const val PREFETCH_COUNT = 20
+private const val PREFETCH_SIZE_PX = 720
+
+/** The newest photos/videos of a thread worth warming: resolved URL + whether it is a video, newest first. */
+internal fun chatMediaPrefetchTargets(messages: List<ChatMessage>, limit: Int = PREFETCH_COUNT): List<Pair<String, Boolean>> =
+    messages.asReversed().asSequence()
+        .filter { it.deletedAt == null && !it.isViewOnce() && (it.isImageAttachment() || it.isVideoAttachment()) }
+        .filter { ChatMediaMemory.localFor(it.fileUrl) == null }
+        .take(limit)
+        .map { resolveChatMediaUrl(it.fileUrl.orEmpty()) to it.isVideoAttachment() }
+        .filter { (url, _) -> isRemoteMediaUrl(url) }
+        .toList()
+
+/** Enqueues [targets] allowed by the auto-download settings; Coil skips what is already cached. */
+fun prefetchChatMedia(context: android.content.Context, targets: List<Pair<String, Boolean>>) {
+    if (targets.isEmpty()) return
+    val prefs = app.aino.mobile.core.settings.ChatPreferences.current
+    val network = app.aino.mobile.core.settings.ChatPreferences.network(context)
+    val photos = prefs.autoDownload(app.aino.mobile.core.settings.AutoDownloadKind.Photos, network)
+    val videos = prefs.autoDownload(app.aino.mobile.core.settings.AutoDownloadKind.Videos, network)
+    val loader = AppContainer.get(context).imageLoader
+    targets.forEach { (url, video) ->
+        if (if (video) !videos else !photos) return@forEach
+        loader.enqueue(ImageRequest.Builder(context).data(if (video) VideoPoster(url) else url).size(PREFETCH_SIZE_PX).build())
+    }
+}
 
 fun aspectDims(aspect: Float): IntSize? {
     if (!(aspect > 0f) || aspect.isInfinite()) return null
@@ -334,21 +470,6 @@ fun mediaProcessingLabel(message: ChatMessage): String? {
     val stage = (message.mediaStage ?: message.mediaState).orEmpty().lowercase()
     val verb = if (stage == "queued") "Queued" else "Processing"
     return message.mediaProgress?.takeIf { it in 1..99 }?.let { "$verb $it%" } ?: verb
-}
-
-@Composable
-private fun MediaProcessingBadge(message: ChatMessage, modifier: Modifier = Modifier) {
-    val label = mediaProcessingLabel(message) ?: return
-    Row(
-        modifier.clip(RoundedCornerShape(12.dp)).background(Color.Black.copy(alpha = .6f))
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val progress = message.mediaProgress?.takeIf { it in 1..99 }?.div(100f)
-        if (progress == null) CircularProgressIndicator(Modifier.size(12.dp), color = Color.White, strokeWidth = 1.5.dp)
-        else CircularProgressIndicator(progress = { progress }, modifier = Modifier.size(12.dp), color = Color.White, strokeWidth = 1.5.dp, trackColor = Color.White.copy(alpha = .3f))
-        Text(label, Modifier.padding(start = 6.dp), color = Color.White, fontSize = 11.sp)
-    }
 }
 
 @Composable
