@@ -1461,7 +1461,7 @@ class ChatViewModel(
         val replyToId = _ui.value.replyingTo?.id
         val preview = _ui.value.composerLinkPreview?.takeIf { it.url == firstLinkIn(content) }
         val mentions = _ui.value.members.filter { it.id in mentionedIds && content.contains("@" + it.display()) }.map { it.id }
-        val queued = QueuedMessage(clientId, conversation.id, currentScope.userId, content, now, sendSequence.incrementAndGet())
+        val queued = QueuedMessage(clientId, conversation.id, currentScope.userId, content, now, sendSequence.incrementAndGet(), replyToId)
         _ui.update { st -> st.copy(
             composer = "", replyingTo = null, composerLinkPreview = null, dismissedPreviewUrl = null,
             queuedMessages = st.queuedMessages + queued, error = null,

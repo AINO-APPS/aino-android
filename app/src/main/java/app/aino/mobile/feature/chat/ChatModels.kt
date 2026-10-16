@@ -868,6 +868,7 @@ data class QueuedMessage(
     val createdAtEpochMs: Long,
     /** Local send order (shared with [OutgoingMediaItem]); unsent items render in this order. */
     val sequence: Long = 0,
+    val replyToId: Long? = null,
 )
 
 /** Presentation model for a chronological native chat thread. */
@@ -888,7 +889,11 @@ sealed interface ThreadItem {
         override val key: String = "server-${message.id}"
     }
 
-    data class Queued(val message: QueuedMessage) : ThreadItem {
+    data class Queued(
+        val message: QueuedMessage,
+        val startsGroup: Boolean,
+        val endsGroup: Boolean,
+    ) : ThreadItem {
         override val key: String = "queued-${message.clientMessageId}"
     }
 
@@ -917,7 +922,7 @@ fun unreadDividerKey(newestFirst: List<ThreadItem>, unread: Int, currentUserId: 
 /**
  * Build the visual thread without changing server chronology.
  * Consecutive messages group only when they share sender/day and are at most
- * five minutes apart. That keeps sender labels and bubble tails truthful.
+ * three minutes apart. That keeps sender labels and bubble corners truthful.
  */
 fun buildThreadItems(
     messages: List<ChatMessage>,
@@ -951,17 +956,13 @@ fun buildThreadItems(
             result += ThreadItem.DateSeparator(day)
             currentDay = day
         }
-        val message = item.message
-        if (message == null) {
-            item.upload?.let { result += ThreadItem.PendingUpload(it.localId, it.createdAtEpochMs) }
-            item.queued?.let { result += ThreadItem.Queued(it) }
-            return@forEachIndexed
-        }
         val previous = positioned.getOrNull(index - 1)
         val next = positioned.getOrNull(index + 1)
         val startsGroup = !sameMessageGroup(previous, item, day, zoneId)
         val endsGroup = !sameMessageGroup(item, next, day, zoneId)
-        result += ThreadItem.Message(message, startsGroup, endsGroup)
+        item.message?.let { result += ThreadItem.Message(it, startsGroup, endsGroup) }
+        item.queued?.let { result += ThreadItem.Queued(it, startsGroup, endsGroup) }
+        item.upload?.let { result += ThreadItem.PendingUpload(it.localId, it.createdAtEpochMs) }
     }
     return result
 }
@@ -972,9 +973,9 @@ private fun sameMessageGroup(
     day: LocalDate,
     zoneId: ZoneId,
 ): Boolean {
-    val a = first?.message ?: return false
-    val b = second?.message ?: return false
-    return a.senderId == b.senderId &&
+    val a = first?.let { it.message?.senderId ?: it.queued?.senderId } ?: return false
+    val b = second?.let { it.message?.senderId ?: it.queued?.senderId } ?: return false
+    return a == b &&
         Instant.ofEpochMilli(first.epochMs).atZone(zoneId).toLocalDate() == day &&
         Instant.ofEpochMilli(second.epochMs).atZone(zoneId).toLocalDate() == day &&
         // Signal `V2ConversationItemShape.clusterTimeout`.

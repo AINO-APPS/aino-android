@@ -110,6 +110,16 @@ class SignalChatLogicTest {
         assertTrue(!message().hasQuotedReply())
     }
 
+    @Test fun `queued and confirmed emoji use the same standalone eligibility`() {
+        listOf("👍", "👨‍👩‍👧", "🇮🇳", "👍🏽", "❤️ ❤️", "😀😀😀").forEach { text ->
+            assertTrue(isJumbomoji(text, hasQuotedReply = false))
+            assertTrue(!isJumbomoji(text, hasQuotedReply = true))
+        }
+        listOf("😀😀😀😀", "Hello 😀", "123", "").forEach { text ->
+            assertTrue(!isJumbomoji(text, hasQuotedReply = false))
+        }
+    }
+
     @Test fun `only short emoji messages get larger text`() {
         assertEquals(48.sp, emojiMessageSize("👍"))
         assertEquals(48.sp, emojiMessageSize("👨‍👩‍👧"))

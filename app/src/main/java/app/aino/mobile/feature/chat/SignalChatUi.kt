@@ -196,6 +196,9 @@ fun BubbleTextWithFooter(
     }
 }
 
+internal fun isJumbomoji(text: String, hasQuotedReply: Boolean): Boolean =
+    !hasQuotedReply && emojiMessageSize(text) != SignalDimens.bodyText
+
 internal fun emojiMessageSize(text: String): TextUnit {
     val trimmed = text.trim()
     if (trimmed.isEmpty()) return SignalDimens.bodyText

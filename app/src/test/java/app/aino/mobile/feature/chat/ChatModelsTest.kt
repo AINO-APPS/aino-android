@@ -6,6 +6,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 import java.time.ZoneId
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -208,6 +209,47 @@ class ChatModelsTest {
         val reply = items[5] as ThreadItem.Message
         assertTrue(reply.startsGroup)
         assertTrue(reply.endsGroup)
+    }
+
+    @Test
+    fun queuedTextKeepsClusterCornersAsMessagesAreConfirmed() {
+        val zone = ZoneId.of("UTC")
+        val sent = ChatMessage(1, 9, 4, "sent", "2026-09-16T09:00:00Z")
+        val first = QueuedMessage("first", 9, 4, "one", Instant.parse("2026-09-16T09:01:00Z").toEpochMilli(), sequence = 1)
+        val second = first.copy(clientMessageId = "second", content = "two", createdAtEpochMs = first.createdAtEpochMs + 60_000, sequence = 2)
+        val firstEcho = ChatMessage(2, 9, 4, first.content, "2026-09-16T09:01:00Z")
+        val secondEcho = ChatMessage(3, 9, 4, second.content, "2026-09-16T09:02:00Z")
+        fun groups(items: List<ThreadItem>) = items.mapNotNull {
+            when (it) {
+                is ThreadItem.Message -> it.startsGroup to it.endsGroup
+                is ThreadItem.Queued -> it.startsGroup to it.endsGroup
+                else -> null
+            }
+        }
+        val expected = listOf(true to false, false to false, false to true)
+        assertEquals(expected, groups(buildThreadItems(listOf(sent), listOf(first, second), 4, zone)))
+        assertEquals(expected, groups(buildThreadItems(listOf(sent, firstEcho), listOf(second), 4, zone)))
+        assertEquals(expected, groups(buildThreadItems(listOf(sent, firstEcho, secondEcho), emptyList(), 4, zone)))
+        assertEquals(listOf(true to true), groups(buildThreadItems(emptyList(), listOf(first), 4, zone)))
+    }
+
+    @Test
+    fun queuedTextRespectsSenderDayTimeoutAndUploadBoundaries() {
+        val zone = ZoneId.of("UTC")
+        val sent = ChatMessage(1, 9, 4, "sent", "2026-09-16T23:58:00Z")
+        val queued = QueuedMessage("q", 9, 4, "next", Instant.parse("2026-09-16T23:59:00Z").toEpochMilli(), sequence = 2)
+        fun assertSeparate(messages: List<ChatMessage>, next: QueuedMessage, uploads: List<OutgoingMediaItem> = emptyList()) {
+            val items = buildThreadItems(messages, listOf(next), 4, zone, uploads)
+            assertTrue(items.filterIsInstance<ThreadItem.Message>().single().endsGroup)
+            assertTrue(items.filterIsInstance<ThreadItem.Queued>().single().startsGroup)
+        }
+        assertSeparate(listOf(sent.copy(senderId = 8)), queued)
+        assertSeparate(listOf(sent), queued.copy(createdAtEpochMs = Instant.parse("2026-09-17T00:00:00Z").toEpochMilli()))
+        assertSeparate(listOf(sent.copy(createdAt = "2026-09-16T23:55:59Z")), queued)
+        assertSeparate(listOf(sent), queued, listOf(OutgoingMediaItem("photo", queued.createdAtEpochMs, sequence = 1)))
+        val items = buildThreadItems(emptyList(), listOf(queued.copy(sequence = 0), queued.copy(clientMessageId = "after")), 4, zone,
+            listOf(OutgoingMediaItem("photo", queued.createdAtEpochMs, sequence = 1)))
+        assertTrue(items.filterIsInstance<ThreadItem.Queued>().all { it.startsGroup && it.endsGroup })
     }
 
     @Test

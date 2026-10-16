@@ -21,6 +21,26 @@ paths inspected, date, behaviors derived, and how the AINO implementation differ
 
 ### Consultation log
 
+**2026-10-16: outgoing text and emoji presentation during sending**
+
+- Repository: `signalapp/Signal-Android`, inspected main revision
+  `db06ef04799796836b773164b49e018f5ec87dc9` (`AGPL-3.0-only`).
+- Behavioral references inspected:
+  `conversation/v2/items/V2ConversationItemShape.kt` and
+  `conversation/v2/items/V2ConversationItemTextOnlyViewHolder.kt`.
+- Behaviors derived: adjacent messages determine bubble geometry when binding
+  the row; eligible emoji-only text receives a transparent background during
+  that binding, rather than waiting for delivery acknowledgement.
+- How AINO differs: independent changes to the existing Compose queued-text
+  renderer and chronological thread model reuse AINO's existing shape, emoji
+  and organisation-colour helpers. Pending text participates in existing
+  grouping, and reply context prevents quoted emoji from losing its bubble.
+  Upload boundaries, transport and animation settings remain unchanged. No
+  external source, tests, constants, comments or resources were copied.
+- Source inspection establishes binding behavior only; the external app was
+  not run. AINO's own model, send-order and native-rendered Compose regressions
+  verify queued presentation and its transition to confirmed text.
+
 **2026-10-13: chat search and back navigation**
 
 - Repository: `signalapp/Signal-Android`, commit

@@ -895,6 +895,10 @@ Phase 4 implementation notes (Android, 2026-09-21):
   the grey reply panel with the accent rule, and web receipt colours. Since
   0.25.6 every chat screen paints the app background (`--bg`, as on home) and
   raised chat panels use `bgElevated` (dark) / `bgSecondary` (light).
+- Queued outgoing text uses the same cluster corners, spacing, fill and outline
+  as confirmed text from its first frame. Eligible standalone emoji have no
+  background while sending; emoji replies retain their normal bubble. Existing
+  organisation colours, upload boundaries and arrival animations are unchanged.
 - All 52 operations under `/api/chat/*` are now proven by
   `scripts/check-endpoint-parity.mjs`; total Android coverage is 92/464.
 - `scripts/check-realtime-parity.mjs` proves all 73 server event names are routed.

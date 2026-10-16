@@ -1118,7 +1118,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
                             onStartCall = viewModel::startCall,
                             onOpenQuote = viewModel::jumpToQuoted,
                         )
-                        is ThreadItem.Queued -> QueuedBubble(item.message)
+                        is ThreadItem.Queued -> QueuedBubble(item.message, item.startsGroup, item.endsGroup)
                         is ThreadItem.PendingUpload -> pendingById[item.localId]?.let { media ->
                             PendingMediaBubble(
                                 media,
@@ -1579,7 +1579,7 @@ private fun CallHistoryChip(label: CallHistoryLabel, time: String, onClick: () -
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(
+internal fun MessageBubble(
     message: ChatMessage,
     isMine: Boolean,
     showSender: Boolean,
@@ -1654,8 +1654,8 @@ private fun MessageBubble(
     val shape = messageBubbleShape(isMine, startsGroup, endsGroup)
     // Signal jumbomoji: 1–3 emoji on their own render large with no bubble.
     val jumbomoji = !deleted && !viewOnce && message.formatType != "poll" && message.fileUrl.isNullOrBlank() &&
-        message.fileName.isNullOrBlank() && !message.hasQuotedReply() && message.forwardedFromId == null &&
-        message.linkPreview == null && emojiMessageSize(message.body()) != SignalDimens.bodyText
+        message.fileName.isNullOrBlank() && message.forwardedFromId == null &&
+        message.linkPreview == null && isJumbomoji(message.body(), message.hasQuotedReply())
     val bubbleColor = when {
         deleted || jumbomoji -> Color.Transparent
         isMine -> signal.outgoing
@@ -2154,24 +2154,40 @@ private fun parseChatInstant(value: String): Instant? = runCatching {
 }.getOrNull()
 
 @Composable
-private fun QueuedBubble(message: QueuedMessage) {
+internal fun QueuedBubble(message: QueuedMessage, startsGroup: Boolean, endsGroup: Boolean) {
     val signal = signalColors
-    val shape = messageBubbleShape(isMine = true, startsGroup = true, endsGroup = true)
-    BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 2.dp, start = SignalDimens.gutter, end = SignalDimens.gutter)) {
+    val shape = messageBubbleShape(isMine = true, startsGroup, endsGroup)
+    val jumbomoji = isJumbomoji(message.content, message.replyToId != null)
+    val fg = if (jumbomoji) signal.text else signal.onOutgoing
+    val fgMuted = if (jumbomoji) signal.textSecondary else signal.onOutgoingSecondary
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().padding(
+            top = if (startsGroup) 6.dp else 1.dp, bottom = if (endsGroup) 6.dp else 1.dp,
+            start = SignalDimens.gutter, end = SignalDimens.gutter,
+        ),
+    ) {
         val bubbleMax = maxWidth - SignalDimens.bubbleEdgeMargin
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Box(
-                Modifier.widthIn(max = bubbleMax).clip(shape).background(signal.outgoing.copy(alpha = .85f))
-                    .padding(start = SignalDimens.bubbleHPad, end = SignalDimens.bubbleHPad, top = SignalDimens.bubbleTopPad, bottom = SignalDimens.bubbleFooterBottomPad),
+                Modifier.widthIn(max = bubbleMax).clip(shape)
+                    .background(if (jumbomoji) Color.Transparent else signal.outgoing)
+                    .then(if (jumbomoji) Modifier else Modifier.border(1.dp, signal.outgoingBorder, shape))
+                    .then(
+                        if (jumbomoji) Modifier.padding(horizontal = 2.dp, vertical = 2.dp)
+                        else Modifier.padding(
+                            start = SignalDimens.bubbleHPad, end = SignalDimens.bubbleHPad,
+                            top = SignalDimens.bubbleTopPad, bottom = SignalDimens.bubbleFooterBottomPad,
+                        ),
+                    ),
             ) {
-                BubbleTextWithFooter(AnnotatedString(message.content), signal.onOutgoing, {
+                BubbleTextWithFooter(AnnotatedString(message.content), fg, {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT)
                                 .format(Instant.ofEpochMilli(message.createdAtEpochMs).atZone(ZoneId.systemDefault())),
-                            color = signal.onOutgoingSecondary, fontSize = SignalDimens.footerText,
+                            color = fgMuted, fontSize = SignalDimens.footerText,
                         )
-                        SignalReceiptIcon(DeliveryTick.Sending, signal.onOutgoingSecondary)
+                        DeliveryTickIcon(DeliveryTick.Sending, onMedia = false, plain = jumbomoji)
                     }
                 }, fontSize = emojiMessageSize(message.content))
             }

@@ -101,6 +101,18 @@ class ChatSendOrderTest {
         assertEquals(listOf(100L, 101L), vm.ui.value.messages.map(ChatMessage::id))
     }
 
+    @Test fun `an emoji reply retains its bubble eligibility while waiting to send`() {
+        val vm = viewModel()
+        vm.sendMedia(listOf(MediaUploadSpec(Uri.parse("content://media/photo.jpg"), "image/jpeg")), "", viewOnce = false, highQuality = false)
+        vm.beginReply(ChatMessage(7, 1, 8, "quoted", "2026-09-30T09:00:00Z"))
+        vm.type("👍")
+        val queued = vm.ui.value.queuedMessages.single()
+        assertEquals(7L, queued.replyToId)
+        assertTrue(!isJumbomoji(queued.content, queued.replyToId != null))
+        uploadGate.countDown()
+        await { vm.ui.value.queuedMessages.isEmpty() && sent.size == 2 }
+    }
+
     @Test fun `text with nothing queued ahead is sent immediately and replaced by the server row`() {
         val vm = viewModel()
         vm.type("hello")
