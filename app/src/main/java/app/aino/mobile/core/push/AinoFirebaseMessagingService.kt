@@ -61,7 +61,7 @@ class AinoFirebaseMessagingService : FirebaseMessagingService() {
         if (!presentation && !PushDeduplicator(applicationContext).accept("${notificationAccount(applicationContext)}:${validated.dedupeKey}")) return
         val hasStoredCredential = !KeystoreTokenStore(applicationContext).getToken().isNullOrBlank()
         if (!shouldHandlePush(validated, hasStoredCredential)) {
-            android.util.Log.i("AinoPush", "Dropped chat push while signed out")
+            android.util.Log.i("AinoPush", "Dropped ${validated.kind} push while signed out")
             return
         }
         var displayFallback = true

@@ -11,8 +11,17 @@ data class ValidatedPush(
     val tenantId: Long?,
 )
 
+/**
+ * A push that renders content for the signed-in account needs that account to
+ * still be here. An incoming call does: without a credential the ring only
+ * offers an Answer the server refuses with "Organization context required", so
+ * it is dropped rather than ringing. Alerts, session revocations and call
+ * cancellations need no session (they only update or clear tray state).
+ */
+private val AUTHENTICATED_PUSHES = setOf(PushKind.ChatMessage, PushKind.ChatReaction, PushKind.IncomingCall)
+
 internal fun shouldHandlePush(push: ValidatedPush, hasStoredCredential: Boolean): Boolean =
-    push.kind !in setOf(PushKind.ChatMessage, PushKind.ChatReaction) || hasStoredCredential
+    push.kind !in AUTHENTICATED_PUSHES || hasStoredCredential
 
 fun validatePushPayload(data: Map<String, String>, now: Instant = Instant.now()): Result<ValidatedPush> = runCatching {
     fun required(name: String): String = data[name]?.takeIf(String::isNotBlank)

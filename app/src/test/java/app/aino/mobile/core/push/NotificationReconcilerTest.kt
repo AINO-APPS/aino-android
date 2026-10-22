@@ -80,4 +80,25 @@ class NotificationReconcilerTest {
     fun chatMentionsUseTheMentionsChannel() {
         assertEquals(PushNotifications.MENTIONS, generalPushChannel("chat_mention"))
     }
+
+        @Test
+        fun signOutClearsCallsAlongWithEverythingElse() {
+            // An incoming call is ongoing, so `ongoing` alone would spare it forever.
+            val ringingCall = ActiveNotification(NotificationTags.CALL, 7, 100, ongoing = true)
+            val ringService = ActiveNotification(null, 909090, 100, ongoing = true)
+            val chat = chat(4)
+
+            assertEquals(
+                listOf(ringingCall, ringService, chat),
+                notificationsToClear(listOf(ringingCall, ringService, chat)),
+            )
+        }
+
+        @Test
+        fun signOutLeavesTheActiveCallNotificationToItsOwnSessionTeardown() {
+            // The active-call service is stopped by wipeUserMedia, not by tray reconciliation.
+            val activeCall = ActiveNotification(null, 909091, 100, ongoing = true)
+            val ringingCall = ActiveNotification(NotificationTags.CALL, 7, 100, ongoing = true)
+            assertEquals(listOf(ringingCall), notificationsToClear(listOf(activeCall, ringingCall)))
+        }
 }

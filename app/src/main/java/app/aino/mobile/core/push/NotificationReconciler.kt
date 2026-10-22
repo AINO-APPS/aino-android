@@ -45,8 +45,26 @@ data class UnreadTruth(
     val alertsSyncedAtMs: Long? = null,
 )
 
-/** Foreground-service notifications posted by the call services without a tag. */
+/**
+ * Foreground-service notifications posted by the call services without a tag:
+ * the incoming-ring service ([RINGING_SERVICE_ID]) and the active-call service.
+ */
 private val CALL_SERVICE_IDS = setOf(909090, 909091)
+
+/**
+ * The incoming-ring service's notification id. It is `ongoing`, so it needs an
+ * explicit exemption in [notificationsToClear]; the active-call service ends
+ * through its own session teardown (`wipeUserMedia`), not tray reconciliation.
+ */
+private const val RINGING_SERVICE_ID = 909090
+
+/**
+ * Sign-out: nothing the previous account left in the tray may stay, calls
+ * included — a ring for an account that is gone can only be answered into a
+ * server error. Everything non-ongoing goes, plus the ringing call notification.
+ */
+fun notificationsToClear(active: List<ActiveNotification>): List<ActiveNotification> =
+    active.filter { !it.ongoing || it.tag == NotificationTags.CALL || it.id == RINGING_SERVICE_ID }
 
 /**
  * Notifications the server says are already read (or deleted). Samsung One UI
@@ -83,18 +101,23 @@ fun staleNotifications(active: List<ActiveNotification>, truth: UnreadTruth): Li
 
 /** Applies [staleNotifications] to the system tray. All calls are best effort. */
 object NotificationReconciler {
+    /** The app's own active notifications, as far as reconciliation needs to know. */
+    private fun ownNotifications(context: Context): List<ActiveNotification>? {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return null
+        return runCatching { manager.activeNotifications.toList() }.getOrNull()
+            ?.filter { it.packageName == context.packageName }
+            ?.map {
+                ActiveNotification(
+                    tag = it.tag,
+                    id = it.id,
+                    postedAtMs = it.postTime,
+                    ongoing = it.isOngoing || (it.notification.flags and Notification.FLAG_FOREGROUND_SERVICE) != 0,
+                )
+            }
+    }
+
     fun reconcile(context: Context, truth: UnreadTruth) {
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        val active = runCatching { manager.activeNotifications.toList() }.getOrNull() ?: return
-        val mine = active.filter { it.packageName == context.packageName }.map {
-            ActiveNotification(
-                tag = it.tag,
-                id = it.id,
-                postedAtMs = it.postTime,
-                ongoing = it.isOngoing || (it.notification.flags and Notification.FLAG_FOREGROUND_SERVICE) != 0,
-            )
-        }
-        val stale = staleNotifications(mine, truth)
+        val stale = staleNotifications(ownNotifications(context) ?: return, truth)
         if (stale.isEmpty()) return
         val compat = NotificationManagerCompat.from(context)
         stale.forEach { n ->
@@ -103,13 +126,11 @@ object NotificationReconciler {
         }
     }
 
-    /** Sign-out: nothing from the previous account may stay in the tray (calls excepted). */
+    /** Sign-out: nothing from the previous account may stay in the tray, calls included. */
     fun clearAll(context: Context) {
         ChatNotifications.clearAll()
-        val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        val active = runCatching { manager.activeNotifications.toList() }.getOrNull() ?: return
         val compat = NotificationManagerCompat.from(context)
-        active.filter { it.packageName == context.packageName && !it.isOngoing && it.tag != NotificationTags.CALL && it.id !in CALL_SERVICE_IDS }
+        notificationsToClear(ownNotifications(context) ?: return)
             .forEach { runCatching { compat.cancel(it.tag, it.id) } }
     }
 }

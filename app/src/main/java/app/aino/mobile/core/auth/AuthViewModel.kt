@@ -115,6 +115,12 @@ class AuthViewModel(
         app.aino.mobile.core.push.PushTokenRegistrar.forget(context)
         // The previous account's messages and alerts must not linger (or badge the icon).
         app.aino.mobile.core.push.NotificationReconciler.clearAll(context)
+        // A call belongs to the session that just ended: stop ringing and hang up,
+        // which tears down both call services through their resource owner.
+        val callSession = app.aino.mobile.core.call.CallSessionRuntime.get(context)
+        callSession.localEnd("signed_out")
+        callSession.reset()
+        app.aino.mobile.core.call.CallRingService.stop(context)
     }
 
     /** Web `updateUser`: patch the signed-in user after a profile/avatar change. */

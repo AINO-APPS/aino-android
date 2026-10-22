@@ -7,14 +7,21 @@ import org.junit.Test
 
 class PushPolicyTest {
     @Test
-    fun chatPushesRequireAStoredCredentialButOtherPushesDoNot() {
-        val chat = ValidatedPush(PushKind.ChatMessage, emptyMap(), "msg:1", 1L)
-        val alert = ValidatedPush(PushKind.General, emptyMap(), "notif:1", 1L)
+        fun pushesThatRenderForTheAccountNeedAStoredCredential() {
+            fun push(kind: PushKind) = ValidatedPush(kind, emptyMap(), "key:1", 1L)
 
-        assertFalse(shouldHandlePush(chat, hasStoredCredential = false))
-        assertTrue(shouldHandlePush(chat, hasStoredCredential = true))
-        assertTrue(shouldHandlePush(alert, hasStoredCredential = false))
-    }
+            // Chat and calls both render for the signed-in user: without a credential
+            // a ring could only be answered into "Organization context required".
+            for (kind in listOf(PushKind.ChatMessage, PushKind.ChatReaction, PushKind.IncomingCall)) {
+                assertFalse(kind.toString(), shouldHandlePush(push(kind), hasStoredCredential = false))
+                assertTrue(kind.toString(), shouldHandlePush(push(kind), hasStoredCredential = true))
+            }
+
+            // These only update or clear tray state, so a signed-out device still handles them.
+            for (kind in listOf(PushKind.General, PushKind.CallHandledElsewhere, PushKind.SessionRevoked)) {
+                assertTrue(kind.toString(), shouldHandlePush(push(kind), hasStoredCredential = false))
+            }
+        }
 
     @Test
     fun tokenRegistrationMatchesBackendContract() {

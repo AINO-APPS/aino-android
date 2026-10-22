@@ -336,7 +336,16 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun consumeCallIntent(intent: android.content.Intent?) {
-        parseIncomingCallRoute(intent?.data)?.let(incomingCallViewModel::route)
+        val route = parseIncomingCallRoute(intent?.data)
+        // A call tap can outlive the session (a ring posted before sign-out, or a
+        // notification tapped after it): without a credential the only possible
+        // outcome is a server rejection, so drop the tap and any leftover ring.
+        if (route != null && app.aino.mobile.core.auth.KeystoreTokenStore(applicationContext).getToken().isNullOrBlank()) {
+            app.aino.mobile.core.call.IncomingCallNotifications.cancel(applicationContext)
+            PendingCallActionStore.clear(applicationContext)
+        } else {
+            route?.let(incomingCallViewModel::route)
+        }
         app.aino.mobile.core.navigation.groupInviteTokenFrom(intent?.data)?.let { token ->
             app.aino.mobile.core.navigation.PendingGroupInvite.set(token)
             // Keep NavHost from treating the invite as a thread deep link on recreation.
