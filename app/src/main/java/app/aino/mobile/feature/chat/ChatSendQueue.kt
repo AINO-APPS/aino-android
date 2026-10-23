@@ -68,9 +68,9 @@ suspend fun <T> withSendRetries(
         } catch (error: CancellationException) {
             throw error
         } catch (error: Throwable) {
-            if (!isTransientSendFailure(error)) throw error
+            // A body the server already read is sent once, whatever the network did to the answer.
+            if (!isRetryableSendFailure(error)) throw error
         }
-        delay(wait)
         wait = minOf(wait * 2, maxDelayMs)
     }
     return block()
@@ -97,3 +97,15 @@ class RetryBackoff(private val delaysMs: List<Long>) {
  * later message overtake it.
  */
 const val TEXT_SEND_ATTEMPTS = Int.MAX_VALUE
+
+/** [block] may be replayed after [error]: only failures that prove the request never landed. */
+fun isRetryableSendFailure(error: Throwable): Boolean = isTransientSendFailure(error) && !isUnknownSendOutcome(error)
+
+/**
+ * True when [error] leaves the outcome of a send unknown: the request may have
+ * reached the server (and committed the row) even though this phone never saw the
+ * answer — a dropped connection, a read timeout or the client's call timeout. The
+ * server dedupes on `clientMsgId`, but this API's send route has no idempotency
+ * guarantee to lean on, so such an attempt must never be repeated.
+ */
+fun isUnknownSendOutcome(error: Throwable): Boolean = error is ApiError.Network

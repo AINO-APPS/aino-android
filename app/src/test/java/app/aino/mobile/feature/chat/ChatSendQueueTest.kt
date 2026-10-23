@@ -45,7 +45,7 @@ class ChatSendQueueTest {
         assertFalse(isTransientSendFailure(IllegalArgumentException("Files must be 25 MB or smaller")))
     }
 
-    @Test fun `retries transient failures then succeeds, but gives up at once on a final answer`() = runBlocking {
+    @Test fun `a dropped connection is never replayed, but a busy server is retried`() = runBlocking {
         var calls = 0
         val value = withSendRetries(baseDelayMs = 1) {
             calls++
@@ -71,14 +71,26 @@ class ChatSendQueueTest {
             assertEquals(3, calls)
         }
 
-        // Unbounded text retries keep going with the backoff capped.
-        calls = 0
-        val started = System.nanoTime()
-        val delivered = withSendRetries(attempts = TEXT_SEND_ATTEMPTS, baseDelayMs = 1, maxDelayMs = 2) {
-            if (++calls < 20) throw ApiError.Network("POST", "u", java.io.IOException("offline"))
-            "sent"
+            // The server may already have committed this body: one attempt only, however
+            // long the backoff would otherwise have gone on for.
+            calls = 0
+            val started = System.nanoTime()
+            try {
+                withSendRetries(attempts = TEXT_SEND_ATTEMPTS, baseDelayMs = 1, maxDelayMs = 2) {
+                    calls++
+                    throw ApiError.Network("POST", "u", java.io.IOException("unexpected end of stream"))
+                }
+                fail("expected the network failure to surface")
+            } catch (error: ApiError.Network) {
+                assertEquals("a sent body must never be replayed", 1, calls)
+            }
+            assertTrue((System.nanoTime() - started) / 1_000_000 < 500)
         }
-        assertEquals("sent", delivered)
-        assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+
+        @Test fun `an unknown outcome is retryable only when the request provably never landed`() {
+            assertTrue(isRetryableSendFailure(ApiError.Http(503, "", "POST", "u")))
+            assertTrue(isRetryableSendFailure(ChatFailure("slow", 429, RuntimeException())))
+            assertFalse("the server may have committed an unanswered upload", isRetryableSendFailure(ApiError.Network("POST", "u", java.io.IOException("timeout"))))
+            assertFalse(isRetryableSendFailure(ChatFailure("blocked", 403, RuntimeException())))
+        }
     }
-}

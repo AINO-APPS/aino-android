@@ -115,3 +115,35 @@ class PipController(
 object PipState {
     val inPip = kotlinx.coroutines.flow.MutableStateFlow(false)
 }
+
+/**
+ * Leaving picture-in-picture when there is no call screen left to close.
+ *
+ * The call surfaces are the only places that finish a call, so a call that ends
+ * while the activity is in PiP would otherwise leave the PiP window - and the
+ * task behind it - floating over the launcher, showing the chat list, with
+ * nothing alive that will ever bring it back. Signal restores the conversation
+ * from its PiP activity's `onPictureInPictureModeChanged`; here the same
+ * restoration is asked of the activity itself.
+ */
+object CallPipExit {
+    /**
+     * True when this frame is the one that must be pulled out of PiP: the
+     * activity is in PiP, it is the resumed one, and no call surface is left
+     * (the call screen disappeared without closing the PiP window).
+     */
+    fun shouldRestore(active: Boolean, surfaceCovering: Boolean, inPip: Boolean): Boolean =
+        active && inPip && !surfaceCovering
+
+    /** Leaves system PiP with the chat restored to full screen. */
+    fun restoreAfterCall(activity: Activity) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            runCatching {
+                val params = PictureInPictureParams.Builder().setAutoEnterEnabled(false).build()
+                activity.setPictureInPictureParams(params)
+            }
+        }
+        runCatching { activity.moveTaskToBack(false) }
+        runCatching { activity.startActivity(activity.intent) }
+    }
+}

@@ -1,4 +1,4 @@
-package app.aino.mobile.feature.chat.media
+package app.aino.mobile.feature.chat
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.text.BasicTextField

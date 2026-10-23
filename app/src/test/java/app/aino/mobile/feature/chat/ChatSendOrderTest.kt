@@ -52,14 +52,16 @@ class ChatSendOrderTest {
                        "file_url":"/u/a.jpg","file_name":"photo.jpg","file_type":"image/jpeg","file_size":3}"""
                 }
                 request.method == "POST" && request.path == "chat/conversations/1/messages" -> {
-                    if (textFailuresLeft > 0) {
-                        textFailuresLeft--
-                        throw ApiError.Network("POST", request.path, java.io.IOException("offline"))
-                    }
-                    val json = request.body!!.toString(Charsets.UTF_8)
-                    val content = Regex("\"content\":\"([^\"]*)\"").find(json)!!.groupValues[1]
-                    val clientId = Regex("\"clientMsgId\":\"([^\"]*)\"").find(json)!!.groupValues[1]
-                    sent += "text:$content"
+                                    val json = request.body!!.toString(Charsets.UTF_8)
+                                    val content = Regex("\"content\":\"([^\"]*)\"").find(json)!!.groupValues[1]
+                                    val clientId = Regex("\"clientMsgId\":\"([^\"]*)\"").find(json)!!.groupValues[1]
+                                    // The server committed the row; only the answer was lost.
+                                    if (textFailuresLeft > 0) {
+                                        textFailuresLeft--
+                                        sent += "text:$content"
+                                        throw ApiError.Network("POST", request.path, java.io.IOException("unexpected end of stream"))
+                                    }
+                                    sent += "text:$content"
                     """{"id":${nextId++},"conversation_id":1,"sender_id":1,"content":"$content",
                        "created_at":"2026-09-30T10:00:06Z","client_msg_id":"$clientId"}"""
                 }
@@ -165,13 +167,13 @@ class ChatSendOrderTest {
         assertEquals(listOf("text:one", "text:two", "text:three"), sent)
     }
 
-    @Test fun `a text that hits a dropped connection keeps its place until it is delivered`() {
+    @Test fun `a text whose answer was lost is never replayed, and the queue moves on`() {
         textFailuresLeft = 1
         val vm = viewModel()
         vm.type("first")
-        vm.type("second")
-        await { sent.size == 2 && vm.ui.value.queuedMessages.isEmpty() }
-        assertEquals(listOf("text:first", "text:second"), sent)
+            vm.type("second")
+            await { sent.size == 2 && vm.ui.value.queuedMessages.isEmpty() }
+            assertEquals("the accepted text must be sent exactly once", listOf("text:first", "text:second"), sent)
     }
 
     private fun await(timeoutMs: Long = 5_000, condition: () -> Boolean) {

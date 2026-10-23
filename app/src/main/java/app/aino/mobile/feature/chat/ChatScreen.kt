@@ -875,7 +875,7 @@ private fun ChatThread(ui: ChatUiState, viewModel: ChatViewModel, onPickDocument
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) cameraOpen = true
         else cameraPermission.launch(Manifest.permission.CAMERA)
     }
-    app.aino.mobile.feature.chat.media.CaptureInputBoundary(cameraOpen || sendItems != null)
+    CaptureInputBoundary(cameraOpen || sendItems != null)
     LaunchedEffect(cameraOpen) { if (cameraOpen) cameraRecent = loadRecentMedia(context, limit = 30).map(RecentMedia::uri) }
     BackHandler(enabled = ui.showInfo) { viewModel.closeInfo() }
     BackHandler(enabled = ui.selectedMessageIds.isNotEmpty()) { viewModel.clearMessageSelection() }
@@ -2383,6 +2383,19 @@ private fun MessageComposer(
 
     val recordingActive = phase != VoicePhase.Idle
     val canRecord = value.isBlank() && editingMessage == null
+    // A call may take the screen while this editor is focused: it ends text entry
+    // first, and the release from picture-in-picture never gives the focus back.
+    val threadLifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val callUi by app.aino.mobile.core.call.ActiveCallRuntime.get(context).ui.collectAsStateWithLifecycle()
+    val callSession by app.aino.mobile.core.call.CallSessionRuntime.get(context).state.collectAsStateWithLifecycle()
+    val meetingLive by app.aino.mobile.feature.meeting.MeetingRuntime.get(context).state.collectAsStateWithLifecycle()
+    val inPip by app.aino.mobile.core.call.PipState.inPip.collectAsStateWithLifecycle()
+    CallEntryBoundary(
+        activity = androidx.activity.compose.LocalActivity.current,
+        surfaceCovering = callUi.visible || callSession.route != null || meetingLive != null,
+        active = threadLifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED),
+        inPip = inPip,
+    )
     // `union()` takes the max of the nav-bar and IME insets (chaining the two
     // paddings would sum them); with adjustResize in the manifest the window
     // itself never pans, so this is the only place the keyboard is accounted for.
