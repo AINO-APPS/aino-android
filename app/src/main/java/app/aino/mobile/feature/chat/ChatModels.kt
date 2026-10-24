@@ -286,7 +286,6 @@ data class ChatMessage(
     @SerialName("link_preview") val linkPreview: LinkPreview? = null,
     /** Present on `/chat/starred` rows (web StarredMessages "in {conversation_name}"). */
     @SerialName("conversation_name") val conversationName: String? = null,
-    val deliveryState: String = "sent",
 ) {
     fun body(): String = snippet().text
 
@@ -313,7 +312,6 @@ data class ChatMessage(
         senderId = senderId,
         body = body(),
         createdAtEpochMs = parseEpoch(createdAt),
-        deliveryState = deliveryState,
     )
 }
 
@@ -323,7 +321,6 @@ fun MessageEntity.toCachedMessage(): ChatMessage = ChatMessage(
     senderId = senderId,
     content = body,
     createdAt = Instant.ofEpochMilli(createdAtEpochMs).toString(),
-    deliveryState = deliveryState,
 )
 
 @Serializable

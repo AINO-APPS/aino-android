@@ -386,7 +386,6 @@ class ChatModelsTest {
         assertEquals(12, entity.conversationId)
         assertEquals(9, entity.senderId)
         assertEquals("Hello", entity.body)
-        assertEquals("sent", entity.deliveryState)
         assertTrue(entity.createdAtEpochMs > 0)
     }
 

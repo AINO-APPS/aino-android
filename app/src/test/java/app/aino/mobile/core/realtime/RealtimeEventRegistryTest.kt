@@ -102,6 +102,13 @@ class RealtimeEventRegistryTest {
     }
 
     @Test
+    fun deliveryReceiptsReconcileAfterThePatch() {
+        // The ack can land while the sender's own row is still an optimistic
+        // bubble, so a bare Patch would be dropped and the tick would stay Sent.
+        assertEquals(RealtimeReaction.PatchThenReconcile, RealtimeEvent.ChatMessageDelivered.reaction)
+    }
+
+    @Test
     fun controlPlaneEventsRegateNavigation() {
         val regate = RealtimeEvent.entries
             .filter { it.reaction == RealtimeReaction.Regate }

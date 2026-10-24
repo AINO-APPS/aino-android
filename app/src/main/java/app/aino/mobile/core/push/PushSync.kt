@@ -145,7 +145,6 @@ internal fun messageEntitiesOf(json: String, scope: CacheScope, conversationId: 
                 else -> app.aino.mobile.feature.chat.chatNotificationBody(row.string("content"), row.string("file_type"), row.string("file_name"), row["metadata"])
             },
             createdAtEpochMs = epochMs(createdAt) ?: 0,
-            deliveryState = "sent",
             payloadJson = row.toString(),
         )
     }

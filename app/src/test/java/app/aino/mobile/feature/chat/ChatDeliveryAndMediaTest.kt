@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -22,6 +23,26 @@ class ChatDeliveryAndMediaTest {
         assertEquals(listOf(30L), once[0].deliveredTo)
         assertEquals(emptyList<Long>(), once[1].deliveredTo)
         assertEquals(listOf(30L), applyDelivered(once, event)[0].deliveredTo)
+    }
+
+    /**
+     * The sender's own row is still an optimistic bubble when the ack lands, so
+     * the patch finds nothing. The registry's PatchThenReconcile tail refetches
+     * the thread, and the server row carries `delivered_to` — that is what
+     * advances the tick from Sent to Delivered.
+     */
+    @Test fun `delivered event that lands before the row exists is repaired by the reconcile`() {
+        val event = ChatDeliveredEvent(messageId = 1, conversationId = 5, userId = 30)
+        val beforeRow = applyDelivered(emptyList(), event)
+        assertEquals(emptyList<ChatMessage>(), beforeRow)
+
+        val serverRow = message(1, sender = 10, deliveredTo = listOf(30))
+        val reconciled = mergeLatestPage(beforeRow, listOf(serverRow))
+        assertEquals(DeliveryTick.Delivered, deliveryTick(reconciled.single(), emptyList(), participantCount = 2))
+    }
+
+    @Test fun `delivered events reconcile the conversation list`() {
+        assertTrue(shouldRefreshConversationList("chat_message_delivered"))
     }
 
     @Test fun `receipts only for incoming, live, not yet delivered messages`() {

@@ -27,7 +27,7 @@ class PushSyncTest {
     }
 
     private fun stored(dao: InMemoryAinoDao, vararg ids: Long) = runBlocking {
-        dao.upsertMessages(ids.map { MessageEntity(1, 7, it, 5, 8, "m$it", it * 1000, "sent", row(it)) })
+        dao.upsertMessages(ids.map { MessageEntity(1, 7, it, 5, 8, "m$it", it * 1000, row(it)) })
     }
 
     @Test

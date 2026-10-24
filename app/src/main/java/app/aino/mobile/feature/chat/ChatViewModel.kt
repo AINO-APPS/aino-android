@@ -736,7 +736,9 @@ class ChatViewModel(
                 if (_ui.value.selectedConversation?.id == delivered.conversationId) {
                     _ui.update { st -> st.copy(messages = applyDelivered(st.messages, delivered)) }
                 }
-                return
+                // No early return: the registry's PatchThenReconcile tail below
+                // refetches the thread, which is what advances a tick whose row
+                // was still an optimistic bubble when this event arrived.
             }
             RealtimeEvent.ChatViewOnce -> {
                 val viewed = decodeChatRealtime<ChatViewOnceEvent>(event.data) ?: return
@@ -1337,6 +1339,9 @@ class ChatViewModel(
                 if (stored.isNotEmpty()) _ui.update {
                     if (it.selectedConversation?.id == id && it.messages.isEmpty()) it.copy(messages = stored, hasOlderMessages = stored.size >= THREAD_PAGE_SIZE) else it
                 }
+                // A message read from the cache reached this device too: ack it so
+                // the sender's tick advances even when the REST load below fails.
+                acknowledgeDelivery(stored)
             }
             runCatching { repository.loadMessages(id) }.fold(
                 onSuccess = { latest ->

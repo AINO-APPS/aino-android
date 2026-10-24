@@ -39,7 +39,12 @@ enum class RealtimeEvent(
     ChatMediaJob("chat_media_job", RealtimeDomain.Chat, RealtimeReaction.Patch),
     ChatPollVote("chat_poll_vote", RealtimeDomain.Chat, RealtimeReaction.Patch),
     ChatViewOnce("chat_view_once", RealtimeDomain.Chat, RealtimeReaction.Patch),
-    ChatMessageDelivered("chat_message_delivered", RealtimeDomain.Chat, RealtimeReaction.Patch),
+    /**
+     * Patch then reconcile: the ack can arrive while the sender's own row is
+     * still an optimistic bubble, so the patch alone would be dropped and the
+     * tick would stay at Sent forever.
+     */
+    ChatMessageDelivered("chat_message_delivered", RealtimeDomain.Chat, RealtimeReaction.PatchThenReconcile),
     ChatCleared("chat_cleared", RealtimeDomain.Chat, RealtimeReaction.Refetch),
     ChatUserBlocked("chat_user_blocked", RealtimeDomain.Chat, RealtimeReaction.Refetch),
     ChatConvArchived("chat_conv_archived", RealtimeDomain.Chat, RealtimeReaction.Refetch),
