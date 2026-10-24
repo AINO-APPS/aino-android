@@ -33,10 +33,13 @@ class PipPolicyTest {
     }
 
     @Test
-    fun userLeaveEntryIsOnlyForActiveCallsBeforeSystemAutoEnter() {
+        fun userLeaveEntryAppliesToActiveCallsOnEverySupportedApi() {
         assertFalse(PipPolicy.shouldEnterOnUserLeave(30, true, false))
         assertFalse(PipPolicy.shouldEnterOnUserLeave(25, true, true))
         assertTrue(PipPolicy.shouldEnterOnUserLeave(30, true, true))
-        assertFalse(PipPolicy.shouldEnterOnUserLeave(31, true, true))
+            // Auto-enter only runs on the transition to background, so a caller that
+            // was already backgrounded got no PiP window at all when this was false.
+            assertTrue(PipPolicy.shouldEnterOnUserLeave(31, true, true))
+            assertTrue(PipPolicy.shouldEnterOnUserLeave(35, true, true))
+        }
     }
-}

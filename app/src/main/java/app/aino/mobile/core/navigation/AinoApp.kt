@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -174,7 +175,11 @@ fun AinoApp(
     val appContext = LocalContext.current.applicationContext
     val callSession = CallSessionRuntime.get(appContext)
     val activeCall = androidx.compose.runtime.remember { app.aino.mobile.core.call.ActiveCallRuntime.get(appContext) }
-    val meetingSession = androidx.compose.runtime.remember { app.aino.mobile.feature.meeting.MeetingRuntime.get(appContext) }
+        // A plain collector, not collectAsStateWithLifecycle: a PiP window is PAUSED,
+        // so a lifecycle-aware collection stops updating and the shell would never
+        // learn that the call ended - which is what left the app stranded in PiP.
+        val activeCallUi by activeCall.ui.collectAsState()
+        val meetingSession = androidx.compose.runtime.remember { app.aino.mobile.feature.meeting.MeetingRuntime.get(appContext) }
     LaunchedEffect(chat, realtime) {
         chat.setRealtimeSender(realtime::send)
         activeCall.send = realtime::send
@@ -470,14 +475,35 @@ fun AinoApp(
             resync = realtime.resync,
             notifications = notifications,
             notes = notes,
-        )
-    }
-    app.aino.mobile.core.call.ActiveCallScreen(activeCall)
+                    )
+                }
+                app.aino.mobile.core.call.ActiveCallScreen(activeCall)
     if (incomingCallUi.route != null) {
         IncomingCallScreen(incomingCall) { incomingCall.clear() }
     } else if (tenantAuthenticated) {
         // Ask once for the settings that let calls ring visibly (call channel, full-screen intent).
         app.aino.mobile.core.call.CallAlertSetupPrompt()
+    }
+    // The call surfaces own this: while either one is on screen, every editor in
+    // the app closes its drawer, drops its focus and yields the IME. Raised here
+    // rather than inside the chat, because a ring can appear while the composer is
+    // not composed at all (mid-navigation, or with the thread behind the ring).
+    val callSurfaceOnScreen = activeCallUi.visible || incomingCallUi.route != null
+    val shellActivity = androidx.activity.compose.LocalActivity.current
+    androidx.compose.runtime.DisposableEffect(callSurfaceOnScreen) {
+        if (callSurfaceOnScreen) app.aino.mobile.core.call.CallInputDismissal.request()
+        else app.aino.mobile.core.call.CallInputDismissal.release()
+        onDispose { }
+    }
+    // The call ended while this activity sat in system PiP: the PiP window would be
+    // stranded over the launcher showing the chat, so the activity comes forward.
+    // `inPipNow` must also be a plain collector for the same reason - a PiP window
+    // is PAUSED, and its exit is the very transition being watched.
+    val inPipNow by app.aino.mobile.core.call.PipState.inPip.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(callSurfaceOnScreen, inPipNow, shellActivity) {
+        if (app.aino.mobile.core.call.CallPipExit.shouldRestore(callSurfaceOnScreen, inPipNow)) {
+            shellActivity?.let { app.aino.mobile.core.call.CallPipExit.restoreAfterCall(it) }
+        }
     }
     }
     }

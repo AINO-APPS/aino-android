@@ -100,6 +100,15 @@ class PipController(
         }
     }
 
+        /**
+         * Leaving PiP must also disarm auto-enter. Leaving it enabled bounced the
+         * activity straight back into a PiP window, which the user saw as the app
+         * still being stuck in PiP after the call ended.
+         */
+        fun onPipExited(activity: Activity, isInPip: Boolean) {
+            if (!isInPip) setAutoEnter(activity, false)
+        }
+
     fun clear(activity: Activity) {
         isCallActive = false
         setAutoEnter(activity, false)
@@ -119,31 +128,43 @@ object PipState {
 /**
  * Leaving picture-in-picture when there is no call screen left to close.
  *
- * The call surfaces are the only places that finish a call, so a call that ends
- * while the activity is in PiP would otherwise leave the PiP window - and the
- * task behind it - floating over the launcher, showing the chat list, with
- * nothing alive that will ever bring it back. Signal restores the conversation
- * from its PiP activity's `onPictureInPictureModeChanged`; here the same
- * restoration is asked of the activity itself.
+ * The call surfaces are the only places that finish a call, so a call that ended
+ * while the activity sat in PiP used to leave the PiP window - and the task
+ * behind it - floating over the launcher, showing the chat list, with nothing
+ * alive that would ever bring it back. Signal restores the conversation from its
+ * PiP activity's `onPictureInPictureModeChanged`; here the same restoration is
+ * asked of the activity itself.
  */
 object CallPipExit {
     /**
      * True when this frame is the one that must be pulled out of PiP: the
-     * activity is in PiP, it is the resumed one, and no call surface is left
-     * (the call screen disappeared without closing the PiP window).
+     * activity is in PiP and no call surface is left (the call screen went away
+     * without closing the PiP window).
+     *
+     * Deliberately independent of the thread's RESUMED state: a PiP window is
+     * never "resumed" in the way a full-screen activity is, and gating on that
+     * was what left the window stranded.
      */
-    fun shouldRestore(active: Boolean, surfaceCovering: Boolean, inPip: Boolean): Boolean =
-        active && inPip && !surfaceCovering
+    fun shouldRestore(surfaceCovering: Boolean, inPip: Boolean): Boolean = inPip && !surfaceCovering
 
-    /** Leaves system PiP with the chat restored to full screen. */
+    /**
+     * Leaves system PiP with the chat restored to full screen. Every step is
+     * best-effort and independent: the window is gone as soon as the activity
+     * comes forward, whichever of these the OEM actually honours.
+     */
     fun restoreAfterCall(activity: Activity) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            runCatching {
-                val params = PictureInPictureParams.Builder().setAutoEnterEnabled(false).build()
-                activity.setPictureInPictureParams(params)
-            }
-        }
-        runCatching { activity.moveTaskToBack(false) }
+        clearAutoEnter(activity)
         runCatching { activity.startActivity(activity.intent) }
+        runCatching { activity.moveTaskToBack(false) }
+    }
+
+    /** Auto-enter must be off before leaving PiP, or the activity bounces straight back in. */
+    fun clearAutoEnter(activity: Activity) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        runCatching {
+            activity.setPictureInPictureParams(
+                PictureInPictureParams.Builder().setAutoEnterEnabled(false).build(),
+            )
+        }
     }
 }

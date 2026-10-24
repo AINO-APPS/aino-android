@@ -31,10 +31,21 @@ object PipPolicy {
 
     fun usesSystemAutoEnter(apiLevel: Int): Boolean = apiLevel >= AUTO_ENTER_MIN_API
 
+        /**
+     * Leaving the app with a live call must always ask for PiP, on every
+     * supported API - system auto-enter is not a substitute.
+     *
+     * `setAutoEnterEnabled(true)` only runs on the transition to background. A
+     * device that is otherwise already backgrounded when the call connects (a
+     * call answered from the notification shade, a call screen drawn as an
+     * overlay, or a PiP window that was dismissed) never gets auto-enter, so
+     * gating this off on API 31+ left those users with no PiP window at all.
+     * Reproduced on Android 15 by pressing Home during a live call:
+     * `mLastReportedPictureInPictureMode=false`.
+     */
     fun shouldEnterOnUserLeave(
         apiLevel: Int,
         deviceAdvertisesPip: Boolean,
         callActive: Boolean,
-    ): Boolean = callActive && isSupported(apiLevel, deviceAdvertisesPip) &&
-        !usesSystemAutoEnter(apiLevel)
+    ): Boolean = callActive && isSupported(apiLevel, deviceAdvertisesPip)
 }

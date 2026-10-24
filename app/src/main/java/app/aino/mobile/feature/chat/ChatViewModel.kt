@@ -547,7 +547,9 @@ class ChatViewModel(
             if (_ui.value.conversations.isEmpty()) {
                 (warm?.let { runCatching(it::loadConversations).getOrNull() }?.takeIf { it.isNotEmpty() }
                     ?: runCatching { scopedCache.snapshot() }.getOrNull()?.takeIf { it.isNotEmpty() })?.let { cached ->
-                    if (_ui.value.conversations.isEmpty()) _ui.update { st -> st.copy(conversations = zeroUnread(cached, visibleConversationId())) }
+                    if (_ui.value.conversations.isEmpty()) _ui.update { st ->
+                        st.copy(conversations = orderedConversations(cached, visibleConversationId()))
+                    }
                     adoptListedConversation(cached)
                 }
             }
@@ -563,13 +565,14 @@ class ChatViewModel(
                     if (generation != listGeneration.get()) return@fold
                     listBehind = false
                     reconcileMissedCalls()
-                    scopedCache.replace(conversations)
+                    val ordered = orderedConversations(conversations, visibleConversationId())
+                    scopedCache.replace(ordered)
                     val userIds = conversations.mapNotNull { it.otherUserId }.distinct()
                     val presence = runCatching { repository.loadPresence(userIds) }.getOrDefault(emptyMap())
                     listRetries.reset()
                     _ui.update { st -> st.copy(
                         loading = false,
-                        conversations = zeroUnread(conversations, visibleConversationId()),
+                        conversations = ordered,
                         presence = presence,
                         fromCache = false,
                         syncedAtMs = startedAt,
@@ -594,7 +597,7 @@ class ChatViewModel(
                     if (transient) scheduleListRetry()
                     _ui.update { st -> st.copy(
                         loading = false,
-                        conversations = if (st.conversations.isNotEmpty()) st.conversations else zeroUnread(cached, visibleConversationId()),
+                        conversations = if (st.conversations.isNotEmpty()) st.conversations else orderedConversations(cached, visibleConversationId()),
                         fromCache = cached.isNotEmpty(),
                         // Offline with nothing saved yet: an empty list that fills in on its own, not an error.
                         error = if (cached.isEmpty() && !transient) userFacingMessage(error, "Could not load conversations") else null,
@@ -779,7 +782,16 @@ class ChatViewModel(
                 }
                 incoming?.clientMsgId?.let { socketEchoes[it]?.complete(Unit) }
                 if (incoming != null && incoming.formatType != "system") {
-                    _ui.update { st -> st.copy(conversations = applyListLastMessage(st.conversations, incoming)) }
+                    _ui.update { st ->
+                        st.copy(
+                            conversations = promoteConversation(
+                                conversations = st.conversations,
+                                message = incoming,
+                                currentUserId = scope?.userId,
+                                visibleConversationId = visibleConversationId(),
+                            ),
+                        )
+                    }
                 }
                 incoming?.toChatMessage()?.let { received -> acknowledgeDelivery(listOf(received)) }
                 if (incoming != null && isCallHistoryMessage(incoming.formatType, incoming.metadata)) onCallActivity()
@@ -2600,7 +2612,7 @@ class ChatViewModel(
     private fun updateSelected(conversation: ChatConversation) {
         _ui.update { st -> st.copy(
             selectedConversation = conversation,
-            conversations = st.conversations.map { if (it.id == conversation.id) conversation else it },
+            conversations = sortConversations(st.conversations.map { if (it.id == conversation.id) conversation else it }),
         ) }
     }
 
@@ -2609,7 +2621,7 @@ class ChatViewModel(
         _ui.update { state ->
             state.copy(
                 selectedConversation = state.selectedConversation?.let { if (it.id == conversation.id) conversation else it },
-                conversations = state.conversations.map { if (it.id == conversation.id) conversation else it },
+                conversations = sortConversations(state.conversations.map { if (it.id == conversation.id) conversation else it }),
             )
         }
     }

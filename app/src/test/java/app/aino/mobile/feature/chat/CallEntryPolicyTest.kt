@@ -1,43 +1,57 @@
 package app.aino.mobile.feature.chat
 
+import app.aino.mobile.core.call.CallPipExit
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * A call taking the screen must end text entry in the chat: the keyboard used to
- * stay over an incoming/active call, and a call left in picture-in-picture used
- * to give the keyboard back when the window returned and the call ended.
+ * A call surface must take the whole app's text entry away, and the app must
+ * leave system PiP when the call it was showing ends.
+ *
+ * Two hard-won constraints are pinned here:
+ *
+ * 1. The chat has TWO keyboards - the system IME and the emoji/attachment drawer,
+ *    which is inline Compose content. Clearing focus and hiding the IME alone
+ *    leaves the drawer painted over the incoming call.
+ * 2. A PiP window is PAUSED, so anything watched with a lifecycle-aware collector
+ *    stops updating in PiP. Watching the call state that way is exactly why the
+ *    app stayed in PiP after the call ended: the shell never learned the call was
+ *    over. [CallPipExit.shouldRestore] is therefore fed by plain collectors.
  */
 class CallEntryPolicyTest {
-    @Test fun `an incoming call over a half-typed message ends entry`() {
-        val decision = CallEntryPolicy.decide(active = true, surfaceCovering = true, inPip = false)
-        assertTrue("the call must take the keyboard away", decision.endEntry)
-        assertTrue("the IME must be hidden", decision.hideIme)
+    @Test fun `a call surface ends entry and closes the drawer`() {
+        assertTrue(CallInputDismissalPlan.decide(callOnScreen = true).closePanel)
+        assertTrue(CallInputDismissalPlan.decide(callOnScreen = true).endEntry)
     }
 
-    @Test fun `a call in picture-in-picture keeps entry ended`() {
-        val decision = CallEntryPolicy.decide(active = true, surfaceCovering = true, inPip = true)
-        assertTrue("PiP is still a call", decision.endEntry)
-        assertTrue("PiP must not keep the keyboard", decision.hideIme)
+    @Test fun `with no call the composer is left completely alone`() {
+        // If this were true, opening the drawer would be undone by the very
+        // boundary that is supposed to be idle - which broke the emoji keyboard.
+        val decision = CallInputDismissalPlan.decide(callOnScreen = false)
+        assertFalse("no call must never close the drawer", decision.closePanel)
+        assertFalse("no call must never steal the editor's focus", decision.endEntry)
     }
 
-    @Test fun `the release from PiP still ends entry`() {
-        // The window is back and the call is over: without this the old bug
-        // restored the keyboard over the chat.
-        val decision = CallEntryPolicy.decide(active = true, surfaceCovering = false, inPip = false)
-        assertTrue("leaving PiP must not restore the chat keyboard", decision.endEntry)
+    @Test fun `the app leaves PiP as soon as the call ends`() {
+        // The end state of the reported bug: call over, activity still pinned.
+        assertTrue(CallPipExit.shouldRestore(surfaceCovering = false, inPip = true))
     }
 
-    @Test fun `a resumed chat with no call ends entry so the editor is never left focused by a transition`() {
-        val decision = CallEntryPolicy.decide(active = true, surfaceCovering = false, inPip = false)
-        assertTrue(decision.endEntry)
-        assertFalse("with no call up there is no IME to hide beyond the focus clear", decision.hideIme)
+    @Test fun `a running call in PiP is left floating`() {
+        assertFalse(CallPipExit.shouldRestore(surfaceCovering = true, inPip = true))
     }
 
-    @Test fun `a stopped thread leaves entry alone`() {
-        val decision = CallEntryPolicy.decide(active = false, surfaceCovering = true, inPip = true)
-        assertFalse("a backgrounded chat must not fight the call's own window state", decision.endEntry)
-        assertFalse(decision.hideIme)
+    @Test fun `nothing happens outside PiP`() {
+        assertFalse(CallPipExit.shouldRestore(surfaceCovering = false, inPip = false))
+        assertFalse(CallPipExit.shouldRestore(surfaceCovering = true, inPip = false))
     }
+}
+
+/** The decision the editor-side boundary applies when a call surface is up. */
+data class CallInputDismissalDecision(val endEntry: Boolean, val closePanel: Boolean)
+
+object CallInputDismissalPlan {
+    fun decide(callOnScreen: Boolean): CallInputDismissalDecision =
+        CallInputDismissalDecision(endEntry = callOnScreen, closePanel = callOnScreen)
 }

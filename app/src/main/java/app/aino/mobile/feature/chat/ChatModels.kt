@@ -76,6 +76,7 @@ data class ChatConversation(
     /** The list row's snippet split into a kind (drawn as an icon) and its text. */
     fun previewSnippet(): PreviewSnippet = when {
         lastDeleted != null -> PreviewSnippet(PreviewKind.Deleted, "Message deleted")
+        lastFormatType == VIEW_ONCE_FORMAT -> viewOnceSnippet(lastFileType)
         lastFormatType == "poll" -> PreviewSnippet(PreviewKind.Poll, lastMessage?.takeIf(String::isNotBlank) ?: "Poll")
         !lastFileName.isNullOrBlank() || !lastFileType.isNullOrBlank() ->
             attachmentPreview(lastFileType, lastFileName, lastMessage)
@@ -99,6 +100,14 @@ data class ChatConversation(
         updatedAtEpochMs = parseEpoch(lastMessageAt ?: updatedAt),
     )
 }
+
+/**
+ * When this conversation last moved: its last message, or the row's own
+ * timestamp while it has none. The one definition of the list's sort key,
+ * matching the value the Room cache stores.
+ */
+val ChatConversation.updatedAtEpochMs: Long
+    get() = parseEpoch(lastMessageAt ?: updatedAt)
 
 /**
  * Legacy row saved before the full payload was stored: only title / avatar are
@@ -145,6 +154,18 @@ enum class PreviewKind(val label: String) { Photo("Photo"), Video("Video"), Voic
 
 data class PreviewSnippet(val kind: PreviewKind?, val text: String)
 
+/**
+ * List-row format marker for a view-once last message. The list carries no
+ * message metadata, so the promote path stamps this to keep the caption out of
+ * the row; the thread path reads `metadata.viewOnce` directly instead.
+ */
+const val VIEW_ONCE_FORMAT = "view_once"
+
+/** A view-once row reads only "Photo" / "Video", never its caption or file name. */
+fun viewOnceSnippet(fileType: String?): PreviewSnippet =
+    if (fileType.orEmpty().lowercase().startsWith("video/")) PreviewSnippet(PreviewKind.Video, "Video")
+    else PreviewSnippet(PreviewKind.Photo, "Photo")
+
 fun attachmentPreview(fileType: String?, fileName: String?, caption: String?): PreviewSnippet {
     val type = fileType.orEmpty().lowercase()
     val (kind, label) = when {
@@ -164,10 +185,7 @@ fun attachmentPreview(fileType: String?, fileName: String?, caption: String?): P
 fun messageSnippet(content: String?, fileType: String?, fileName: String?, viewOnce: Boolean): PreviewSnippet {
     val text = content?.trim()?.takeIf(String::isNotEmpty)
     if (fileType.isNullOrBlank() && fileName.isNullOrBlank()) return PreviewSnippet(null, text ?: "Message")
-    if (viewOnce) {
-        return if (fileType.orEmpty().lowercase().startsWith("video/")) PreviewSnippet(PreviewKind.Video, "Video")
-        else PreviewSnippet(PreviewKind.Photo, "Photo")
-    }
+    if (viewOnce) return viewOnceSnippet(fileType)
     return attachmentPreview(fileType, fileName, text)
 }
 

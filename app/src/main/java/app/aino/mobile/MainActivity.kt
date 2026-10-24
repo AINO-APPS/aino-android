@@ -211,16 +211,21 @@ class MainActivity : FragmentActivity() {
                         )
                     }.distinctUntilChanged().collect { keepOn -> CallScreenAwake.apply(this@MainActivity, keepOn) }
                 }
-                // Leaving the app during a connected call or a meeting enters system PiP.
-                kotlinx.coroutines.flow.combine(activeCall, meeting) { call, live ->
-                    when {
-                        call.visible && call.connectedAt != null -> if (call.hasVideo) 9 to 16 else 1 to 1
-                        live != null -> 9 to 16
-                        else -> null
-                    }
-                }.collect { ratio ->
-                    pipController.setCallActive(this@MainActivity, ratio != null, ratio?.first ?: 1, ratio?.second ?: 1)
-                }
+                // Leaving the app during a call or a meeting enters system PiP. Armed for the
+                                // whole call, not only once it is connected: a call that is still
+                                // ringing/connecting when the user leaves would otherwise get no PiP
+                                // window at all, and the arming only ran on a later state change.
+                                kotlinx.coroutines.flow.combine(activeCall, meeting, incomingCallViewModel.ui) { call, live, incoming ->
+                                    val ringing = incoming.route != null && incoming.state != IncomingCallState.Ended
+                                    when {
+                                        call.visible -> if (call.hasVideo) 9 to 16 else 1 to 1
+                                        live != null -> 9 to 16
+                                        ringing -> 9 to 16
+                                        else -> null
+                                    }
+                                }.distinctUntilChanged().collect { ratio ->
+                                    pipController.setCallActive(this@MainActivity, ratio != null, ratio?.first ?: 1, ratio?.second ?: 1)
+                                }
             }
         }
     }
@@ -275,7 +280,10 @@ class MainActivity : FragmentActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         pipController.onPictureInPictureModeChanged(isInPictureInPictureMode)
         app.aino.mobile.core.call.PipState.inPip.value = isInPictureInPictureMode
-    }
+        // On the way out, stop auto-enter immediately: leaving it enabled bounced
+        // the activity straight back into PiP, which read as "the app stays in PiP".
+        pipController.onPipExited(this, isInPictureInPictureMode)
+            }
 
     override fun onStart() {
         super.onStart()

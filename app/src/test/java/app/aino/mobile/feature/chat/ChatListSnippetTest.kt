@@ -87,7 +87,7 @@ class ChatListSnippetTest {
         val incoming = decodeChatRealtime<ChatRealtimeMessage>(
             kotlinx.serialization.json.Json.parseToJsonElement("""{"id":2,"conversationId":1,"senderId":6,"content":"hi","createdAt":"2026-10-08T10:05:00Z"}"""),
         )!!
-        val next = applyListLastMessage(listOf(read), incoming)[0]
+            val next = promoteConversation(listOf(read), incoming)[0]
         assertEquals(6L, next.lastSenderId)
         assertFalse(next.lastMessageRead)
         assertFalse(next.lastMessageDelivered)
