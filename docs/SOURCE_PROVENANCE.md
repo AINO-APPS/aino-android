@@ -196,3 +196,23 @@ a distribution-license decision, treat the source as all-rights-reserved project
 material: do not add third-party copied code and do not infer permission to
 redistribute source merely because GitHub hosts the repository. This policy does
 not choose a license on the owner's behalf.
+
+## WebRTC runtime artifact (provenance gap)
+
+`app/build.gradle.kts` depends on `io.github.webrtc-sdk:android:150.7871.01`
+(declared in `gradle/libs.versions.toml`), **not** the upstream
+`org.webrtc:google-webrtc` artifact. The code consumes the standard
+`org.webrtc.*` API, so the swap is source-compatible, but the artifact is a
+third-party repackaging of a WebRTC build.
+
+Consequences to be aware of:
+
+- Codec availability, hardware-encoder selection, audio-processing behavior and
+  JNI surface can differ from an upstream build, which makes device-specific
+  quality differences harder to attribute.
+- The build's exact upstream revision and patch set are not recorded here.
+- License/notice obligations for the repackaged binary have not been reviewed.
+
+This is a tracked risk, not a known defect. Before treating any
+device-specific call-quality report as an AINO bug, confirm the behavior
+reproduces against an upstream `org.webrtc` build.

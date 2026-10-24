@@ -334,7 +334,9 @@ class ActiveCallController(private val context: Context, private val session: Ca
             return null
         }
         created.addLocalTracks(local.audioTrack, local.videoTrack)
-        created.startQualityAdaptation(scope)
+        created.startQualityAdaptation(scope) { report ->
+            runCatching { CallApi(AppContainer.get(context).api).reportQuality(report) }
+        }
         peer = created
         if (offer) created.createOffer()
         return created

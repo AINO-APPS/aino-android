@@ -45,9 +45,34 @@ class CallApi(private val api: ApiClient) {
         return JSON.decodeFromJsonElement(element)
     }
 
+    /**
+     * Fire-and-forget call-quality sample. Without this a "video froze and
+     * never recovered" report cannot be checked against the media path, the
+     * RTT floor or the encoder tier — there was no record at all.
+     */
+    fun reportQuality(sample: CallQualityReport) {
+        runCatching {
+            // @api POST chat/calls/quality
+            api.execute(ApiRequest("POST", "chat/calls/quality", body = JSON.encodeToString(sample).toByteArray()))
+        }
+    }
+
     private fun body(conversationId: Long): ByteArray = JSON.encodeToString(CallConversationBody(conversationId)).toByteArray()
 
     private companion object {
         val JSON = Json { ignoreUnknownKeys = true }
     }
 }
+
+/** One aggregated quality sample; every field is optional. */
+@Serializable
+data class CallQualityReport(
+    val path: String? = null,
+    val platform: String = "android",
+    val rttSeconds: Double? = null,
+    val packetLoss: Double? = null,
+    val freezeCount: Long? = null,
+    val durationSeconds: Double? = null,
+    val encoderTier: Int? = null,
+    val iceRestarts: Int? = null,
+)

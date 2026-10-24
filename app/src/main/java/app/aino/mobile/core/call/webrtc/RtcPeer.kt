@@ -1,6 +1,7 @@
 package app.aino.mobile.core.call.webrtc
 
 import kotlin.coroutines.resume
+import app.aino.mobile.core.call.CallQualityReport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -44,6 +45,9 @@ class RtcPeer(
     private val candidates = IceCandidateBuffer()
     private val encodings = EncodingParameterApplier()
     private var qualityJob: Job? = null
+    private var qualityController: CallQualityController? = null
+    /** True once this peer has been CONNECTED at least once. */
+    @Volatile private var everConnected = false
     @Volatile private var makingOffer = false
     @Volatile private var remoteDescriptionSet = false
     @Volatile private var closed = false
@@ -61,7 +65,16 @@ class RtcPeer(
                     transceiver.receiver.track()?.let { if (!closed) listener.onRemoteTrack(it) }
                 }
                 override fun onConnectionChange(newState: PeerConnection.PeerConnectionState) {
-                    if (!closed) listener.onConnectionState(newState)
+                    if (closed) return
+                    if (newState == PeerConnection.PeerConnectionState.CONNECTED) {
+                        // A second CONNECTED means we recovered from an ICE
+                        // restart / relay rebuild: the media path changed, so
+                        // the learned RTT floor is stale. Relearn it without
+                        // touching the ladder position.
+                        if (everConnected) qualityController?.relearnBaseline()
+                        everConnected = true
+                    }
+                    listener.onConnectionState(newState)
                 }
                 override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState) {
                     if (!closed) listener.onIceState(newState)
@@ -228,20 +241,68 @@ class RtcPeer(
      * tier, then polls stats every [intervalMs] and applies tier changes until
      * [close]. Idempotent while running.
      */
-    fun startQualityAdaptation(scope: CoroutineScope, intervalMs: Long = QUALITY_STATS_INTERVAL_MS) {
+    fun startQualityAdaptation(
+        scope: CoroutineScope,
+        intervalMs: Long = QUALITY_STATS_INTERVAL_MS,
+        onReport: ((CallQualityReport) -> Unit)? = null,
+    ) {
         if (closed || qualityJob?.isActive == true) return
         val controller = CallQualityController()
+        qualityController = controller
         // Signal "Use less data for calls": never climb above the low-data rung.
         val prefs = app.aino.mobile.core.settings.ChatPreferences.current
         val floor = if (prefs.lowDataFor(app.aino.mobile.core.settings.ChatPreferences.network())) LOW_DATA_TIER_INDEX else 0
         if (floor > 0) controller.setTierIndex(floor)
         qualityJob = scope.launch {
             var capped = applyQuality(cappedTier(controller.getTierIndex(), floor))
+            val startedAt = System.currentTimeMillis()
+            var lastReportAt = 0L
+            var lastSample: RawStatsSample? = null
+            var lastDecision: QualityDecision? = null
             while (isActive && !closed) {
                 delay(intervalMs)
                 val report = stats() ?: break
-                val decision = controller.observe(collectStatsSample(report))
+                val sample = collectStatsSample(report)
+                val decision = controller.observe(sample)
+                lastSample = sample
+                lastDecision = decision
                 if (decision.changed || !capped) capped = applyQuality(cappedTier(decision.tierIndex, floor))
+
+                // One aggregated sample every 30 s: enough to see a call that
+                // degraded, cheap enough to run on every peer of a mesh.
+                val now = System.currentTimeMillis()
+                if (onReport != null && now - lastReportAt >= 30_000) {
+                    lastReportAt = now
+                    runCatching {
+                        onReport(
+                            CallQualityReport(
+                                path = sample.localCandidateType,
+                                rttSeconds = decision.smoothedRttSeconds,
+                                packetLoss = decision.smoothedLossRate,
+                                freezeCount = sample.freezeCount,
+                                durationSeconds = (now - startedAt) / 1000.0,
+                                encoderTier = decision.tierIndex,
+                            ),
+                        )
+                    }
+                }
+            }
+            // Final sample on teardown so a call that ended badly is recorded.
+            val sample = lastSample
+            val decision = lastDecision
+            if (onReport != null && sample != null && decision != null) {
+                runCatching {
+                    onReport(
+                        CallQualityReport(
+                            path = sample.localCandidateType,
+                            rttSeconds = decision.smoothedRttSeconds,
+                            packetLoss = decision.smoothedLossRate,
+                            freezeCount = sample.freezeCount,
+                            durationSeconds = (System.currentTimeMillis() - startedAt) / 1000.0,
+                            encoderTier = decision.tierIndex,
+                        ),
+                    )
+                }
             }
         }
     }
@@ -265,6 +326,7 @@ class RtcPeer(
         closed = true
         qualityJob?.cancel()
         qualityJob = null
+        qualityController = null
         encodings.clear(peer)
         synchronized(candidates) { candidates.clear() }
         runCatching { peer.dispose() }

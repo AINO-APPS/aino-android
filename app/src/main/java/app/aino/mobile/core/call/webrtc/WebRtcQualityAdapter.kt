@@ -18,6 +18,8 @@ fun collectStatsSample(report: RTCStatsReport, nowEpochMs: Long = System.current
     var jitterCount = 0L
     var limitation: String? = null
     var outboundLost: Double? = null
+    var localCandidateType: String? = null
+    var remoteCandidateType: String? = null
     report.statsMap.values.forEach { stat ->
         val values = stat.members
         fun number(key: String): Number? = values[key] as? Number
@@ -25,6 +27,14 @@ fun collectStatsSample(report: RTCStatsReport, nowEpochMs: Long = System.current
         when {
             stat.type == "candidate-pair" && ((values["nominated"] as? Boolean) == true || values["state"] == "succeeded") -> {
                 rtt = number("currentRoundTripTime")?.toDouble() ?: rtt
+                // Candidate types identify the media path; a change means the
+                // learned RTT floor no longer applies.
+                (values["localCandidateId"] as? String)?.let { id ->
+                    localCandidateType = report.statsMap[id]?.members?.get("candidateType") as? String
+                }
+                (values["remoteCandidateId"] as? String)?.let { id ->
+                    remoteCandidateType = report.statsMap[id]?.members?.get("candidateType") as? String
+                }
             }
             stat.type == "inbound-rtp" && kind in setOf("audio", "video") -> {
                 lost += number("packetsLost")?.toLong() ?: 0
@@ -40,7 +50,10 @@ fun collectStatsSample(report: RTCStatsReport, nowEpochMs: Long = System.current
             }
         }
     }
-    return RawStatsSample(nowEpochMs, rtt, lost, received, freezes, jitterDelay, jitterCount, limitation, outboundLost)
+    return RawStatsSample(
+        nowEpochMs, rtt, lost, received, freezes, jitterDelay, jitterCount,
+        limitation, outboundLost, localCandidateType, remoteCandidateType,
+    )
 }
 
 class EncodingParameterApplier {

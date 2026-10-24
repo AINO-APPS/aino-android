@@ -3,13 +3,17 @@ package app.aino.mobile.feature.meeting
 import android.content.Context
 import app.aino.mobile.core.AppContainer
 import app.aino.mobile.core.call.ActiveCallService
+import app.aino.mobile.core.call.CallApi
 import app.aino.mobile.core.call.CallAudio
 import app.aino.mobile.core.call.webrtc.IceConfigDto
 import app.aino.mobile.core.call.webrtc.IceConfigRepository
+import app.aino.mobile.core.call.webrtc.IceRecoveryAction
 import app.aino.mobile.core.call.webrtc.LocalMedia
 import app.aino.mobile.core.call.webrtc.RtcPeer
 import app.aino.mobile.core.call.webrtc.WebRtcRuntime
 import app.aino.mobile.core.call.webrtc.fallbackIceConfig
+import app.aino.mobile.core.call.webrtc.iceRecoveryAction
+import app.aino.mobile.core.call.webrtc.relayOnlyServers
 import app.aino.mobile.core.call.webrtc.IceCandidateSignal
 import app.aino.mobile.core.realtime.RealtimeEnvelope
 import java.util.UUID
@@ -132,6 +136,8 @@ class MeetingSession(context: Context) {
     private val peers = mutableMapOf<Long, RtcPeer>()
     private val screenTrackIds = mutableMapOf<Long, MutableSet<String>>()
     private val iceRestarts = mutableMapOf<Long, Int>()
+    /** Peers already rebuilt onto a relay-only path. */
+    private val relayOnlyPeers = mutableSetOf<Long>()
     private val peerTimers = mutableMapOf<Long, Job>()
     private val pendingChats = LinkedHashMap<String, JsonObject>()
     private val sessionJobs = mutableListOf<Job>()
@@ -371,7 +377,7 @@ class MeetingSession(context: Context) {
         capBitrates()
     }
 
-    private fun createPeer(userId: Long, initiator: Boolean): RtcPeer? {
+    private fun createPeer(userId: Long, initiator: Boolean, relayOnly: Boolean = false): RtcPeer? {
         val s = _state.value ?: return null
         val config = ice ?: return null
         val local = media ?: return null
@@ -381,14 +387,35 @@ class MeetingSession(context: Context) {
             upsertPeer(userId, member?.display(), member?.avatar)
         }
         val peer = runCatching {
-            RtcPeer(WebRtcRuntime.shared(appContext), config, meetingPolite(s.selfId, userId), PeerListener(userId))
+            RtcPeer(
+                WebRtcRuntime.shared(appContext),
+                config,
+                meetingPolite(s.selfId, userId),
+                PeerListener(userId),
+                relayOnly = relayOnly,
+            )
         }.getOrElse { return null }
         peer.addLocalTracks(local.audioTrack, local.videoTrack)
         peers[userId] = peer
         updatePeer(userId) { it.copy(link = PeerLink.Connecting, video = null, screen = null) }
         armConnectTimeout(userId)
+        // Group calls previously applied a static peer-count bitrate cap and
+        // never adapted: a peer whose uplink degraded stayed at 500 kbps and
+        // simply froze. The same controller the 1:1 path uses now runs per
+        // peer, with the peer-count cap as the ceiling.
+        peer.startQualityAdaptation(scope) { report ->
+            runCatching { CallApi(AppContainer.get(appContext).api).reportQuality(report) }
+        }
         if (initiator) peer.createOffer()
         return peer
+    }
+
+    /** Rebuild a peer from scratch, optionally forcing every byte through TURN. */
+    private fun rebuildPeer(userId: Long, relayOnly: Boolean) {
+        val s = _state.value ?: return
+        val initiator = s.selfId < userId
+        createPeer(userId, initiator = initiator, relayOnly = relayOnly)
+        sendTrackState()
     }
 
     /** ParticipantTile: 30 s without a connection shows "Couldn't connect" + Retry. */
@@ -448,18 +475,31 @@ class MeetingSession(context: Context) {
             -> {
                 updatePeer(userId) { if (it.link == PeerLink.Failed) it else it.copy(link = PeerLink.Reconnecting) }
                 peerTimers.remove(userId)?.cancel()
-                // UMS:928 — ICE restart after 2 s still disconnected, at most 3 per peer.
+                // UMS:928 — ICE restart after 2 s still disconnected. The
+                // recovery ladder is the shared IceRecoveryPolicy, so a mesh
+                // peer escalates to a relay-only rebuild instead of being
+                // abandoned after three restarts (which left the tile dead
+                // even though TURN could have carried the call).
                 peerTimers[userId] = scope.launch {
                     delay(2_000)
                     val peer = peers[userId] ?: return@launch
                     if (peer.connectionState == PeerConnection.PeerConnectionState.CONNECTED) return@launch
                     val attempts = iceRestarts[userId] ?: 0
-                    if (attempts < 3) {
-                        iceRestarts[userId] = attempts + 1
-                        peer.restartIce()
-                        armConnectTimeout(userId)
-                    } else {
-                        updatePeer(userId) { it.copy(link = PeerLink.Failed) }
+                    val relayOnly = relayOnlyPeers.contains(userId)
+                    val hasRelay = ice?.let { relayOnlyServers(it.iceServers).isNotEmpty() } == true
+                    when (iceRecoveryAction(attempts, relayOnly, hasRelay)) {
+                        IceRecoveryAction.RestartIce -> {
+                            iceRestarts[userId] = attempts + 1
+                            peer.restartIce()
+                            armConnectTimeout(userId)
+                        }
+                        IceRecoveryAction.RebuildRelayOnly -> {
+                            iceRestarts[userId] = attempts + 1
+                            relayOnlyPeers.add(userId)
+                            rebuildPeer(userId, relayOnly = true)
+                        }
+                        IceRecoveryAction.GiveUp -> updatePeer(userId) { it.copy(link = PeerLink.Failed) }
+                        IceRecoveryAction.Wait -> Unit
                     }
                 }
             }
@@ -509,6 +549,7 @@ class MeetingSession(context: Context) {
         peers.remove(userId)?.close()
         peerTimers.remove(userId)?.cancel()
         iceRestarts.remove(userId)
+        relayOnlyPeers.remove(userId)
         screenTrackIds.remove(userId)
         _state.update { s -> s?.copy(peers = s.peers.filterNot { it.userId == userId }) }
         capBitrates()

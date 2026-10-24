@@ -5,8 +5,8 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 488,
-    "covered": 256,
+    "platform": 489,
+    "covered": 257,
     "waived": 233,
     "missing": 0,
     "unmatched": 0
@@ -141,6 +141,11 @@
       "method": "POST",
       "path": "/api/chat/calls/delete",
       "source": "app/src/main/java/app/aino/mobile/feature/chat/ChatRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/chat/calls/quality",
+      "source": "app/src/main/java/app/aino/mobile/core/call/CallApi.kt"
     },
     {
       "method": "GET",

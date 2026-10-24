@@ -53,6 +53,12 @@ data class RawStatsSample(
     val qualityLimitationReason: String? = null,
     /** Loss the peer reports for *our* video (remote-inbound-rtp fractionLost, 0..1). */
     val outboundFractionLost: Double? = null,
+    /**
+     * Candidate types of the nominated pair. A change means the media path
+     * moved (e.g. direct → TURN relay), so the learned RTT floor is stale.
+     */
+    val localCandidateType: String? = null,
+    val remoteCandidateType: String? = null,
 )
 
 data class QualityDecision(
@@ -90,10 +96,31 @@ class CallQualityController(isMobile: Boolean = true) {
     private var baselineRtt: Double? = null
     private val baselineSamples = mutableListOf<Double>()
     private var firstSampleAt: Long? = null
+    /** Candidate types of the pair the current baseline was learned on. */
+    private var baselinePathKey: String? = null
+    /** True only between a path change and the point where the new floor is trusted. */
+    private var relearning = false
 
     fun observe(sample: RawStatsSample): QualityDecision {
         val prev = previous
         previous = sample
+
+        // A path change (ICE restart, relay-only rebuild, nominated-pair swap)
+        // moves the call onto a link with a different latency floor. Grading
+        // the new path against the old floor reports permanent "excess RTT"
+        // and walks the ladder to the bottom rung, where it then stays for the
+        // rest of the call — the "reconnects, then quality drops" symptom.
+        val pathKey = sample.localCandidateType?.let { local ->
+            "$local/${sample.remoteCandidateType ?: "?"}"
+        }
+        if (pathKey != null) {
+            if (baselinePathKey == null) baselinePathKey = pathKey
+            else if (pathKey != baselinePathKey) {
+                relearnBaseline()
+                baselinePathKey = pathKey
+            }
+        }
+
         sample.rttSeconds?.takeIf(Double::isFinite)?.let { rtt ->
             rttEwma = rttEwma?.let { EWMA_ALPHA * rtt + (1 - EWMA_ALPHA) * it } ?: rtt
             updateBaseline(requireNotNull(rttEwma), sample.timestampMs)
@@ -120,14 +147,21 @@ class CallQualityController(isMobile: Boolean = true) {
 
         if (rttEwma == null) return decision(ConnectionQuality.Unknown, false, freezeDelta, jitter, "no rtt sample yet")
 
+        // After a path change there is nothing meaningful to compare RTT
+        // against until the new floor is learned, so RTT-excess grading is
+        // suspended for those few samples. Loss and CPU limitation are
+        // absolute and stay authoritative.
+        val learningBaseline = relearning && baselineSamples.size < BASELINE_MIN_SAMPLES
+        if (!learningBaseline) relearning = false
+
         // Sender (uplink) health: the only input to the encoder cap.
         var send = ConnectionQuality.Good
         var reason = "stable"
         when {
             outboundLossEwma >= OUTBOUND_LOSS_BAD -> { send = ConnectionQuality.Poor; reason = "uplink loss ${"%.1f".format(outboundLossEwma * 100)}%" }
-            rttExcess >= RTT_EXCESS_BAD -> { send = ConnectionQuality.Poor; reason = "rtt +${(rttExcess * 1000).roundToInt()}ms over baseline" }
-            outboundLossEwma >= OUTBOUND_LOSS_WARN || rttExcess >= RTT_EXCESS_WARN || sample.qualityLimitationReason == "cpu" -> {
-                send = ConnectionQuality.Fair; reason = "uplink degrading"
+            !learningBaseline && rttExcess >= RTT_EXCESS_BAD -> { send = ConnectionQuality.Poor; reason = "rtt +${(rttExcess * 1000).roundToInt()}ms over baseline" }
+            outboundLossEwma >= OUTBOUND_LOSS_WARN || (!learningBaseline && rttExcess >= RTT_EXCESS_WARN) || sample.qualityLimitationReason == "cpu" -> {
+                send = ConnectionQuality.Fair; reason = if (learningBaseline) "learning path baseline" else "uplink degrading"
             }
         }
 
@@ -167,9 +201,21 @@ class CallQualityController(isMobile: Boolean = true) {
     fun getTierIndex() = tierIndex
     fun getTier() = tiers[tierIndex]
     fun setTierIndex(index: Int) { tierIndex = index.coerceIn(0, BOTTOM_TIER_INDEX); goodStreak = 0; badStreak = 0 }
+
+    /**
+     * Reopen the learning window WITHOUT moving the ladder. Call this whenever
+     * the media path changes: the new path has a different latency floor, and
+     * grading it against the old one would pin the encoder at the bottom rung.
+     */
+    fun relearnBaseline() {
+        baselineRtt = null; baselineSamples.clear(); firstSampleAt = null
+        baselinePathKey = null; goodStreak = 0; badStreak = 0; relearning = true
+    }
+
     fun reset() {
         tierIndex = START_TIER_INDEX; previous = null; rttEwma = null; lossEwma = 0.0; outboundLossEwma = 0.0
         goodStreak = 0; badStreak = 0; baselineRtt = null; baselineSamples.clear(); firstSampleAt = null
+        baselinePathKey = null; relearning = false
     }
 
     private fun updateBaseline(rtt: Double, timestamp: Long) {

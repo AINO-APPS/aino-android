@@ -16,7 +16,12 @@ class CallQualityTest {
         jitterCount: Long = 0,
         limitation: String? = null,
         outLoss: Double? = null,
-    ) = RawStatsSample(time, rtt, lost, received, freezes, jitterDelay, jitterCount, limitation, outLoss)
+        localType: String? = null,
+        remoteType: String? = null,
+    ) = RawStatsSample(
+        time, rtt, lost, received, freezes, jitterDelay, jitterCount,
+        limitation, outLoss, localType, remoteType,
+    )
 
     @Test
     fun ladderMatchesLegacyAndMobileCap() {
@@ -106,6 +111,41 @@ class CallQualityTest {
         assertTrue(controller.getTierIndex() > START_TIER_INDEX)
         controller.reset()
         assertEquals(START_TIER_INDEX, controller.getTierIndex())
+    }
+
+    @Test
+    fun relearnsRttFloorWhenTheMediaPathChanges() {
+        // Regression: a call that connects on a direct path (≈20 ms) and then
+        // recovers from an ICE failure onto a TURN relay (≈120 ms) used to
+        // grade the relayed path against the direct-path floor forever, so the
+        // ladder walked to the bottom rung and stayed there.
+        val controller = CallQualityController()
+        controller.setTierIndex(0)
+        repeat(6) { controller.observe(sample(it * 2_000L, rtt = .02, localType = "srflx", remoteType = "srflx")) }
+        val tierBefore = controller.getTierIndex()
+
+        var decision: QualityDecision? = null
+        repeat(8) {
+            decision = controller.observe(
+                sample(20_000L + it * 2_000L, rtt = .12, localType = "relay", remoteType = "srflx"),
+            )
+        }
+
+        assertTrue(requireNotNull(decision).baselineRttSeconds!! > .06)
+        assertEquals(ConnectionQuality.Good, decision!!.quality)
+        assertTrue(controller.getTierIndex() <= tierBefore)
+    }
+
+    @Test
+    fun stillDownshiftsOnARelayedPathThatIsGenuinelyCongested() {
+        val controller = CallQualityController()
+        controller.setTierIndex(0)
+        repeat(6) { controller.observe(sample(it * 2_000L, rtt = .12, localType = "relay", remoteType = "srflx")) }
+        val healthy = controller.getTierIndex()
+
+        repeat(8) { controller.observe(sample(20_000L + it * 2_000L, rtt = .6, localType = "relay", remoteType = "srflx")) }
+
+        assertTrue(controller.getTierIndex() > healthy)
     }
 
     @Test
