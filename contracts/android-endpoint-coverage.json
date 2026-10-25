@@ -5,11 +5,11 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 489,
-    "covered": 257,
+    "platform": 505,
+    "covered": 270,
     "waived": 233,
-    "missing": 0,
-    "unmatched": 0
+    "missing": 4,
+    "unmatched": 1
   },
   "covered": [
     {
@@ -973,6 +973,16 @@
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
+      "method": "PUT",
+      "path": "/api/sprints/:param",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:param/baseline",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/sprints/:param/burndown",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
@@ -980,6 +990,11 @@
     {
       "method": "POST",
       "path": "/api/sprints/:param/complete",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:param/completion-preview",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -1134,12 +1149,32 @@
     },
     {
       "method": "PATCH",
+      "path": "/api/tasks/:param/rank",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PATCH",
       "path": "/api/tasks/:param/schedule",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
       "method": "PATCH",
       "path": "/api/tasks/:param/status",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/:param/timer",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/:param/timer/start",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/:param/timer/stop",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -1169,7 +1204,17 @@
     },
     {
       "method": "POST",
+      "path": "/api/tasks/bulk",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
       "path": "/api/tasks/carry-forward",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/epics",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -1200,6 +1245,11 @@
     {
       "method": "GET",
       "path": "/api/tasks/lookup/quicksearch",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/schedule-overlays",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -1279,6 +1329,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/tracker/task-time",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
       "path": "/api/tracker/theme",
       "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
     },
@@ -1296,7 +1351,23 @@
       "method": "POST",
       "path": "/api/tracker/work-mode-request",
       "source": "app/src/main/java/app/aino/mobile/feature/attendance/AttendanceRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/user/preferences",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/user/preferences",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     }
   ],
-  "unmatched": []
+  "unmatched": [
+    {
+      "method": "GET",
+      "path": "/api/tasks/by-key",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    }
+  ]
 }
