@@ -345,9 +345,13 @@ internal fun PriorityGlyph(priority: String, modifier: Modifier = Modifier) {
 // ── Task card ────────────────────────────────────────────────────────────
 
 /**
- * The one task card used by the Sprint board and the Backlog. A left rail in
- * the priority colour, key · type · points, title, labels, then people/due/
- * comments. [highlighted] flashes the border when a realtime patch lands.
+ * The one task card used by the Sprint board, the Backlog and Scheduled.
+ *
+ * One anatomy everywhere: a quiet key/type line, the title as the anchor, an
+ * aligned metadata row, at most two labels, then people/due/comments. Blocked
+ * and overdue are exceptions, so they stay visible in both densities — a
+ * compact card that hides them hides the only reason to look at it.
+ * [highlighted] flashes the border when a realtime patch lands.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -360,7 +364,10 @@ internal fun TaskCardM3(
     showStatus: Boolean = false,
     onLongPress: (() -> Unit)? = null,
     onComments: (() -> Unit)? = null,
+    /** Footer actions: selection, schedule, reschedule. */
     trailing: (@Composable () -> Unit)? = null,
+    /** Top-right slot, reserved for the overflow menu so it is always visible. */
+    topTrailing: (@Composable () -> Unit)? = null,
     /** Compact keeps key, title and points; comfortable adds the rest (D25). */
     compact: Boolean = false,
     /** "Updated by <name>" from a realtime delta; fades on its own (D48). */
@@ -404,6 +411,7 @@ internal fun TaskCardM3(
                 ),
             verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 6.dp),
         ) {
+            // Quiet top line: key, type and points. The title below is the anchor.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     val projectColor = task.project?.color?.let { hexColor(it) }
@@ -426,33 +434,52 @@ internal fun TaskCardM3(
                         Text("$points ${agile.unitLabel}", color = colors.textMuted, fontSize = 0.72.rem, maxLines = 1)
                     }
                 }
-                if (!compact && task.isBlocked && agile.features.blockers) {
-                    Icon(HeroIcons.NoSymbol, "Blocked", Modifier.size(15.dp), tint = colors.danger)
-                    Spacer(Modifier.width(6.dp))
-                }
-                if (!compact) PriorityGlyph(task.priority)
+                // The overflow menu stays top-right in both densities, so it is
+                // always reachable — compact must not hide the way out.
+                topTrailing?.invoke()
             }
             Text(
                 task.title,
                 color = colors.text,
-                fontSize = 0.92.rem,
+                fontSize = 0.94.rem,
                 fontWeight = FontWeight.SemiBold,
-                lineHeight = 0.92.rem * 1.3f,
-                maxLines = if (compact) 1 else 2,
+                lineHeight = 0.94.rem * 1.4f,
+                maxLines = if (compact) 2 else 3,
                 overflow = TextOverflow.Ellipsis,
                 textDecoration = doneDecoration(done),
             )
+            // Exceptions stay visible in both densities: they are the reason to
+            // look at the card at all.
+            if (task.isBlocked && agile.features.blockers) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(HeroIcons.NoSymbol, null, Modifier.size(13.dp), tint = colors.warning)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Blocked", color = colors.warning, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                }
+            }
+            if (overdue) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(HeroIcons.Clock, null, Modifier.size(13.dp), tint = colors.danger)
+                    Spacer(Modifier.width(4.dp))
+                    // The absolute date, not `due`: formatDueDate already says
+                    // "3d overdue" for exactly these dates.
+                    Text("Overdue · ${formatDate(task.dueDate)}", color = colors.danger, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
             if (compact) {
-                // Compact stops here: key, title, points. Nothing else.
+                // Compact stops here: key, title, points and the exceptions.
                 return@Column
             }
-            if (showStatus) {
-                stateOf(task, agile)?.let { StatusPill(stateLabel(it), hexColor(it.color, colors.textMuted)) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (showStatus) {
+                    stateOf(task, agile)?.let { StatusPill(stateLabel(it), hexColor(it.color, colors.textMuted)) }
+                }
+                PriorityGlyph(task.priority)
             }
             if (task.labels.isNotEmpty()) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    task.labels.take(3).forEach { LabelPill(it) }
-                    if (task.labels.size > 3) Text("+${task.labels.size - 3}", color = colors.textMuted, fontSize = 0.68.rem, fontWeight = FontWeight.SemiBold)
+                    task.labels.take(2).forEach { LabelPill(it) }
+                    if (task.labels.size > 2) Text("+${task.labels.size - 2}", color = colors.textMuted, fontSize = 0.68.rem, fontWeight = FontWeight.SemiBold)
                 }
             }
             Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -467,7 +494,9 @@ internal fun TaskCardM3(
                     } else {
                         MetaChip(HeroIcons.User, "Unassigned", colors.textMuted, italic = true)
                     }
-                    due?.let { MetaChip(HeroIcons.CalendarDays, it, if (overdue) colors.danger else colors.textMuted, bold = overdue) }
+                    // Overdue is already stated above, so the footer only carries
+                    // the plain due date.
+                    if (!overdue) due?.let { MetaChip(HeroIcons.CalendarDays, it, colors.textMuted) }
                 }
                 if (onComments != null) {
                     Row(

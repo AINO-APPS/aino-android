@@ -438,6 +438,14 @@ private fun BacklogRow(
                     Text("Schedule", color = colors.primaryLight, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
             },
+            // Long-press is not discoverable on its own, so the same actions are
+            // always one visible tap away.
+            topTrailing = {
+                Box(
+                    Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "More actions", onClick = onActions),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(HeroIcons.EllipsisVertical, null, Modifier.size(18.dp), tint = colors.textMuted) }
+            },
         )
     }
 }
