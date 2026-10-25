@@ -95,6 +95,8 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
                 Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     WeekStrip(today, ui.scheduled, onPick = ::jumpTo)
                     ActiveFilterChips(ui, viewModel, Modifier.padding(horizontal = 16.dp))
+                    // Read-only context: why a day has no capacity (D51).
+                    if (ui.overlays.isNotEmpty()) OverlayStrip(ui, viewModel, Modifier.padding(horizontal = 16.dp))
                 }
             }
             ui.error?.let { item(key = "error") { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) } }
@@ -148,6 +150,48 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
             ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { actionsFor = null; viewModel.openComments(task.id) }
             if (ui.userId != null && ui.userId == task.userId) {
                 ActionRow(HeroIcons.Trash, "Delete", danger = true) { actionsFor = null; viewModel.requestDelete(task) }
+            }
+        }
+    }
+}
+
+/**
+ * Read-only background context for the schedule: approved leave, holidays and
+ * booked meetings, each independently toggleable (D51). These explain why a
+ * day has no capacity; they never block planning onto it.
+ */
+@Composable
+private fun OverlayStrip(ui: TaskUiState, viewModel: TaskViewModel, modifier: Modifier = Modifier) {
+    val colors = LocalWebColors.current
+    val types = remember(ui.overlays) { ui.overlays.map { it.type }.distinct() }
+    Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        types.forEach { type ->
+            val on = type in ui.overlayTypes
+            val tint = when (type) {
+                "leave" -> colors.warning
+                "holiday" -> colors.success
+                else -> colors.primaryLight
+            }
+            Row(
+                Modifier
+                    .clip(ChipShape)
+                    .background(if (on) tint.copy(alpha = 0.16f) else colors.bg)
+                    .clickable(
+                        onClickLabel = "${if (on) "Hide" else "Show"} $type overlay",
+                        role = androidx.compose.ui.semantics.Role.Checkbox,
+                    ) { viewModel.toggleOverlayType(type) }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(8.dp).background(if (on) tint else colors.textMuted, CircleShape))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    type.replaceFirstChar { it.uppercase() },
+                    color = if (on) colors.textSecondary else colors.textMuted,
+                    fontSize = 0.74.rem,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                )
             }
         }
     }
@@ -264,6 +308,8 @@ private fun ScheduledRow(
             showStatus = true,
             onLongPress = onActions,
             onComments = { viewModel.openComments(task.id) },
+            compact = ui.compact,
+            attribution = ui.attribution[task.id],
             trailing = {
                 Spacer(Modifier.width(6.dp))
                 Row(

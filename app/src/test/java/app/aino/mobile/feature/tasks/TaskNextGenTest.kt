@@ -239,4 +239,48 @@ class TaskNextGenTest {
         assertEquals(120, decoded.estimatedMinutes)
         assertEquals(45, decoded.loggedMinutes)
     }
+
+    // ── The Compose layer's own rules ────────────────────────────────────
+
+    @Test
+    fun manualOrderSortsByTheServerRank() {
+        val tasks = listOf(
+            task(id = 1).copy(rank = "0|hzzzzz:"),
+            task(id = 2).copy(rank = "0|i00000:"),
+            task(id = 3).copy(rank = "0|hzzzz0:"),
+        )
+        val ordered = sortBacklog(tasks, BacklogSort.Rank).map { it.id }
+        // LexoRank is a string order, not a numeric one.
+        assertEquals(listOf(3L, 1L, 2L), ordered)
+    }
+
+    @Test
+    fun manualOrderIsNotGrouped() {
+        // Grouping is a property of the priority and due-date sorts only; a
+        // ranked list must stay flat so a drag maps to one position.
+        assertNull(groupBacklog(listOf(task()), BacklogSort.Rank))
+    }
+
+    @Test
+    fun minutesReadAsHoursAndMinutes() {
+        assertEquals("0m", formatMinutes(0))
+        assertEquals("25m", formatMinutes(25))
+        assertEquals("1h", formatMinutes(60))
+        assertEquals("1h 25m", formatMinutes(85))
+    }
+
+    @Test
+    fun theSprintTabHasBothSurfaces() {
+        assertEquals(SprintView.Board, SprintView.fromKey("board"))
+        assertEquals(SprintView.Plan, SprintView.fromKey("plan"))
+        assertNull(SprintView.fromKey("nonsense"))
+    }
+
+    @Test
+    fun anUnknownDensityDoesNotSilentlyCompact() {
+        assertTrue(TaskPreferences(cardDensity = "compact").isCompact)
+        assertFalse(TaskPreferences(cardDensity = "comfortable").isCompact)
+        // An unknown value from a newer server must not silently compact.
+        assertFalse(TaskPreferences(cardDensity = "spacious").isCompact)
+    }
 }

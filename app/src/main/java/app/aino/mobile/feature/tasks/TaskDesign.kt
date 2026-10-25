@@ -361,6 +361,10 @@ internal fun TaskCardM3(
     onLongPress: (() -> Unit)? = null,
     onComments: (() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    /** Compact keeps key, title and points; comfortable adds the rest (D25). */
+    compact: Boolean = false,
+    /** "Updated by <name>" from a realtime delta; fades on its own (D48). */
+    attribution: String? = null,
 ) {
     val colors = LocalWebColors.current
     val haptics = LocalHapticFeedback.current
@@ -389,7 +393,17 @@ internal fun TaskCardM3(
             .alpha(if (done) 0.65f else 1f),
     ) {
         Box(Modifier.width(4.dp).fillMaxHeight().background(colors.tone(pri.tone)))
-        Column(Modifier.weight(1f).padding(start = 12.dp, end = 12.dp, top = 11.dp, bottom = 11.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(
+                    start = 12.dp,
+                    end = 12.dp,
+                    top = if (compact) 8.dp else 11.dp,
+                    bottom = if (compact) 8.dp else 11.dp,
+                ),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 6.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                     val projectColor = task.project?.color?.let { hexColor(it) }
@@ -401,7 +415,7 @@ internal fun TaskCardM3(
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                     )
-                    if (type != null) {
+                    if (!compact && type != null) {
                         Dot()
                         Box(Modifier.size(7.dp).background(hexColor(type.color), CircleShape))
                         Spacer(Modifier.width(4.dp))
@@ -412,11 +426,11 @@ internal fun TaskCardM3(
                         Text("$points ${agile.unitLabel}", color = colors.textMuted, fontSize = 0.72.rem, maxLines = 1)
                     }
                 }
-                if (task.isBlocked && agile.features.blockers) {
+                if (!compact && task.isBlocked && agile.features.blockers) {
                     Icon(HeroIcons.NoSymbol, "Blocked", Modifier.size(15.dp), tint = colors.danger)
                     Spacer(Modifier.width(6.dp))
                 }
-                PriorityGlyph(task.priority)
+                if (!compact) PriorityGlyph(task.priority)
             }
             Text(
                 task.title,
@@ -424,10 +438,14 @@ internal fun TaskCardM3(
                 fontSize = 0.92.rem,
                 fontWeight = FontWeight.SemiBold,
                 lineHeight = 0.92.rem * 1.3f,
-                maxLines = 2,
+                maxLines = if (compact) 1 else 2,
                 overflow = TextOverflow.Ellipsis,
                 textDecoration = doneDecoration(done),
             )
+            if (compact) {
+                // Compact stops here: key, title, points. Nothing else.
+                return@Column
+            }
             if (showStatus) {
                 stateOf(task, agile)?.let { StatusPill(stateLabel(it), hexColor(it.color, colors.textMuted)) }
             }
@@ -466,6 +484,17 @@ internal fun TaskCardM3(
                     MetaChip(HeroIcons.ChatBubbleOvalLeft, "${task.commentCount}", colors.textMuted)
                 }
                 trailing?.invoke()
+            }
+            // Non-blocking attribution: a teammate changed this card just now.
+            if (attribution != null) {
+                Text(
+                    "Updated by $attribution",
+                    color = colors.primary,
+                    fontSize = 0.68.rem,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

@@ -91,6 +91,8 @@ data class TaskUiState(
     val agile: AgileConfig = AgileConfig(),
     // Page.
     val tab: TaskTab = TaskTab.Backlog,
+    /** Sprint tab shows the board or the split planner (D21). */
+    val sprintView: SprintView = SprintView.Board,
     val selectedSprintId: Long? = null,
     val filters: TaskFilters = TaskFilters(),
     val sheet: TaskSheet? = null,
@@ -155,6 +157,8 @@ data class TaskUiState(
     val completed: List<Task> = emptyList(),
     val completedCount: Int = 0,
     val completedLoading: Boolean = false,
+    /** True once "View all completed" has dropped the recent-window filter. */
+    val completedShowingAll: Boolean = false,
     /** Multi-select for bulk actions. */
     val selectedIds: Set<Long> = emptySet(),
     /** Epics with their rollups, for the epic filter. */
@@ -162,6 +166,8 @@ data class TaskUiState(
     val selectedEpicId: Long? = null,
     /** Read-only background context on the schedule. */
     val overlays: List<ScheduleOverlay> = emptyList(),
+    /** Which overlay types are currently shown; each toggles independently. */
+    val overlayTypes: Set<String> = setOf("leave", "holiday", "meeting"),
     /** The carryover pre-flight shown before a sprint is completed. */
     val completionPreview: CompletionPreview? = null,
     /** Committed points and the scope delta for the selected sprint. */
@@ -547,6 +553,10 @@ class TaskViewModel(
         val gen = scheduledGen.incrementAndGet()
         scheduledJob = io {
             val (from, to) = scheduledWindow()
+            // Overlays are read-only context for the same window, so they load
+            // alongside the tasks rather than on a second round trip.
+            runCatching { repository.loadScheduleOverlays(from.toString(), to.toString()) }
+                .onSuccess { list -> _ui.update { it.copy(overlays = list) } }
             runCatching { repository.loadScheduled(from, to, _ui.value.filters) }.fold(
                 onSuccess = { list -> if (gen == scheduledGen.get()) _ui.update { it.copy(scheduled = list, scheduledLoading = false, scheduledLoaded = true) } },
                 onFailure = {
@@ -563,6 +573,32 @@ class TaskViewModel(
     fun showScheduled(date: String?) {
         _ui.update { it.copy(tab = TaskTab.Scheduled, scheduledFocus = date, searchOpen = false) }
         loadScheduled()
+    }
+
+    /** Switch the Sprint tab between the board and the split planner. */
+    fun setSprintView(view: SprintView) {
+        _ui.update { it.copy(sprintView = view) }
+        if (view == SprintView.Plan) {
+            // The planner needs the ranked backlog beside the sprint.
+            if (_ui.value.backlog.isEmpty()) loadBacklog()
+            _ui.value.selectedSprintId?.let { loadBaseline(it) }
+        }
+    }
+
+    /** The sprint goal is editable inline from the planner. */
+    fun saveSprintGoal(sprintId: Long, goal: String) {
+        val trimmed = goal.trim()
+        io {
+            runCatching { repository.updateSprintGoal(sprintId, trimmed) }.fold(
+                onSuccess = { updated ->
+                    val saved = updated.sprint?.goal ?: trimmed
+                    _ui.update { s ->
+                        s.copy(sprints = s.sprints.map { if (it.id == sprintId) it.copy(goal = saved) else it })
+                    }
+                },
+                onFailure = { fail(failure(it, "Could not save the sprint goal")) },
+            )
+        }
     }
 
     fun consumeScheduledFocus() = _ui.update { it.copy(scheduledFocus = null) }
@@ -815,10 +851,13 @@ class TaskViewModel(
             val options = runCatching(repository::loadTeamSprints).getOrDefault(emptyList())
                 .filter { it.id != sprint.id && it.status != "completed" }
             _ui.update { it.copy(rolloverOptions = options) }
+            // The pre-flight summary is what makes the dialog honest (D32).
+            runCatching { repository.loadCompletionPreview(sprint.id) }
+                .onSuccess { preview -> _ui.update { it.copy(completionPreview = preview) } }
         }
     }
 
-    fun cancelComplete() = _ui.update { it.copy(completing = false) }
+    fun cancelComplete() = _ui.update { it.copy(completing = false, completionPreview = null) }
 
     fun setRollover(value: String) = _ui.update { it.copy(rolloverTo = value) }
 
@@ -1038,6 +1077,8 @@ class TaskViewModel(
             )
             _ui.update { it.copy(detailLoading = false) }
             refreshHistory(task.id)
+            // The timer state belongs to the open task, so it loads with it.
+            loadTimer(task.id)
         }
     }
 
@@ -1286,11 +1327,9 @@ class TaskViewModel(
     }
 
     /** The completed window: the last 30 days, matching web's default. */
-    fun loadCompleted() {
+    fun loadCompleted(all: Boolean = false) {
         _ui.update { it.copy(completedLoading = true) }
         io {
-            val today = java.time.LocalDate.now()
-            val from = today.minusDays(30)
             runCatching {
                 repository.loadBacklog(TaskFilters(completed = "only"), limit = 50, offset = 0)
             }.fold(
@@ -1300,13 +1339,12 @@ class TaskViewModel(
                             completed = response.tasks,
                             completedCount = response.completedCount ?: response.tasks.size,
                             completedLoading = false,
+                            completedShowingAll = all,
                         )
                     }
                 },
                 onFailure = { _ui.update { it.copy(completedLoading = false) } },
             )
-            // `from` is kept for parity with web's window; the server applies it.
-            from.toString()
         }
     }
 
@@ -1334,6 +1372,18 @@ class TaskViewModel(
                 onFailure = { fail(failure(it, "Bulk action failed")) },
             )
         }
+    }
+
+    /** Deleting a batch is destructive, so it asks first. */
+    fun confirmBulkDelete() {
+        val count = _ui.value.selectedIds.size
+        if (count == 0) return
+        confirm(
+            "Delete $count ${if (count == 1) "ticket" else "tickets"}?",
+            "This cannot be undone.",
+            "Delete",
+            danger = true,
+        ) { bulkAction("delete") }
     }
 
     // ── Ranked reorder ───────────────────────────────────────────────────
@@ -1367,6 +1417,13 @@ class TaskViewModel(
             runCatching { repository.loadScheduleOverlays(from, to) }.onSuccess { list ->
                 _ui.update { it.copy(overlays = list) }
             }
+        }
+    }
+
+    /** Each overlay type toggles independently; the choice is per session. */
+    fun toggleOverlayType(type: String) {
+        _ui.update {
+            it.copy(overlayTypes = if (type in it.overlayTypes) it.overlayTypes - type else it.overlayTypes + type)
         }
     }
 

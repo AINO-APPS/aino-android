@@ -388,6 +388,10 @@ data class TaskCommentPayload(val content: String)
 @Serializable
 data class SchedulePayload(val date: String)
 
+/** `PUT /sprints/:id` — the only field the planner edits inline. */
+@Serializable
+data class SprintGoalPayload(val goal: String)
+
 @Serializable
 data class AssignSprintPayload(@SerialName("sprint_id") val sprintId: Long?)
 

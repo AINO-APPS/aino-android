@@ -192,7 +192,7 @@ fun TasksScreen(
                     userScrollEnabled = true,
                 ) { page ->
                     when (tabs.getOrNull(page)) {
-                        TaskTab.Sprint -> SprintBoard(ui, viewModel, open)
+                        TaskTab.Sprint -> if (ui.sprintView == SprintView.Plan) SprintPlanPage(ui, viewModel, open) else SprintBoard(ui, viewModel, open)
                         TaskTab.Backlog -> BacklogPage(ui, viewModel, open)
                         TaskTab.Scheduled -> ScheduledPage(ui, viewModel, open)
                         TaskTab.ServiceDesk -> serviceDesk()
@@ -338,6 +338,110 @@ internal fun ActiveFilterChips(ui: TaskUiState, viewModel: TaskViewModel, modifi
 
 // ── Search overlay (`useGlobalSearch`) ───────────────────────────────────
 
+/**
+ * The palette's launcher body: views and actions, shown before a query is
+ * typed and when a query matches no task (D29). Tasks come first once the
+ * user types, because that is what people search for.
+ */
+@Composable
+private fun CommandPaletteBody(
+    ui: TaskUiState,
+    viewModel: TaskViewModel,
+    onOpen: (Task) -> Unit,
+    noResultsFor: String? = null,
+) {
+    val colors = LocalWebColors.current
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (noResultsFor != null) {
+            item {
+                Text(
+                    "No task matches “$noResultsFor”",
+                    color = colors.textMuted,
+                    fontSize = 0.78.rem,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            }
+        }
+        item { PaletteGroupTitle("Views") }
+        items(ui.visibleTabs, key = { "v-${it.key}" }) { tab ->
+            PaletteRow(tabIcon(tab), tabLabel(tab), "Go to ${tabLabel(tab)}") {
+                viewModel.selectTab(tab)
+                viewModel.closeSearch()
+            }
+        }
+        item { PaletteGroupTitle("Actions") }
+        item {
+            PaletteRow(HeroIcons.Plus, "New ticket", "Create a backlog ticket") {
+                viewModel.closeSearch()
+                viewModel.openSheet(TaskSheet.CreateTicket)
+            }
+        }
+        item {
+            PaletteRow(
+                if (ui.compact) HeroIcons.QueueList else HeroIcons.Bars3BottomLeft,
+                if (ui.compact) "Comfortable cards" else "Compact cards",
+                "Change card density",
+            ) { viewModel.setCardDensity(!ui.compact) }
+        }
+        item {
+            PaletteRow(
+                if (ui.preferences.showCompleted) HeroIcons.EyeSlash else HeroIcons.Eye,
+                if (ui.preferences.showCompleted) "Hide completed" else "Show completed",
+                "Toggle the completed section",
+            ) { viewModel.setShowCompleted(!ui.preferences.showCompleted) }
+        }
+        if (ui.agileEnabled && ui.currentSprint != null) {
+            item {
+                PaletteRow(HeroIcons.PlayCircle, "Start sprint", "Begin the selected sprint") {
+                    viewModel.closeSearch()
+                    viewModel.startSprint()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PaletteGroupTitle(text: String) {
+    Text(
+        text.uppercase(),
+        color = LocalWebColors.current.textMuted,
+        fontSize = 0.66.rem,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.08.rem,
+        modifier = Modifier.padding(top = 10.dp, bottom = 4.dp).semantics { heading() },
+    )
+}
+
+@Composable
+private fun PaletteRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    hint: String,
+    onClick: () -> Unit,
+) {
+    val colors = LocalWebColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(ChipShape)
+            .clickable(onClickLabel = label, onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, null, Modifier.size(17.dp), tint = colors.textMuted)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, color = colors.text, fontSize = 0.86.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(hint, color = colors.textMuted, fontSize = 0.72.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
 @Composable
 private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
@@ -358,9 +462,9 @@ private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Ta
         HorizontalDivider(color = colors.border)
         val q = ui.searchQuery.trim()
         when {
-            q.length < 2 -> TaskEmptyState(HeroIcons.MagnifyingGlass, "Search every task", "Type at least two characters — sprint, backlog and scheduled tasks are all searched.")
+            q.length < 2 -> CommandPaletteBody(ui, viewModel, onOpen)
             ui.searching && ui.searchResults.isEmpty() -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { WebSpinner() }
-            ui.searchResults.isEmpty() -> TaskEmptyState(HeroIcons.MagnifyingGlass, "No results", "Nothing matches “$q”.")
+            ui.searchResults.isEmpty() -> CommandPaletteBody(ui, viewModel, onOpen, noResultsFor = q)
             else -> LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
@@ -374,6 +478,8 @@ private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Ta
                         task, ui.agile,
                         onOpen = { onOpen(task) },
                         showStatus = true,
+                        compact = ui.compact,
+                        attribution = ui.attribution[task.id],
                         trailing = {
                             Spacer(Modifier.width(6.dp))
                             MetaChip(

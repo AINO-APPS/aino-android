@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -83,6 +84,7 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
     }
 
     TaskPage(loading = ui.backlogLoading || ui.refreshing, onRefresh = { viewModel.refresh(pull = true) }) {
+        Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize(),
             state = list,
@@ -136,6 +138,14 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                     }
                 }
             }
+
+            // Completed work is hidden by default and lives at the foot of the
+            // list, so it never mixes into the triage queue (D14/D16).
+            item(key = "completed") { CompletedSection(ui, viewModel, onOpen) }
+        }
+
+        // Bulk actions are backlog-only (D23); the bar floats above the list.
+        BulkActionBar(ui, viewModel, Modifier.align(Alignment.BottomCenter))
         }
     }
 
@@ -186,6 +196,107 @@ private fun BacklogControls(ui: TaskUiState, viewModel: TaskViewModel) {
             SortMenu(ui.backlogSort, viewModel::setSort)
         }
         ActiveFilterChips(ui, viewModel, Modifier.padding(horizontal = 16.dp))
+        // Density and epic filter: both are per-user/per-view choices that
+        // apply to every surface, so they sit with the other view controls.
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DensityToggle(ui, viewModel)
+            if (ui.epics.isNotEmpty()) EpicFilterChip(ui, viewModel)
+        }
+    }
+}
+
+/** Comfortable ⇄ Compact. The choice persists per user, shared with web. */
+@Composable
+private fun DensityToggle(ui: TaskUiState, viewModel: TaskViewModel) {
+    val colors = LocalWebColors.current
+    val compact = ui.compact
+    Row(
+        Modifier
+            .clip(ChipShape)
+            .clickable(
+                onClickLabel = if (compact) "Switch to comfortable cards" else "Switch to compact cards",
+                role = androidx.compose.ui.semantics.Role.Switch,
+                onClick = { viewModel.setCardDensity(!compact) },
+            )
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (compact) HeroIcons.Bars3BottomLeft else HeroIcons.QueueList,
+            null,
+            Modifier.size(15.dp),
+            tint = colors.textMuted,
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (compact) "Compact" else "Comfortable",
+            color = colors.textSecondary,
+            fontSize = 0.76.rem,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Narrows the backlog to one epic's children; "All" clears it. */
+@Composable
+private fun EpicFilterChip(ui: TaskUiState, viewModel: TaskViewModel) {
+    val colors = LocalWebColors.current
+    var open by remember { mutableStateOf(false) }
+    val selected = ui.epics.firstOrNull { it.id == ui.selectedEpicId }
+    Box {
+        Row(
+            Modifier
+                .clip(ChipShape)
+                .clickable(
+                    onClickLabel = "Filter by epic, currently ${selected?.title ?: "all"}",
+                    role = androidx.compose.ui.semantics.Role.DropdownList,
+                ) { open = true }
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(HeroIcons.Square3Stack3d, null, Modifier.size(15.dp), tint = colors.textMuted)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                selected?.title ?: "All epics",
+                color = colors.textSecondary,
+                fontSize = 0.76.rem,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 140.dp),
+            )
+            Icon(HeroIcons.ChevronDown, null, Modifier.size(16.dp), tint = colors.textMuted)
+        }
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.background(colors.bgElevated),
+        ) {
+            DropdownMenuItem(
+                text = { Text("All epics", color = colors.text, fontSize = 0.84.rem) },
+                onClick = { viewModel.selectEpic(null); open = false },
+            )
+            ui.epics.forEach { epic ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(epic.title, color = colors.text, fontSize = 0.84.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(
+                                "${epic.doneChildren}/${epic.totalChildren} done · ${epic.percentByPoints}%",
+                                color = colors.textMuted,
+                                fontSize = 0.7.rem,
+                            )
+                        }
+                    },
+                    onClick = { viewModel.selectEpic(epic.id); open = false },
+                )
+            }
+        }
     }
 }
 
@@ -309,7 +420,10 @@ private fun BacklogRow(
             showStatus = task.workflowStateKey != null && task.workflowStateCategory != "open",
             onLongPress = onActions,
             onComments = { viewModel.openComments(task.id) },
+            compact = ui.compact,
+            attribution = ui.attribution[task.id],
             trailing = {
+                SelectionToggle(task.id in ui.selectedIds) { viewModel.toggleSelection(task.id) }
                 Spacer(Modifier.width(6.dp))
                 Row(
                     Modifier
@@ -349,6 +463,24 @@ private fun BacklogActionsSheet(
         ActionRow(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") {
             clipboard.setText(androidx.compose.ui.text.AnnotatedString(task.displayKey))
             onDismiss()
+        }
+        // Manual reorder: the server computes the rank from the neighbours, so
+        // the client never invents a position (D50).
+        if (ui.backlogSort == BacklogSort.Rank) {
+            val ordered = ui.sortedBacklog
+            val index = ordered.indexOfFirst { it.id == task.id }
+            if (index > 0) {
+                ActionRow(HeroIcons.ChevronUp, "Move up") {
+                    onDismiss()
+                    viewModel.reorder(task.id, ordered[index - 1].id, ordered.getOrNull(index - 2)?.id)
+                }
+            }
+            if (index >= 0 && index < ordered.size - 1) {
+                ActionRow(HeroIcons.ChevronDown, "Move down") {
+                    onDismiss()
+                    viewModel.reorder(task.id, ordered.getOrNull(index + 2)?.id, ordered[index + 1].id)
+                }
+            }
         }
         if (ui.userId != null && ui.userId == task.userId) {
             ActionRow(HeroIcons.Trash, "Delete", danger = true) { onDismiss(); viewModel.requestDelete(task) }

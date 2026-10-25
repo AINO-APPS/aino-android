@@ -144,8 +144,11 @@ class TaskRepository(
     // @api POST sprints/:id/pause
     // @api POST sprints/:id/resume
     fun pauseSprint(id: Long): SprintEnvelope = mutate("sprints/$id/pause", Unit)
-
     fun resumeSprint(id: Long): SprintEnvelope = mutate("sprints/$id/resume", Unit)
+
+    /** The sprint goal is editable inline from the planner (D21). */
+    fun updateSprintGoal(id: Long, goal: String): SprintEnvelope =
+        mutate("sprints/$id", SprintGoalPayload(goal), "PUT")
 
     fun updateStatus(id: Long, status: String): Task =
         mutate("tasks/$id/status", TaskStatusPayload(status), "PATCH")

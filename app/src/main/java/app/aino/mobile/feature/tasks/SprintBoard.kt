@@ -194,6 +194,8 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                         onOpen = { onOpen(task) },
                                         highlighted = task.id in ui.recentlyUpdated,
                                         onComments = { viewModel.openComments(task.id) },
+                                        compact = ui.compact,
+                                        attribution = ui.attribution[task.id],
                                         trailing = {
                                             Box(
                                                 Modifier.size(32.dp).clip(CircleShape).clickable(onClickLabel = "Task actions") { actionsFor = task },
@@ -314,6 +316,42 @@ private fun SprintHeaderCard(ui: TaskUiState, viewModel: TaskViewModel, expanded
             }
         }
         Column(Modifier.padding(horizontal = 14.dp).padding(bottom = 12.dp)) {
+            // Board ⇄ Plan: the two surfaces of the Sprint tab (D21).
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SprintView.entries.forEach { view ->
+                    val selected = ui.sprintView == view
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .clip(ChipShape)
+                            .background(if (selected) colors.primary.copy(alpha = 0.14f) else colors.bg)
+                            .clickable(
+                                onClickLabel = "Show ${view.key}",
+                                role = androidx.compose.ui.semantics.Role.Tab,
+                            ) { viewModel.setSprintView(view) }
+                            .padding(vertical = 7.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            if (view == SprintView.Board) HeroIcons.QueueList else HeroIcons.ArrowsRightLeft,
+                            null,
+                            Modifier.size(14.dp),
+                            tint = if (selected) colors.primary else colors.textMuted,
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            if (view == SprintView.Board) "Board" else "Plan",
+                            color = if (selected) colors.primary else colors.textSecondary,
+                            fontSize = 0.76.rem,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LinearProgressIndicator(
                     progress = { stats.percent / 100f },
@@ -382,6 +420,40 @@ private fun SprintLifecycleControls(ui: TaskUiState, sprint: AvailableSprint, vi
                 PillButton("Complete", viewModel::beginComplete, Modifier.weight(1f), primary = true, icon = HeroIcons.CheckCircle, enabled = !ui.lifecycleBusy)
             }
             ui.completing -> {
+                // Pre-flight (D32): what moves, where to, and what is dropped —
+                // shown before the sprint is actually completed.
+                ui.completionPreview?.let { preview ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(CardShape)
+                            .background(colors.bg)
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            "${preview.doneTasks} of ${preview.totalTasks} done" +
+                                if (preview.velocityPoints > 0) " · ${formatPoints(preview.velocityPoints)} ${ui.agile.unitLabel}" else "",
+                            color = colors.textSecondary,
+                            fontSize = 0.8.rem,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        if (preview.incompleteTasks > 0) {
+                            Text(
+                                "${preview.incompleteTasks} unfinished (${formatPoints(preview.incompletePoints)} ${ui.agile.unitLabel}) will move",
+                                color = colors.warning,
+                                fontSize = 0.76.rem,
+                            )
+                        } else {
+                            Text("Nothing carries over", color = colors.success, fontSize = 0.76.rem)
+                        }
+                        Text(
+                            "Finished work stays with this sprint.",
+                            color = colors.textMuted,
+                            fontSize = 0.72.rem,
+                        )
+                    }
+                }
                 val target = if (ui.rolloverTo == "backlog") "Backlog" else ui.rolloverOptions.firstOrNull { it.id.toString() == ui.rolloverTo }?.name ?: "Backlog"
                 PropertyRow(HeroIcons.ArrowTurnDownRight, "Roll over to", { rolloverPicker = true }) { PropertyText(target) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

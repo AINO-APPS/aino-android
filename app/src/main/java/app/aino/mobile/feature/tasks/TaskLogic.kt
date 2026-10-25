@@ -18,6 +18,15 @@ enum class TaskTab(val key: String) {
     }
 }
 
+/** The Sprint tab has two surfaces: the board and the split planner (D21). */
+enum class SprintView(val key: String) {
+    Board("board"), Plan("plan");
+
+    companion object {
+        fun fromKey(key: String?): SprintView? = entries.firstOrNull { it.key == key }
+    }
+}
+
 /** `tasks/constants.ts` PRIORITIES — colour is a web token name resolved by the UI. */
 data class PriorityOption(val value: String, val label: String, val icon: String, val tone: Tone)
 
@@ -134,6 +143,8 @@ private fun priorityRank(priority: String): Int = when (priority) { "high" -> 0;
 
 /** `useBacklog` sort options, in `<select>` order. */
 enum class BacklogSort(val key: String, val label: String) {
+    /** Manual order: the server's LexoRank, shared by backlog and sprint (D8). */
+    Rank("rank", "Manual order"),
     Priority("priority", "Priority"),
     Newest("newest", "Newest first"),
     Oldest("oldest", "Oldest first"),
@@ -149,6 +160,8 @@ private fun instantOf(value: String?): Instant? = value?.let {
 
 /** `sortedBacklogTasks`; stable like `Array.prototype.sort`. */
 fun sortBacklog(tasks: List<Task>, sort: BacklogSort): List<Task> = when (sort) {
+    // Manual order is the server's LexoRank; the list arrives already ranked.
+    BacklogSort.Rank -> tasks.sortedBy { it.rank.orEmpty() }
     BacklogSort.Priority -> tasks.sortedBy { mapOf("high" to 0, "medium" to 1, "low" to 2)[it.priority] ?: 1 }
     BacklogSort.Newest -> tasks.sortedByDescending { instantOf(it.createdAt)?.toEpochMilli() ?: 0L }
     BacklogSort.Oldest -> tasks.sortedBy { instantOf(it.createdAt)?.toEpochMilli() ?: 0L }

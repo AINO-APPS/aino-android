@@ -365,6 +365,8 @@ private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel
         }
         task.createdAt?.let { PropertyRow(HeroIcons.Clock, "Created", null) { PropertyText(formatLocaleString(it), muted = true) } }
         task.completedAt?.let { PropertyRow(HeroIcons.CheckCircle, "Completed", null) { PropertyText(formatLocaleString(it), muted = true) } }
+        // Logged against estimate, with the timer startable from the task (D13).
+        TaskTimePanel(task, ui, viewModel)
     }
 
     when (picker) {
