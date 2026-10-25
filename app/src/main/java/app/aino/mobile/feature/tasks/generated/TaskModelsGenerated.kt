@@ -13,7 +13,6 @@ data class Task(
     val title: String,
     val description: String? = null,
     val priority: String,
-    val status: String? = null,
     val workflow_state_id: Int?,
     val workflow_state_key: String? = null,
     val workflow_state_name: String? = null,

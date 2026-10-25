@@ -48,14 +48,18 @@ class TaskSyncTest {
     private fun task(
         id: Long = 1,
         sprintId: Long? = null,
-        date: String? = null,
+        plannedDate: String? = null,
         assignedTo: Long? = null,
         userId: Long? = 9,
         priority: String = "medium",
-        status: String = "pending",
+        workflowStateKey: String? = "pending",
+        completedAt: String? = null,
         title: String = "Fix login",
         labels: List<TaskLabel> = emptyList(),
-    ) = Task(id = id, title = title, sprintId = sprintId, date = date, assignedTo = assignedTo, userId = userId, priority = priority, status = status, labels = labels)
+    ) = Task(
+        id = id, title = title, sprintId = sprintId, plannedDate = plannedDate, assignedTo = assignedTo,
+        userId = userId, priority = priority, workflowStateKey = workflowStateKey, completedAt = completedAt, labels = labels,
+    )
 
     @Test
     fun filtersMirrorTheServerRules() {
@@ -67,8 +71,8 @@ class TaskSyncTest {
         assertTrue(matchesFilters(task(assignedTo = 8), TaskFilters(assignee = "8"), me, true))
         assertFalse(matchesFilters(task(priority = "low"), TaskFilters(priority = "high"), me, true))
         assertTrue(matchesFilters(task(priority = "low"), TaskFilters(priority = "urgent"), me, true))
-        assertFalse(matchesFilters(task(status = "done"), TaskFilters(status = "pending"), me, includeStatus = true))
-        assertTrue(matchesFilters(task(status = "done"), TaskFilters(status = "pending"), me, includeStatus = false))
+        assertFalse(matchesFilters(task(workflowStateKey = "done"), TaskFilters(status = "pending"), me, includeStatus = true))
+        assertTrue(matchesFilters(task(workflowStateKey = "done"), TaskFilters(status = "pending"), me, includeStatus = false))
         assertTrue(matchesFilters(task(labels = listOf(TaskLabel(3, "ui"))), TaskFilters(label = "3"), me, true))
         assertFalse(matchesFilters(task(), TaskFilters(label = "3"), me, true))
         assertTrue(matchesFilters(task(title = "Fix LOGIN flow"), TaskFilters(search = "login"), me, true))
@@ -83,7 +87,7 @@ class TaskSyncTest {
         assertTrue(belongsToBacklog(task(), TaskFilters(), null))
         assertFalse(belongsToBacklog(task(sprintId = 4), TaskFilters(), null))
         // A planned date is metadata and never removes a task from the backlog (D2).
-        assertTrue(belongsToBacklog(task(date = "2026-10-06"), TaskFilters(), null))
+        assertTrue(belongsToBacklog(task(plannedDate = "2026-10-06"), TaskFilters(), null))
     }
 
     @Test
@@ -123,12 +127,12 @@ class TaskSyncTest {
         )
         val groups = groupScheduled(
             listOf(
-                task(1, date = "2026-10-04"),                       // overdue
-                task(2, date = "2026-10-03", status = "done"),      // past + done → hidden
-                task(3, date = "2026-10-06", priority = "low"),
-                task(4, date = "2026-10-06", priority = "high"),
-                task(5, date = "2026-10-07"),
-                task(6, date = "2026-10-12"),
+                task(1, plannedDate = "2026-10-04"),                       // overdue
+                task(2, plannedDate = "2026-10-03", completedAt = "2026-10-03T10:00:00Z"), // past + done → hidden
+                task(3, plannedDate = "2026-10-06", priority = "low"),
+                task(4, plannedDate = "2026-10-06", priority = "high"),
+                task(5, plannedDate = "2026-10-07"),
+                task(6, plannedDate = "2026-10-12"),
                 task(7),                                            // undated → ignored
             ),
             today,
@@ -136,8 +140,8 @@ class TaskSyncTest {
         assertEquals(listOf("Overdue", "Today", "Tomorrow", "Mon, Oct 12"), groups.map { it.label })
         assertEquals(listOf(1L), groups[0].tasks.map { it.id })
         assertEquals(listOf(4L, 3L), groups[1].tasks.map { it.id })
-        assertTrue(belongsToScheduled(task(date = "2026-10-07"), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
-        assertFalse(belongsToScheduled(task(date = "2026-12-25"), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
+        assertTrue(belongsToScheduled(task(plannedDate = "2026-10-07"), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
+        assertFalse(belongsToScheduled(task(plannedDate = "2026-12-25"), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
         assertFalse(belongsToScheduled(task(), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
         assertEquals(1, filterCount(TaskFilters(status = "done"), TaskTab.Scheduled))
         assertEquals(TaskTab.Scheduled, TaskTab.fromKey("scheduled"))

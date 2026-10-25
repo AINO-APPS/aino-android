@@ -18,7 +18,7 @@ class TaskNextGenTest {
     private fun task(
         id: Long = 1,
         title: String = "Refund webhook",
-        status: String = "pending",
+        workflowStateKey: String = "pending",
         plannedDate: String? = null,
         sprintId: Long? = null,
         completedAt: String? = null,
@@ -27,7 +27,7 @@ class TaskNextGenTest {
     ) = Task(
         id = id,
         title = title,
-        status = status,
+        workflowStateKey = workflowStateKey,
         plannedDate = plannedDate,
         sprintId = sprintId,
         completedAt = completedAt,
@@ -59,11 +59,11 @@ class TaskNextGenTest {
 
     @Test
     fun aDeltaPatchesOnlyTheFieldsItCarries() {
-        val before = task(title = "Original", status = "pending")
+        val before = task(title = "Original", workflowStateKey = "pending")
         val delta = parseTaskDelta(json("""{"taskId":1,"fields":{"title":"Renamed"}}"""))!!
         val after = applyTaskDelta(before, delta)
         assertEquals("Renamed", after.title)
-        assertEquals("pending", after.status)
+        assertEquals("pending", after.workflowStateKey)
     }
 
     @Test
@@ -108,7 +108,7 @@ class TaskNextGenTest {
     @Test
     fun theDeltaAllowListMatchesTheServer() {
         // Mirrors server/modules/tasks/tasks.deltas.ts and the web mirror.
-        assertEquals(19, DELTA_FIELDS.size)
+        assertEquals(18, DELTA_FIELDS.size)
         assertTrue("planned_date" in DELTA_FIELDS)
         assertTrue("logged_minutes" in DELTA_FIELDS)
         assertFalse("org_id" in DELTA_FIELDS)

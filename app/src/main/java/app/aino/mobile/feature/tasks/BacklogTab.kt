@@ -160,7 +160,7 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
 private fun BacklogControls(ui: TaskUiState, viewModel: TaskViewModel) {
     val colors = LocalWebColors.current
     val all = ui.backlogSummary.total.takeIf { it > 0 } ?: ui.backlogTotal.takeIf { it > 0 } ?: ui.backlog.size
-    val overdue = ui.backlog.count { it.status != "done" && isDueOverdue(it.dueDate) }
+    val overdue = ui.backlog.count { !it.isCompleted && isDueOverdue(it.dueDate) }
     val unassigned = ui.backlog.count { it.assignedTo == null && it.assignee == null }
     Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // Priority filter gets the full width; sorting lives on the summary line below.
@@ -306,7 +306,7 @@ private fun BacklogRow(
             task, ui.agile,
             onOpen = { onOpen(task) },
             highlighted = task.id in ui.recentlyUpdated,
-            showStatus = task.status != "pending",
+            showStatus = task.workflowStateKey != null && task.workflowStateCategory != "open",
             onLongPress = onActions,
             onComments = { viewModel.openComments(task.id) },
             trailing = {

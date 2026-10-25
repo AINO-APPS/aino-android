@@ -42,11 +42,10 @@ val COLUMNS = listOf(
 
 fun priorityOf(value: String?): PriorityOption = PRIORITIES.firstOrNull { it.value == value } ?: PRIORITIES[1]
 
-fun columnOf(status: String?): ColumnDef = COLUMNS.firstOrNull { it.id == status } ?: COLUMNS[0]
+fun columnOf(stateKey: String?): ColumnDef = COLUMNS.firstOrNull { it.id == stateKey } ?: COLUMNS[0]
 
 /** The server's allow-list on `GET /tasks` and `GET /tasks/backlog`. */
 private val SERVER_PRIORITIES = setOf("low", "medium", "high")
-private val SERVER_STATUSES = setOf("pending", "in_progress", "in_review", "done")
 
 /** `useFilters` state; empty string = "All". */
 data class TaskFilters(
@@ -79,7 +78,7 @@ private fun filterParams(filters: TaskFilters, includeStatus: Boolean): List<Pai
     if (filters.assignee.isNotEmpty()) add("assignee" to filters.assignee)
     if (filters.label.isNotEmpty()) add("label" to filters.label)
     filters.priority.takeIf { it in SERVER_PRIORITIES }?.let { add("priority" to it) }
-    if (includeStatus) filters.status.takeIf { it in SERVER_STATUSES }?.let { add("status" to it) }
+    if (includeStatus) filters.status.takeIf(String::isNotEmpty)?.let { add("status" to it) }
     filters.search.trim().takeIf(String::isNotEmpty)?.let { add("search" to it) }
 }
 
@@ -111,8 +110,8 @@ private val DAY_HEADER = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)
  * today onward in date order. Completed past tasks are dropped — they are history.
  */
 fun groupScheduled(tasks: List<Task>, today: LocalDate = LocalDate.now()): List<ScheduledGroup> {
-    val dated = tasks.mapNotNull { t -> localDateOf(t.date)?.let { it to t } }
-    val overdue = dated.filter { (d, t) -> d.isBefore(today) && t.status != "done" }
+    val dated = tasks.mapNotNull { t -> localDateOf(t.plannedDate)?.let { it to t } }
+    val overdue = dated.filter { (d, t) -> d.isBefore(today) && !t.isCompleted }
         .sortedWith(compareBy<Pair<LocalDate, Task>> { it.first }.thenBy { priorityRank(it.second.priority) })
         .map { it.second }
     val upcoming = dated.filter { (d, _) -> !d.isBefore(today) }
@@ -126,7 +125,7 @@ fun groupScheduled(tasks: List<Task>, today: LocalDate = LocalDate.now()): List<
                 1L -> "Tomorrow"
                 else -> day.format(DAY_HEADER)
             }
-            add(ScheduledGroup(day.toString(), label, day, list.sortedWith(compareBy<Task> { it.status == "done" }.thenBy { priorityRank(it.priority) })))
+            add(ScheduledGroup(day.toString(), label, day, list.sortedWith(compareBy<Task> { it.isCompleted }.thenBy { priorityRank(it.priority) })))
         }
     }
 }
@@ -177,7 +176,7 @@ fun groupBacklog(tasks: List<Task>, sort: BacklogSort, today: LocalDate = LocalD
             val due = localDateOf(task.dueDate) ?: return "none"
             val diff = ChronoUnit.DAYS.between(today, due)
             return when {
-                diff < 0 -> if (task.status == "done") "past" else "overdue"
+                diff < 0 -> if (task.isCompleted) "past" else "overdue"
                 diff == 0L -> "today"
                 diff <= 7 -> "week"
                 else -> "later"
@@ -267,9 +266,9 @@ fun canChangeStatus(task: Task, userId: Long?, role: String?): Boolean =
 
 const val STATUS_FORBIDDEN = "Only the assignee or reporter can change the status"
 
-/** KanbanBoard `getColTasks`: by workflow_state_id, else by the legacy status key. */
+/** KanbanBoard `getColTasks`: by workflow_state_id, else by the workflow-state key. */
 fun tasksForColumn(tasks: List<Task>, state: WorkflowState): List<Task> = tasks.filter { t ->
-    (t.workflowStateId != null && state.id != 0L && t.workflowStateId == state.id) || t.status == state.key
+    (t.workflowStateId != null && state.id != 0L && t.workflowStateId == state.id) || t.workflowStateKey == state.key
 }
 
 /** AgilePickers `formatPoints`: 1.00 → "1", 0.50 → "0.5". */
@@ -364,23 +363,23 @@ fun validateComment(content: String): String? {
 /** Local stats recomputation after an optimistic status change. */
 fun recomputeStats(tasks: List<Task>): TaskStats {
     val total = tasks.size
-    val done = tasks.count { it.status == "done" }
-    val inProgress = tasks.count { it.status == "in_progress" }
+    val done = tasks.count { it.isCompleted }
+    val inProgress = tasks.count { it.workflowStateCategory == "in_progress" }
     return TaskStats(total, done, inProgress, if (total > 0) Math.round(done * 100f / total) else 0)
 }
 
 enum class HistoryPart { Plain, Old, New }
 
 private val HISTORY_FIELDS = mapOf(
-    "status" to "status", "title" to "title", "description" to "description", "priority" to "priority",
-    "assigned_to" to "assignee", "due_date" to "due date", "date" to "schedule", "labels" to "labels",
+    "workflow_state" to "status", "title" to "title", "description" to "description", "priority" to "priority",
+    "assigned_to" to "assignee", "due_date" to "due date", "planned_date" to "schedule", "labels" to "labels",
     "story_points" to "story points", "work_item_type" to "work item type", "sprint" to "sprint",
     "parent" to "parent task", "is_blocked" to "blocked status", "project" to "project",
 )
 
 /** TaskDetailModal history `actionText()` as styled runs. */
 fun historyText(h: TaskHistoryEntry): List<Pair<HistoryPart, String>> = when {
-    h.action == "created" && h.field == "date" && !h.oldValue.isNullOrEmpty() ->
+    h.action == "created" && h.field == "planned_date" && !h.oldValue.isNullOrEmpty() ->
         listOf(HistoryPart.Plain to "carried forward from ", HistoryPart.Old to h.oldValue)
     h.action == "created" -> listOf(HistoryPart.Plain to "created this task")
     h.action == "comment_added" -> listOf(HistoryPart.Plain to "added a comment")

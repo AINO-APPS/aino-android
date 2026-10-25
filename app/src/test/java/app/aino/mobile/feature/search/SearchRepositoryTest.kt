@@ -21,8 +21,8 @@ class SearchRepositoryTest {
         val captured = mutableListOf<ApiRequest>()
         val repository = repository(
             captured,
-            """{"tasks":[{"id":5,"title":"Fix login","description":"x","status":"in_progress","priority":"high",
-                         "date":"2026-09-01","due_date":null,"sprint_id":null,"snippet":"<b>Fix</b> login"}],
+            """{"tasks":[{"id":5,"title":"Fix login","description":"x","workflow_state_key":"in_progress","priority":"high",
+                         "planned_date":"2026-09-01","due_date":null,"sprint_id":null,"snippet":"<b>Fix</b> login"}],
                 "notes":[{"id":"pg_1","title":"Plan","snippet":"…the plan","tags":[],"pinned":false,"folderId":null,"updatedAt":null}],
                 "users":[{"id":8,"username":"ana","full_name":"Ana B","email":"a@x.io","avatar":"/uploads/a.png","role":"team_lead"}],
                 "events":[{"id":3,"title":"Review","description":null,"start_time":"2026-09-25T04:00:00.000Z","end_time":null,"all_day":false}],
@@ -37,7 +37,7 @@ class SearchRepositoryTest {
         assertEquals("GET", request.method)
         assertEquals("search?q=fix%20login%20%26%20more", request.path)
         assertEquals("5", results.tasks.single().id)
-        assertEquals("in_progress", results.tasks.single().status)
+        assertEquals("in_progress", results.tasks.single().workflowStateKey)
         assertEquals("pg_1", results.notes.single().id)
         assertEquals("Ana B", results.users.single().fullName)
         assertFalse(results.events.single().allDay)

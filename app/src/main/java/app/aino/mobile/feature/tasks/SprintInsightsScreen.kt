@@ -297,7 +297,7 @@ private fun SprintTicketsTable(tasks: List<Task>, onOpenTask: (Long) -> Unit) {
             tasks.map { t ->
                 listOf(
                     { TicketCell(t.id, t.title, onOpenTask) },
-                    { CellText(INSIGHT_STATUS_LABELS[t.status] ?: t.status) },
+                    { CellText(t.workflowStateKey?.let { key -> INSIGHT_STATUS_LABELS[key] ?: key } ?: "—") },
                     { CellText(t.priority.replaceFirstChar(Char::uppercase), priorityColors[t.priority] ?: Color(0xFF6B7280), FontWeight.Medium) },
                     { CellText(t.storyPoints?.let(::formatPoints) ?: "—") },
                 )

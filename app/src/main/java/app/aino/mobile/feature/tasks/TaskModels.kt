@@ -51,8 +51,6 @@ data class Task(
     val title: String,
     val description: String? = null,
     val priority: String = "medium",
-    val status: String = "pending",
-    val date: String? = null,
     /** Date-only planning metadata. Never affects backlog membership (D2). */
     @SerialName("planned_date") val plannedDate: String? = null,
     @SerialName("due_date") val dueDate: String? = null,
@@ -71,7 +69,10 @@ data class Task(
     @SerialName("project_id") val projectId: Long? = null,
     @SerialName("parent_task_id") val parentTaskId: Long? = null,
     @SerialName("work_item_type_id") val workItemTypeId: Long? = null,
+    /** The workflow state is the only status (D4). */
     @SerialName("workflow_state_id") val workflowStateId: Long? = null,
+    @SerialName("workflow_state_key") val workflowStateKey: String? = null,
+    @SerialName("workflow_state_category") val workflowStateCategory: String? = null,
     /** Planned effort in minutes, shown against [loggedMinutes]. */
     @SerialName("estimated_minutes") val estimatedMinutes: Int? = null,
     /** Minutes logged by timers started from this task; rolls into the timesheet. */
@@ -99,7 +100,7 @@ data class Task(
     val isBacklogItem: Boolean get() = sprintId == null
 
     /** True when the task has a planner day, which is what "Move to Backlog" clears. */
-    val isScheduled: Boolean get() = plannedDate != null || date != null
+    val isScheduled: Boolean get() = plannedDate != null
 
     /** The single definition of complete: the server derives `completed_at` (D5). */
     val isCompleted: Boolean get() = completedAt != null

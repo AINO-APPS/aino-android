@@ -96,7 +96,7 @@ class TaskLogicTest {
     fun groupsTheBacklogIntoDueDateBuckets() {
         val list = listOf(
             Task(1, "overdue", dueDate = "2026-09-20"),
-            Task(2, "done late", dueDate = "2026-09-20", status = "done"),
+            Task(2, "done late", dueDate = "2026-09-20", completedAt = "2026-09-21T00:00:00Z"),
             Task(3, "today", dueDate = "2026-09-25"),
             Task(4, "week", dueDate = "2026-10-02"),
             Task(5, "later", dueDate = "2026-10-03T00:00:00Z"),
@@ -131,15 +131,15 @@ class TaskLogicTest {
     }
 
     @Test
-    fun kanbanMatchesByWorkflowStateIdOrLegacyStatusKey() {
+    fun kanbanMatchesByWorkflowStateIdOrStateKey() {
         val review = WorkflowState(id = 7, key = "in_review", name = "In Review")
         val tasks = listOf(
-            Task(id = 1, title = "a", status = "pending", workflowStateId = 7),
-            Task(id = 2, title = "b", status = "in_review"),
-            Task(id = 3, title = "c", status = "done", workflowStateId = 9),
+            Task(id = 1, title = "a", workflowStateKey = "pending", workflowStateId = 7),
+            Task(id = 2, title = "b", workflowStateKey = "in_review"),
+            Task(id = 3, title = "c", workflowStateKey = "done", workflowStateId = 9),
         )
         assertEquals(listOf(1L, 2L), tasksForColumn(tasks, review).map { it.id })
-        // The fallback workflow has id 0, so only status keys match.
+        // The fallback workflow has id 0, so only state keys match.
         assertEquals(listOf(2L), tasksForColumn(tasks, review.copy(id = 0)).map { it.id })
     }
 
@@ -170,7 +170,7 @@ class TaskLogicTest {
         fun h(action: String, field: String? = null, old: String? = null, new: String? = null) =
             historyText(TaskHistoryEntry(id = 1, action = action, field = field, oldValue = old, newValue = new)).joinToString("") { it.second }
         assertEquals("created this task", h("created"))
-        assertEquals("carried forward from 2026-09-24", h("created", "date", "2026-09-24"))
+        assertEquals("carried forward from 2026-09-24", h("created", "planned_date", "2026-09-24"))
         assertEquals("changed status from pending → done", h("status_change", old = "pending", new = "done"))
         assertEquals("updated assignee: — → Vishnu", h("updated", "assigned_to", null, "Vishnu"))
         assertEquals("updated description", h("updated", "description", "a", "b"))
@@ -187,7 +187,12 @@ class TaskLogicTest {
 
     @Test
     fun recomputesStatsAfterAnOptimisticMove() {
-        val tasks = listOf(Task(1, "a", status = "done"), Task(2, "b", status = "in_progress"), Task(3, "c"), Task(4, "d", status = "done"))
+        val tasks = listOf(
+            Task(1, "a", completedAt = "2026-09-21T00:00:00Z"),
+            Task(2, "b", workflowStateCategory = "in_progress"),
+            Task(3, "c"),
+            Task(4, "d", completedAt = "2026-09-22T00:00:00Z"),
+        )
         assertEquals(TaskStats(total = 4, done = 2, inProgress = 1, percent = 50), recomputeStats(tasks))
     }
 

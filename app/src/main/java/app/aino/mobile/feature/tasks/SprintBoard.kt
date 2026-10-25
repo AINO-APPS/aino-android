@@ -184,7 +184,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                             )
                                         }
                                         .semantics {
-                                            if (canMove) customActions = states.filter { it.key != task.status }.map { s ->
+                                            if (canMove) customActions = states.filter { it.key != task.workflowStateKey }.map { s ->
                                                 CustomAccessibilityAction("Move to ${stateLabel(s)}") { viewModel.moveTask(task, s); true }
                                             }
                                         },
@@ -420,7 +420,7 @@ internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewMo
         if (task.sprintId != null && canChangeStatus(task, ui.userId, ui.role)) {
             SectionTitle("Move to", Modifier.padding(bottom = 6.dp))
             ui.agile.workflowStates.forEach { state ->
-                val current = task.status == state.key || (state.id != 0L && task.workflowStateId == state.id)
+                val current = task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)
                 Row(
                     Modifier
                         .fillMaxWidth()

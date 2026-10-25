@@ -189,7 +189,7 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
         SelectSheet(
             "Status",
             ui.agile.workflowStates.map { SelectOption(it.key, stateLabel(it), color = hexColor(it.color, colors.textMuted)) },
-            setOf(current?.key ?: task.status),
+            setOfNotNull(current?.key ?: task.workflowStateKey),
             onDismiss = { statusSheet = false },
             onSelect = { keys -> ui.agile.workflowStates.firstOrNull { it.key == keys.firstOrNull() }?.let { haptics.confirm(); viewModel.setStatus(task, it) } },
             icon = HeroIcons.CheckCircle,
@@ -213,7 +213,7 @@ private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, dr
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             WorkItemTypeBadge(task.workItemTypeId, ui.agile)
             when {
-                task.isScheduled -> MetaPill(HeroIcons.CalendarDays, formatDate(task.plannedDate ?: task.date), colors.primary)
+                task.isScheduled -> MetaPill(HeroIcons.CalendarDays, formatDate(task.plannedDate), colors.primary)
                 task.isBacklogItem -> MetaPill(HeroIcons.ArchiveBox, "Backlog", colors.warning)
             }
         }
@@ -312,12 +312,12 @@ private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel
         val canStatus = canChangeStatus(task, ui.userId, ui.role)
         PropertyRow(HeroIcons.CheckCircle, "Status", if (canStatus) onStatus else null) {
             val state = stateOf(task, ui.agile)
-            val column = columnOf(task.status)
+            val column = columnOf(task.workflowStateKey)
             StatusPill(state?.let(::stateLabel) ?: column.label, hexColor(state?.color, colors.tone(column.tone)))
         }
         PropertyRow(HeroIcons.CalendarDays, "Due date", { dueOpen = true }) {
             val due = formatDueDate(task.dueDate)
-            val overdue = isDueOverdue(task.dueDate) && task.status != "done"
+            val overdue = isDueOverdue(task.dueDate) && !task.isCompleted
             if (due != null) PropertyText("${formatDate(task.dueDate)} · $due", color = if (overdue) colors.danger else null)
             else PropertyText("No due date", muted = true)
         }

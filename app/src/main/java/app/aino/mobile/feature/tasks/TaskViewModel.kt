@@ -179,7 +179,7 @@ data class TaskUiState(
     val sprintTabVisible: Boolean get() = agileEnabled && sprints.isNotEmpty()
     val visibleTabs: List<TaskTab> get() = TaskTab.entries.filter { it != TaskTab.Sprint || sprintTabVisible }
     val filterCount: Int get() = filterCount(filters, tab)
-    val importable: List<Task> get() = backlog.filter { it.sprintId != selectedSprintId && it.status != "done" }
+    val importable: List<Task> get() = backlog.filter { it.sprintId != selectedSprintId && !it.isCompleted }
     val backlogHasMore: Boolean get() = backlog.size < backlogTotal
     val scheduledGroups: List<ScheduledGroup> get() = groupScheduled(scheduled)
     val scheduledOverdue: Int get() = scheduledGroups.firstOrNull { it.date == null }?.tasks?.size ?: 0
@@ -690,10 +690,10 @@ class TaskViewModel(
      * limit 409) snaps the card back.
      */
     fun moveTask(task: Task, state: WorkflowState) {
-        if (task.status == state.key || (state.id != 0L && task.workflowStateId == state.id)) return
+        if (task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)) return
         if (!canChangeStatus(task, _ui.value.userId, _ui.value.role)) return notify(STATUS_FORBIDDEN)
         val previous = task
-        val moved = task.copy(status = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: task.workflowStateId)
+        val moved = task.copy(workflowStateKey = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: task.workflowStateId)
         applyTask(moved)
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(
@@ -714,10 +714,10 @@ class TaskViewModel(
         val current = _ui.value.tasks.firstOrNull { it.id == previous.id } ?: previous
         applyTask(previous)
         io {
-            runCatching { repository.updateStatus(previous.id, previous.status) }.fold(
+            runCatching { repository.updateStatus(previous.id, previous.workflowStateKey.orEmpty()) }.fold(
                 onSuccess = { refreshSprintStats() },
                 onFailure = { e ->
-                    applyTask(current.copy(status = from.key))
+                    applyTask(current.copy(workflowStateKey = from.key))
                     fail(failure(e, "Failed to undo move"))
                 },
             )
@@ -727,12 +727,13 @@ class TaskViewModel(
     /** Status/field writes return the bare row; keep the enrichment (labels, people) we already have. */
     private fun patchServerTask(saved: Task, local: Task) {
         val merged = local.copy(
-            status = saved.status.ifEmpty { local.status },
+            workflowStateKey = saved.workflowStateKey ?: local.workflowStateKey,
+            workflowStateCategory = saved.workflowStateCategory ?: local.workflowStateCategory,
             workflowStateId = saved.workflowStateId ?: local.workflowStateId,
             completedAt = saved.completedAt,
         )
         applyTask(merged)
-        _ui.update { s -> s.copy(detail = s.detail?.let { if (it.id == merged.id) it.copy(status = merged.status, workflowStateId = merged.workflowStateId, completedAt = merged.completedAt) else it }) }
+        _ui.update { s -> s.copy(detail = s.detail?.let { if (it.id == merged.id) it.copy(workflowStateKey = merged.workflowStateKey, workflowStateId = merged.workflowStateId, completedAt = merged.completedAt) else it }) }
     }
 
     private fun applyTask(task: Task) = _ui.update { s ->
@@ -968,7 +969,7 @@ class TaskViewModel(
 
     /** `handleUnscheduleTask`; the confirm dialog is skipped for the Scheduled list's swipe (it has Undo). */
     fun unschedule(taskId: Long, title: String?, closeAfter: Boolean = false, ask: Boolean = true) {
-        val previousDate = (_ui.value.scheduled + _ui.value.tasks).firstOrNull { it.id == taskId }?.date ?: _ui.value.detail?.takeIf { it.id == taskId }?.date
+        val previousDate = (_ui.value.scheduled + _ui.value.tasks).firstOrNull { it.id == taskId }?.plannedDate ?: _ui.value.detail?.takeIf { it.id == taskId }?.plannedDate
         val run = {
             io {
                 runCatching { repository.unscheduleTask(taskId) }.fold(
@@ -1134,7 +1135,7 @@ class TaskViewModel(
 
     /** Detail status chip (`handleDetailStatusChange`), workflow-state aware. */
     fun setStatus(task: Task, state: WorkflowState) {
-        if (task.status == state.key) return
+        if (task.workflowStateKey == state.key) return
         if (!canChangeStatus(task, _ui.value.userId, _ui.value.role)) return notify(STATUS_FORBIDDEN)
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(

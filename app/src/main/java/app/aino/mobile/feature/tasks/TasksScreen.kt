@@ -295,7 +295,7 @@ private fun headerSubtitle(ui: TaskUiState): String = when (ui.tab) {
     }
     TaskTab.Scheduled -> {
         val overdue = ui.scheduledOverdue
-        val upcoming = ui.scheduled.count { t -> localDateOf(t.date)?.isBefore(java.time.LocalDate.now()) == false }
+        val upcoming = ui.scheduled.count { t -> localDateOf(t.plannedDate)?.isBefore(java.time.LocalDate.now()) == false }
         listOfNotNull("$upcoming upcoming", overdue.takeIf { it > 0 }?.let { "$it overdue" }).joinToString(" · ")
     }
     TaskTab.ServiceDesk -> "Report bugs, request features, or raise access issues"
@@ -377,8 +377,8 @@ private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Ta
                         trailing = {
                             Spacer(Modifier.width(6.dp))
                             MetaChip(
-                                if (task.date != null) HeroIcons.CalendarDays else if (task.sprintId != null) HeroIcons.RocketLaunch else HeroIcons.ArchiveBox,
-                                task.date?.take(10) ?: if (task.sprintId != null) "Sprint" else "Backlog",
+                                if (task.plannedDate != null) HeroIcons.CalendarDays else if (task.sprintId != null) HeroIcons.RocketLaunch else HeroIcons.ArchiveBox,
+                                task.plannedDate?.take(10) ?: if (task.sprintId != null) "Sprint" else "Backlog",
                                 colors.textMuted,
                             )
                         },

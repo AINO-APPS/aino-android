@@ -45,7 +45,7 @@ data class SearchTask(
     val title: String? = null,
     /** `ts_headline` output: plain text with `<b>` around the matched words. */
     val snippet: String? = null,
-    val status: String? = null,
+    @SerialName("workflow_state_key") val workflowStateKey: String? = null,
 )
 
 /** Notebook page ids are strings. */
@@ -271,11 +271,11 @@ fun searchSections(
     })
     if (results != null) {
         add("Tasks", results.tasks.map { t ->
-            val colors = TASK_STATUS_COLORS[t.status]
+            val colors = TASK_STATUS_COLORS[t.workflowStateKey]
             SearchRow(
                 key = "task-${t.id}", kind = SearchKind.Task, title = t.title.orEmpty(),
                 snippet = t.snippet?.takeIf(String::isNotEmpty), snippetHtml = true,
-                badge = t.status?.let { SearchBadge(it.replace("_", " "), colors?.first, colors?.second) },
+                badge = t.workflowStateKey?.let { SearchBadge(it.replace("_", " "), colors?.first, colors?.second) },
                 link = searchLink(SearchKind.Task, t.id),
             )
         })

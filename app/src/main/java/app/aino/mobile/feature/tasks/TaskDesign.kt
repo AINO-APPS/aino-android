@@ -321,10 +321,10 @@ internal fun StatusPill(name: String, color: Color, modifier: Modifier = Modifie
     }
 }
 
-/** The workflow state a task sits in (by id, else the legacy status key). */
+/** The workflow state a task sits in (by id, else the state key). */
 internal fun stateOf(task: Task, agile: AgileConfig): WorkflowState? =
     agile.workflowStates.firstOrNull { it.id != 0L && it.id == task.workflowStateId }
-        ?: agile.workflowStates.firstOrNull { it.key == task.status }
+        ?: agile.workflowStates.firstOrNull { it.key == task.workflowStateKey }
 
 internal fun stateLabel(state: WorkflowState): String = state.name.ifEmpty { state.key }
 
@@ -364,7 +364,7 @@ internal fun TaskCardM3(
 ) {
     val colors = LocalWebColors.current
     val haptics = LocalHapticFeedback.current
-    val done = task.status == "done" || stateOf(task, agile)?.isTerminal == true
+    val done = task.isCompleted || stateOf(task, agile)?.isTerminal == true
     val pri = priorityOf(task.priority)
     val type = agile.type(task.workItemTypeId)
     val points = if (agile.features.storyPoints) formatPoints(task.storyPoints) else ""

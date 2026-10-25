@@ -60,7 +60,7 @@ fun matchesFilters(task: Task, filters: TaskFilters, userId: Long?, includeStatu
     }
     if (filters.label.isNotEmpty() && task.labels.none { it.id.toString() == filters.label }) return false
     if (filters.priority in setOf("low", "medium", "high") && task.priority != filters.priority) return false
-    if (includeStatus && filters.status in setOf("pending", "in_progress", "in_review", "done") && task.status != filters.status) return false
+    if (includeStatus && filters.status.isNotEmpty() && task.workflowStateKey != filters.status) return false
     val q = filters.search.trim()
     if (q.isNotEmpty()) {
         val hay = task.title + " " + stripHtml(task.description)
@@ -79,7 +79,7 @@ fun belongsToBacklog(task: Task, filters: TaskFilters, userId: Long?): Boolean =
 
 /** Scheduled view membership: a planner date inside the loaded window, plus the active filters. */
 fun belongsToScheduled(task: Task, from: java.time.LocalDate, to: java.time.LocalDate, filters: TaskFilters, userId: Long?): Boolean {
-    val day = localDateOf(task.date) ?: return false
+    val day = localDateOf(task.plannedDate) ?: return false
     return !day.isBefore(from) && !day.isAfter(to) && matchesFilters(task, filters, userId, includeStatus = true)
 }
 
@@ -101,7 +101,8 @@ fun adjustSummary(summary: BacklogSummary, old: Task?, new: Task?): BacklogSumma
     val byStatus = summary.byStatus.toMutableMap()
     fun bump(task: Task, delta: Int) {
         byPriority[task.priority] = maxOf(0, (byPriority[task.priority] ?: 0) + delta)
-        byStatus[task.status] = maxOf(0, (byStatus[task.status] ?: 0) + delta)
+        val key = task.workflowStateKey ?: return
+        byStatus[key] = maxOf(0, (byStatus[key] ?: 0) + delta)
     }
     old?.let { bump(it, -1) }
     new?.let { bump(it, 1) }
@@ -120,7 +121,7 @@ fun backlogWindow(loaded: Int, pageSize: Int): Int = maxOf(pageSize, loaded).coe
  */
 val DELTA_FIELDS = setOf(
     "title", "description", "priority", "assigned_to", "due_date", "planned_date",
-    "sprint_id", "story_points", "work_item_type_id", "workflow_state_id", "status",
+    "sprint_id", "story_points", "work_item_type_id", "workflow_state_id",
     "parent_task_id", "is_blocked", "blocked_reason", "project_id", "rank",
     "estimated_minutes", "logged_minutes", "acceptance_criteria",
 )
@@ -173,7 +174,6 @@ fun applyTaskDelta(task: Task, delta: TaskDelta, lastAppliedAt: String? = null):
             "story_points" -> next.copy(storyPoints = value.stringOrNull()?.toDoubleOrNull())
             "work_item_type_id" -> next.copy(workItemTypeId = value.longOrNull())
             "workflow_state_id" -> next.copy(workflowStateId = value.longOrNull())
-            "status" -> next.copy(status = value.stringOrNull() ?: next.status)
             "parent_task_id" -> next.copy(parentTaskId = value.longOrNull())
             "is_blocked" -> next.copy(isBlocked = value.stringOrNull()?.toBooleanStrictOrNull() ?: next.isBlocked)
             "blocked_reason" -> next.copy(blockedReason = value.stringOrNull())

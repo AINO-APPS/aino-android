@@ -135,7 +135,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
     }
 
     rescheduling?.let { task ->
-        ScheduleDialog(task, title = "Reschedule \"${task.title}\"", initial = task.date, onDismiss = { rescheduling = null }) { date ->
+        ScheduleDialog(task, title = "Reschedule \"${task.title}\"", initial = task.plannedDate, onDismiss = { rescheduling = null }) { date ->
             viewModel.schedule(task.id, date)
         }
     }
@@ -157,7 +157,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
 @Composable
 private fun WeekStrip(today: LocalDate, tasks: List<Task>, onPick: (LocalDate) -> Unit) {
     val colors = LocalWebColors.current
-    val counts = remember(tasks) { tasks.mapNotNull { localDateOf(it.date) }.groupingBy { it }.eachCount() }
+    val counts = remember(tasks) { tasks.mapNotNull { localDateOf(it.plannedDate) }.groupingBy { it }.eachCount() }
     val days = remember(today) { (0L until 7L).map { today.plusDays(it) } }
     LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         items(days, key = { it.toString() }) { day ->
@@ -277,7 +277,7 @@ private fun ScheduledRow(
                     val tint = if (showDate) colors.danger else colors.primaryLight
                     Icon(HeroIcons.CalendarDays, null, Modifier.size(14.dp), tint = tint)
                     Spacer(Modifier.width(4.dp))
-                    Text(if (showDate) formatDate(task.date).substringBeforeLast(",") else "Reschedule", color = tint, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(if (showDate) formatDate(task.plannedDate).substringBeforeLast(",") else "Reschedule", color = tint, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
             },
         )
