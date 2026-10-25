@@ -550,7 +550,7 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TaskUiState, viewModel: T
     val done = items.count { it.done }
     val pct = if (items.isEmpty()) 0 else Math.round(done * 100f / items.size)
     Column(
-        Modifier.fillMaxWidth().background(colors.glass, RoundedCornerShape(8.dp)).border(1.dp, colors.border, RoundedCornerShape(8.dp)).padding(12.dp),
+        Modifier.fillMaxWidth().background(colors.cardBg, RoundedCornerShape(8.dp)).border(1.dp, colors.border, RoundedCornerShape(8.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -894,7 +894,7 @@ private fun TaskPicker(
 private fun PanelBox(content: @Composable () -> Unit) {
     val colors = LocalWebColors.current
     Column(
-        Modifier.fillMaxWidth().background(colors.glass, RoundedCornerShape(8.dp)).border(1.dp, colors.border, RoundedCornerShape(8.dp)).padding(12.dp),
+        Modifier.fillMaxWidth().background(colors.cardBg, RoundedCornerShape(8.dp)).border(1.dp, colors.border, RoundedCornerShape(8.dp)).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) { content() }
 }

@@ -31,6 +31,11 @@ class WebTokensTest {
         assertArgb(0xFF131314.toInt(), c.bg, "bg")
         assertArgb(0xFF1B1B1C.toInt(), c.bgSecondary, "bgSecondary")
         assertArgb(0xFF202021.toInt(), c.bgElevated, "bgElevated")
+        // Solid surfaces: the liquid-glass washes are gone.
+        assertArgb(0xFF1B1B1C.toInt(), c.cardBg, "cardBg")
+        assertArgb(0xFF1B1B1C.toInt(), c.surface, "surface")
+        assertArgb(0xFF2A2A2C.toInt(), c.border, "border")
+        assertArgb(0xFF242426.toInt(), c.bgHover, "bgHover")
     }
 
     @Test
@@ -38,12 +43,12 @@ class WebTokensTest {
         val c = WebColorsLight
         assertArgb(0xFF2383E2.toInt(), c.primary, "primary")
         assertArgb(0xFF1B6FC2.toInt(), c.accentHover, "accentHover")
-        assertArgb(0xFFFBFBFA.toInt(), c.bg, "bg")
-        assertArgb(0xFFF5F4F1.toInt(), c.bgSecondary, "bgSecondary")
+        assertArgb(0xFFF7F7F8.toInt(), c.bg, "bg")
+        assertArgb(0xFFF1F1F3.toInt(), c.bgSecondary, "bgSecondary")
         assertArgb(0xFFFFFFFF.toInt(), c.bgElevated, "bgElevated")
         assertArgb(0xFF37352F.toInt(), c.text, "text")
         assertArgb(0xFFFFFFFF.toInt(), c.cardBg, "cardBg")
-        assertArgb(0xFFF7F6F3.toInt(), c.inputBg, "inputBg")
+        assertArgb(0xFFFFFFFF.toInt(), c.inputBg, "inputBg")
     }
 
     @Test

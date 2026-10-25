@@ -132,7 +132,7 @@ fun TasksScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         floatingActionButton = {
             AnimatedVisibility(
-                visible = ui.tab == TaskTab.Backlog && !ui.searchOpen,
+                visible = ui.showNewTicketFab,
                 enter = scaleIn() + fadeIn(),
                 exit = scaleOut() + fadeOut(),
             ) {
@@ -244,7 +244,7 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Tasks", color = colors.text, fontSize = 1.4.rem, fontWeight = FontWeight.ExtraBold, modifier = Modifier.semantics { heading() })
+            Text("Plan", color = colors.text, fontSize = 1.4.rem, fontWeight = FontWeight.ExtraBold, modifier = Modifier.semantics { heading() })
             Text(headerSubtitle(ui), color = colors.textMuted, fontSize = 0.78.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         RoundIconButton(HeroIcons.MagnifyingGlass, "Search tasks", viewModel::openSearch)

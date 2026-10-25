@@ -97,7 +97,7 @@ fun NotificationsScreen(
                             onClick = { viewModel.open(item)?.let(onOpenLink) },
                             onDelete = { viewModel.delete(item.id) },
                         )
-                        HorizontalDivider(color = colors.glassBorder)
+                        HorizontalDivider(color = colors.border)
                     }
                 }
             }

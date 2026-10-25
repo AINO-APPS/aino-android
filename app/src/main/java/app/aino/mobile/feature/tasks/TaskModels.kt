@@ -488,7 +488,7 @@ data class SprintBaseline(
 @Serializable
 data class TaskPreferences(
     @SerialName("show_completed") val showCompleted: Boolean = false,
-    @SerialName("card_density") val cardDensity: String = "comfortable",
+    @SerialName("card_density") val cardDensity: String = "compact",
     @SerialName("default_team_id") val defaultTeamId: Long? = null,
 ) {
     val isCompact: Boolean get() = cardDensity == "compact"

@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.aino.mobile.core.designsystem.AinoSnackbarHost
 import app.aino.mobile.core.designsystem.component.UserAvatar
 import app.aino.mobile.core.designsystem.icons.HeroIcons
@@ -345,13 +346,15 @@ internal fun PriorityGlyph(priority: String, modifier: Modifier = Modifier) {
 // ── Task card ────────────────────────────────────────────────────────────
 
 /**
- * The one task card used by the Sprint board, the Backlog and Scheduled.
+ * The one task card used by the Sprint board, the Backlog and Scheduled —
+ * the same anatomy as web's `TaskCardParts`:
  *
- * One anatomy everywhere: a quiet key/type line, the title as the anchor, an
- * aligned metadata row, at most two labels, then people/due/comments. Blocked
- * and overdue are exceptions, so they stay visible in both densities — a
- * compact card that hides them hides the only reason to look at it.
- * [highlighted] flashes the border when a realtime patch lands.
+ *   top     KEY · points · blocked              priority  [menu]
+ *   title   up to two lines
+ *   footer  status · due · 2 labels (+N)        [trailing] avatar
+ *
+ * Solid surface, 1dp border, no tinted background. Comfortable adds a
+ * comments count. [highlighted] flashes the border when a realtime patch lands.
  */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
@@ -368,172 +371,182 @@ internal fun TaskCardM3(
     trailing: (@Composable () -> Unit)? = null,
     /** Top-right slot, reserved for the overflow menu so it is always visible. */
     topTrailing: (@Composable () -> Unit)? = null,
-    /** Compact keeps key, title and points; comfortable adds the rest (D25). */
+    /** Compact (default) drops the comments count. */
     compact: Boolean = false,
     /** "Updated by <name>" from a realtime delta; fades on its own (D48). */
     attribution: String? = null,
+    selected: Boolean = false,
 ) {
     val colors = LocalWebColors.current
     val haptics = LocalHapticFeedback.current
     val done = task.isCompleted || stateOf(task, agile)?.isTerminal == true
-    val pri = priorityOf(task.priority)
-    val type = agile.type(task.workItemTypeId)
     val points = if (agile.features.storyPoints) formatPoints(task.storyPoints) else ""
     val due = formatDueDate(task.dueDate)
     val overdue = isDueOverdue(task.dueDate) && !done
-    val borderColor by animateColorAsState(if (highlighted) colors.primary else colors.border, tween(350), label = "cardBorder")
-    // Opaque: the dark-theme card token is translucent, and swipe actions sit underneath the card.
-    val base = colors.cardBg.compositeOver(colors.bg)
-    val bg by animateColorAsState(if (highlighted) colors.primary.copy(alpha = 0.08f).compositeOver(base) else base, tween(350), label = "cardBg")
-    Row(
+    val ring = when {
+        selected -> colors.primary
+        highlighted -> colors.primary
+        else -> colors.border
+    }
+    val borderColor by animateColorAsState(ring, tween(250), label = "cardBorder")
+    // Opaque: swipe actions sit underneath the card.
+    val bg = colors.cardBg.compositeOver(colors.bg)
+    Column(
         modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .clip(CardShape)
+            .clip(TaskCardShape)
             .background(bg)
-            .border(BorderStroke(if (highlighted) 1.5.dp else 1.dp, borderColor), CardShape)
+            .border(BorderStroke(if (selected) 1.5.dp else 1.dp, borderColor), TaskCardShape)
             .combinedClickable(
                 onClick = onOpen,
                 onLongClick = onLongPress?.let { action -> { haptics.performHapticFeedback(HapticFeedbackType.LongPress); action() } },
                 onLongClickLabel = if (onLongPress != null) "More actions" else null,
             )
-            .alpha(if (done) 0.65f else 1f),
+            .padding(start = 12.dp, end = if (topTrailing != null) 2.dp else 12.dp, top = 8.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Box(Modifier.width(4.dp).fillMaxHeight().background(colors.tone(pri.tone)))
-        Column(
-            Modifier
-                .weight(1f)
-                .padding(
-                    start = 12.dp,
-                    end = 12.dp,
-                    top = if (compact) 8.dp else 11.dp,
-                    bottom = if (compact) 8.dp else 11.dp,
-                ),
-            verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 6.dp),
-        ) {
-            // Quiet top line: key, type and points. The title below is the anchor.
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    val projectColor = task.project?.color?.let { hexColor(it) }
-                    Text(
-                        task.displayKey,
-                        color = projectColor ?: colors.textMuted,
-                        fontSize = 0.72.rem,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                    )
-                    if (!compact && type != null) {
-                        Dot()
-                        Box(Modifier.size(7.dp).background(hexColor(type.color), CircleShape))
-                        Spacer(Modifier.width(4.dp))
-                        Text(type.name, color = colors.textMuted, fontSize = 0.72.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    if (points.isNotEmpty()) {
-                        Dot()
-                        Text("$points ${agile.unitLabel}", color = colors.textMuted, fontSize = 0.72.rem, maxLines = 1)
-                    }
-                }
-                // The overflow menu stays top-right in both densities, so it is
-                // always reachable — compact must not hide the way out.
-                topTrailing?.invoke()
+        Row(Modifier.heightIn(min = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+            val projectColor = task.project?.color?.let { hexColor(it) }
+            agile.type(task.workItemTypeId)?.let { type ->
+                Box(Modifier.size(8.dp).background(hexColor(type.color), RoundedCornerShape(2.dp)).semantics { contentDescription = type.name })
+                Spacer(Modifier.width(6.dp))
             }
             Text(
-                task.title,
-                color = colors.text,
-                fontSize = 0.94.rem,
-                fontWeight = FontWeight.SemiBold,
-                lineHeight = 0.94.rem * 1.4f,
-                maxLines = if (compact) 2 else 3,
-                overflow = TextOverflow.Ellipsis,
-                textDecoration = doneDecoration(done),
+                task.displayKey,
+                color = projectColor ?: colors.textMuted,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
             )
-            // Exceptions stay visible in both densities: they are the reason to
-            // look at the card at all.
+            if (points.isNotEmpty()) {
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    points,
+                    color = colors.textSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .background(colors.bgHover.compositeOver(bg), ChipShape)
+                        .padding(horizontal = 6.dp, vertical = 1.dp)
+                        .semantics { contentDescription = "$points ${agile.unitLabel}" },
+                )
+            }
             if (task.isBlocked && agile.features.blockers) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(HeroIcons.NoSymbol, null, Modifier.size(13.dp), tint = colors.warning)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Blocked", color = colors.warning, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Spacer(Modifier.width(8.dp))
+                Icon(HeroIcons.NoSymbol, null, Modifier.size(12.dp), tint = colors.warningInk)
+                Spacer(Modifier.width(3.dp))
+                Text("Blocked", color = colors.warningInk, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+            Spacer(Modifier.weight(1f))
+            PriorityGlyph(task.priority)
+            topTrailing?.invoke()
+        }
+        Text(
+            task.title,
+            color = if (done) colors.textMuted else colors.text,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            lineHeight = 20.sp,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textDecoration = doneDecoration(done),
+            modifier = Modifier.padding(end = if (topTrailing != null) 10.dp else 0.dp),
+        )
+        Row(
+            Modifier.padding(end = if (topTrailing != null) 10.dp else 0.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (showStatus || done) {
+                    stateOf(task, agile)?.let { CardStatusPill(stateLabel(it), hexColor(it.color, colors.textMuted)) }
+                }
+                if (overdue) {
+                    MetaChip(HeroIcons.Clock, "Overdue", colors.dangerInk, bold = true)
+                } else {
+                    due?.let { MetaChip(HeroIcons.CalendarDays, it, colors.textSecondary) }
+                }
+                task.labels.take(2).forEach { CardLabel(it) }
+                if (task.labels.size > 2) {
+                    Text(
+                        "+${task.labels.size - 2}",
+                        color = colors.textMuted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.border(1.dp, colors.border, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
                 }
             }
-            if (overdue) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(HeroIcons.Clock, null, Modifier.size(13.dp), tint = colors.danger)
-                    Spacer(Modifier.width(4.dp))
-                    // The absolute date, not `due`: formatDueDate already says
-                    // "3d overdue" for exactly these dates.
-                    Text("Overdue · ${formatDate(task.dueDate)}", color = colors.danger, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-            if (compact) {
-                // Compact stops here: key, title, points and the exceptions.
-                return@Column
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (showStatus) {
-                    stateOf(task, agile)?.let { StatusPill(stateLabel(it), hexColor(it.color, colors.textMuted)) }
-                }
-                PriorityGlyph(task.priority)
-            }
-            if (task.labels.isNotEmpty()) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    task.labels.take(2).forEach { LabelPill(it) }
-                    if (task.labels.size > 2) Text("+${task.labels.size - 2}", color = colors.textMuted, fontSize = 0.68.rem, fontWeight = FontWeight.SemiBold)
-                }
-            }
-            Row(Modifier.padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    val assignee = task.assignee
-                    if (assignee != null) {
-                        Row(Modifier.widthIn(max = 140.dp), verticalAlignment = Alignment.CenterVertically) {
-                            UserAvatar(assignee.display(), avatarPath(assignee.avatar), 20.dp)
-                            Spacer(Modifier.width(6.dp))
-                            Text(assignee.display(), color = colors.textSecondary, fontSize = 0.74.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                    } else {
-                        MetaChip(HeroIcons.User, "Unassigned", colors.textMuted, italic = true)
-                    }
-                    // Overdue is already stated above, so the footer only carries
-                    // the plain due date.
-                    if (!overdue) due?.let { MetaChip(HeroIcons.CalendarDays, it, colors.textMuted) }
-                }
+            if (!compact) {
                 if (onComments != null) {
                     Row(
-                        Modifier.clip(ChipShape).clickable(onClickLabel = "Comments", onClick = onComments).padding(horizontal = 6.dp, vertical = 4.dp),
+                        Modifier.clip(ChipShape).clickable(onClickLabel = "Comments", onClick = onComments).padding(horizontal = 4.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(HeroIcons.ChatBubbleOvalLeft, null, Modifier.size(15.dp), tint = if (task.commentCount > 0) colors.textSecondary else colors.textMuted)
+                        Icon(HeroIcons.ChatBubbleOvalLeft, null, Modifier.size(14.dp), tint = colors.textMuted)
                         if (task.commentCount > 0) {
                             Spacer(Modifier.width(3.dp))
-                            Text("${task.commentCount}", color = colors.textSecondary, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold)
+                            Text("${task.commentCount}", color = colors.textSecondary, fontSize = 11.sp)
                         }
                     }
                 } else if (task.commentCount > 0) {
                     MetaChip(HeroIcons.ChatBubbleOvalLeft, "${task.commentCount}", colors.textMuted)
                 }
-                trailing?.invoke()
             }
-            // Non-blocking attribution: a teammate changed this card just now.
-            if (attribution != null) {
-                Text(
-                    "Updated by $attribution",
-                    color = colors.primary,
-                    fontSize = 0.68.rem,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            trailing?.invoke()
+            task.assignee?.let { UserAvatar(it.display(), avatarPath(it.avatar), 22.dp) }
+        }
+        if (attribution != null) {
+            Text(
+                "Updated by $attribution",
+                color = colors.primary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
 
+internal val TaskCardShape = RoundedCornerShape(6.dp)
+
+/** Compact card status pill: tinted fill, coloured dot, no border. */
 @Composable
-private fun Dot() {
-    Text("·", color = LocalWebColors.current.textMuted, fontSize = 0.72.rem, modifier = Modifier.padding(horizontal = 5.dp))
+private fun CardStatusPill(name: String, color: Color) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(color.copy(alpha = 0.14f))
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).background(color, CircleShape))
+        Spacer(Modifier.width(5.dp))
+        Text(name, color = color, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+    }
 }
 
+/** Neutral label chip with a colour dot (tenant colours can be unreadable as text). */
+@Composable
+private fun CardLabel(label: TaskLabel) {
+    val colors = LocalWebColors.current
+    Row(
+        Modifier
+            .widthIn(max = 96.dp)
+            .border(1.dp, colors.border, RoundedCornerShape(4.dp))
+            .padding(horizontal = 5.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(6.dp).background(hexColor(label.color ?: "", colors.textMuted), CircleShape))
+        Spacer(Modifier.width(4.dp))
+        Text(label.name, color = colors.textSecondary, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
 @Composable
 internal fun MetaChip(icon: ImageVector, text: String, color: Color, italic: Boolean = false, bold: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically) {

@@ -94,7 +94,7 @@ private fun darkColorSchemeFor(c: WebColors) = androidx.compose.material3.darkCo
     surfaceContainerHigh = surfaceContainerHighFor(c),
     surfaceContainerHighest = surfaceContainerHighestFor(c),
     outline = c.border,
-    outlineVariant = c.glassBorder,
+    outlineVariant = c.border,
     error = c.danger,
 )
 
@@ -116,6 +116,6 @@ private fun lightColorSchemeFor(c: WebColors) = androidx.compose.material3.light
     surfaceContainerHigh = surfaceContainerHighFor(c),
     surfaceContainerHighest = surfaceContainerHighestFor(c),
     outline = c.border,
-    outlineVariant = c.glassBorder,
+    outlineVariant = c.border,
     error = c.danger,
 )

@@ -1546,7 +1546,7 @@ private fun InfoMessageList(ui: ChatUiState, emptyText: String, onOpen: (ChatMes
 private fun InfoRow(icon: ImageVector, label: String, danger: Boolean = false, onClick: () -> Unit) {
     val colors = LocalWebColors.current
     val tint = if (danger) colors.danger else colors.textSecondary
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface).border(1.dp, colors.glassBorder, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface).border(1.dp, colors.border, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, Modifier.size(20.dp), tint = tint)
         Text(label, Modifier.padding(start = 12.dp).weight(1f), color = if (danger) colors.danger else colors.text, fontSize = 14.sp)
         Icon(HeroIcons.ChevronRight, null, Modifier.size(16.dp), tint = colors.textMuted)

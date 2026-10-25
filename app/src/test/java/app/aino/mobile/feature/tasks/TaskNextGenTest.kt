@@ -132,11 +132,11 @@ class TaskNextGenTest {
     // ── Preferences ──────────────────────────────────────────────────────
 
     @Test
-    fun preferencesDefaultToHiddenCompletedAndComfortableCards() {
+    fun preferencesDefaultToHiddenCompletedAndCompactCards() {
         val defaults = TaskPreferences()
         assertFalse(defaults.showCompleted)
-        assertEquals("comfortable", defaults.cardDensity)
-        assertFalse(defaults.isCompact)
+        assertEquals("compact", defaults.cardDensity)
+        assertTrue(defaults.isCompact)
     }
 
     @Test

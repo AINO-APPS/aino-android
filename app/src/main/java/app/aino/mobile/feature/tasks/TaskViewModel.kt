@@ -192,6 +192,8 @@ data class TaskUiState(
     /** Compact cards keep key, title and points; comfortable adds the rest. */
     val compact: Boolean get() = preferences.isCompact
     val hasSelection: Boolean get() = selectedIds.isNotEmpty()
+    /** Selection mode swaps the "New ticket" FAB for the bulk action bar so the two never overlap. */
+    val showNewTicketFab: Boolean get() = tab == TaskTab.Backlog && !searchOpen && !hasSelection
     /** The epic filter narrows the backlog and board to one epic's children. */
     val epicFiltered: List<Task> get() = selectedEpicId?.let { epic ->
         backlog.filter { it.parentTaskId == epic }
@@ -900,6 +902,9 @@ class TaskViewModel(
                             backlog = result.tasks,
                             backlogSummary = result.summary ?: it.backlogSummary,
                             backlogTotal = result.pagination?.total ?: result.summary?.total ?: result.tasks.size,
+                            // The first page carries the hidden-completed count so the
+                            // "Completed (N)" section shows before it is ever opened.
+                            completedCount = result.completedCount ?: it.completedCount,
                             backlogLoading = false,
                         )
                     }

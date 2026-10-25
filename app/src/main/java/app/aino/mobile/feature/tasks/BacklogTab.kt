@@ -355,6 +355,17 @@ private fun BacklogGroupHeader(group: BacklogGroup, collapsed: Boolean, onToggle
             fontWeight = FontWeight.Bold,
             modifier = Modifier.background(accent.copy(alpha = 0.14f), CircleShape).padding(horizontal = 8.dp, vertical = 1.dp),
         )
+        // Points alongside the count, so a group's weight is visible before opening it.
+        val points = group.tasks.sumOf { it.storyPoints ?: 0.0 }
+        if (points > 0) {
+            Spacer(Modifier.width(6.dp))
+            Text(
+                "${formatPoints(points)} pts",
+                color = colors.textMuted,
+                fontSize = 0.68.rem,
+                maxLines = 1,
+            )
+        }
         Spacer(Modifier.weight(1f))
         Icon(HeroIcons.ChevronDown, null, Modifier.size(16.dp).rotate(if (collapsed) -90f else 0f), tint = colors.textMuted)
     }
@@ -421,6 +432,7 @@ private fun BacklogRow(
             onLongPress = onActions,
             onComments = { viewModel.openComments(task.id) },
             compact = ui.compact,
+            selected = task.id in ui.selectedIds,
             attribution = ui.attribution[task.id],
             trailing = {
                 SelectionToggle(task.id in ui.selectedIds) { viewModel.toggleSelection(task.id) }

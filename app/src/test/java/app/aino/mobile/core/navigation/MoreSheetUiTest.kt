@@ -64,7 +64,7 @@ class MoreSheetUiTest {
         assertEquals(positions.sorted(), positions)
         compose.onNodeWithText("Profile").assertDoesNotExist()
         compose.onNodeWithText("Attendance").assertDoesNotExist()
-        compose.onNodeWithText("Tasks").assertDoesNotExist()
+        compose.onNodeWithText("Plan").assertDoesNotExist()
     }
 
     @Test

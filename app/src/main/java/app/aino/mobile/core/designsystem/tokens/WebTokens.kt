@@ -24,6 +24,11 @@ data class WebColors(
     val warningGlow: Color,
     val danger: Color,
     val dangerGlow: Color,
+    // Chip ink: the tone adjusted until it clears 4.5:1 on its own 14% tint.
+    val primaryInk: Color,
+    val successInk: Color,
+    val warningInk: Color,
+    val dangerInk: Color,
     // Surfaces
     val bg: Color,
     val bgSecondary: Color,
@@ -31,8 +36,6 @@ data class WebColors(
     val bgElevated: Color,
     val surface: Color,
     val surfaceHover: Color,
-    val glass: Color,
-    val glassBorder: Color,
     // Text
     val text: Color,
     val textPrimary: Color,
@@ -61,23 +64,25 @@ val WebColorsDark = WebColors(
     warningGlow = Color(0x2ECB912F), // rgba(203,145,47,0.18)
     danger = Color(0xFFE03E3E),
     dangerGlow = Color(0x2EE03E3E), // rgba(224,62,62,0.18)
+    primaryInk = Color(0xFF4093E6),
+    successInk = Color(0xFF4DAA57),
+    warningInk = Color(0xFFCB912F),
+    dangerInk = Color(0xFFE66363),
     bg = Color(0xFF131314),
     bgSecondary = Color(0xFF1B1B1C),
-    bgHover = Color(0x0EFFFFFF), // rgba(255,255,255,0.055)
+    bgHover = Color(0xFF242426),
     bgElevated = Color(0xFF202021),
-    surface = Color(0x0AFFFFFF), // rgba(255,255,255,0.04)
-    surfaceHover = Color(0x12FFFFFF), // rgba(255,255,255,0.07)
-    glass = Color(0x0AFFFFFF), // rgba(255,255,255,0.04)
-    glassBorder = Color(0x17FFFFFF), // rgba(255,255,255,0.09)
+    surface = Color(0xFF1B1B1C),
+    surfaceHover = Color(0xFF242426),
     text = Color(0xCEFFFFFF), // rgba(255,255,255,0.81)
     textPrimary = Color(0xCEFFFFFF), // rgba(255,255,255,0.81)
     textSecondary = Color(0x87FFFFFF), // rgba(255,255,255,0.53)
     textMuted = Color(0x61FFFFFF), // rgba(255,255,255,0.38)
-    inputBg = Color(0x11FFFFFF), // rgba(255,255,255,0.065)
-    inputBorder = Color(0x1AFFFFFF), // rgba(255,255,255,0.1)
+    inputBg = Color(0xFF1B1B1C),
+    inputBorder = Color(0xFF2F2F32),
     inputBorderFocus = Color(0x992383E2), // rgba(35,131,226,0.6)
-    cardBg = Color(0x09FFFFFF), // rgba(255,255,255,0.035)
-    border = Color(0x17FFFFFF), // rgba(255,255,255,0.09)
+    cardBg = Color(0xFF1B1B1C),
+    border = Color(0xFF2A2A2C),
 )
 
 /** `[data-theme="light"]` — full override set from global.css. */
@@ -95,23 +100,25 @@ val WebColorsLight = WebColors(
     warningGlow = Color(0x2ECB912F),
     danger = Color(0xFFE03E3E),
     dangerGlow = Color(0x2EE03E3E),
-    bg = Color(0xFFFBFBFA),
-    bgSecondary = Color(0xFFF5F4F1),
-    bgHover = Color(0x0F37352F), // rgba(55,53,47,0.06)
+    primaryInk = Color(0xFF1D6BB9),
+    successInk = Color(0xFF377A3F),
+    warningInk = Color(0xFF8E6621),
+    dangerInk = Color(0xFFC13535),
+    bg = Color(0xFFF7F7F8),
+    bgSecondary = Color(0xFFF1F1F3),
+    bgHover = Color(0xFFF1F1F3),
     bgElevated = Color(0xFFFFFFFF),
-    surface = Color(0x0A37352F), // rgba(55,53,47,0.04)
-    surfaceHover = Color(0x1437352F), // rgba(55,53,47,0.08)
-    glass = Color(0xE0FFFFFF), // rgba(255,255,255,0.88)
-    glassBorder = Color(0x1F37352F), // rgba(55,53,47,0.12)
+    surface = Color(0xFFFFFFFF),
+    surfaceHover = Color(0xFFF1F1F3),
     text = Color(0xFF37352F),
     textPrimary = Color(0xFF37352F),
     textSecondary = Color(0xA637352F), // rgba(55,53,47,0.65)
     textMuted = Color(0x7337352F), // rgba(55,53,47,0.45)
-    inputBg = Color(0xFFF7F6F3),
-    inputBorder = Color(0x2937352F), // rgba(55,53,47,0.16)
+    inputBg = Color(0xFFFFFFFF),
+    inputBorder = Color(0xFFD4D4D8),
     inputBorderFocus = Color(0x802383E2), // rgba(35,131,226,0.5)
     cardBg = Color(0xFFFFFFFF),
-    border = Color(0x2137352F), // rgba(55,53,47,0.13)
+    border = Color(0xFFE4E4E7),
 )
 
 /** Per-status dot colour map (ProfileMenu §2). `offline` is transparent+ring. */

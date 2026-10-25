@@ -77,6 +77,8 @@ class SoundPickerDialogTest {
     @Test fun dialogBackgroundTokenIsOpaqueInBothThemes() {
         assertEquals(1f, WebColorsDark.bgElevated.alpha)
         assertEquals(1f, WebColorsLight.bgElevated.alpha)
-        assertTrue(WebColorsDark.surface.alpha < 1f)
+        // Surfaces are solid now: the liquid-glass washes were removed.
+        assertEquals(1f, WebColorsDark.surface.alpha)
+        assertEquals(1f, WebColorsLight.surface.alpha)
     }
 }

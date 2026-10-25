@@ -9,11 +9,11 @@ enum class AinoDestination(
     val icon: ImageVector,
     val inBottomBar: Boolean = false,
 ) {
-    // Bottom bar: Home · Attendance · Tasks · Chat · More. Mobile decision
+    // Bottom bar: Home · Attendance · Plan · Chat · More. Mobile decision
     // (2026-10-01): Attendance takes the web's Calendar slot, Calendar moves to More.
     Dashboard("dashboard", "Home", HeroIcons.Home, true),
     Attendance("attendance", "Attendance", HeroIcons.Clock, true),
-    Tasks("tasks", "Tasks", HeroIcons.ClipboardDocumentCheck, true),
+    Tasks("tasks", "Plan", HeroIcons.CalendarDays, true),
     Chat("chat", "Chat", HeroIcons.ChatBubbleOvalLeft, true),
     ChatThread("chat/{conversationId}", "Chat", HeroIcons.ChatBubbleOvalLeft),
     More("more", "More", HeroIcons.EllipsisHorizontal, true),
