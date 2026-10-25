@@ -196,11 +196,11 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                         onComments = { viewModel.openComments(task.id) },
                                         compact = ui.compact,
                                         attribution = ui.attribution[task.id],
-                                        trailing = {
+                                        topTrailing = {
                                             Box(
-                                                Modifier.size(32.dp).clip(CircleShape).clickable(onClickLabel = "Task actions") { actionsFor = task },
+                                                Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Task actions") { actionsFor = task },
                                                 contentAlignment = Alignment.Center,
-                                            ) { Icon(HeroIcons.EllipsisVertical, "Task actions", Modifier.size(16.dp), tint = colors.textMuted) }
+                                            ) { Icon(HeroIcons.EllipsisVertical, "Task actions", Modifier.size(18.dp), tint = colors.textMuted) }
                                         },
                                     )
                                 }

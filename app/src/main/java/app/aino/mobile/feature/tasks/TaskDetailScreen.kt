@@ -174,7 +174,7 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
             }
             Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
                 ui.error?.let { ErrorMsg(it, Modifier.padding(bottom = 12.dp)) }
-                DetailHero(task, ui, viewModel, draft, { draft = it })
+                DetailHero(task, ui, viewModel, draft, { draft = it }, onStatus = { statusSheet = true })
                 Spacer(Modifier.height(16.dp))
                 PropertiesCard(task, ui, viewModel, onStatus = { statusSheet = true })
                 Spacer(Modifier.height(20.dp))
@@ -202,11 +202,15 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
     ui.confirm?.let { TaskConfirmDialog(it, viewModel::acceptConfirm, viewModel::dismissConfirm) }
 }
 
-// ── Hero: type, title, description, blocker ──────────────────────────────
+// ── Hero: type, title, status/blocker, description ───────────────────────
+//
+// Reading order on a phone: what this is (type, schedule state), what it is
+// called, whether it is blocked, then the detail. Properties and discussion
+// follow below, so the first screen answers "what am I looking at?".
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, draft: TaskEditDraft, onDraft: (TaskEditDraft) -> Unit) {
+private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, draft: TaskEditDraft, onDraft: (TaskEditDraft) -> Unit, onStatus: () -> Unit) {
     val colors = LocalWebColors.current
     var expanded by remember(task.id) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -219,7 +223,6 @@ private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, dr
         }
         if (ui.detailEditing) {
             WebTextField(draft.title, { onDraft(draft.copy(title = it)) }, "Title", maxLength = 200, fontSize = 1.1.rem)
-            WebTextField(draft.description, { onDraft(draft.copy(description = it)) }, "Description", singleLine = false, minLines = 5)
         } else {
             Text(
                 task.title.ifEmpty { " " },
@@ -229,6 +232,33 @@ private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, dr
                 lineHeight = 1.3.rem * 1.25f,
                 modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = "Edit title", onClick = viewModel::startEdit),
             )
+        }
+        // Status and blocker sit directly under the title: they are the two
+        // facts that change what you do next.
+        val state = stateOf(task, ui.agile)
+        if (state != null) {
+            StatusPill(
+                stateLabel(state),
+                hexColor(state.color, colors.textMuted),
+                onClick = if (canChangeStatus(task, ui.userId, ui.role)) onStatus else null,
+            )
+        }
+        if (task.isBlocked && ui.agile.features.blockers) {
+            Row(
+                Modifier.fillMaxWidth().clip(CardShape).background(colors.danger.copy(alpha = 0.12f)).border(1.dp, colors.danger.copy(alpha = 0.3f), CardShape).padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(HeroIcons.NoSymbol, null, Modifier.size(18.dp), tint = colors.danger)
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Blocked", color = colors.danger, fontSize = 0.88.rem, fontWeight = FontWeight.Bold)
+                    task.blockedReason?.takeIf(String::isNotBlank)?.let { Text(it, color = colors.textSecondary, fontSize = 0.82.rem) }
+                }
+            }
+        }
+        if (ui.detailEditing) {
+            WebTextField(draft.description, { onDraft(draft.copy(description = it)) }, "Description", singleLine = false, minLines = 5)
+        } else {
             val description = task.description?.takeIf { stripHtml(it).isNotBlank() }
             if (description != null) {
                 Column(
@@ -252,19 +282,6 @@ private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, dr
                     Icon(HeroIcons.Plus, null, Modifier.size(15.dp), tint = colors.textMuted)
                     Spacer(Modifier.width(6.dp))
                     Text("Add a description", color = colors.textMuted, fontSize = 0.88.rem)
-                }
-            }
-        }
-        if (task.isBlocked && ui.agile.features.blockers) {
-            Row(
-                Modifier.fillMaxWidth().clip(CardShape).background(colors.danger.copy(alpha = 0.12f)).border(1.dp, colors.danger.copy(alpha = 0.3f), CardShape).padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(HeroIcons.NoSymbol, null, Modifier.size(18.dp), tint = colors.danger)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Blocked", color = colors.danger, fontSize = 0.88.rem, fontWeight = FontWeight.Bold)
-                    task.blockedReason?.takeIf(String::isNotBlank)?.let { Text(it, color = colors.textSecondary, fontSize = 0.82.rem) }
                 }
             }
         }
