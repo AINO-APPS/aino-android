@@ -82,7 +82,8 @@ class TaskSyncTest {
         assertFalse(belongsToSprint(task(sprintId = 4), null, TaskFilters(), null))
         assertTrue(belongsToBacklog(task(), TaskFilters(), null))
         assertFalse(belongsToBacklog(task(sprintId = 4), TaskFilters(), null))
-        assertFalse(belongsToBacklog(task(date = "2026-10-06"), TaskFilters(), null))
+        // A planned date is metadata and never removes a task from the backlog (D2).
+        assertTrue(belongsToBacklog(task(date = "2026-10-06"), TaskFilters(), null))
     }
 
     @Test

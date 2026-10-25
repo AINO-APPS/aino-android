@@ -55,6 +55,10 @@ data class TaskFilters(
     val priority: String = "",
     val status: String = "",
     val search: String = "",
+    /** `?completed=1|0` overrides the stored preference for one view. */
+    val completed: String = "",
+    /** `?epic=<id>` narrows the list to one epic's children. */
+    val epic: String = "",
 )
 
 /** `useFilters.filterCount` — status only counts on the Sprint tab. */

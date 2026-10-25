@@ -34,6 +34,57 @@ class TaskRepository(
     fun loadScheduled(from: java.time.LocalDate, to: java.time.LocalDate, filters: TaskFilters): List<Task> =
         decode<TaskListResponse>(api.execute(ApiRequest(path = scheduledQuery(from, to, filters)))).tasks
 
+    // ── Next-generation surfaces ─────────────────────────────────────────
+    /** `GET /tasks/by-key/:key` — a canonical `PROJ-123` reference resolves to one task. */
+    fun loadByKey(key: String): Task =
+        decode(api.execute(ApiRequest(path = "tasks/by-key/" + java.net.URLEncoder.encode(key, "UTF-8"))))
+
+    /** `GET /tasks/epics` — epics with their rollups. */
+    fun loadEpics(): List<EpicSummary> = decode(api.execute(ApiRequest(path = "tasks/epics")))
+
+    /** `GET /tasks/schedule-overlays` — read-only leave, holidays and meetings. */
+    fun loadScheduleOverlays(from: String, to: String): List<ScheduleOverlay> =
+        decode(api.execute(ApiRequest(path = "tasks/schedule-overlays?from=$from&to=$to")))
+
+    /** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
+    fun loadCompletionPreview(id: Long): CompletionPreview =
+        decode(api.execute(ApiRequest(path = "sprints/$id/completion-preview")))
+
+    /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
+    fun loadBaseline(id: Long): SprintBaseline =
+        decode(api.execute(ApiRequest(path = "sprints/$id/baseline")))
+
+    /** `GET /user/preferences` — the per-user Tasks preferences shared with web. */
+    fun loadPreferences(): TaskPreferences =
+        decode(api.execute(ApiRequest(path = "user/preferences")))
+
+    /** `PUT /user/preferences` — a partial update; the server keeps the rest. */
+    fun savePreferences(patch: JsonObject): TaskPreferences =
+        mutate("user/preferences", patch, "PUT")
+
+    // ── Time tracking ────────────────────────────────────────────────────
+    /** `GET /tasks/:id/timer` — is a timer running for this task? */
+    fun loadTimer(id: Long): TaskTimerState = decode(api.execute(ApiRequest(path = "tasks/$id/timer")))
+
+    /** `POST /tasks/:id/timer/start` — attribute the elapsed time to this task. */
+    fun startTimer(id: Long): TaskTimerState = mutate("tasks/$id/timer/start", Unit)
+
+    /** `POST /tasks/:id/timer/stop` — log the elapsed minutes and roll them into the timesheet. */
+    fun stopTimer(id: Long): TaskTimerStop = mutate("tasks/$id/timer/stop", Unit)
+
+    /** `GET /tracker/task-time` — the timesheet's per-task view. */
+    fun loadTaskTime(from: String, to: String): List<TaskTimeDay> =
+        decode(api.execute(ApiRequest(path = "tracker/task-time?from=$from&to=$to")))
+
+    // ── Ranked reorder ───────────────────────────────────────────────────
+    /** `PATCH /tasks/:id/rank` — the server computes the LexoRank from the neighbours. */
+    fun rankTask(id: Long, beforeId: Long?, afterId: Long?): Task =
+        mutate("tasks/$id/rank", RankPayload(beforeId, afterId), "PATCH")
+
+    // ── Bulk actions ─────────────────────────────────────────────────────
+    /** `POST /tasks/bulk` — one request for a multi-select action. */
+    fun bulkAction(payload: BulkPayload): BulkResult = mutate("tasks/bulk", payload)
+
     // ── Metadata ─────────────────────────────────────────────────────────
     fun loadLabels(): List<TaskLabel> = decode(api.execute(ApiRequest(path = "tasks/labels")))
 

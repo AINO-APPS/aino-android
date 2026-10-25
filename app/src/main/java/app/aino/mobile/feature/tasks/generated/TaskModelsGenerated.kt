@@ -28,6 +28,8 @@ data class Task(
     val project_id: Int? = null,
     val work_item_type_id: Int? = null,
     val story_points: Double? = null,
+    val estimated_minutes: Int? = null,
+    val logged_minutes: Int? = null,
     val assigned_to: Int? = null,
     val user_id: Int? = null,
     val org_id: Int? = null,

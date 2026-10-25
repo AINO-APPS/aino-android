@@ -111,3 +111,85 @@ fun adjustSummary(summary: BacklogSummary, old: Task?, new: Task?): BacklogSumma
 
 /** The page window a silent reload should fetch so infinite scroll keeps its position. */
 fun backlogWindow(loaded: Int, pageSize: Int): Int = maxOf(pageSize, loaded).coerceAtMost(500)
+
+// ─── Field-level deltas ─────────────────────────────────────────────────────
+
+/**
+ * Fields a `task_updated` delta may carry. Mirrors the server allow-list
+ * (`server/modules/tasks/tasks.deltas.ts`) and the web mirror.
+ */
+val DELTA_FIELDS = setOf(
+    "title", "description", "priority", "assigned_to", "due_date", "planned_date",
+    "sprint_id", "story_points", "work_item_type_id", "workflow_state_id", "status",
+    "parent_task_id", "is_blocked", "blocked_reason", "project_id", "rank",
+    "estimated_minutes", "logged_minutes", "acceptance_criteria",
+)
+
+/** A field-level delta: only the fields that changed, who changed them and when. */
+data class TaskDelta(
+    val taskId: Long,
+    val fields: JsonObject,
+    val actorName: String?,
+    val at: String?,
+)
+
+/**
+ * Parse a `task_updated` frame's delta.
+ *
+ * Returns `null` when the frame carries no `fields` object — a delete or a
+ * comment frame, which the caller handles by refetching instead.
+ */
+fun parseTaskDelta(data: JsonElement?): TaskDelta? {
+    val obj = data as? JsonObject ?: return null
+    val id = (obj["taskId"] as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() }
+        ?: return null
+    if (id <= 0) return null
+    val fields = obj["fields"] as? JsonObject ?: return null
+    val actor = (obj["actor"] as? JsonObject)?.get("name") as? JsonPrimitive
+    val at = (obj["at"] as? JsonPrimitive)?.contentOrNull
+    return TaskDelta(id, fields, actor?.contentOrNull, at)
+}
+
+/**
+ * Apply a delta to a task the client already holds.
+ *
+ * Fields absent from the delta are left alone, so two people editing different
+ * fields of the same ticket both survive. A delta older than the one already
+ * applied is ignored, so the later write wins deterministically.
+ */
+fun applyTaskDelta(task: Task, delta: TaskDelta, lastAppliedAt: String? = null): Task {
+    if (delta.at != null && lastAppliedAt != null && delta.at < lastAppliedAt) return task
+    var next = task
+    delta.fields.forEach { (key, value) ->
+        if (key !in DELTA_FIELDS) return@forEach
+        next = when (key) {
+            "title" -> next.copy(title = value.stringOrNull() ?: next.title)
+            "description" -> next.copy(description = value.stringOrNull())
+            "priority" -> next.copy(priority = value.stringOrNull() ?: next.priority)
+            "assigned_to" -> next.copy(assignedTo = value.longOrNull())
+            "due_date" -> next.copy(dueDate = value.stringOrNull())
+            "planned_date" -> next.copy(plannedDate = value.stringOrNull())
+            "sprint_id" -> next.copy(sprintId = value.longOrNull())
+            "story_points" -> next.copy(storyPoints = value.stringOrNull()?.toDoubleOrNull())
+            "work_item_type_id" -> next.copy(workItemTypeId = value.longOrNull())
+            "workflow_state_id" -> next.copy(workflowStateId = value.longOrNull())
+            "status" -> next.copy(status = value.stringOrNull() ?: next.status)
+            "parent_task_id" -> next.copy(parentTaskId = value.longOrNull())
+            "is_blocked" -> next.copy(isBlocked = value.stringOrNull()?.toBooleanStrictOrNull() ?: next.isBlocked)
+            "blocked_reason" -> next.copy(blockedReason = value.stringOrNull())
+            "project_id" -> next.copy(projectId = value.longOrNull())
+            "rank" -> next.copy(rank = value.stringOrNull())
+            "estimated_minutes" -> next.copy(estimatedMinutes = value.stringOrNull()?.toIntOrNull())
+            "logged_minutes" -> next.copy(loggedMinutes = value.stringOrNull()?.toIntOrNull() ?: next.loggedMinutes)
+            "acceptance_criteria" -> next.copy(acceptanceCriteriaRaw = value)
+            else -> next
+        }
+    }
+    return next
+}
+
+private fun JsonElement.stringOrNull(): String? =
+    (this as? JsonPrimitive)?.takeIf { it !is kotlinx.serialization.json.JsonNull }?.contentOrNull
+
+private fun JsonElement.longOrNull(): Long? =
+    (this as? JsonPrimitive)?.let { it.longOrNull ?: it.contentOrNull?.toLongOrNull() }

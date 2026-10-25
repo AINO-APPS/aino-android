@@ -53,6 +53,8 @@ data class Task(
     val priority: String = "medium",
     val status: String = "pending",
     val date: String? = null,
+    /** Date-only planning metadata. Never affects backlog membership (D2). */
+    @SerialName("planned_date") val plannedDate: String? = null,
     @SerialName("due_date") val dueDate: String? = null,
     @SerialName("assigned_to") val assignedTo: Long? = null,
     @SerialName("user_id") val userId: Long? = null,
@@ -63,10 +65,17 @@ data class Task(
     @SerialName("comment_count") val commentCount: Int = 0,
     @SerialName("issue_key") val issueKey: String? = null,
     @SerialName("sprint_id") val sprintId: Long? = null,
+    @SerialName("team_id") val teamId: Long? = null,
+    /** LexoRank string, unique per team. Server-computed from before/after ids. */
+    val rank: String? = null,
     @SerialName("project_id") val projectId: Long? = null,
     @SerialName("parent_task_id") val parentTaskId: Long? = null,
     @SerialName("work_item_type_id") val workItemTypeId: Long? = null,
     @SerialName("workflow_state_id") val workflowStateId: Long? = null,
+    /** Planned effort in minutes, shown against [loggedMinutes]. */
+    @SerialName("estimated_minutes") val estimatedMinutes: Int? = null,
+    /** Minutes logged by timers started from this task; rolls into the timesheet. */
+    @SerialName("logged_minutes") val loggedMinutes: Int = 0,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("completed_at") val completedAt: String? = null,
     @SerialName("acceptance_criteria") val acceptanceCriteriaRaw: JsonElement? = null,
@@ -81,8 +90,19 @@ data class Task(
     /** `issue_key || "#id"` (TaskCard / BacklogTab). */
     val displayKey: String get() = issueKey ?: "#$id"
 
-    /** Backlog = neither a planner date nor a sprint (TaskDetailModal `isBacklogItem`). */
-    val isBacklogItem: Boolean get() = date == null && sprintId == null
+    /**
+     * Backlog membership: not in a sprint.
+     *
+     * A planned date is metadata and never removes a task from the backlog (D2),
+     * so this matches the server's `t.sprint_id IS NULL` rule.
+     */
+    val isBacklogItem: Boolean get() = sprintId == null
+
+    /** True when the task has a planner day, which is what "Move to Backlog" clears. */
+    val isScheduled: Boolean get() = plannedDate != null || date != null
+
+    /** The single definition of complete: the server derives `completed_at` (D5). */
+    val isCompleted: Boolean get() = completedAt != null
 
     val acceptanceCriteria: List<AcceptanceCriterion> get() = parseCriteria(acceptanceCriteriaRaw)
 }
@@ -118,6 +138,9 @@ data class BacklogResponse(
     val tasks: List<Task> = emptyList(),
     val summary: BacklogSummary? = null,
     val pagination: BacklogPagination? = null,
+    /** Completed work is excluded by default; this is how much is hidden. */
+    @SerialName("completed_count") val completedCount: Int? = null,
+    @SerialName("incomplete_total") val incompleteTotal: Int? = null,
 )
 
 @Serializable
@@ -378,6 +401,138 @@ data class CarryForwardResponse(val message: String = "", val carried: Int = 0)
 
 @Serializable
 data class TaskMessageResponse(val message: String = "")
+
+// ─── Next-generation payloads and responses ─────────────────────────────────
+
+/** `PATCH /tasks/:id/rank` — the server computes the LexoRank from the neighbours. */
+@Serializable
+data class RankPayload(
+    @SerialName("beforeId") val beforeId: Long? = null,
+    @SerialName("afterId") val afterId: Long? = null,
+)
+
+/** `POST /tasks/bulk` — one request for a multi-select action. */
+@Serializable
+data class BulkPayload(
+    @SerialName("task_ids") val taskIds: List<Long>,
+    val action: String,
+    val value: String? = null,
+)
+
+@Serializable
+data class BulkResult(
+    val updated: Int = 0,
+    val failed: List<Long> = emptyList(),
+)
+
+/** `GET /tasks/epics` — an epic with its rollup. */
+@Serializable
+data class EpicSummary(
+    val id: Long,
+    val title: String,
+    @SerialName("issue_key") val issueKey: String? = null,
+    @SerialName("story_points") val storyPoints: Double? = null,
+    @SerialName("total_children") val totalChildren: Int = 0,
+    @SerialName("done_children") val doneChildren: Int = 0,
+    @SerialName("total_points") val totalPoints: Double = 0.0,
+    @SerialName("done_points") val donePoints: Double = 0.0,
+    @SerialName("percent_by_points") val percentByPoints: Int = 0,
+)
+
+/** `GET /tasks/schedule-overlays` — read-only background context. */
+@Serializable
+data class ScheduleOverlay(
+    val id: String,
+    val type: String,
+    val label: String,
+    val date: String,
+    @SerialName("end_date") val endDate: String? = null,
+)
+
+/** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
+@Serializable
+data class CompletionPreview(
+    @SerialName("sprint_id") val sprintId: Long = 0,
+    @SerialName("done_tasks") val doneTasks: Int = 0,
+    @SerialName("total_tasks") val totalTasks: Int = 0,
+    @SerialName("incomplete_tasks") val incompleteTasks: Int = 0,
+    @SerialName("incomplete_points") val incompletePoints: Double = 0.0,
+    @SerialName("velocity_points") val velocityPoints: Double = 0.0,
+    val carryover: List<CarryoverItem> = emptyList(),
+)
+
+@Serializable
+data class CarryoverItem(
+    val id: Long,
+    val title: String,
+    @SerialName("issue_key") val issueKey: String? = null,
+    @SerialName("story_points") val storyPoints: Double? = null,
+)
+
+/** `GET /sprints/:id/baseline` — committed points and the scope delta. */
+@Serializable
+data class SprintBaseline(
+    @SerialName("committed_points") val committedPoints: Double = 0.0,
+    @SerialName("committed_task_ids") val committedTaskIds: List<Long> = emptyList(),
+    @SerialName("added_points") val addedPoints: Double = 0.0,
+    @SerialName("removed_points") val removedPoints: Double = 0.0,
+    @SerialName("captured_at") val capturedAt: String? = null,
+)
+
+/** `GET /user/preferences` — the per-user Tasks preferences shared with web. */
+@Serializable
+data class TaskPreferences(
+    @SerialName("show_completed") val showCompleted: Boolean = false,
+    @SerialName("card_density") val cardDensity: String = "comfortable",
+    @SerialName("default_team_id") val defaultTeamId: Long? = null,
+) {
+    val isCompact: Boolean get() = cardDensity == "compact"
+}
+
+/** `GET /tasks/:id/timer` and `POST /tasks/:id/timer/start`. */
+@Serializable
+data class TaskTimerState(
+    @SerialName("taskId") val taskId: Long = 0,
+    val running: Boolean = false,
+    @SerialName("startedAt") val startedAt: String? = null,
+    val time: TaskTimeSummary = TaskTimeSummary(),
+)
+
+/** `POST /tasks/:id/timer/stop`. */
+@Serializable
+data class TaskTimerStop(
+    @SerialName("taskId") val taskId: Long = 0,
+    val running: Boolean = false,
+    val minutes: Int = 0,
+    val time: TaskTimeSummary = TaskTimeSummary(),
+)
+
+/** Logged against estimated, with the overrun made explicit. */
+@Serializable
+data class TaskTimeSummary(
+    val estimated: Int = 0,
+    val logged: Int = 0,
+    val remaining: Int = 0,
+    val percent: Int = 0,
+    val over: Boolean = false,
+)
+
+/** `GET /tracker/task-time` — the timesheet's per-task view. */
+@Serializable
+data class TaskTimeDay(
+    val date: String,
+    val minutes: Int = 0,
+    val entries: List<TaskTimeEntry> = emptyList(),
+)
+
+@Serializable
+data class TaskTimeEntry(
+    @SerialName("task_id") val taskId: Long,
+    val title: String,
+    @SerialName("issue_key") val issueKey: String? = null,
+    val date: String,
+    val minutes: Int = 0,
+)
 
 /** `acceptance_criteria` is JSONB `[{ id, text, done, doneAt, doneBy }]`; tolerate anything else. */
 internal fun parseCriteria(raw: JsonElement?): List<AcceptanceCriterion> {

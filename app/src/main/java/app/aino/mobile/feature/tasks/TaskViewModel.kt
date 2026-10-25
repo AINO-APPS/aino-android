@@ -147,6 +147,30 @@ data class TaskUiState(
     val inlineComments: CommentThread? = null,
     /** Bumped on refresh while the Service Desk tab is visible; the tab reloads on change. */
     val serviceDeskVersion: Int = 0,
+    // ── Next-generation surfaces ─────────────────────────────────────────
+    /** Per-user Tasks preferences, shared with web so both clients agree. */
+    val preferences: TaskPreferences = TaskPreferences(),
+    /** Completed work is hidden by default; the section expands on demand. */
+    val completedOpen: Boolean = false,
+    val completed: List<Task> = emptyList(),
+    val completedCount: Int = 0,
+    val completedLoading: Boolean = false,
+    /** Multi-select for bulk actions. */
+    val selectedIds: Set<Long> = emptySet(),
+    /** Epics with their rollups, for the epic filter. */
+    val epics: List<EpicSummary> = emptyList(),
+    val selectedEpicId: Long? = null,
+    /** Read-only background context on the schedule. */
+    val overlays: List<ScheduleOverlay> = emptyList(),
+    /** The carryover pre-flight shown before a sprint is completed. */
+    val completionPreview: CompletionPreview? = null,
+    /** Committed points and the scope delta for the selected sprint. */
+    val baseline: SprintBaseline? = null,
+    /** Time tracking for the open detail. */
+    val timerRunning: Boolean = false,
+    val timerBusy: Boolean = false,
+    /** "Updated by <name>" flashes keyed by task id, from realtime deltas. */
+    val attribution: Map<Long, String> = emptyMap(),
 ) {
     val currentSprint: AvailableSprint? get() = sprints.firstOrNull { it.id == selectedSprintId }
     val sortedBacklog: List<Task> get() = sortBacklog(backlog, backlogSort)
@@ -159,6 +183,13 @@ data class TaskUiState(
     val backlogHasMore: Boolean get() = backlog.size < backlogTotal
     val scheduledGroups: List<ScheduledGroup> get() = groupScheduled(scheduled)
     val scheduledOverdue: Int get() = scheduledGroups.firstOrNull { it.date == null }?.tasks?.size ?: 0
+    /** Compact cards keep key, title and points; comfortable adds the rest. */
+    val compact: Boolean get() = preferences.isCompact
+    val hasSelection: Boolean get() = selectedIds.isNotEmpty()
+    /** The epic filter narrows the backlog and board to one epic's children. */
+    val epicFiltered: List<Task> get() = selectedEpicId?.let { epic ->
+        backlog.filter { it.parentTaskId == epic }
+    } ?: backlog
 }
 
 /** The Scheduled view's fetch window, relative to today. */
@@ -291,11 +322,59 @@ class TaskViewModel(
     /** Raw `task_*` envelope from the shell; falls back to a reload when the payload is unusable. */
     fun onTaskEvent(type: String, data: JsonElement?) {
         if (_ui.value.userId == null) return
+        // A field-level delta patches the card in place, so a teammate's edit
+        // lands without a refetch and without flicker.
+        val delta = if (type == "task_updated") parseTaskDelta(data) else null
+        if (delta != null) {
+            applyDelta(delta)
+            return
+        }
         val event = parseTaskEvent(type, data)
         synchronized(pendingEvents) {
             if (event == null) pendingReload = true else pendingEvents += event
         }
         scheduleSync()
+    }
+
+    /** Per-task timestamp of the last delta applied, so an out-of-order frame cannot roll a field back. */
+    private val deltaAppliedAt = mutableMapOf<Long, String>()
+
+    /**
+     * Patch one task from a field-level delta.
+     *
+     * Only the fields in the frame are touched, so two people editing different
+     * fields of the same ticket both survive. The later write wins per field.
+     */
+    private fun applyDelta(delta: TaskDelta) {
+        val previous = deltaAppliedAt[delta.taskId]
+        if (delta.at != null && previous != null && delta.at < previous) return
+        if (delta.at != null) deltaAppliedAt[delta.taskId] = delta.at
+
+        var patched: Task? = null
+        _ui.update { s ->
+            fun Task.patched(): Task =
+                if (id == delta.taskId) applyTaskDelta(this, delta, previous).also { patched = it } else this
+            s.copy(
+                tasks = s.tasks.map { it.patched() },
+                backlog = s.backlog.map { it.patched() },
+                completed = s.completed.map { it.patched() },
+                scheduled = s.scheduled.map { it.patched() },
+                searchResults = s.searchResults.map { it.patched() },
+                detail = s.detail?.patched(),
+                attribution = delta.actorName?.let { s.attribution + (delta.taskId to it) } ?: s.attribution,
+            )
+        }
+        patched?.let { flash(delta.taskId) }
+        // The attribution is a flash, not a permanent label.
+        delta.actorName?.let { name ->
+            viewModelScope.launch(Dispatchers.Main.immediate) {
+                delay(ATTRIBUTION_MS)
+                _ui.update { s ->
+                    if (s.attribution[delta.taskId] == name) s.copy(attribution = s.attribution - delta.taskId)
+                    else s
+                }
+            }
+        }
     }
 
     /** Reconnect catch-up: the server keeps no replay log, so revalidate everything visible. */
@@ -1158,9 +1237,225 @@ class TaskViewModel(
 
     internal val repo: TaskRepository get() = repository
 
+    // ── Preferences (shared with web) ────────────────────────────────────
+
+    /** Load the per-user Tasks preferences so both clients agree. */
+    fun loadPreferences() {
+        io {
+            runCatching { repository.loadPreferences() }.onSuccess { prefs ->
+                _ui.update { it.copy(preferences = prefs) }
+            }
+        }
+    }
+
+    /** Toggle the completed section; the choice persists per user. */
+    fun setShowCompleted(show: Boolean) {
+        _ui.update { it.copy(preferences = it.preferences.copy(showCompleted = show), completedOpen = show) }
+        io {
+            runCatching {
+                repository.savePreferences(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("show_completed", kotlinx.serialization.json.JsonPrimitive(show))
+                    },
+                )
+            }.onSuccess { prefs -> _ui.update { it.copy(preferences = prefs) } }
+        }
+        if (show) loadCompleted()
+    }
+
+    /** Switch between comfortable and compact cards; the choice persists per user. */
+    fun setCardDensity(compact: Boolean) {
+        val density = if (compact) "compact" else "comfortable"
+        _ui.update { it.copy(preferences = it.preferences.copy(cardDensity = density)) }
+        io {
+            runCatching {
+                repository.savePreferences(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("card_density", kotlinx.serialization.json.JsonPrimitive(density))
+                    },
+                )
+            }.onSuccess { prefs -> _ui.update { it.copy(preferences = prefs) } }
+        }
+    }
+
+    fun toggleCompletedSection() {
+        val open = !_ui.value.completedOpen
+        _ui.update { it.copy(completedOpen = open) }
+        if (open && _ui.value.completed.isEmpty()) loadCompleted()
+    }
+
+    /** The completed window: the last 30 days, matching web's default. */
+    fun loadCompleted() {
+        _ui.update { it.copy(completedLoading = true) }
+        io {
+            val today = java.time.LocalDate.now()
+            val from = today.minusDays(30)
+            runCatching {
+                repository.loadBacklog(TaskFilters(completed = "only"), limit = 50, offset = 0)
+            }.fold(
+                onSuccess = { response ->
+                    _ui.update {
+                        it.copy(
+                            completed = response.tasks,
+                            completedCount = response.completedCount ?: response.tasks.size,
+                            completedLoading = false,
+                        )
+                    }
+                },
+                onFailure = { _ui.update { it.copy(completedLoading = false) } },
+            )
+            // `from` is kept for parity with web's window; the server applies it.
+            from.toString()
+        }
+    }
+
+    // ── Bulk actions ─────────────────────────────────────────────────────
+
+    fun toggleSelection(id: Long) {
+        _ui.update { s ->
+            s.copy(selectedIds = if (id in s.selectedIds) s.selectedIds - id else s.selectedIds + id)
+        }
+    }
+
+    fun clearSelection() = _ui.update { it.copy(selectedIds = emptySet()) }
+
+    /** One request for a multi-select action, with an Undo affordance. */
+    fun bulkAction(action: String, value: String? = null) {
+        val ids = _ui.value.selectedIds.toList()
+        if (ids.isEmpty()) return
+        io {
+            runCatching { repository.bulkAction(BulkPayload(ids, action, value)) }.fold(
+                onSuccess = { result ->
+                    clearSelection()
+                    notify("${result.updated} updated")
+                    reloadTab()
+                },
+                onFailure = { fail(failure(it, "Bulk action failed")) },
+            )
+        }
+    }
+
+    // ── Ranked reorder ───────────────────────────────────────────────────
+
+    /** Move a backlog row between two neighbours; the server computes the rank. */
+    fun reorder(taskId: Long, beforeId: Long?, afterId: Long?) {
+        io {
+            runCatching { repository.rankTask(taskId, beforeId, afterId) }.fold(
+                onSuccess = { ranked -> patchTask(ranked, highlight = false) },
+                onFailure = { fail(failure(it, "Failed to reorder")) },
+            )
+        }
+    }
+
+    // ── Epics ────────────────────────────────────────────────────────────
+
+    fun loadEpics() {
+        io {
+            runCatching { repository.loadEpics() }.onSuccess { list ->
+                _ui.update { it.copy(epics = list) }
+            }
+        }
+    }
+
+    fun selectEpic(id: Long?) = _ui.update { it.copy(selectedEpicId = id) }
+
+    // ── Schedule overlays ────────────────────────────────────────────────
+
+    fun loadOverlays(from: String, to: String) {
+        io {
+            runCatching { repository.loadScheduleOverlays(from, to) }.onSuccess { list ->
+                _ui.update { it.copy(overlays = list) }
+            }
+        }
+    }
+
+    // ── Sprint pre-flight and baseline ───────────────────────────────────
+
+    /** The carryover pre-flight shown before a sprint is completed. */
+    fun loadCompletionPreview(sprintId: Long) {
+        io {
+            runCatching { repository.loadCompletionPreview(sprintId) }.onSuccess { preview ->
+                _ui.update { it.copy(completionPreview = preview) }
+            }
+        }
+    }
+
+    fun loadBaseline(sprintId: Long) {
+        io {
+            runCatching { repository.loadBaseline(sprintId) }.onSuccess { baseline ->
+                _ui.update { it.copy(baseline = baseline) }
+            }
+        }
+    }
+
+    // ── Time tracking ────────────────────────────────────────────────────
+
+    /** Is a timer running for the open task? */
+    fun loadTimer(taskId: Long) {
+        io {
+            runCatching { repository.loadTimer(taskId) }.onSuccess { state ->
+                _ui.update { it.copy(timerRunning = state.running) }
+            }
+        }
+    }
+
+    /** Start a timer attributed to this task; the elapsed time rolls into the timesheet. */
+    fun startTimer(taskId: Long) {
+        _ui.update { it.copy(timerBusy = true) }
+        io {
+            runCatching { repository.startTimer(taskId) }.fold(
+                onSuccess = { state ->
+                    _ui.update { it.copy(timerRunning = state.running, timerBusy = false) }
+                },
+                onFailure = {
+                    _ui.update { it.copy(timerBusy = false) }
+                    fail(failure(it, "Could not start the timer"))
+                },
+            )
+        }
+    }
+
+    /** Stop the timer and add the elapsed minutes to the task. */
+    fun stopTimer(taskId: Long) {
+        _ui.update { it.copy(timerBusy = true) }
+        io {
+            runCatching { repository.stopTimer(taskId) }.fold(
+                onSuccess = { stop ->
+                    _ui.update { s ->
+                        s.copy(
+                            timerRunning = false,
+                            timerBusy = false,
+                            detail = s.detail?.let {
+                                if (it.id == taskId) it.copy(loggedMinutes = it.loggedMinutes + stop.minutes) else it
+                            },
+                        )
+                    }
+                    notify("Logged ${stop.minutes}m")
+                },
+                onFailure = {
+                    _ui.update { it.copy(timerBusy = false) }
+                    fail(failure(it, "Could not stop the timer"))
+                },
+            )
+        }
+    }
+
+    // ── Canonical key lookup ─────────────────────────────────────────────
+
+    /** Resolve a `PROJ-123` reference to its task and open it. */
+    fun openByKey(key: String) {
+        io {
+            runCatching { repository.loadByKey(key) }.fold(
+                onSuccess = { task -> viewModelScope.launch { openDetail(task) } },
+                onFailure = { fail(failure(it, "No task matches $key")) },
+            )
+        }
+    }
+
     companion object {
         private const val SYNC_DEBOUNCE_MS = 400L
         private const val HIGHLIGHT_MS = 2_200L
+        private const val ATTRIBUTION_MS = 4_000L
 
         fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
