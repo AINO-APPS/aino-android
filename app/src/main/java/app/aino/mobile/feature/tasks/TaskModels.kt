@@ -196,9 +196,19 @@ data class AvailableSprint(
     val goal: String? = null,
     @SerialName("team_id") val teamId: Long? = null,
     @SerialName("team_name") val teamName: String? = null,
+    /** The sprint's running number within its team; the heading shows "#3". */
+    @SerialName("sprint_number") val sprintNumber: Int? = null,
     @Serializable(with = LenientDoubleNullableSerializer::class)
     @SerialName("velocity_points") val velocityPoints: Double? = null,
-)
+) {
+    /**
+     * The sprint's number, from `sprint_number` or the trailing digits of its
+     * name ("Sprint #3" → 3). The heading already says "Sprint", so repeating
+     * the stored name would hide the number.
+     */
+    val number: Int?
+        get() = sprintNumber ?: Regex("(\\d+)\\s*$").find(name)?.groupValues?.get(1)?.toIntOrNull()
+}
 
 @Serializable
 data class SprintListResponse(val sprints: List<AvailableSprint> = emptyList())

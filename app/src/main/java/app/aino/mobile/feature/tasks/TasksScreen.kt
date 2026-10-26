@@ -296,8 +296,11 @@ internal fun MenuItem(icon: ImageVector, text: String, danger: Boolean = false, 
 
 private fun headerSubtitle(ui: TaskUiState): String = when (ui.tab) {
     TaskTab.Sprint -> ui.currentSprint?.let { sp ->
-        val team = ui.teamName?.let { "$it · " }.orEmpty()
-        team + sp.name + if (sp.status == "active") " · ${sprintDaysLeft(sp.endDate)}d left" else " · ${sp.status.replaceFirstChar(Char::uppercase)}"
+        // The team the user belongs to, then the sprint's number — the heading
+        // already says "Sprint", so the stored name would just repeat it.
+        val team = (ui.teamName ?: sp.teamName)?.let { "$it · " }.orEmpty()
+        val label = sp.number?.let { "#$it" } ?: sp.name
+        team + label + if (sp.status == "active") " · ${sprintDaysLeft(sp.endDate)}d left" else " · ${sp.status.replaceFirstChar(Char::uppercase)}"
     } ?: "Sprint board"
     TaskTab.Backlog -> {
         val total = ui.backlogTotal.takeIf { it > 0 } ?: ui.backlog.size

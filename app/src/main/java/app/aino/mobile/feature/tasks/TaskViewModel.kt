@@ -252,6 +252,8 @@ class TaskViewModel(
     private var errorJob: Job? = null
     private var searchJob: Job? = null
     private var carriedOn: String? = null
+    /** The sprint landing has been applied once; a later tab choice is honoured. */
+    private var landingApplied = false
     private var sprintJob: Job? = null
     private var backlogJob: Job? = null
     private var scheduledJob: Job? = null
@@ -342,9 +344,12 @@ class TaskViewModel(
                     sprints = sprints,
                     agile = config ?: s.agile,
                     selectedSprintId = selected,
-                    tab = if (s.tab == TaskTab.Sprint && (!agile || sprints.isEmpty())) TaskTab.Backlog else s.tab,
+                    tab = if (s.tab == TaskTab.Sprint && (!agile || sprints.isEmpty())) TaskTab.Backlog
+                    else if (!landingApplied) landingTab(s.tab, sprints, agile)
+                    else s.tab,
                 )
             }
+            landingApplied = true
             autoCarryForward()
             reloadTab()
             _ui.update { it.copy(refreshing = false) }
@@ -1086,17 +1091,28 @@ class TaskViewModel(
         }
     }
 
-    /** "Delete Item" ConfirmDialog. */
+    /**
+     * "Cancel ticket" ConfirmDialog.
+     *
+     * Tickets are cancelled, never hard-deleted: the API moves the ticket to the
+     * org's terminal "Cancelled" state, so its history, comments and time
+     * survive and it can be moved back to an open state.
+     */
     fun requestDelete(task: Task) {
-        confirm("Delete Item", "Are you sure you want to delete \"${task.title}\"? This cannot be undone.", "Delete", danger = true) {
+        confirm(
+            "Cancel ticket",
+            "Cancel \"${task.title}\"? The ticket and its history are kept, and it leaves the open work.",
+            "Cancel ticket",
+            danger = true,
+        ) {
             io {
                 runCatching { repository.deleteTask(task.id) }.fold(
                     onSuccess = {
                         removeTask(task.id, remote = false)
-                        notify("Deleted ${task.displayKey}")
+                        notify("Cancelled ${task.displayKey}")
                         if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
                     },
-                    onFailure = { e -> fail(failure(e, "Failed to delete item")) },
+                    onFailure = { e -> fail(failure(e, "Failed to cancel ticket")) },
                 )
             }
         }
@@ -1404,14 +1420,14 @@ class TaskViewModel(
         }
     }
 
-    /** Deleting a batch is destructive, so it asks first. */
+    /** Cancelling a batch is destructive, so it asks first. */
     fun confirmBulkDelete() {
         val count = _ui.value.selectedIds.size
         if (count == 0) return
         confirm(
-            "Delete $count ${if (count == 1) "ticket" else "tickets"}?",
-            "This cannot be undone.",
-            "Delete",
+            "Cancel $count ${if (count == 1) "ticket" else "tickets"}?",
+            "They keep their history and leave the open work.",
+            "Cancel tickets",
             danger = true,
         ) { bulkAction("delete") }
     }

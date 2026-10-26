@@ -59,6 +59,15 @@ internal fun SprintPlanPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (
             contentPadding = PaddingValues(bottom = 112.dp),
         ) {
             item(key = "header") { PlanHeader(ui, viewModel) }
+            // The switch lives on both surfaces so the Board stays reachable
+            // from Plan (it used to exist only in the board's header card).
+            item(key = "view-switch") {
+                SprintViewSwitch(
+                    selected = ui.sprintView,
+                    onSelect = viewModel::setSprintView,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
             ui.error?.let { item(key = "error") { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) } }
 
             // ── Sprint pane ──────────────────────────────────────────────

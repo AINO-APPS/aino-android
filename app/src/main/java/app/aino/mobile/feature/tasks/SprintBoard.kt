@@ -2,12 +2,10 @@ package app.aino.mobile.feature.tasks
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,9 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -41,7 +36,6 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -59,97 +52,118 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.aino.mobile.core.designsystem.icons.HeroIcons
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
- * Sprint board for phones: a sprint switcher + collapsible progress card,
- * a row of status chips (one per workflow state, with counts and WIP
- * limits) synced to a swipeable column pager. Long-press a card and drag
- * it onto a chip to move it; the card's long-press menu ("Move to…") is the
+ * Sprint board for phones: a sprint switcher + collapsible progress card, then
+ * the workflow states stacked **vertically** — New, In Progress, In Review,
+ * Done — each with its own header (count and WIP limit) and its cards beneath.
+ *
+ * A vertical stack is the right shape for a phone: every column is reachable by
+ * scrolling, nothing is hidden behind a swipe, and the whole board reads in the
+ * same order as the workflow. Long-press a card and drag it onto another
+ * column's header to move it; the card's long-press menu ("Move to…") is the
  * accessible fallback. Moves are optimistic with Undo.
  */
 @Composable
 internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
     val haptics = LocalHapticFeedback.current
-    val scope = rememberCoroutineScope()
-    val states = ui.agile.workflowStates
-    val pager = rememberPagerState { states.size.coerceAtLeast(1) }
+    // Cancelled is a terminal state, not a work-in-progress column: a cancelled
+    // ticket leaves the board rather than sitting in a fifth column.
+    val states = ui.agile.workflowStates.filter { it.key != "cancelled" }
     var progressOpen by rememberSaveable { mutableStateOf(false) }
     var actionsFor by remember { mutableStateOf<Task?>(null) }
 
-    // Drag-to-chip state (root coordinates).
-    val chipBounds = remember { mutableStateMapOf<String, Rect>() }
+    // Drag-to-column state (root coordinates). A column claims a drop target
+    // from both its header and its body, kept in separate maps so an empty
+    // column's body cannot shadow its own header (the two used to write the
+    // same slot, which made dropping on a header stop working).
+    val headerBounds = remember { mutableStateMapOf<String, Rect>() }
+    val bodyBounds = remember { mutableStateMapOf<String, Rect>() }
     var dragging by remember { mutableStateOf<Task?>(null) }
     var dragPos by remember { mutableStateOf(Offset.Zero) }
     var dragOrigin by remember { mutableStateOf(Offset.Zero) }
     var boardOrigin by remember { mutableStateOf(Offset.Zero) }
-    val hoverKey = dragging?.let { _ -> chipBounds.entries.firstOrNull { it.value.contains(dragPos) }?.key }
+    val hoverKey = dragging?.let { _ -> dropTargetKey(headerBounds, bodyBounds, dragPos) }
     LaunchedEffect(hoverKey) { if (hoverKey != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
 
     TaskPage(loading = ui.sprintLoading || ui.refreshing, onRefresh = { viewModel.refresh(pull = true) }) {
         Box(Modifier.fillMaxSize().onGloballyPositioned { boardOrigin = it.boundsInRoot().topLeft }) {
-            Column(Modifier.fillMaxSize()) {
-                SprintHeaderCard(ui, viewModel, progressOpen) { progressOpen = !progressOpen }
-                ui.error?.let { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) }
-                ActiveFilterChips(ui, viewModel, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp))
-                // Status chips (drop targets while dragging).
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    states.forEachIndexed { index, state ->
-                        val count = tasksForColumn(ui.tasks, state).size
-                        StatusTab(
-                            state = state,
-                            count = count,
-                            wip = state.wipLimit?.takeIf { ui.agile.features.wipLimits && it > 0 },
-                            selected = pager.currentPage == index,
-                            dropTarget = dragging != null,
-                            hovered = hoverKey == state.key,
-                            onClick = { scope.launch { pager.animateScrollToPage(index) } },
-                            modifier = Modifier.onGloballyPositioned { chipBounds[state.key] = it.boundsInRoot() },
-                        )
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 96.dp),
+            ) {
+                item(key = "header") {
+                    Column {
+                        SprintHeaderCard(ui, viewModel, progressOpen) { progressOpen = !progressOpen }
+                        ui.error?.let { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) }
+                        ActiveFilterChips(ui, viewModel, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp))
+                        if (dragging != null) {
+                            Text(
+                                "Drop on a column to move",
+                                color = colors.primary, fontSize = 0.74.rem, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                            )
+                        }
                     }
                 }
-                if (dragging != null) {
-                    Text(
-                        "Drop on a status to move",
-                        color = colors.primary, fontSize = 0.74.rem, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
-                    )
-                }
-                HorizontalPager(state = pager, modifier = Modifier.weight(1f).fillMaxWidth(), userScrollEnabled = dragging == null, key = { states.getOrNull(it)?.key ?: it }) { page ->
-                    val state = states.getOrNull(page) ?: return@HorizontalPager
-                    val columnTasks = tasksForColumn(ui.tasks, state)
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        when {
-                            ui.sprintLoading && ui.tasks.isEmpty() -> items(3, key = { "sk-$it" }) { TaskCardSkeleton() }
-                            ui.selectedSprintId == null -> item { TaskEmptyState(HeroIcons.RocketLaunch, "No sprint selected", "Create a sprint for your team to start planning.") }
-                            columnTasks.isEmpty() -> item {
-                                TaskEmptyState(
-                                    HeroIcons.QueueList,
-                                    "Nothing in ${stateLabel(state)}",
-                                    if (ui.tasks.isEmpty()) "Pull tickets in from the backlog to plan this sprint." else "Swipe to see other columns, or drag a card here.",
-                                    action = if (ui.tasks.isEmpty() && ui.agileEnabled) "Import from backlog" else null,
-                                    onAction = { viewModel.openSheet(TaskSheet.Import) },
-                                )
+
+                if (ui.sprintLoading && ui.tasks.isEmpty()) {
+                    items(3, key = { "sk-$it" }) {
+                        Box(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) { TaskCardSkeleton() }
+                    }
+                } else if (ui.selectedSprintId == null) {
+                    item(key = "no-sprint") {
+                        TaskEmptyState(HeroIcons.RocketLaunch, "No sprint selected", "Create a sprint for your team to start planning.")
+                    }
+                } else {
+                    // One board-level state when nothing is visible, instead of a
+                    // full empty state per column (four of them stacked ~800dp of
+                    // illustrations and repeated "Nothing in …" copy).
+                    val empty = boardEmptyState(hasTasks = ui.tasks.isNotEmpty(), filterCount = ui.filterCount)
+                    states.forEach { state ->
+                        val columnTasks = tasksForColumn(ui.tasks, state)
+                        item(key = "col-${state.key}") {
+                            ColumnHeader(
+                                state = state,
+                                count = columnTasks.size,
+                                wip = state.wipLimit?.takeIf { ui.agile.features.wipLimits && it > 0 },
+                                dropTarget = dragging != null,
+                                hovered = hoverKey == state.key,
+                                modifier = Modifier.onGloballyPositioned { headerBounds[state.key] = it.boundsInRoot() },
+                            )
+                        }
+                        if (columnTasks.isEmpty()) {
+                            // Headers render bare when the whole board is empty;
+                            // the board-level state below carries the message.
+                            if (empty == BoardEmpty.None) {
+                                item(key = "empty-${state.key}") {
+                                    EmptyColumnRow(
+                                        state = state,
+                                        hovered = hoverKey == state.key,
+                                        // The body is the larger target, so it
+                                        // registers the same bounds as its header.
+                                        modifier = Modifier.onGloballyPositioned {
+                                            bodyBounds[state.key] = it.boundsInRoot()
+                                        },
+                                    )
+                                }
                             }
-                            else -> items(columnTasks, key = { "t-${it.id}" }) { task ->
+                        } else {
+                            items(columnTasks, key = { "t-${it.id}" }) { task ->
                                 val isDragged = dragging?.id == task.id
                                 var cardOrigin by remember { mutableStateOf(Offset.Zero) }
                                 // pointerInput keeps its first lambdas; read the latest row (realtime may have patched it).
@@ -157,6 +171,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                 val canMove = canChangeStatus(task, ui.userId, ui.role)
                                 Box(
                                     Modifier
+                                        .padding(horizontal = 16.dp, vertical = 5.dp)
                                         .onGloballyPositioned { cardOrigin = it.boundsInRoot().topLeft }
                                         .alpha(if (isDragged) 0.35f else 1f)
                                         .pointerInput(task.id, states, canMove) {
@@ -173,7 +188,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                                     dragPos += amount
                                                 },
                                                 onDragEnd = {
-                                                    val target = chipBounds.entries.firstOrNull { it.value.contains(dragPos) }?.key
+                                                    val target = dropTargetKey(headerBounds, bodyBounds, dragPos)
                                                     val moved = dragging?.let { d -> viewModel.ui.value.tasks.firstOrNull { it.id == d.id } ?: d }
                                                     dragging = null
                                                     if (moved != null && target != null) {
@@ -207,6 +222,16 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                             }
                         }
                     }
+                    if (empty != BoardEmpty.None) {
+                        item(key = "board-empty") {
+                            BoardEmptyFooter(
+                                empty = empty,
+                                onClearFilters = viewModel::clearFilters,
+                                onImport = { viewModel.openSheet(TaskSheet.Import) },
+                                onCreate = { viewModel.openSheet(TaskSheet.CreateTicket) },
+                            )
+                        }
+                    }
                 }
             }
             // Floating ghost of the dragged card.
@@ -237,16 +262,19 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
     }
 }
 
-/** Status chip doubling as pager tab and drop target. */
+/**
+ * One column's header in the vertical board: the state's dot and name, its
+ * count (and WIP limit), and the drop-target highlight while a card is being
+ * dragged. It is also the drop target, so a card can be moved by dragging it
+ * onto the header of the column it should join.
+ */
 @Composable
-private fun StatusTab(
+internal fun ColumnHeader(
     state: WorkflowState,
     count: Int,
     wip: Int?,
-    selected: Boolean,
     dropTarget: Boolean,
     hovered: Boolean,
-    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalWebColors.current
@@ -254,35 +282,143 @@ private fun StatusTab(
     val exceeded = wip != null && count > wip
     val bg by animateColorAsState(
         when {
-            hovered -> tint.copy(alpha = 0.35f)
-            selected -> tint.copy(alpha = 0.18f)
+            hovered -> tint.copy(alpha = 0.22f)
             dropTarget -> colors.surfaceHover
             else -> colors.surface
-        }, label = "statusTabBg",
+        },
+        label = "columnHeaderBg",
     )
-    val scale by animateFloatAsState(if (hovered) 1.08f else 1f, label = "statusTabScale")
     Row(
         modifier
-            .scale(scale)
-            .clip(CircleShape)
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 14.dp, bottom = 4.dp)
+            .clip(RoundedCornerShape(10.dp))
             .background(bg)
-            .border(if (hovered || selected) 1.5.dp else 1.dp, if (exceeded) colors.danger else if (hovered || selected) tint else colors.border, CircleShape)
-            .clickable(onClickLabel = "Show ${stateLabel(state)}", onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .border(
+                if (hovered) 1.5.dp else 1.dp,
+                if (exceeded) colors.danger else if (hovered) tint else colors.border,
+                RoundedCornerShape(10.dp),
+            )
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(8.dp).background(tint, CircleShape))
-        Spacer(Modifier.width(7.dp))
-        Text(stateLabel(state), color = if (selected) colors.text else colors.textSecondary, fontSize = 0.82.rem, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, maxLines = 1)
-        Spacer(Modifier.width(7.dp))
+        Box(Modifier.size(9.dp).background(tint, CircleShape))
+        Spacer(Modifier.width(9.dp))
+        Text(
+            stateLabel(state),
+            color = colors.text,
+            fontSize = 0.82.rem,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
         Text(
             if (wip != null) "$count/$wip" else "$count",
-            color = if (exceeded) colors.danger else if (selected) tint else colors.textMuted,
-            fontSize = 0.74.rem,
+            color = if (exceeded) colors.danger else colors.textMuted,
+            fontSize = 0.76.rem,
             fontWeight = FontWeight.Bold,
         )
     }
 }
+
+/**
+ * The board-level empty state, shown once after the last column header.
+ *
+ * Lighter than [TaskEmptyState]: it is a footer to the board rather than the
+ * only thing on the page, so a 40dp icon and tighter padding keep it from
+ * re-creating the vertical gap that four full empty states used to make.
+ */
+@Composable
+internal fun BoardEmptyFooter(
+    empty: BoardEmpty,
+    onClearFilters: () -> Unit,
+    onImport: () -> Unit,
+    onCreate: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (empty == BoardEmpty.None) return
+    val colors = LocalWebColors.current
+    val filtered = empty == BoardEmpty.Filtered
+    Column(
+        modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier.size(40.dp).background(colors.primary.copy(alpha = 0.10f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (filtered) HeroIcons.MagnifyingGlass else HeroIcons.RocketLaunch,
+                null,
+                Modifier.size(20.dp),
+                tint = colors.primary,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            if (filtered) "No tickets match your filters" else "This sprint is empty",
+            color = colors.text,
+            fontSize = 0.92.rem,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            if (filtered) "Try removing a filter or two to widen the results."
+            else "Pull work in from the backlog, or create a ticket to get started.",
+            color = colors.textMuted,
+            fontSize = 0.8.rem,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(14.dp))
+        if (filtered) {
+            PillButton("Clear filters", onClearFilters, primary = true)
+        } else {
+            PillButton("Import from backlog", onImport, primary = true)
+            Spacer(Modifier.height(8.dp))
+            PillButton("Create ticket", onCreate)
+        }
+    }
+}
+
+/**
+ * One empty column's body: a thin dashed slot, not a full empty state.
+ *
+ * It is a drop target (the caller registers its bounds) and decorative to
+ * screen readers — the column header's `0` already says the column is empty, so
+ * announcing it again is noise in a linear swipe-through.
+ */
+@Composable
+internal fun EmptyColumnRow(
+    state: WorkflowState,
+    hovered: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalWebColors.current
+    val tint = hexColor(state.color, colors.textMuted)
+    Box(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 4.dp, bottom = 2.dp)
+            .height(44.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (hovered) tint.copy(alpha = 0.10f) else androidx.compose.ui.graphics.Color.Transparent)
+            .border(
+                width = if (hovered) 1.5.dp else 1.dp,
+                color = if (hovered) tint else colors.border,
+                shape = RoundedCornerShape(8.dp),
+            )
+            .clearAndSetSemantics { testTag = EMPTY_COLUMN_TAG },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text("No tickets", color = colors.textMuted, fontSize = 0.76.rem)
+    }
+}
+
+/** Test/automation handle for the decorative empty-column slot. */
+internal const val EMPTY_COLUMN_TAG = "empty-column"
 
 /** Sprint switcher row + collapsible progress / lifecycle details. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -301,7 +437,11 @@ private fun SprintHeaderCard(ui: TaskUiState, viewModel: TaskViewModel, expanded
         ) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(sprint.name, color = colors.text, fontSize = 1.rem, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    Text(
+                        sprint.number?.let { "#$it" } ?: sprint.name,
+                        color = colors.text, fontSize = 1.rem, fontWeight = FontWeight.Bold,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                    )
                     if (ui.sprints.size > 1) Icon(HeroIcons.ChevronDown, null, Modifier.size(18.dp), tint = colors.textSecondary)
                     Spacer(Modifier.width(8.dp))
                     SprintStatusPill(sprint.status)
@@ -317,41 +457,7 @@ private fun SprintHeaderCard(ui: TaskUiState, viewModel: TaskViewModel, expanded
         }
         Column(Modifier.padding(horizontal = 14.dp).padding(bottom = 12.dp)) {
             // Board ⇄ Plan: the two surfaces of the Sprint tab (D21).
-            Row(
-                Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                SprintView.entries.forEach { view ->
-                    val selected = ui.sprintView == view
-                    Row(
-                        Modifier
-                            .weight(1f)
-                            .clip(ChipShape)
-                            .background(if (selected) colors.primary.copy(alpha = 0.14f) else colors.bg)
-                            .clickable(
-                                onClickLabel = "Show ${view.key}",
-                                role = androidx.compose.ui.semantics.Role.Tab,
-                            ) { viewModel.setSprintView(view) }
-                            .padding(vertical = 7.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            if (view == SprintView.Board) HeroIcons.QueueList else HeroIcons.ArrowsRightLeft,
-                            null,
-                            Modifier.size(14.dp),
-                            tint = if (selected) colors.primary else colors.textMuted,
-                        )
-                        Spacer(Modifier.width(5.dp))
-                        Text(
-                            if (view == SprintView.Board) "Board" else "Plan",
-                            color = if (selected) colors.primary else colors.textSecondary,
-                            fontSize = 0.76.rem,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-            }
+            SprintViewSwitch(ui.sprintView, viewModel::setSprintView)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LinearProgressIndicator(
                     progress = { stats.percent / 100f },
@@ -517,7 +623,7 @@ internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewMo
             onDismiss()
         }
         if (ui.userId != null && ui.userId == task.userId) {
-            ActionRow(HeroIcons.Trash, "Delete", danger = true) { onDismiss(); viewModel.requestDelete(task) }
+            ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true) { onDismiss(); viewModel.requestDelete(task) }
         }
     }
 }

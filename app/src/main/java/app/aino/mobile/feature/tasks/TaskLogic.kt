@@ -1,5 +1,7 @@
 package app.aino.mobile.feature.tasks
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import java.net.URLEncoder
 import java.time.Instant
 import java.time.LocalDate
@@ -295,6 +297,49 @@ fun pickSprint(current: Long?, sprints: List<AvailableSprint>): Long? {
     if (sprints.isEmpty()) return current
     if (current != null && sprints.any { it.id == current }) return current
     return sprints.firstOrNull { it.status == "active" }?.id ?: sprints.first().id
+}
+
+/**
+ * Where the Tasks page should land once the sprint list resolves.
+ *
+ * Once a team's sprint is running, the sprint is where the work is; the backlog
+ * is only the pool of unplanned tickets. The landing only applies while the user
+ * is still on the default Backlog tab and has not chosen a tab themselves, so an
+ * explicit choice is never overridden.
+ */
+fun landingTab(current: TaskTab, sprints: List<AvailableSprint>, agileEnabled: Boolean): TaskTab {
+    if (!agileEnabled) return current
+    if (current != TaskTab.Backlog) return current
+    return if (sprints.any { it.status == "active" }) TaskTab.Sprint else current
+}
+
+/**
+ * Which empty state the sprint board shows.
+ *
+ * `Filtered` and `Empty` need different copy and different actions: filters hide
+ * tickets that exist, so offering "import from the backlog" there is wrong.
+ */
+enum class BoardEmpty { None, Filtered, Empty }
+
+/** Decide the board's empty state from what is visible and whether filters are on. */
+fun boardEmptyState(hasTasks: Boolean, filterCount: Int): BoardEmpty = when {
+    hasTasks -> BoardEmpty.None
+    filterCount > 0 -> BoardEmpty.Filtered
+    else -> BoardEmpty.Empty
+}
+
+/**
+ * Which column a dragged card is over, in root coordinates.
+ *
+ * A column claims bounds from two places — its header and, when it is empty,
+ * its dashed body — and the header must win: it sits above the body, and a
+ * column whose body registered last would otherwise swallow drops aimed at its
+ * own header. Testing headers first makes the header tappable regardless of
+ * layout order.
+ */
+fun dropTargetKey(headers: Map<String, Rect>, bodies: Map<String, Rect>, pos: Offset): String? {
+    headers.entries.firstOrNull { it.value.contains(pos) }?.let { return it.key }
+    return bodies.entries.firstOrNull { it.value.contains(pos) }?.key
 }
 
 /** Roles allowed to drive the sprint lifecycle from the board. */
