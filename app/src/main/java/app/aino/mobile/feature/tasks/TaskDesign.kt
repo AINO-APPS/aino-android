@@ -329,18 +329,23 @@ internal fun stateOf(task: Task, agile: AgileConfig): WorkflowState? =
 
 internal fun stateLabel(state: WorkflowState): String = state.name.ifEmpty { state.key }
 
-/** Priority glyph: three bars filled by level. */
+/** Priority chevron: up for high, a dash for medium, down for low. */
 @Composable
 internal fun PriorityGlyph(priority: String, modifier: Modifier = Modifier) {
     val colors = LocalWebColors.current
     val p = priorityOf(priority)
-    val level = when (p.value) { "high" -> 3; "medium" -> 2; else -> 1 }
     val tint = colors.tone(p.tone)
-    Row(modifier.semantics { contentDescription = "${p.label} priority" }, horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
-        (1..3).forEach { i ->
-            Box(Modifier.width(3.dp).height((4 + i * 3).dp).background(if (i <= level) tint else colors.border, RoundedCornerShape(1.dp)))
-        }
+    val glyph = when (p.value) {
+        "high" -> HeroIcons.ChevronUp
+        "low" -> HeroIcons.ChevronDown
+        else -> HeroIcons.Minus
     }
+    Icon(
+        glyph,
+        contentDescription = "${p.label} priority",
+        modifier = modifier.size(16.dp),
+        tint = tint,
+    )
 }
 
 // ── Task card ────────────────────────────────────────────────────────────
