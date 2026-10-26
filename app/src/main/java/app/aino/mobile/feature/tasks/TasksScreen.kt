@@ -33,16 +33,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LeadingIconTab
+import androidx.compose.material3.Tab
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -136,13 +136,22 @@ fun TasksScreen(
                 enter = scaleIn() + fadeIn(),
                 exit = scaleOut() + fadeOut(),
             ) {
-                ExtendedFloatingActionButton(
+                Surface(
                     onClick = { viewModel.openSheet(TaskSheet.CreateTicket) },
-                    icon = { Icon(HeroIcons.Plus, null, Modifier.size(18.dp)) },
-                    text = { Text("New ticket", fontWeight = FontWeight.SemiBold) },
-                    containerColor = colors.primary,
+                    shape = RoundedCornerShape(14.dp),
+                    color = colors.primary,
                     contentColor = colors.onAccent,
-                )
+                    shadowElevation = 6.dp,
+                ) {
+                    Row(
+                        Modifier.height(48.dp).padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(HeroIcons.Plus, null, Modifier.size(16.dp))
+                        Text("New ticket", fontSize = 0.8.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
+                }
             }
         },
     ) { padding ->
@@ -158,7 +167,7 @@ fun TasksScreen(
                 ) {
                     tabs.forEachIndexed { index, tab ->
                         val badge = when (tab) { TaskTab.Backlog -> ui.backlogTotal.takeIf { it > 0 }; TaskTab.Scheduled -> ui.scheduledOverdue.takeIf { it > 0 }; else -> null }
-                        LeadingIconTab(
+                        Tab(
                             selected = pagerState.currentPage == index,
                             onClick = { viewModel.selectTab(tab) },
                             text = {
@@ -176,7 +185,6 @@ fun TasksScreen(
                                     }
                                 }
                             },
-                            icon = { Icon(tabIcon(tab), null, Modifier.size(18.dp)) },
                             selectedContentColor = colors.primary,
                             unselectedContentColor = colors.textSecondary,
                         )
@@ -248,14 +256,16 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
             Text(headerSubtitle(ui), color = colors.textMuted, fontSize = 0.78.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         RoundIconButton(HeroIcons.MagnifyingGlass, "Search tasks", viewModel::openSearch)
-        if (ui.tab != TaskTab.ServiceDesk) {
-            Spacer(Modifier.width(8.dp))
-            RoundIconButton(HeroIcons.Bars3BottomLeft, "Filters", { viewModel.openSheet(TaskSheet.Filters) }, badge = ui.filterCount, active = ui.filterCount > 0)
-        }
         Spacer(Modifier.width(8.dp))
         Box {
             RoundIconButton(HeroIcons.EllipsisVertical, "More options", { menu = true })
             androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(colors.bgElevated)) {
+                if (ui.tab != TaskTab.ServiceDesk) {
+                    MenuItem(HeroIcons.Bars3BottomLeft, "Filters and view options" + if (ui.filterCount > 0) " (${ui.filterCount})" else "") {
+                        menu = false
+                        viewModel.openSheet(TaskSheet.Filters)
+                    }
+                }
                 if (ui.agileEnabled) {
                     MenuItem(HeroIcons.ChartBar, "Sprint insights") { menu = false; onOpenInsights() }
                 }
@@ -291,7 +301,7 @@ private fun headerSubtitle(ui: TaskUiState): String = when (ui.tab) {
     } ?: "Sprint board"
     TaskTab.Backlog -> {
         val total = ui.backlogTotal.takeIf { it > 0 } ?: ui.backlog.size
-        if (total > 0) "$total unscheduled ticket${if (total == 1) "" else "s"}" else "Unscheduled work waiting to be planned"
+        if (total > 0) "$total ticket${if (total == 1) "" else "s"} to plan" else "Sprint and backlog work"
     }
     TaskTab.Scheduled -> {
         val overdue = ui.scheduledOverdue
@@ -389,10 +399,10 @@ private fun CommandPaletteBody(
         }
         item {
             PaletteRow(
-                if (ui.preferences.showCompleted) HeroIcons.EyeSlash else HeroIcons.Eye,
-                if (ui.preferences.showCompleted) "Hide completed" else "Show completed",
+                if (ui.completedOpen) HeroIcons.EyeSlash else HeroIcons.Eye,
+                if (ui.completedOpen) "Hide completed" else "Show completed",
                 "Toggle the completed section",
-            ) { viewModel.setShowCompleted(!ui.preferences.showCompleted) }
+            ) { viewModel.setShowCompleted(!ui.completedOpen) }
         }
         if (ui.agileEnabled && ui.currentSprint != null) {
             item {
@@ -505,6 +515,10 @@ private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel) {
     var picker by remember { mutableStateOf<String?>(null) }
     TaskSheetScaffold(when (ui.tab) { TaskTab.Sprint -> "Filter sprint"; TaskTab.Scheduled -> "Filter scheduled"; else -> "Filter backlog" }, viewModel::closeSheet, HeroIcons.Bars3BottomLeft) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            if (ui.tab == TaskTab.Backlog) {
+                SectionTitle("View options")
+                BacklogViewControls(ui, viewModel)
+            }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SectionTitle("Assignee")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

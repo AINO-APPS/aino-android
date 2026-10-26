@@ -371,11 +371,14 @@ internal fun TaskCardM3(
     highlighted: Boolean = false,
     showStatus: Boolean = false,
     onLongPress: (() -> Unit)? = null,
+    /** Accessibility label for the long-press gesture. */
+    longPressLabel: String = "More actions",
     onComments: (() -> Unit)? = null,
     /** Footer actions: selection, schedule, reschedule. */
     trailing: (@Composable () -> Unit)? = null,
     /** Top-right slot, reserved for the overflow menu so it is always visible. */
     topTrailing: (@Composable () -> Unit)? = null,
+    leading: (@Composable () -> Unit)? = null,
     /** Compact (default) drops the comments count. */
     compact: Boolean = false,
     /** "Updated by <name>" from a realtime delta; fades on its own (D48). */
@@ -386,7 +389,7 @@ internal fun TaskCardM3(
     val haptics = LocalHapticFeedback.current
     val done = task.isCompleted || stateOf(task, agile)?.isTerminal == true
     val points = if (agile.features.storyPoints) formatPoints(task.storyPoints) else ""
-    val due = formatDueDate(task.dueDate)
+    val due = formatDueDate(task.plannedDate ?: task.dueDate)
     val overdue = isDueOverdue(task.dueDate) && !done
     val ring = when {
         selected -> colors.primary
@@ -405,12 +408,13 @@ internal fun TaskCardM3(
             .combinedClickable(
                 onClick = onOpen,
                 onLongClick = onLongPress?.let { action -> { haptics.performHapticFeedback(HapticFeedbackType.LongPress); action() } },
-                onLongClickLabel = if (onLongPress != null) "More actions" else null,
+                onLongClickLabel = if (onLongPress != null) longPressLabel else null,
             )
             .padding(start = 12.dp, end = if (topTrailing != null) 2.dp else 12.dp, top = 8.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(Modifier.heightIn(min = 24.dp), verticalAlignment = Alignment.CenterVertically) {
+            leading?.invoke()
             val projectColor = task.project?.color?.let { hexColor(it) }
             agile.type(task.workItemTypeId)?.let { type ->
                 Box(Modifier.size(8.dp).background(hexColor(type.color), RoundedCornerShape(2.dp)).semantics { contentDescription = type.name })
@@ -424,7 +428,7 @@ internal fun TaskCardM3(
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,
             )
-            if (points.isNotEmpty()) {
+            if (!compact && points.isNotEmpty()) {
                 Spacer(Modifier.width(6.dp))
                 Text(
                     points,
@@ -437,7 +441,7 @@ internal fun TaskCardM3(
                         .semantics { contentDescription = "$points ${agile.unitLabel}" },
                 )
             }
-            if (task.isBlocked && agile.features.blockers) {
+            if (!compact && task.isBlocked && agile.features.blockers) {
                 Spacer(Modifier.width(8.dp))
                 Icon(HeroIcons.NoSymbol, null, Modifier.size(12.dp), tint = colors.warningInk)
                 Spacer(Modifier.width(3.dp))
@@ -458,6 +462,18 @@ internal fun TaskCardM3(
             textDecoration = doneDecoration(done),
             modifier = Modifier.padding(end = if (topTrailing != null) 10.dp else 0.dp),
         )
+        if (!compact) {
+            stripHtml(task.description).takeIf { it.isNotBlank() }?.let { description ->
+                Text(
+                    description,
+                    color = colors.textSecondary,
+                    fontSize = 12.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(end = 10.dp),
+                )
+            }
+        }
         Row(
             Modifier.padding(end = if (topTrailing != null) 10.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -469,15 +485,16 @@ internal fun TaskCardM3(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (showStatus || done) {
-                    stateOf(task, agile)?.let { CardStatusPill(stateLabel(it), hexColor(it.color, colors.textMuted)) }
+                    val state = stateOf(task, agile)
+                    CardStatusPill(state?.let(::stateLabel) ?: columnOf(task.workflowStateKey).label, state?.let { hexColor(it.color, colors.textMuted) } ?: colors.textMuted)
                 }
                 if (overdue) {
                     MetaChip(HeroIcons.Clock, "Overdue", colors.dangerInk, bold = true)
                 } else {
                     due?.let { MetaChip(HeroIcons.CalendarDays, it, colors.textSecondary) }
                 }
-                task.labels.take(2).forEach { CardLabel(it) }
-                if (task.labels.size > 2) {
+                if (!compact) task.labels.take(2).forEach { CardLabel(it) }
+                if (!compact && task.labels.size > 2) {
                     Text(
                         "+${task.labels.size - 2}",
                         color = colors.textMuted,
@@ -505,7 +522,7 @@ internal fun TaskCardM3(
             trailing?.invoke()
             task.assignee?.let { UserAvatar(it.display(), avatarPath(it.avatar), 22.dp) }
         }
-        if (attribution != null) {
+        if (!compact && attribution != null) {
             Text(
                 "Updated by $attribution",
                 color = colors.primary,

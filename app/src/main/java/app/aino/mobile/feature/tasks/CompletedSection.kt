@@ -33,9 +33,8 @@ import app.aino.mobile.core.designsystem.tokens.rem
 /**
  * The collapsible Completed section at the foot of the backlog.
  *
- * Completed work is hidden by default (D16) but the count renders from the
- * first response, so discoverability does not suffer. Expanding issues one
- * lazy request for the recent window; "View all" drops the window entirely.
+ * Expanded by default; selection temporarily collapses the rows without
+ * changing the user's expansion choice or discarding completed data.
  *
  * Rows are deliberately quieter than open work: no swipe actions, no drag
  * handle, muted text — this is history, not a triage queue.
@@ -49,21 +48,19 @@ internal fun CompletedSection(
 ) {
     val colors = LocalWebColors.current
     val count = ui.completedCount
-    // Nothing finished and nothing loaded: the section would be an empty shell.
-    if (count == 0 && ui.completed.isEmpty() && !ui.completedLoading) return
-
     Column(modifier.fillMaxWidth()) {
         Row(
             Modifier
                 .fillMaxWidth()
                 .background(colors.bg)
                 .clickable(
-                    onClickLabel = if (ui.completedOpen) "Collapse completed" else "Expand completed",
+                    enabled = !ui.hasSelection,
+                    onClickLabel = if (ui.completedExpanded) "Collapse completed" else "Expand completed",
                     onClick = viewModel::toggleCompletedSection,
                 )
                 .semantics {
                     customActions = listOf(
-                        CustomAccessibilityAction(if (ui.completedOpen) "Collapse completed" else "Expand completed") {
+                        CustomAccessibilityAction(if (ui.completedExpanded) "Collapse completed" else "Expand completed") {
                             viewModel.toggleCompletedSection()
                             true
                         },
@@ -75,7 +72,7 @@ internal fun CompletedSection(
             Icon(
                 HeroIcons.ChevronDown,
                 null,
-                Modifier.size(16.dp).rotate(if (ui.completedOpen) 0f else -90f),
+                Modifier.size(16.dp).rotate(if (ui.completedExpanded) 0f else -90f),
                 tint = colors.textMuted,
             )
             Spacer(Modifier.width(8.dp))
@@ -103,10 +100,10 @@ internal fun CompletedSection(
             }
         }
 
-        if (ui.completedOpen) {
+        if (ui.completedExpanded) {
             if (ui.completed.isEmpty() && !ui.completedLoading) {
                 Text(
-                    "Nothing finished in the last 30 days.",
+                    "No completed tickets match this view.",
                     color = colors.textMuted,
                     fontSize = 0.76.rem,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
@@ -115,7 +112,7 @@ internal fun CompletedSection(
             ui.completed.forEach { task ->
                 CompletedRow(task, ui, onOpen)
             }
-            if (ui.completed.isNotEmpty()) {
+            if (ui.completed.isNotEmpty() && !ui.planLoaded && !ui.completedShowingAll) {
                 Row(
                     Modifier
                         .fillMaxWidth()

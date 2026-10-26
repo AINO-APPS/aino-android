@@ -1,6 +1,7 @@
 package app.aino.mobile.feature.tasks
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -9,6 +10,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import app.aino.mobile.ComposeTestHostActivity
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.WebColorsDark
+import app.aino.mobile.core.network.ApiClient
+import app.aino.mobile.core.network.ApiResponse
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -19,7 +22,7 @@ import org.robolectric.annotation.Config
 /**
  * The Plan card anatomy on Android, matching web's `TaskCardParts`:
  * key · points · blocked on the quiet line, the title, then status · due ·
- * labels · avatar. Compact (the default) drops only the comment count.
+ * avatar. Labels, description and extra metadata are comfortable-only.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
@@ -42,6 +45,7 @@ class TaskCardUiTest {
         ),
         dueDate = "2099-11-01",
         commentCount = 4,
+        description = "<p>Retry safely with backoff.</p>",
     )
 
     private fun show(compact: Boolean) {
@@ -53,20 +57,22 @@ class TaskCardUiTest {
                     onOpen = {},
                     showStatus = true,
                     compact = compact,
+                    leading = { SelectionToggle(false) {} },
                 )
             }
         }
     }
 
     @Test
-    fun compactCardShowsKeyTitleStatusDueLabelsAndAvatar() {
+    fun compactCardShowsPreviewHierarchyWithoutLabelsOrDescription() {
         show(compact = true)
         compose.onNodeWithText("PAY-142").assertIsDisplayed()
         compose.onNodeWithText("Refund webhook retries").assertIsDisplayed()
         compose.onNodeWithText("In Progress").assertIsDisplayed()
-        compose.onNodeWithText("payments").assertIsDisplayed()
-        compose.onNodeWithText("billing").assertIsDisplayed()
-        compose.onNodeWithText("+1").assertIsDisplayed()
+        compose.onNodeWithText("payments").assertDoesNotExist()
+        compose.onNodeWithText("billing").assertDoesNotExist()
+        compose.onNodeWithText("+1").assertDoesNotExist()
+        compose.onNodeWithText("Retry safely with backoff.").assertDoesNotExist()
         compose.onNodeWithContentDescription("High priority").assertIsDisplayed()
         // The avatar is the assignee affordance; the name is not repeated.
         assertEquals(0, compose.onAllNodesWithText("Ada Lovelace").fetchSemanticsNodes().size)
@@ -82,5 +88,40 @@ class TaskCardUiTest {
     fun comfortableCardAddsTheCommentCount() {
         show(compact = false)
         compose.onNodeWithText("4").assertIsDisplayed()
+        compose.onNodeWithText("payments").assertIsDisplayed()
+        compose.onNodeWithText("Retry safely with backoff.").assertIsDisplayed()
+    }
+
+    @Test
+    fun completedRowsTemporarilyCollapseDuringSelectionAndRestoreAfterward() {
+        val state = mutableStateOf(TaskUiState(
+            completed = listOf(task.copy(title = "Archived change", completedAt = "2026-10-25")),
+            completedCount = 1,
+            planLoaded = true,
+        ))
+        val vm = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }))
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                CompletedSection(state.value, vm, {})
+            }
+        }
+        compose.onNodeWithText("Archived change").assertIsDisplayed()
+        compose.runOnIdle { state.value = state.value.copy(selectedIds = setOf(9)) }
+        compose.onNodeWithText("Completed").assertIsDisplayed()
+        compose.onNodeWithText("Archived change").assertDoesNotExist()
+        compose.runOnIdle { state.value = state.value.copy(selectedIds = emptySet()) }
+        compose.onNodeWithText("Archived change").assertIsDisplayed()
+    }
+
+    @Test
+    fun backlogShowsOnlyTheFourPreviewQuickChipsInline() {
+        val vm = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }))
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                BacklogPage(TaskUiState(backlog = listOf(task), backlogTotal = 1), vm, {})
+            }
+        }
+        listOf("All", "Mine", "High", "Unscheduled").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+        listOf("Medium", "Low", "Compact", "All epics", "Priority").forEach { compose.onNodeWithText(it).assertDoesNotExist() }
     }
 }

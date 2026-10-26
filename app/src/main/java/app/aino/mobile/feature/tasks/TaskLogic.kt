@@ -11,7 +11,7 @@ import java.util.Locale
 
 /** `Tasks.tsx` tabs plus Android's Scheduled view; `key` is the `?tab=` value. */
 enum class TaskTab(val key: String) {
-    Sprint("sprint"), Backlog("backlog"), Scheduled("scheduled"), ServiceDesk("service-desk");
+    Backlog("backlog"), Scheduled("scheduled"), Sprint("sprint"), ServiceDesk("service-desk");
 
     companion object {
         fun fromKey(key: String?): TaskTab? = entries.firstOrNull { it.key == key }
@@ -68,6 +68,35 @@ data class TaskFilters(
     /** `?epic=<id>` narrows the list to one epic's children. */
     val epic: String = "",
 )
+
+/** Independent, Backlog-only predicates; resetting them never changes advanced filters. */
+data class BacklogQuickFilters(
+    val mine: Boolean = false,
+    val high: Boolean = false,
+    val unscheduled: Boolean = false,
+) {
+    val isAll: Boolean get() = !mine && !high && !unscheduled
+    val count: Int get() = listOf(mine, high, unscheduled).count { it }
+}
+
+fun matchesPlanFilters(task: Task, filters: TaskFilters, quick: BacklogQuickFilters, userId: Long?): Boolean =
+    matchesFilters(task, filters, userId, includeStatus = false) &&
+        (filters.epic.isEmpty() || task.parentTaskId?.toString() == filters.epic) &&
+        (!quick.mine || (userId != null && (task.assignedTo == userId || (task.userId == userId && task.assignedTo == null)))) &&
+        (!quick.high || task.priority == "high") &&
+        (!quick.unscheduled || task.plannedDate == null)
+
+fun groupPlanBacklog(tasks: List<Task>, sprints: List<AvailableSprint>): List<BacklogGroup> {
+    val bySprint = tasks.groupBy { it.sprintId }
+    return buildList {
+        bySprint.filterKeys { it != null }.forEach { (id, rows) ->
+            val name = sprints.firstOrNull { it.id == id }?.name
+                ?: rows.firstNotNullOfOrNull { it.sprint?.name } ?: "Sprint $id"
+            add(BacklogGroup("sprint-$id", name, Tone.PrimaryLight, rows))
+        }
+        bySprint[null]?.let { add(BacklogGroup("backlog", "Backlog", null, it)) }
+    }
+}
 
 /** `useFilters.filterCount` — status only counts on the Sprint tab. */
 fun filterCount(filters: TaskFilters, tab: TaskTab): Int {

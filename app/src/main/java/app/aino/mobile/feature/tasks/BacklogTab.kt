@@ -36,14 +36,11 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,10 +59,10 @@ import app.aino.mobile.core.designsystem.tokens.rem
 
 /*
  * Backlog — a grooming queue:
- *   priority chips + sort · active filter chips
- *   grouped list (sticky, collapsible priority bands / due buckets)
+ *   independent quick chips; secondary filters and view options
+ *   grouped list (sticky, collapsible sprint / backlog sections)
  *   swipe right → schedule · swipe left → add to sprint · long-press → actions
- *   infinite scroll · "New ticket" FAB → create sheet
+ *   "New ticket" FAB → create sheet
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -76,12 +73,6 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
     var sprintFor by remember { mutableStateOf<Task?>(null) }
     var actionsFor by remember { mutableStateOf<Task?>(null) }
     val list = rememberLazyListState()
-
-    // Infinite scroll: fetch the next page when the last few rows come into view.
-    val nearEnd by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= list.layoutInfo.totalItemsCount - 4 } == true } }
-    LaunchedEffect(list) {
-        snapshotFlow { nearEnd }.collect { if (it) viewModel.loadMoreBacklog() }
-    }
 
     TaskPage(loading = ui.backlogLoading || ui.refreshing, onRefresh = { viewModel.refresh(pull = true) }) {
         Box(Modifier.fillMaxSize()) {
@@ -139,8 +130,6 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                 }
             }
 
-            // Completed work is hidden by default and lives at the foot of the
-            // list, so it never mixes into the triage queue (D14/D16).
             item(key = "completed") { CompletedSection(ui, viewModel, onOpen) }
         }
 
@@ -168,45 +157,26 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
 /** Priority chips + sort, then active filter chips. */
 @Composable
 private fun BacklogControls(ui: TaskUiState, viewModel: TaskViewModel) {
-    val colors = LocalWebColors.current
-    val all = ui.backlogSummary.total.takeIf { it > 0 } ?: ui.backlogTotal.takeIf { it > 0 } ?: ui.backlog.size
-    val overdue = ui.backlog.count { !it.isCompleted && isDueOverdue(it.dueDate) }
-    val unassigned = ui.backlog.count { it.assignedTo == null && it.assignee == null }
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        // Priority filter gets the full width; sorting lives on the summary line below.
+    val quick = ui.quickFilters
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
         ChipStrip {
-            CountChip("All", ui.filters.priority.isEmpty(), { viewModel.togglePriority("") }, count = all)
-            PRIORITIES.forEach { p ->
-                CountChip(
-                    p.label, ui.filters.priority == p.value, { viewModel.togglePriority(p.value) },
-                    count = ui.backlogSummary.byPriority[p.value] ?: 0, accent = colors.tone(p.tone), dot = true,
-                )
-            }
-        }
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                when {
-                    overdue > 0 || unassigned > 0 -> {
-                        if (overdue > 0) MetaChip(HeroIcons.ExclamationCircle, "$overdue overdue", colors.danger, bold = true)
-                        if (unassigned > 0) MetaChip(HeroIcons.User, "$unassigned unassigned", colors.textMuted)
-                    }
-                    else -> Text("${ui.backlog.size} of ${maxOf(ui.backlogTotal, ui.backlog.size)} tickets", color = colors.textMuted, fontSize = 0.74.rem)
-                }
-            }
-            SortMenu(ui.backlogSort, viewModel::setSort)
-        }
-        ActiveFilterChips(ui, viewModel, Modifier.padding(horizontal = 16.dp))
-        // Density and epic filter: both are per-user/per-view choices that
-        // apply to every surface, so they sit with the other view controls.
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            DensityToggle(ui, viewModel)
-            if (ui.epics.isNotEmpty()) EpicFilterChip(ui, viewModel)
+            CountChip("All", quick.isAll, { viewModel.setQuickFilters(BacklogQuickFilters()) })
+            CountChip("Mine", quick.mine, { viewModel.setQuickFilters(quick.copy(mine = !quick.mine)) })
+            CountChip("High", quick.high, { viewModel.setQuickFilters(quick.copy(high = !quick.high)) })
+            CountChip("Unscheduled", quick.unscheduled, { viewModel.setQuickFilters(quick.copy(unscheduled = !quick.unscheduled)) })
         }
     }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun BacklogViewControls(ui: TaskUiState, viewModel: TaskViewModel) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SortMenu(ui.backlogSort, viewModel::setSort)
+        DensityToggle(ui, viewModel)
+        if (ui.epics.isNotEmpty()) EpicFilterChip(ui, viewModel)
+    }
+    ActiveFilterChips(ui, viewModel)
 }
 
 /** Comfortable ⇄ Compact. The choice persists per user, shared with web. */
@@ -402,6 +372,7 @@ private fun BacklogRow(
             .padding(horizontal = 16.dp, vertical = 5.dp)
             .semantics {
                 customActions = buildList {
+                    add(CustomAccessibilityAction("Select") { viewModel.toggleSelection(task.id); true })
                     add(CustomAccessibilityAction("Schedule") { onSchedule(); true })
                     if (canSprint) add(CustomAccessibilityAction("Add to sprint") { onSprint(); true })
                     add(CustomAccessibilityAction("More actions") { onActions(); true })
@@ -426,17 +397,20 @@ private fun BacklogRow(
     ) {
         TaskCardM3(
             task, ui.agile,
-            onOpen = { onOpen(task) },
+            onOpen = { if (ui.hasSelection) viewModel.toggleSelection(task.id) else onOpen(task) },
             highlighted = task.id in ui.recentlyUpdated,
-            showStatus = task.workflowStateKey != null && task.workflowStateCategory != "open",
-            onLongPress = onActions,
+            showStatus = true,
+            // Long-press starts selection; the checkbox only appears once selecting.
+            onLongPress = { viewModel.toggleSelection(task.id) },
+            longPressLabel = "Select",
             onComments = { viewModel.openComments(task.id) },
             compact = ui.compact,
             selected = task.id in ui.selectedIds,
             attribution = ui.attribution[task.id],
-            trailing = {
-                SelectionToggle(task.id in ui.selectedIds) { viewModel.toggleSelection(task.id) }
-                Spacer(Modifier.width(6.dp))
+            leading = if (ui.hasSelection) {
+                { SelectionToggle(task.id in ui.selectedIds) { viewModel.toggleSelection(task.id) } }
+            } else null,
+            trailing = if (!ui.compact) ({
                 Row(
                     Modifier
                         .clip(ChipShape)
@@ -449,9 +423,8 @@ private fun BacklogRow(
                     Spacer(Modifier.width(4.dp))
                     Text("Schedule", color = colors.primaryLight, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
-            },
-            // Long-press is not discoverable on its own, so the same actions are
-            // always one visible tap away.
+            }) else null,
+            // Long-press selects; the overflow keeps the row actions one tap away.
             topTrailing = {
                 Box(
                     Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "More actions", onClick = onActions),

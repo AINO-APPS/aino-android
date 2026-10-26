@@ -43,6 +43,25 @@ Keystore key. Every decrypt requires `BIOMETRIC_STRONG`; weak-only biometric dev
 continue to use password login rather than storing a credential behind a weaker
 app-level check. No face, fingerprint, or biometric template leaves the device.
 
+## Plan on Android
+
+Plan opens on Backlog, followed by Scheduled and Sprint (when enabled); Sprint
+retains its board and planning views. Backlog groups live work by sprint and
+backlog with matching ticket/point totals. All resets only the independent Mine,
+High and Unscheduled quick chips. Mine includes work assigned to you and your
+unassigned creations; Unscheduled checks the planner date, not sprint membership.
+Search and More remain in the header. More → Filters and view options contains
+advanced filters, sorting, Epic selection and compact/comfortable density.
+Compact cards omit descriptions, labels and extra metadata. Completed work starts
+expanded and temporarily collapses during selection; the bulk bar replaces the FAB.
+
+The current API has no planned-date-null predicate. Android therefore drains all
+backlog pages (including completed work) and fetches available sprint tasks before
+publishing a Plan snapshot. Filters, counts, grouping and realtime reconciliation
+use that same complete snapshot, never a locally filtered server page. Refresh
+keeps the prior snapshot if any page fails. This trades extra initial requests
+for correct combined-filter totals without changing server contracts.
+
 ## Push registration (Signal `FcmRefreshJob` parity)
 
 - The FCM token is registered per **session** (tenant, user, JWT `sid`): every

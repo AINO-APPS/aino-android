@@ -96,9 +96,10 @@ internal fun SprintPlanPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (
 
             // ── Backlog pane ─────────────────────────────────────────────
             item(key = "backlog-title") {
-                PlanSectionTitle("Backlog", "${ui.backlogTotal} ${if (ui.backlogTotal == 1) "ticket" else "tickets"}")
+                val count = ui.planningBacklog.size
+                PlanSectionTitle("Backlog", "$count ${if (count == 1) "ticket" else "tickets"}")
             }
-            val pullable = ui.backlog.filter { it.sprintId != ui.selectedSprintId && !it.isCompleted }
+            val pullable = ui.planningBacklog
             if (pullable.isEmpty()) {
                 item(key = "backlog-empty") {
                     Text(
