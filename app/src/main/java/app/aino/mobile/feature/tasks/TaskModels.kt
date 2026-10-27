@@ -291,6 +291,15 @@ data class AgileConfigResponse(
     val workItemTypes: List<WorkItemType> = emptyList(),
     val workflowStates: List<WorkflowState> = emptyList(),
     val canEdit: Boolean = false,
+    /** Allowed `from -> to` state pairs. Absent/empty means "not restricted". */
+    val transitions: List<WorkflowTransition> = emptyList(),
+)
+
+/** One edge of the tenant's workflow graph (`GET /agile/config`). */
+@Serializable
+data class WorkflowTransition(
+    @SerialName("from_state_id") val fromStateId: Long = 0,
+    @SerialName("to_state_id") val toStateId: Long = 0,
 )
 
 data class AgileFeatures(
@@ -310,8 +319,32 @@ data class AgileConfig(
     val unitLabel: String = "SP",
     val features: AgileFeatures = AgileFeatures(),
     val canEdit: Boolean = false,
+    /** Allowed transitions. Empty means the workflow is unrestricted. */
+    val transitions: List<WorkflowTransition> = emptyList(),
 ) {
     fun type(id: Long?): WorkItemType? = id?.let { wanted -> workItemTypes.firstOrNull { it.id == wanted && it.id != 0L } }
+
+    /**
+     * May this ticket move to [toStateId]?
+     *
+     * Falls back to "allowed" when the tenant has no transition rows, so a
+     * tenant on the default workflow is never blocked by a missing config, and
+     * an older server that omits the field degrades to today's behaviour.
+     */
+    fun canTransition(fromStateId: Long?, toStateId: Long?): Boolean {
+        if (transitions.isEmpty()) return true
+        if (fromStateId == null || toStateId == null) return true
+        if (fromStateId == toStateId) return true
+        return transitions.any { it.fromStateId == fromStateId && it.toStateId == toStateId }
+    }
+
+    /** The states this ticket may be moved to, in configured order.
+         *
+         * States that carry no id (the `id: 0` fallback set, used before
+         * `/agile/config` resolves) cannot be matched against the graph at all, so
+         * they are always offered rather than silently dropped. */
+        fun legalTargets(fromStateId: Long?): List<WorkflowState> =
+            workflowStates.filter { it.id == 0L || canTransition(fromStateId, it.id) }
 
     companion object {
         fun from(response: AgileConfigResponse): AgileConfig {
@@ -331,6 +364,7 @@ data class AgileConfig(
                     wipLimits = s.enableWipLimits ?: false,
                 ),
                 canEdit = response.canEdit,
+                transitions = response.transitions,
             )
         }
     }
@@ -429,68 +463,174 @@ data class RankPayload(
 /** `POST /tasks/bulk` — one request for a multi-select action. */
 @Serializable
 data class BulkPayload(
-    @SerialName("task_ids") val taskIds: List<Long>,
+    val ids: List<Long>,
     val action: String,
     val value: String? = null,
 )
 
+/** One ticket's outcome inside a bulk response. `code` is present for the
+ *  failure kinds the server can name (`INVALID_TRANSITION`, `WIP_EXCEEDED`,
+ *  `SPRINT_TEAM_MISMATCH`); `previous` carries the values needed to undo. */
 @Serializable
-data class BulkResult(
-    val updated: Int = 0,
-    val failed: List<Long> = emptyList(),
+data class BulkItemResult(
+    val id: Long,
+    val ok: Boolean = false,
+    val error: String? = null,
+    val code: String? = null,
 )
 
-/** `GET /tasks/epics` — an epic with its rollup. */
+/** `POST /tasks/bulk` response — counts plus the per-ticket results. */
+@Serializable
+data class BulkResult(
+    val action: String = "",
+    val requested: Int = 0,
+    val changed: Int = 0,
+    val failed: Int = 0,
+    val results: List<BulkItemResult> = emptyList(),
+) {
+    /** The failures a user needs to read, in the server's own words. */
+    val failures: List<BulkItemResult> get() = results.filterNot { it.ok }
+}
+
+/** `GET /tasks/epics` — an epic with its rollup.
+ *
+ *  The server spreads the epic row and nests the counts under `rollup` with
+ *  camelCase keys (`routes/tasks/epics.ts`), so the rollup is a second object
+ *  rather than flat snake_case fields on the epic. */
 @Serializable
 data class EpicSummary(
     val id: Long,
-    val title: String,
+    val title: String = "",
     @SerialName("issue_key") val issueKey: String? = null,
     @SerialName("story_points") val storyPoints: Double? = null,
-    @SerialName("total_children") val totalChildren: Int = 0,
-    @SerialName("done_children") val doneChildren: Int = 0,
-    @SerialName("total_points") val totalPoints: Double = 0.0,
-    @SerialName("done_points") val donePoints: Double = 0.0,
-    @SerialName("percent_by_points") val percentByPoints: Int = 0,
+    val rollup: EpicRollup = EpicRollup(),
+) {
+    val totalChildren: Int get() = rollup.totalChildren
+    val doneChildren: Int get() = rollup.doneChildren
+    val totalPoints: Double get() = rollup.totalPoints
+    val donePoints: Double get() = rollup.donePoints
+    val percentByPoints: Int get() = rollup.percentByPoints
+}
+
+/** The rollup block the epics endpoint computes per epic. */
+@Serializable
+data class EpicRollup(
+    val totalChildren: Int = 0,
+    val doneChildren: Int = 0,
+    val totalPoints: Double = 0.0,
+    val donePoints: Double = 0.0,
+    val percentByPoints: Int = 0,
+    val percentByCount: Int = 0,
 )
 
-/** `GET /tasks/schedule-overlays` — read-only background context. */
+/** `GET /tasks/epics` — the response envelope. */
+@Serializable
+data class EpicListResponse(
+    val epics: List<EpicSummary> = emptyList(),
+)
+
+/** `GET /tasks/schedule-overlays` — read-only background context.
+ *
+ *  The three collections carry different row shapes, so they are kept apart
+ *  rather than flattened into one DTO. */
+@Serializable
+data class ScheduleOverlays(
+    val leave: List<ScheduleOverlay> = emptyList(),
+    val holidays: List<ScheduleOverlay> = emptyList(),
+    val meetings: List<ScheduleOverlay> = emptyList(),
+) {
+    val isEmpty: Boolean get() = leave.isEmpty() && holidays.isEmpty() && meetings.isEmpty()
+
+    /** Every row with its `kind` set, for surfaces that treat them uniformly. */
+    val all: List<ScheduleOverlay>
+        get() = leave.map { it.copy(kind = "leave") } +
+            holidays.map { it.copy(kind = "holiday") } +
+            meetings.map { it.copy(kind = "meeting") }
+
+    /** Rows of one kind, already carrying that `kind`. */
+    fun of(type: String): List<ScheduleOverlay> = when (type) {
+        "leave" -> leave.map { it.copy(kind = "leave") }
+        "holiday" -> holidays.map { it.copy(kind = "holiday") }
+        "meeting" -> meetings.map { it.copy(kind = "meeting") }
+        else -> emptyList()
+    }
+}
+
+/** One overlay row. Only `kind` is synthesised client-side; which of the
+ *  optional fields are present depends on the kind:
+ *  leave carries `date`/`leave_type`/`duration`/`user_name`,
+ *  holidays carry `date`/`name` (mapped to `label`),
+ *  meetings carry `title`/`start_time`/`end_time`. */
 @Serializable
 data class ScheduleOverlay(
-    val id: String,
-    val type: String,
-    val label: String,
-    val date: String,
+    val id: Long? = null,
+    val kind: String = "",
+    val date: String? = null,
+    val label: String = "",
     @SerialName("end_date") val endDate: String? = null,
-)
+    @SerialName("user_id") val userId: Long? = null,
+    @SerialName("user_name") val userName: String? = null,
+    @SerialName("leave_type") val leaveType: String? = null,
+    val duration: Double? = null,
+    val name: String? = null,
+    val title: String? = null,
+    @SerialName("start_time") val startTime: String? = null,
+    @SerialName("end_time") val endTime: String? = null,
+) {
+    /** The human label, whichever field the row happens to carry. */
+    val displayLabel: String
+        get() = label.ifBlank { name ?: title ?: userName ?: kind.replaceFirstChar { it.uppercase() } }
+
+    /** The day this overlay belongs to, whether it is a date or a timestamp. */
+    val day: String? get() = date ?: startTime?.take(10)
+}
 
 /** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
 @Serializable
 data class CompletionPreview(
-    @SerialName("sprint_id") val sprintId: Long = 0,
-    @SerialName("done_tasks") val doneTasks: Int = 0,
-    @SerialName("total_tasks") val totalTasks: Int = 0,
-    @SerialName("incomplete_tasks") val incompleteTasks: Int = 0,
-    @SerialName("incomplete_points") val incompletePoints: Double = 0.0,
-    @SerialName("velocity_points") val velocityPoints: Double = 0.0,
-    val carryover: List<CarryoverItem> = emptyList(),
-)
+    val sprint: CompletionPreviewSprint? = null,
+    val defaultTarget: String? = null,
+    val moving: Int = 0,
+    val staying: Int = 0,
+    val movingPoints: Double = 0.0,
+) {
+    val doneTasks: Int get() = staying
+    val totalTasks: Int get() = moving + staying
+    val incompleteTasks: Int get() = moving
+}
 
 @Serializable
-data class CarryoverItem(
-    val id: Long,
-    val title: String,
-    @SerialName("issue_key") val issueKey: String? = null,
-    @SerialName("story_points") val storyPoints: Double? = null,
+data class CompletionPreviewSprint(
+    val id: Long = 0,
+    val name: String = "",
+    val status: String = "",
 )
 
 /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
 @Serializable
+data class BaselineResponse(
+    val baseline: SprintBaseline? = null,
+    val delta: ScopeDelta = ScopeDelta(),
+) {
+    val committedPoints: Double get() = baseline?.committedPoints ?: 0.0
+    val addedPoints: Double get() = delta.addedPoints
+    val removedPoints: Double get() = delta.removedPoints
+}
+
+/** The scope change since the baseline was captured. */
+@Serializable
+data class ScopeDelta(
+    val addedPoints: Double = 0.0,
+    val removedPoints: Double = 0.0,
+    val addedCount: Int = 0,
+    val removedCount: Int = 0,
+)
+
+/** The stored baseline snapshot. */
+@Serializable
 data class SprintBaseline(
     @SerialName("committed_points") val committedPoints: Double = 0.0,
     @SerialName("committed_task_ids") val committedTaskIds: List<Long> = emptyList(),
-    @SerialName("added_points") val addedPoints: Double = 0.0,
-    @SerialName("removed_points") val removedPoints: Double = 0.0,
     @SerialName("captured_at") val capturedAt: String? = null,
 )
 

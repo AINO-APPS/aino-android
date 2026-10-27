@@ -81,6 +81,8 @@ data class TaskUiState(
     val userId: Long? = null,
     val role: String = "employee",
     val teamName: String? = null,
+    /** The caller's team, for the team-aware status permission. */
+    val teamId: Long? = null,
     val agileEnabled: Boolean = false,
     val customFieldsEnabled: Boolean = false,
     // Metadata.
@@ -169,13 +171,13 @@ data class TaskUiState(
     val epics: List<EpicSummary> = emptyList(),
     val selectedEpicId: Long? = null,
     /** Read-only background context on the schedule. */
-    val overlays: List<ScheduleOverlay> = emptyList(),
+        val overlays: ScheduleOverlays = ScheduleOverlays(),
     /** Which overlay types are currently shown; each toggles independently. */
     val overlayTypes: Set<String> = setOf("leave", "holiday", "meeting"),
     /** The carryover pre-flight shown before a sprint is completed. */
     val completionPreview: CompletionPreview? = null,
     /** Committed points and the scope delta for the selected sprint. */
-    val baseline: SprintBaseline? = null,
+        val baseline: BaselineResponse? = null,
     /** Time tracking for the open detail. */
     val timerRunning: Boolean = false,
     val timerBusy: Boolean = false,
@@ -265,6 +267,8 @@ class TaskViewModel(
     private val pendingEvents = mutableListOf<TaskEvent>()
     private var pendingReload = false
     private val highlightJobs = mutableMapOf<Long, Job>()
+        /** One "no longer available" notice per refresh cycle, not one per row. */
+        private var invisibleNoticed = false
 
     private fun io(block: suspend () -> Unit) = viewModelScope.launch(Dispatchers.IO) { block() }
 
@@ -292,6 +296,30 @@ class TaskViewModel(
         if (e is ApiError) userFacingMessage(e, fallback)
         else e.message?.takeIf { it.isNotBlank() && it != "Task action failed" && !it.startsWith("HTTP ") } ?: fallback
 
+        /** Status code of a failed call, whichever error shape carried it. */
+        private fun statusOf(e: Throwable): Int = when (e) {
+            is TaskFailure -> e.statusCode
+            is ApiError.Http -> e.statusCode
+            else -> 0
+        }
+
+        /**
+         * Does this failure mean the ticket is no longer visible?
+         *
+         * 404 has always meant "deleted"; since team ownership landed, a ticket
+         * belonging to another team answers 403 instead. Both mean the row should
+         * leave the list, so they are treated identically and only the logging
+         * distinguishes them.
+         */
+        private fun isGone(e: Throwable): Boolean = statusOf(e) == 404 || statusOf(e) == 403
+
+        /** One non-blocking notice per refresh cycle, however many rows vanish. */
+        private fun noteInvisible() {
+            if (invisibleNoticed) return
+            invisibleNoticed = true
+            notify("Some tickets are no longer available to you")
+        }
+
     private fun confirm(title: String, message: String, confirmText: String, danger: Boolean = false, action: () -> Unit) {
         _ui.update { it.copy(confirm = ConfirmRequest(title, message, confirmText, danger, action)) }
     }
@@ -307,14 +335,16 @@ class TaskViewModel(
     fun clearError() = _ui.update { it.copy(error = null) }
 
     /** The signed-in user context the web reads from AuthContext / FeaturesContext. */
-    fun bind(userId: Long, role: String, teamName: String?, agileEnabled: Boolean, customFieldsEnabled: Boolean = false) {
+    fun bind(userId: Long, role: String, teamName: String?, agileEnabled: Boolean, customFieldsEnabled: Boolean = false, teamId: Long? = null) {
         val current = _ui.value
         if (current.userId == userId && current.role == role && current.teamName == teamName &&
+            current.teamId == teamId &&
             current.agileEnabled == agileEnabled && current.customFieldsEnabled == customFieldsEnabled
         ) return
         val changedUser = current.userId != null && current.userId != userId
         _ui.value = (if (changedUser) TaskUiState() else current).copy(
-            userId = userId, role = role, teamName = teamName, agileEnabled = agileEnabled, customFieldsEnabled = customFieldsEnabled,
+            userId = userId, role = role, teamName = teamName, teamId = teamId,
+            agileEnabled = agileEnabled, customFieldsEnabled = customFieldsEnabled,
             // Agile switched off mid-session: bounce off the Sprint tab.
             tab = if (!agileEnabled && current.tab == TaskTab.Sprint) TaskTab.Backlog else if (changedUser) TaskTab.Backlog else current.tab,
         )
@@ -326,6 +356,7 @@ class TaskViewModel(
     /** Pull-to-refresh, resume and reconnect: metadata plus the visible tab. */
     fun refresh(pull: Boolean = false) {
         if (_ui.value.userId == null) return
+        invisibleNoticed = false
         if (pull) _ui.update { it.copy(refreshing = true) }
         io {
             val agile = _ui.value.agileEnabled
@@ -485,13 +516,17 @@ class TaskViewModel(
     /** Fetches one task and patches every view of it. `false` = the fetch failed (caller reloads). */
     private suspend fun syncTask(id: Long): Boolean {
         val fresh = runCatching { repository.loadDetail(id) }.getOrElse { e ->
-            // 404 = deleted or no longer visible to this user.
-            if ((e as? TaskFailure)?.statusCode == 404 || (e as? ApiError.Http)?.statusCode == 404) {
-                removeTask(id, remote = true)
-                return true
+                // 404 = deleted; 403 = no longer visible to this user. The team
+                // ownership boundary moved the "not yours" answer from 404 to 403,
+                // so both now mean "it is gone" — the row is removed silently and a
+                // single notice per refresh cycle explains the disappearance.
+                if (isGone(e)) {
+                    removeTask(id, remote = true)
+                    noteInvisible()
+                    return true
+                }
+                return false
             }
-            return false
-        }
         patchTask(fresh, highlight = true)
         val s = _ui.value
         if (s.detail?.id == id) {
@@ -794,7 +829,7 @@ class TaskViewModel(
      */
     fun moveTask(task: Task, state: WorkflowState) {
         if (task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)) return
-        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role)) return notify(STATUS_FORBIDDEN)
+        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role, _ui.value.teamId)) return notify(STATUS_FORBIDDEN)
         val previous = task
         val moved = task.copy(workflowStateKey = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: task.workflowStateId)
         applyTask(moved)
@@ -1147,7 +1182,8 @@ class TaskViewModel(
 
     /** Web `?tab=` / `?sprint_id=` query params. */
     fun applyLink(tab: String?, sprintId: Long?) {
-        TaskTab.fromKey(tab)?.let { next -> _ui.update { it.copy(tab = next) } }
+        TaskTab.fromKey(tab)?.let { next -> _ui.update { it.copy(tab = next) } }
+
         sprintId?.let { id -> _ui.update { it.copy(selectedSprintId = id) } }
         if (tab != null || sprintId != null) reloadTab()
     }
@@ -1237,7 +1273,7 @@ class TaskViewModel(
     /** Detail status chip (`handleDetailStatusChange`), workflow-state aware. */
     fun setStatus(task: Task, state: WorkflowState) {
         if (task.workflowStateKey == state.key) return
-        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role)) return notify(STATUS_FORBIDDEN)
+        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role, _ui.value.teamId)) return notify(STATUS_FORBIDDEN)
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(
                 onSuccess = {
@@ -1412,13 +1448,28 @@ class TaskViewModel(
             runCatching { repository.bulkAction(BulkPayload(ids, action, value)) }.fold(
                 onSuccess = { result ->
                     clearSelection()
-                    notify("${result.updated} updated")
+                        notify(bulkSummary(result))
                     reloadTab()
                 },
                 onFailure = { fail(failure(it, "Bulk action failed")) },
             )
         }
     }
+
+        /** The result line: what changed, plus the first blocked ticket's reason.
+         *
+         *  The server names the remedy in `error` (`INVALID_TRANSITION`,
+         *  `WIP_EXCEEDED`, `SPRINT_TEAM_MISMATCH`), so it is shown verbatim rather
+         *  than reduced to a count. */
+        private fun bulkSummary(result: BulkResult): String {
+            if (result.failed == 0) return "${result.changed} updated"
+            val first = result.failures.firstOrNull()?.error
+            return if (first.isNullOrBlank()) {
+                "${result.changed} updated, ${result.failed} skipped"
+            } else {
+                "${result.changed} updated, ${result.failed} skipped — $first"
+            }
+        }
 
     /** Cancelling a batch is destructive, so it asks first. */
     fun confirmBulkDelete() {
@@ -1434,15 +1485,15 @@ class TaskViewModel(
 
     // ── Ranked reorder ───────────────────────────────────────────────────
 
-    /** Move a backlog row between two neighbours; the server computes the rank. */
-    fun reorder(taskId: Long, beforeId: Long?, afterId: Long?) {
-        io {
-            runCatching { repository.rankTask(taskId, beforeId, afterId) }.fold(
-                onSuccess = { ranked -> patchTask(ranked, highlight = false) },
-                onFailure = { fail(failure(it, "Failed to reorder")) },
-            )
+        /** Move a backlog row between two neighbours; the server computes the rank. */
+        fun reorder(taskId: Long, beforeId: Long?, afterId: Long?) {
+            io {
+                runCatching { repository.rankTask(taskId, beforeId, afterId) }.fold(
+                    onSuccess = { ranked -> patchTask(ranked, highlight = false) },
+                    onFailure = { fail(failure(it, "Failed to reorder")) },
+                )
+            }
         }
-    }
 
     // ── Epics ────────────────────────────────────────────────────────────
 

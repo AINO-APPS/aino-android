@@ -24,6 +24,7 @@ class TaskNextGenTest {
         completedAt: String? = null,
         loggedMinutes: Int = 0,
         estimatedMinutes: Int? = null,
+        teamId: Long? = null,
     ) = Task(
         id = id,
         title = title,
@@ -33,6 +34,7 @@ class TaskNextGenTest {
         completedAt = completedAt,
         loggedMinutes = loggedMinutes,
         estimatedMinutes = estimatedMinutes,
+        teamId = teamId,
     )
 
     // ── Field deltas ─────────────────────────────────────────────────────
@@ -108,10 +110,19 @@ class TaskNextGenTest {
     @Test
     fun theDeltaAllowListMatchesTheServer() {
         // Mirrors server/modules/tasks/tasks.deltas.ts and the web mirror.
-        assertEquals(18, DELTA_FIELDS.size)
+        assertEquals(19, DELTA_FIELDS.size)
         assertTrue("planned_date" in DELTA_FIELDS)
         assertTrue("logged_minutes" in DELTA_FIELDS)
+        // A transfer moves the ticket's owning team.
+        assertTrue("team_id" in DELTA_FIELDS)
         assertFalse("org_id" in DELTA_FIELDS)
+    }
+
+    @Test
+    fun aTransferDeltaRepointsTheOwningTeam() {
+        val delta = parseTaskDelta(json("""{"taskId":1,"fields":{"team_id":7}}"""))!!
+        val after = applyTaskDelta(task(teamId = 3), delta)
+        assertEquals(7L, after.teamId)
     }
 
     // ── Completed visibility ─────────────────────────────────────────────
@@ -171,8 +182,10 @@ class TaskNextGenTest {
 
     @Test
     fun bulkAndRankPayloadsUseTheServerFieldNames() {
+        // The server reads `ids` (`routes/tasks/bulk.ts:74`). The client sent
+        // `task_ids` for months, so every bulk action 400'd.
         val bulk = Json.encodeToString(BulkPayload(listOf(1, 2, 3), "status", "done"))
-        assertTrue(bulk.contains("\"task_ids\""))
+        assertTrue(bulk.contains("\"ids\""))
         assertTrue(bulk.contains("\"action\""))
 
         val rank = Json.encodeToString(RankPayload(beforeId = 4, afterId = 9))
@@ -181,42 +194,87 @@ class TaskNextGenTest {
     }
 
     @Test
+    fun aBulkResultReportsCountsAndPerTicketFailures() {
+        // Captured from `routes/tasks/bulk.ts:221` — `failed` is a number, and
+        // each result carries the server's own error text and machine code.
+        val result = Json { ignoreUnknownKeys = true }.decodeFromString<BulkResult>(
+            """{"action":"status","requested":3,"changed":1,"failed":2,"results":[
+                 {"id":1,"ok":true},
+                 {"id":2,"ok":false,"error":"Only the assignee can change this","code":"STATUS_FORBIDDEN"},
+                 {"id":3,"ok":false,"error":"That move is not allowed from Done","code":"INVALID_TRANSITION"}]}""",
+        )
+        assertEquals(1, result.changed)
+        assertEquals(2, result.failed)
+        assertEquals(2, result.failures.size)
+        assertEquals("INVALID_TRANSITION", result.failures[1].code)
+    }
+
+    @Test
     fun aCompletionPreviewSummarisesWhatMoved() {
+        // Captured from `routes/sprintCompletion.ts:41`.
         val preview = Json { ignoreUnknownKeys = true }.decodeFromString<CompletionPreview>(
-            """{"sprint_id":4,"done_tasks":8,"total_tasks":10,"incomplete_tasks":2,"incomplete_points":5.0,"velocity_points":21.0,"carryover":[{"id":9,"title":"Ship it","issue_key":"WEB-9","story_points":3.0}]}""",
+            """{"sprint":{"id":4,"name":"Sprint 12","status":"active"},"defaultTarget":"backlog","moving":2,"staying":8,"movingPoints":5.0}""",
         )
         assertEquals(8, preview.doneTasks)
+        assertEquals(10, preview.totalTasks)
         assertEquals(2, preview.incompleteTasks)
-        assertEquals(1, preview.carryover.size)
-        assertEquals("WEB-9", preview.carryover[0].issueKey)
+        assertEquals(5.0, preview.movingPoints, 0.001)
+        assertEquals("backlog", preview.defaultTarget)
     }
 
     @Test
     fun aBaselineReportsTheScopeDelta() {
-        val baseline = Json { ignoreUnknownKeys = true }.decodeFromString<SprintBaseline>(
-            """{"committed_points":21.0,"committed_task_ids":[1,2],"added_points":8.0,"removed_points":3.0}""",
+        // Captured from `routes/sprintBaseline.ts:54` — the payload is wrapped
+        // in `{baseline, delta}`, not flat.
+        val response = Json { ignoreUnknownKeys = true }.decodeFromString<BaselineResponse>(
+            """{"baseline":{"committed_points":21.0,"committed_task_ids":[1,2],"captured_at":"2026-10-20T09:00:00Z"},
+                "delta":{"addedPoints":8.0,"removedPoints":3.0,"addedCount":1,"removedCount":1}}""",
         )
-        assertEquals(21.0, baseline.committedPoints, 0.001)
-        assertEquals(8.0, baseline.addedPoints, 0.001)
-        assertEquals(3.0, baseline.removedPoints, 0.001)
+        assertEquals(21.0, response.committedPoints, 0.001)
+        assertEquals(8.0, response.addedPoints, 0.001)
+        assertEquals(3.0, response.removedPoints, 0.001)
     }
 
     @Test
-    fun anEpicCarriesItsRollup() {
-        val epic = Json { ignoreUnknownKeys = true }.decodeFromString<EpicSummary>(
-            """{"id":3,"title":"Payments","issue_key":"PAY-1","total_children":4,"done_children":3,"total_points":13.0,"done_points":8.0,"percent_by_points":62}""",
+    fun anEpicCarriesItsNestedRollup() {
+        // Captured from `routes/tasks/epics.ts:39` — the counts are nested under
+        // `rollup` with camelCase keys, not flat snake_case on the epic.
+        val response = Json { ignoreUnknownKeys = true }.decodeFromString<EpicListResponse>(
+            """{"epics":[{"id":3,"title":"Payments","issue_key":"PAY-1",
+                 "rollup":{"totalChildren":4,"doneChildren":3,"totalPoints":13.0,"donePoints":8.0,
+                           "percentByPoints":62,"percentByCount":75}}]}""",
         )
+        val epic = response.epics.single()
         assertEquals(4, epic.totalChildren)
         assertEquals(62, epic.percentByPoints)
+        assertEquals(13.0, epic.totalPoints, 0.001)
     }
 
     @Test
-    fun aScheduleOverlayIsReadOnlyContext() {
-        val overlay = Json { ignoreUnknownKeys = true }.decodeFromString<ScheduleOverlay>(
-            """{"id":"leave-1","type":"leave","label":"Ada on leave","date":"2026-10-25","end_date":"2026-10-27"}""",
+    fun scheduleOverlaysKeepTheirThreeCollectionsApart() {
+        // Captured from `modules/tasks/tasks.schedule.ts:57` — three arrays of
+        // different row shapes, not one flat list.
+        val overlays = Json { ignoreUnknownKeys = true }.decodeFromString<ScheduleOverlays>(
+            """{"leave":[{"id":1,"user_id":9,"user_name":"Ada","date":"2026-10-25","duration":1.0,"leave_type":"annual","status":"approved"}],
+                "holidays":[{"id":2,"name":"Diwali","date":"2026-10-27"}],
+                "meetings":[{"id":3,"title":"Standup","start_time":"2026-10-26T09:30:00Z","end_time":"2026-10-26T09:45:00Z"}]}""",
         )
-        assertEquals("leave", overlay.type)
-        assertEquals("2026-10-27", overlay.endDate)
+        assertEquals(1, overlays.leave.size)
+        assertEquals(1, overlays.holidays.size)
+        assertEquals(1, overlays.meetings.size)
+        assertEquals(3, overlays.all.size)
+        assertEquals("leave", overlays.all.first().kind)
+        assertEquals("Ada", overlays.leave.single().displayLabel)
+        assertEquals("Diwali", overlays.holidays.single().displayLabel)
+        assertEquals("Standup", overlays.meetings.single().displayLabel)
+        assertEquals("2026-10-26", overlays.meetings.single().day)
+        assertFalse(overlays.isEmpty)
+    }
+
+    @Test
+    fun anEmptyOverlayWindowIsEmpty() {
+        val overlays = Json { ignoreUnknownKeys = true }.decodeFromString<ScheduleOverlays>("{}")
+        assertTrue(overlays.isEmpty)
     }
 
     @Test

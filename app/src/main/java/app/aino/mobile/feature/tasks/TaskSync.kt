@@ -123,7 +123,7 @@ val DELTA_FIELDS = setOf(
     "title", "description", "priority", "assigned_to", "due_date", "planned_date",
     "sprint_id", "story_points", "work_item_type_id", "workflow_state_id",
     "parent_task_id", "is_blocked", "blocked_reason", "project_id", "rank",
-    "estimated_minutes", "logged_minutes", "acceptance_criteria",
+    "estimated_minutes", "logged_minutes", "acceptance_criteria", "team_id",
 )
 
 /** A field-level delta: only the fields that changed, who changed them and when. */
@@ -182,7 +182,10 @@ fun applyTaskDelta(task: Task, delta: TaskDelta, lastAppliedAt: String? = null):
             "estimated_minutes" -> next.copy(estimatedMinutes = value.stringOrNull()?.toIntOrNull())
             "logged_minutes" -> next.copy(loggedMinutes = value.stringOrNull()?.toIntOrNull() ?: next.loggedMinutes)
             "acceptance_criteria" -> next.copy(acceptanceCriteriaRaw = value)
-            else -> next
+                        // A transfer changes the owning team. Patching it keeps the
+                        // client's team-aware status permission correct without a refetch.
+                        "team_id" -> next.copy(teamId = value.longOrNull())
+                        else -> next
         }
     }
     return next

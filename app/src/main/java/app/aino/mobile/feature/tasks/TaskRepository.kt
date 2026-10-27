@@ -72,19 +72,20 @@ class TaskRepository(
         decode(api.execute(ApiRequest(path = "tasks/by-key/" + java.net.URLEncoder.encode(key, "UTF-8"))))
 
     /** `GET /tasks/epics` — epics with their rollups. */
-    fun loadEpics(): List<EpicSummary> = decode(api.execute(ApiRequest(path = "tasks/epics")))
+        fun loadEpics(): List<EpicSummary> =
+            decode<EpicListResponse>(api.execute(ApiRequest(path = "tasks/epics"))).epics
 
-    /** `GET /tasks/schedule-overlays` — read-only leave, holidays and meetings. */
-    fun loadScheduleOverlays(from: String, to: String): List<ScheduleOverlay> =
-        decode(api.execute(ApiRequest(path = "tasks/schedule-overlays?from=$from&to=$to")))
+        /** `GET /tasks/schedule-overlays` — read-only leave, holidays and meetings. */
+        fun loadScheduleOverlays(from: String, to: String): ScheduleOverlays =
+            decode(api.execute(ApiRequest(path = "tasks/schedule-overlays?from=$from&to=$to")))
 
-    /** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
-    fun loadCompletionPreview(id: Long): CompletionPreview =
-        decode(api.execute(ApiRequest(path = "sprints/$id/completion-preview")))
+        /** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
+        fun loadCompletionPreview(id: Long): CompletionPreview =
+            decode(api.execute(ApiRequest(path = "sprints/$id/completion-preview")))
 
-    /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
-    fun loadBaseline(id: Long): SprintBaseline =
-        decode(api.execute(ApiRequest(path = "sprints/$id/baseline")))
+        /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
+        fun loadBaseline(id: Long): BaselineResponse =
+            decode(api.execute(ApiRequest(path = "sprints/$id/baseline")))
 
     /** `GET /user/preferences` — the per-user Tasks preferences shared with web. */
     fun loadPreferences(): TaskPreferences =
@@ -278,9 +279,33 @@ class TaskRepository(
         json.parseToJsonElement(error.responseBody).jsonObject["error"]?.jsonPrimitive?.content
     }.getOrNull()
 
-    private inline fun <reified T> decode(response: ApiResponse): T =
-        json.decodeFromString(response.bodyAsString().ifBlank { "{}" })
-}
+    /**
+     * Decode a response body.
+     *
+     * A shape mismatch used to vanish into `runCatching { }.getOrNull()` at every
+     * call site, so four features rendered nothing with no log, no error and no
+     * failing test. Re-throw a `TaskFailure` that names the endpoint so the
+     * degradation is observable instead of silent.
+     */
+        private inline fun <reified T> decode(response: ApiResponse): T {
+            val body = response.bodyAsString()
+            return try {
+                json.decodeFromString(body.ifBlank { "{}" })
+            } catch (error: Exception) {
+                if (app.aino.mobile.BuildConfig.DEBUG) {
+                    android.util.Log.w(
+                        "TaskRepository",
+                        "decode ${T::class.simpleName} failed: ${error.message} body=${body.take(200)}",
+                    )
+                }
+                throw TaskFailure(
+                    "Unexpected ${T::class.simpleName} response: ${error.message}",
+                    statusCode = 0,
+                    cause = error,
+                )
+            }
+        }
+    }
 
 class TaskFailure(message: String, val statusCode: Int, cause: Throwable) : Exception(message, cause)
 

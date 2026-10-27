@@ -186,15 +186,18 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
     if (statusSheet) {
         val current = stateOf(task, ui.agile)
         val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
-        SelectSheet(
-            "Status",
-            ui.agile.workflowStates.map { SelectOption(it.key, stateLabel(it), color = hexColor(it.color, colors.textMuted)) },
-            setOfNotNull(current?.key ?: task.workflowStateKey),
-            onDismiss = { statusSheet = false },
-            onSelect = { keys -> ui.agile.workflowStates.firstOrNull { it.key == keys.firstOrNull() }?.let { haptics.confirm(); viewModel.setStatus(task, it) } },
-            icon = HeroIcons.CheckCircle,
-        )
-    }
+            // Only legal moves are offered. `legalTargets` returns every state when
+            // the tenant has no transition rows, so a default workflow is unchanged.
+            val targets = ui.agile.legalTargets(current?.id ?: task.workflowStateId)
+            SelectSheet(
+                "Status",
+                targets.map { SelectOption(it.key, stateLabel(it), color = hexColor(it.color, colors.textMuted)) },
+                setOfNotNull(current?.key ?: task.workflowStateKey),
+                onDismiss = { statusSheet = false },
+                onSelect = { keys -> targets.firstOrNull { it.key == keys.firstOrNull() }?.let { haptics.confirm(); viewModel.setStatus(task, it) } },
+                icon = HeroIcons.CheckCircle,
+            )
+        }
     if (blockSheet) BlockerSheet(task, viewModel) { blockSheet = false }
     if (scheduleOpen) {
         ScheduleDialog(task, initial = task.dueDate, onDismiss = { scheduleOpen = false }) { date -> viewModel.schedule(task.id, date, closeAfter = true) }
@@ -240,7 +243,7 @@ private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, dr
             StatusPill(
                 stateLabel(state),
                 hexColor(state.color, colors.textMuted),
-                onClick = if (canChangeStatus(task, ui.userId, ui.role)) onStatus else null,
+                onClick = if (canChangeStatus(task, ui.userId, ui.role, ui.teamId)) onStatus else null,
             )
         }
         if (task.isBlocked && ui.agile.features.blockers) {
@@ -326,7 +329,7 @@ private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel
                 PropertyText(p.label, color = colors.tone(p.tone))
             }
         }
-        val canStatus = canChangeStatus(task, ui.userId, ui.role)
+        val canStatus = canChangeStatus(task, ui.userId, ui.role, ui.teamId)
         PropertyRow(HeroIcons.CheckCircle, "Status", if (canStatus) onStatus else null) {
             val state = stateOf(task, ui.agile)
             val column = columnOf(task.workflowStateKey)

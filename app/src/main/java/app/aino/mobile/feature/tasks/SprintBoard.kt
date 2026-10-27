@@ -168,7 +168,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                 var cardOrigin by remember { mutableStateOf(Offset.Zero) }
                                 // pointerInput keeps its first lambdas; read the latest row (realtime may have patched it).
                                 val currentTask by rememberUpdatedState(task)
-                                val canMove = canChangeStatus(task, ui.userId, ui.role)
+                                val canMove = canChangeStatus(task, ui.userId, ui.role, ui.teamId)
                                 Box(
                                     Modifier
                                         .padding(horizontal = 16.dp, vertical = 5.dp)
@@ -539,14 +539,14 @@ private fun SprintLifecycleControls(ui: TaskUiState, sprint: AvailableSprint, vi
                     ) {
                         Text(
                             "${preview.doneTasks} of ${preview.totalTasks} done" +
-                                if (preview.velocityPoints > 0) " · ${formatPoints(preview.velocityPoints)} ${ui.agile.unitLabel}" else "",
+                                                        if (preview.movingPoints > 0) " · ${formatPoints(preview.movingPoints)} ${ui.agile.unitLabel}" else "",
                             color = colors.textSecondary,
                             fontSize = 0.8.rem,
                             fontWeight = FontWeight.SemiBold,
                         )
                         if (preview.incompleteTasks > 0) {
                             Text(
-                                "${preview.incompleteTasks} unfinished (${formatPoints(preview.incompletePoints)} ${ui.agile.unitLabel}) will move",
+                                                        "${preview.incompleteTasks} unfinished (${formatPoints(preview.movingPoints)} ${ui.agile.unitLabel}) will move",
                                 color = colors.warning,
                                 fontSize = 0.76.rem,
                             )
@@ -595,7 +595,7 @@ internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewMo
     val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     TaskSheetScaffold(task.displayKey, onDismiss) {
         Text(task.title, color = colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp))
-        if (task.sprintId != null && canChangeStatus(task, ui.userId, ui.role)) {
+        if (task.sprintId != null && canChangeStatus(task, ui.userId, ui.role, ui.teamId)) {
             SectionTitle("Move to", Modifier.padding(bottom = 6.dp))
             ui.agile.workflowStates.forEach { state ->
                 val current = task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)

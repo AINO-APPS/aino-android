@@ -346,16 +346,48 @@ fun dropTargetKey(headers: Map<String, Rect>, bodies: Map<String, Rect>, pos: Of
 fun canManageSprint(role: String?): Boolean =
     role in setOf("team_lead", "manager", "super_admin", "hr_admin", "platform_admin")
 
-/** Mirrors the server's `canChangeTaskStatus`: assignee, reporter, or an org admin. */
-fun canChangeStatus(task: Task, userId: Long?, role: String?): Boolean =
-    (userId != null && (task.assignedTo == userId || task.userId == userId)) ||
-        role in setOf("super_admin", "hr_admin", "platform_admin")
+/** Mirrors the server's `canChangeTaskStatus`.
+ *
+ *  Server rule (`modules/tasks/tasks.policy.ts:248-261`): the assignee, the
+ *  reporter, an org admin, **or any member of the ticket's owning team**. The
+ *  team clause landed with team ownership and is now live on every plan, so
+ *  omitting it here would hide moves the server accepts.
+ */
+fun canChangeStatus(task: Task, userId: Long?, role: String?, teamId: Long? = null): Boolean {
+    if (userId != null && (task.assignedTo == userId || task.userId == userId)) return true
+    if (role in setOf("super_admin", "hr_admin", "platform_admin")) return true
+    return teamId != null && task.teamId != null && teamId == task.teamId
+}
 
 const val STATUS_FORBIDDEN = "Only the assignee or reporter can change the status"
 
 /** KanbanBoard `getColTasks`: by workflow_state_id, else by the workflow-state key. */
 fun tasksForColumn(tasks: List<Task>, state: WorkflowState): List<Task> = tasks.filter { t ->
     (t.workflowStateId != null && state.id != 0L && t.workflowStateId == state.id) || t.workflowStateKey == state.key
+}
+
+/**
+ * The neighbour ids for a one-step backlog move, as `(beforeId, afterId)`.
+ *
+ * The server's contract (`modules/tasks/tasks.rank.ts`): `before` is the rank
+ * of the item that ends up **above** the moved ticket and `after` the one
+ * **below**, and it rejects `before >= after`. The two neighbours must
+ * therefore bracket the moved row. Sending two neighbours from the same side —
+ * the previous behaviour in both directions — inverted the pair and 409'd
+ * every attempt.
+ *
+ * Returns null when the move is impossible at that end of the list.
+ */
+fun rankNeighbours(orderedIds: List<Long>, taskId: Long, up: Boolean): Pair<Long?, Long?>? {
+    val index = orderedIds.indexOf(taskId)
+    if (index < 0) return null
+    return if (up) {
+        if (index == 0) null
+        else orderedIds.getOrNull(index - 2) to orderedIds[index - 1]
+    } else {
+        if (index >= orderedIds.size - 1) null
+        else orderedIds[index + 1] to orderedIds.getOrNull(index + 2)
+    }
 }
 
 /** AgilePickers `formatPoints`: 1.00 → "1", 0.50 → "0.5". */

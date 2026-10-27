@@ -96,7 +96,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
                     WeekStrip(today, ui.scheduled, onPick = ::jumpTo)
                     ActiveFilterChips(ui, viewModel, Modifier.padding(horizontal = 16.dp))
                     // Read-only context: why a day has no capacity (D51).
-                    if (ui.overlays.isNotEmpty()) OverlayStrip(ui, viewModel, Modifier.padding(horizontal = 16.dp))
+                    if (!ui.overlays.isEmpty) OverlayStrip(ui, viewModel, Modifier.padding(horizontal = 16.dp))
                 }
             }
             ui.error?.let { item(key = "error") { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) } }
@@ -163,7 +163,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
 @Composable
 private fun OverlayStrip(ui: TaskUiState, viewModel: TaskViewModel, modifier: Modifier = Modifier) {
     val colors = LocalWebColors.current
-    val types = remember(ui.overlays) { ui.overlays.map { it.type }.distinct() }
+    val types = remember(ui.overlays) { ui.overlays.all.map { it.kind }.distinct() }
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         types.forEach { type ->
             val on = type in ui.overlayTypes

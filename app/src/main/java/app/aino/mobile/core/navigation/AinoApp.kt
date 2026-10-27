@@ -545,14 +545,15 @@ private fun AuthenticatedShell(
 ) {
     val nav = rememberNavController()
     // Tasks read the signed-in context the web takes from AuthContext / FeaturesContext.
-    LaunchedEffect(user.id, user.role, user.teamName, user.tenantFeatures) {
+    LaunchedEffect(user.id, user.role, user.teamName, user.teamId, user.tenantFeatures) {
         val ungated = user.role == "platform_admin" && user.tenantId == null
         tasks.bind(
             user.id, user.role, user.teamName,
             agileEnabled = ungated || user.tenantFeatures["agile"] == true,
             customFieldsEnabled = ungated || user.tenantFeatures["custom_fields"] == true,
-        )
-    }
+                teamId = user.teamId,
+            )
+        }
     val entry by nav.currentBackStackEntryAsState()
     val current = entry?.destination?.route
     val isChatThread = current == AinoDestination.ChatThread.route

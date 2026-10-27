@@ -197,18 +197,111 @@ class TaskLogicTest {
     }
 
     @Test
-    fun onlyAssigneeReporterOrOrgAdminCanChangeStatus() {
-        val task = Task(1, "a", userId = 2, assignedTo = 3)
+        fun onlyAssigneeReporterOrgAdminOrOwningTeamCanChangeStatus() {
+            val task = Task(1, "a", userId = 2, assignedTo = 3, teamId = 7)
         assertTrue(canChangeStatus(task, 2, "employee"))
         assertTrue(canChangeStatus(task, 3, "employee"))
         assertTrue(canChangeStatus(task, 9, "hr_admin"))
         assertFalse(canChangeStatus(task, 9, "manager"))
         assertFalse(canChangeStatus(task, null, "employee"))
-    }
+            // Any member of the owning team may move it (server
+            // `canChangeTaskStatus` with team ownership on).
+            assertTrue(canChangeStatus(task, 9, "employee", teamId = 7))
+            assertFalse(canChangeStatus(task, 9, "employee", teamId = 8))
+            assertFalse(canChangeStatus(task, 9, "employee", teamId = null))
+        }
+
+        @Test
+        fun aTicketsTeamDoesNotLeakThroughANullTeamId() {
+            // A ticket with no owning team must not match a caller whose team is
+            // also unknown — otherwise every unteamed user could move every row.
+            val orphan = Task(1, "a", userId = 2, assignedTo = 3, teamId = null)
+            assertFalse(canChangeStatus(orphan, 9, "employee", teamId = null))
+        }
+
+        @Test
+        fun noTransitionRowsMeansTheWorkflowIsUnrestricted() {
+            val config = AgileConfig()
+            assertTrue(config.transitions.isEmpty())
+            assertTrue(config.canTransition(1, 2))
+            assertEquals(config.workflowStates.size, config.legalTargets(1).size)
+        }
+
+        @Test
+        fun transitionsRestrictTheOfferedTargets() {
+            val config = AgileConfig(
+                workflowStates = listOf(
+                    WorkflowState(1, "pending", "New", "open"),
+                    WorkflowState(2, "in_progress", "In Progress", "in_progress"),
+                    WorkflowState(3, "done", "Done", "done", isTerminal = true),
+                ),
+                transitions = listOf(WorkflowTransition(fromStateId = 1, toStateId = 2)),
+            )
+            assertTrue(config.canTransition(1, 2))
+            assertFalse(config.canTransition(2, 1))
+            // Staying put is always allowed, so the current state stays visible.
+            assertTrue(config.canTransition(1, 1))
+            // A missing endpoint cannot be evaluated, so it is not blocked.
+            assertTrue(config.canTransition(null, 2))
+            // The current state plus the one legal edge; state 3 is not offered.
+            assertEquals(listOf(1L, 2L), config.legalTargets(1).map { it.id })
+        }
+
+        @Test
+        fun fallbackStatesAreOfferedWhenTheyCarryNoId() {
+            // Before `/agile/config` resolves every fallback state has `id: 0` and
+            // so cannot be matched against the graph; none may disappear.
+            val config = AgileConfig(
+                transitions = listOf(WorkflowTransition(fromStateId = 1, toStateId = 2)),
+            )
+            assertEquals(config.workflowStates.size, config.legalTargets(1).size)
+        }
 
     @Test
     fun newTicketsStartInNew() {
         assertEquals("New", columnOf("pending").label)
         assertEquals("New", FALLBACK_WORKFLOW_STATES.first { it.isInitial }.name)
     }
+
+        @Test
+        fun reorderNeighboursBracketTheMovedRow() {
+            // Ranks 10,20,30,40 in order; ids are positions 1..4.
+            val ids = listOf(1L, 2L, 3L, 4L)
+
+            // Moving 3 up puts it between 1 and 2: before=1's rank, after=2's rank.
+            // The old code sent (2, 1) — both above — which the server rejects
+            // because before >= after.
+            assertEquals(1L to 2L, rankNeighbours(ids, 3L, up = true))
+            // Moving 2 down puts it between 3 and 4.
+            assertEquals(3L to 4L, rankNeighbours(ids, 2L, up = false))
+        }
+
+        @Test
+        fun reorderNeighboursHandleTheEndsOfTheList() {
+            val ids = listOf(1L, 2L, 3L)
+
+            // The first row cannot move up, the last cannot move down.
+            assertNull(rankNeighbours(ids, 1L, up = true))
+            assertNull(rankNeighbours(ids, 3L, up = false))
+
+            // Moving to an end leaves one neighbour null, never two.
+            assertEquals(null to 1L, rankNeighbours(ids, 2L, up = true))
+            assertEquals(3L to null, rankNeighbours(ids, 2L, up = false))
+        }
+
+        @Test
+        fun reorderNeighboursAlwaysEmitBeforeBeforeAfter() {
+            // The server rejects `before >= after`; pin that the pair is ordered so
+            // an inversion can never ship again. Ids ascend with rank here.
+            val ids = listOf(10L, 20L, 30L, 40L)
+            for (id in ids) {
+                for (up in listOf(true, false)) {
+                    val pair = rankNeighbours(ids, id, up) ?: continue
+                    val (before, after) = pair
+                    if (before != null && after != null) {
+                        assertTrue("move $id ${if (up) "up" else "down"} emitted $before >= $after", before < after)
+                    }
+                }
+            }
+        }
 }

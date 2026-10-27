@@ -458,23 +458,23 @@ private fun BacklogActionsSheet(
             onDismiss()
         }
         // Manual reorder: the server computes the rank from the neighbours, so
-        // the client never invents a position (D50).
-        if (ui.backlogSort == BacklogSort.Rank) {
-            val ordered = ui.sortedBacklog
-            val index = ordered.indexOfFirst { it.id == task.id }
-            if (index > 0) {
-                ActionRow(HeroIcons.ChevronUp, "Move up") {
-                    onDismiss()
-                    viewModel.reorder(task.id, ordered[index - 1].id, ordered.getOrNull(index - 2)?.id)
+                // the client never invents a position (D50). `rankNeighbours` brackets
+                // the moved row; see its doc for why the pair order matters.
+                if (ui.backlogSort == BacklogSort.Rank) {
+                    val ids = ui.sortedBacklog.map { it.id }
+                    rankNeighbours(ids, task.id, up = true)?.let { (before, after) ->
+                        ActionRow(HeroIcons.ChevronUp, "Move up") {
+                            onDismiss()
+                            viewModel.reorder(task.id, before, after)
+                        }
+                    }
+                    rankNeighbours(ids, task.id, up = false)?.let { (before, after) ->
+                        ActionRow(HeroIcons.ChevronDown, "Move down") {
+                            onDismiss()
+                            viewModel.reorder(task.id, before, after)
+                        }
+                    }
                 }
-            }
-            if (index >= 0 && index < ordered.size - 1) {
-                ActionRow(HeroIcons.ChevronDown, "Move down") {
-                    onDismiss()
-                    viewModel.reorder(task.id, ordered.getOrNull(index + 2)?.id, ordered[index + 1].id)
-                }
-            }
-        }
         if (ui.userId != null && ui.userId == task.userId) {
             ActionRow(HeroIcons.Trash, "Delete", danger = true) { onDismiss(); viewModel.requestDelete(task) }
         }
