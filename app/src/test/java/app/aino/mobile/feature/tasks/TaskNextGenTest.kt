@@ -20,6 +20,7 @@ class TaskNextGenTest {
         title: String = "Refund webhook",
         workflowStateKey: String = "pending",
         plannedDate: String? = null,
+        dueDate: String? = null,
         sprintId: Long? = null,
         completedAt: String? = null,
         loggedMinutes: Int = 0,
@@ -30,6 +31,7 @@ class TaskNextGenTest {
         title = title,
         workflowStateKey = workflowStateKey,
         plannedDate = plannedDate,
+        dueDate = dueDate,
         sprintId = sprintId,
         completedAt = completedAt,
         loggedMinutes = loggedMinutes,
@@ -134,9 +136,12 @@ class TaskNextGenTest {
     }
 
     @Test
-    fun aPlannedDateDoesNotRemoveATaskFromTheBacklog() {
-        // D2: planned_date is metadata, never a container.
-        assertTrue(task(plannedDate = "2026-10-25").isBacklogItem)
+    fun aDueDateIsMetadataButAPlannedDayIsAContainer() {
+        // ADR-015: a planned day moves a ticket to Scheduled, a sprint wins over
+        // both, and a due date is only a deadline — it never removes a ticket
+        // from the backlog it was created in.
+        assertTrue(task(dueDate = "2026-10-25").isBacklogItem)
+        assertFalse(task(plannedDate = "2026-10-25").isBacklogItem)
         assertFalse(task(sprintId = 4).isBacklogItem)
     }
 

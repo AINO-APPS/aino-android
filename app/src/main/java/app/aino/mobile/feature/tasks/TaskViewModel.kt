@@ -264,7 +264,9 @@ data class TaskUiState(
 internal fun TaskUiState.projectPlan(): TaskUiState {
     val openSprints = sprints.map { it.id }.toSet()
     val filtered = planTasks.filter {
-        (it.sprintId == null || it.sprintId !in openSprints) &&
+        // Backlog = no sprint and no planned day. A stranded sprint row (its
+        // sprint is gone) is kept so it cannot vanish (D6).
+        (it.isBacklogItem || (it.sprintId != null && it.sprintId !in openSprints)) &&
         matchesPlanFilters(it, filters, quickFilters, userId) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }
@@ -1178,6 +1180,11 @@ class TaskViewModel(
                 title = draft.title.trim(),
                 description = plainTextToHtml(draft.description),
                 priority = draft.priority,
+                // The team the page is showing, so an admin browsing another
+                // team creates the ticket there (web `scopeParams.team_id`).
+                // Without it the server falls back to the creator's own team,
+                // and the ticket is invisible in the filtered list.
+                teamId = s.selectedTeamId?.takeIf { it > 0 },
                 assignedTo = draft.assignedTo,
                 dueDate = draft.dueDate.ifEmpty { null },
                 labelIds = draft.labels.ifEmpty { null },

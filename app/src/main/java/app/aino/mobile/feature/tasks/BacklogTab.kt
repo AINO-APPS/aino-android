@@ -557,9 +557,12 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel) {
                         PropertyText(ui.agile.type(d.workItemTypeId)?.name ?: "Default", muted = d.workItemTypeId == null)
                     }
                 }
-                if (ui.agileEnabled && ui.sprints.isNotEmpty()) {
+                // Only the browsed team's sprints: a ticket is created into the
+                // team whose backlog is on screen, so a foreign sprint would be
+                // rejected (and the ticket would leave this list anyway).
+                if (ui.agileEnabled && ui.teamSprints.isNotEmpty()) {
                     PropertyRow(HeroIcons.RocketLaunch, "Sprint", { picker = "sprint" }) {
-                        PropertyText(ui.sprints.firstOrNull { it.id == d.sprintId }?.name ?: "Backlog (no sprint)", muted = d.sprintId == null)
+                        PropertyText(ui.teamSprints.firstOrNull { it.id == d.sprintId }?.name ?: "Backlog (no sprint)", muted = d.sprintId == null)
                     }
                 }
                 if (ui.projects.isNotEmpty()) {
@@ -638,7 +641,7 @@ internal fun TaskPickers(
         )
         "sprint" -> SelectSheet(
             "Sprint",
-            listOf(SelectOption<Long?>(null, "Backlog (no sprint)")) + ui.sprints.map {
+            listOf(SelectOption<Long?>(null, "Backlog (no sprint)")) + ui.teamSprints.map {
                 SelectOption<Long?>(it.id, it.name, "${formatDate(it.startDate)} – ${formatDate(it.endDate)} · ${it.status}", color = if (it.status == "active") colors.success else colors.primaryLight)
             },
             setOf(sprintId), onDismiss, { onSprint(it.firstOrNull()) }, icon = HeroIcons.RocketLaunch,

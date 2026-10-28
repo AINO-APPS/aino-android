@@ -49,6 +49,7 @@ class TaskSyncTest {
         id: Long = 1,
         sprintId: Long? = null,
         plannedDate: String? = null,
+        dueDate: String? = null,
         assignedTo: Long? = null,
         userId: Long? = 9,
         priority: String = "medium",
@@ -57,7 +58,7 @@ class TaskSyncTest {
         title: String = "Fix login",
         labels: List<TaskLabel> = emptyList(),
     ) = Task(
-        id = id, title = title, sprintId = sprintId, plannedDate = plannedDate, assignedTo = assignedTo,
+        id = id, title = title, sprintId = sprintId, plannedDate = plannedDate, dueDate = dueDate, assignedTo = assignedTo,
         userId = userId, priority = priority, workflowStateKey = workflowStateKey, completedAt = completedAt, labels = labels,
     )
 
@@ -86,8 +87,10 @@ class TaskSyncTest {
         assertFalse(belongsToSprint(task(sprintId = 4), null, TaskFilters(), null))
         assertTrue(belongsToBacklog(task(), TaskFilters(), null))
         assertFalse(belongsToBacklog(task(sprintId = 4), TaskFilters(), null))
-        // A planned date is metadata and never removes a task from the backlog (D2).
-        assertTrue(belongsToBacklog(task(plannedDate = "2026-10-06"), TaskFilters(), null))
+        // A planned day is the Scheduled container (ADR-015); a due date is a
+        // deadline, so it stays in the backlog.
+        assertFalse(belongsToBacklog(task(plannedDate = "2026-10-06"), TaskFilters(), null))
+        assertTrue(belongsToBacklog(task(dueDate = "2026-10-06"), TaskFilters(), null))
     }
 
     @Test

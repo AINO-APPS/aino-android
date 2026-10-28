@@ -92,12 +92,14 @@ data class Task(
     val displayKey: String get() = issueKey ?: "#$id"
 
     /**
-     * Backlog membership: not in a sprint.
+     * Backlog membership: not in a sprint and not planned onto a day
+     * (`t.sprint_id IS NULL AND t.planned_date IS NULL`, ADR-015).
      *
-     * A planned date is metadata and never removes a task from the backlog (D2),
-     * so this matches the server's `t.sprint_id IS NULL` rule.
+     * A due date is a deadline, not a container, so it never removes a ticket
+     * from the backlog — a ticket created from the Backlog with a due date
+     * stays there.
      */
-    val isBacklogItem: Boolean get() = sprintId == null
+    val isBacklogItem: Boolean get() = sprintId == null && plannedDate == null
 
     /** True when the task has a planner day, which is what "Move to Backlog" clears. */
     val isScheduled: Boolean get() = plannedDate != null
@@ -392,6 +394,8 @@ data class CreateBacklogPayload(
     val title: String,
     val description: String = "",
     val priority: String = "medium",
+    /** The team being browsed: an admin creates the ticket there, as web does. */
+    @SerialName("team_id") val teamId: Long? = null,
     @SerialName("assigned_to") val assignedTo: Long? = null,
     @SerialName("due_date") val dueDate: String? = null,
     @SerialName("label_ids") val labelIds: List<Long>? = null,

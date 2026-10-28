@@ -72,14 +72,15 @@ class PlanAlignmentTest {
         assertFalse(matchesPlanFilters(rows[0], TaskFilters(), BacklogQuickFilters(mine = true), null))
     }
 
-    @Test fun projectionExcludesSprintWorkFromTheBacklog() {
+    @Test fun projectionExcludesSprintAndScheduledWorkFromTheBacklog() {
         val ui = TaskUiState(userId = 9, sprints = listOf(sprint), planTasks = rows, planLoaded = true).projectPlan()
         // Task 1 carries sprint_id 12, which is open: it belongs on the board only.
-        assertEquals(2, ui.backlogTotal)
-        assertEquals(listOf(2L, 3L), ui.backlog.map { it.id })
+        // Task 2 carries a planned day: it belongs to Scheduled (ADR-015).
+        assertEquals(1, ui.backlogTotal)
+        assertEquals(listOf(3L), ui.backlog.map { it.id })
         assertEquals(1, ui.completedCount)
         assertNull(ui.backlogGroups)
-        // Task 2 carries a planned date, so the unscheduled chip drops it too.
+        // The unscheduled chip cannot add back the planned or the sprinted row.
         val unscheduled = ui.copy(quickFilters = BacklogQuickFilters(unscheduled = true)).projectPlan()
         assertEquals(listOf(3L), unscheduled.backlog.map { it.id })
         assertEquals(1, unscheduled.completedCount)
@@ -103,7 +104,8 @@ class PlanAlignmentTest {
         // Regression: the list used to render `backlogGroups` *instead of* the
         // backlog, so one stranded ticket removed every ordinary row.
         val mixed = listOf(
-            Task(1, "Normal", plannedDate = "2026-11-01"),
+            // A due date is metadata: this ticket stays in the backlog (ADR-015).
+            Task(1, "Normal", dueDate = "2026-11-01"),
             Task(2, "Also normal"),
             Task(7, "Orphan", sprintId = 99),
         )
@@ -189,8 +191,8 @@ class PlanAlignmentTest {
             planLoaded = true, planTasks = rows, sprints = listOf(sprint),
             quickFilters = BacklogQuickFilters(unscheduled = true),
         ).projectPlan()
-        // Sprint work is never offered for import, and the unscheduled chip does
-        // not narrow the pool further.
-        assertEquals(listOf(2L, 3L), ui.importable.map { it.id })
+        // Sprint work and planned work are never offered for import, and the
+        // unscheduled chip does not narrow the pool further.
+        assertEquals(listOf(3L), ui.importable.map { it.id })
     }
 }
