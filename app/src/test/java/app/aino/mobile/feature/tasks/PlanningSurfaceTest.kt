@@ -10,9 +10,10 @@ import java.time.LocalDate
 /**
  * The Android Tasks surfaces follow the same rules as the web (ADR-015).
  *
- * Tabs are decided by the *selected team's* sprint state — a running sprint
- * leads with the board, and Backlog and Scheduled sit beside it. With no active
- * sprint there is no board, so Sprint is hidden. Service Desk always renders.
+ * Tabs are decided by the *selected team's* sprint state. Sprint and Scheduled
+ * are alternatives, never companions: a running sprint shows the board, Backlog
+ * and Service Desk; with no running sprint, Scheduled takes the board's place.
+ * Service Desk always renders.
  */
 class PlanningSurfaceTest {
     /** Only the dates matter for the Scheduled rules. */
@@ -27,11 +28,21 @@ class PlanningSurfaceTest {
     private val planned = AvailableSprint(id = 13, name = "Sprint #2", status = "planned", teamId = 3)
 
     @Test
-    fun anActiveSprintOffersSprintBacklogAndScheduled() {
+    fun aStartedSprintOffersSprintBacklogAndDeskButNotScheduled() {
+        // Sprint and Scheduled are alternatives (ADR-015): a sprint team must
+        // never be offered the dated list.
         assertEquals(
-            listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk),
+            listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk),
             planningTabs(agileEnabled = true, sprints = listOf(active, planned)),
         )
+    }
+
+    @Test
+    fun aSprintTeamsScheduledTabIsNotSelectable() {
+        val running = TaskUiState(agileEnabled = true, sprints = listOf(active))
+        assertFalse(running.visibleTabs.contains(TaskTab.Scheduled))
+        // The snackbar's "View" action on a scheduled ticket lands on Backlog.
+        assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Scheduled, running.visibleTabs))
     }
 
     @Test

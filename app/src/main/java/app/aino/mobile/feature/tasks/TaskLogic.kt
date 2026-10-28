@@ -91,21 +91,21 @@ fun matchesPlanFilters(task: Task, filters: TaskFilters, quick: BacklogQuickFilt
 /**
  * The tab set for the selected team, decided by its sprint state (ADR-015).
  *
- * A started sprint is the team's working surface: the board leads and Backlog
- * and Scheduled sit beside it. With no active sprint there is no board to show,
- * so Sprint is hidden. Service Desk is a support queue, not a planning surface,
- * and always renders.
+ * Sprint and Scheduled are **alternatives**, never companions: a team that
+ * plans work in a sprint plans it there, and a dated list beside it is noise.
+ * A started sprint therefore shows Sprint, Backlog and Service Desk; with no
+ * started sprint, Scheduled takes the board's place and the team works from
+ * Backlog and Scheduled. Service Desk always renders.
  *
  * [sprints] must already be narrowed to the selected team, so one team's sprint
  * never drives another's tabs.
  */
 fun planningTabs(agileEnabled: Boolean, sprints: List<AvailableSprint>): List<TaskTab> {
     val active = agileEnabled && activeSprintId(sprints) != null
-    return buildList {
-        if (active) add(TaskTab.Sprint)
-        add(TaskTab.Backlog)
-        add(TaskTab.Scheduled)
-        add(TaskTab.ServiceDesk)
+    return if (active) {
+        listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk)
+    } else {
+        listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk)
     }
 }
 

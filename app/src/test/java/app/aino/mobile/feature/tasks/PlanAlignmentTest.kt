@@ -28,10 +28,10 @@ class PlanAlignmentTest {
     }
 
     @Test fun tabSetFollowsTheSelectedTeamsSprintState() {
-        // A started sprint is the working surface: the board leads and Backlog
-        // and Scheduled sit beside it (ADR-015).
+        // A started sprint is the working surface; Scheduled is the alternative
+        // to the board, never a companion (ADR-015).
         assertEquals(
-            listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk),
+            listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk),
             TaskUiState(agileEnabled = true, sprints = listOf(sprint)).visibleTabs,
         )
         // Only a planned sprint is not a board, so Sprint is hidden.
@@ -50,7 +50,8 @@ class PlanAlignmentTest {
     @Test fun aHiddenTabIsNeverSelectable() {
         val running = TaskUiState(agileEnabled = true, sprints = listOf(sprint))
         assertEquals(TaskTab.Sprint, normalizeTab(TaskTab.Sprint, running.visibleTabs))
-        assertEquals(TaskTab.Scheduled, normalizeTab(TaskTab.Scheduled, running.visibleTabs))
+        // A sprint team has no Scheduled tab.
+        assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Scheduled, running.visibleTabs))
         val idle = TaskUiState(agileEnabled = true, sprints = emptyList())
         assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Sprint, idle.visibleTabs))
         assertEquals(TaskTab.Scheduled, normalizeTab(TaskTab.Scheduled, idle.visibleTabs))
