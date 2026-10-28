@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package app.aino.mobile.feature.chat
 
 import app.aino.mobile.core.db.CacheScope
@@ -14,6 +16,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.put
@@ -257,11 +260,14 @@ data class ChatMessage(
     @SerialName("sender_avatar") val senderAvatar: String? = null,
     @SerialName("sender_username") val senderUsername: String? = null,
     @SerialName("reply_to_id") val replyToId: Long? = null,
-    @SerialName("reply_content") val replyContent: String? = null,
-    @SerialName("reply_sender_name") val replySenderName: String? = null,
-    @SerialName("reply_file_url") val replyFileUrl: String? = null,
-    @SerialName("reply_file_type") val replyFileType: String? = null,
-    @SerialName("reply_file_name") val replyFileName: String? = null,
+    // GET /messages and the send routes name the quote's fields differently
+    // (`reply_content` vs `reply_to_content`), so accept both: a send response
+    // carries the quote the optimistic bubble must paint straight away.
+    @JsonNames("reply_to_content") @SerialName("reply_content") val replyContent: String? = null,
+    @JsonNames("reply_to_sender_name") @SerialName("reply_sender_name") val replySenderName: String? = null,
+    @JsonNames("reply_to_file_url") @SerialName("reply_file_url") val replyFileUrl: String? = null,
+    @JsonNames("reply_to_file_type") @SerialName("reply_file_type") val replyFileType: String? = null,
+    @JsonNames("reply_to_file_name") @SerialName("reply_file_name") val replyFileName: String? = null,
     @SerialName("file_name") val fileName: String? = null,
     @SerialName("file_url") val fileUrl: String? = null,
     @SerialName("file_type") val fileType: String? = null,
@@ -1168,10 +1174,21 @@ fun updatePinnedList(
 fun mergeIncomingMessage(messages: List<ChatMessage>, incoming: ChatMessage): List<ChatMessage> {
     val index = messages.indexOfFirst { it.id == incoming.id }
     if (index >= 0) {
-        // Keep richer REST fields (reactions, receipts) but adopt the echo's clientMsgId.
+        // Keep richer REST fields (reactions, receipts) but adopt the echo's clientMsgId
+        // and any quote context the row on screen is missing: a bubble painted from the
+        // send response (or a cache row) can carry replyToId with no quoted text, and the
+        // echo is what supplies it without a full thread refetch.
         val existing = messages[index]
-        if (existing.clientMessageId != null || incoming.clientMessageId == null) return messages
-        return messages.toMutableList().also { it[index] = existing.copy(clientMessageId = incoming.clientMessageId) }
+        val adopted = existing.copy(
+            clientMessageId = existing.clientMessageId ?: incoming.clientMessageId,
+            replyContent = existing.replyContent ?: incoming.replyContent,
+            replySenderName = existing.replySenderName ?: incoming.replySenderName,
+            replyFileUrl = existing.replyFileUrl ?: incoming.replyFileUrl,
+            replyFileType = existing.replyFileType ?: incoming.replyFileType,
+            replyFileName = existing.replyFileName ?: incoming.replyFileName,
+        )
+        if (adopted == existing) return messages
+        return messages.toMutableList().also { it[index] = adopted }
     }
     return (messages + incoming).sortedWith(compareBy<ChatMessage> { parseEpoch(it.createdAt) }.thenBy { it.id })
 }

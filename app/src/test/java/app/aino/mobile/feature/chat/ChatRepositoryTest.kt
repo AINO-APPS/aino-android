@@ -121,6 +121,31 @@ class ChatRepositoryTest {
         assertEquals(9, message.reactions.single().userId)
     }
 
+    /**
+     * The send route answers with the GET projection's field names so the
+     * optimistic reply bubble can be reconciled 1:1 (`chat.message-send.routes.ts`
+     * `reply_to_content` / `reply_to_sender_name`). A quoted reply must decode
+     * its quote block from that response, or the new bubble paints
+     * "Original message unavailable" until the thread is refetched.
+     */
+    @Test
+    fun sendResponseCarriesTheQuotedMessageForTheOptimisticBubble() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = repository(captured) {
+            """{"id":78,"conversation_id":12,"sender_id":4,"content":"Reply",
+               "created_at":"2026-09-15T04:00:00Z","client_msg_id":"c-1",
+               "reply_to_id":70,"reply_to_content":"Original","reply_to_sender_name":"Vishnu",
+               "reply_to_file_url":null,"reply_to_file_type":null,"reply_to_file_name":null,
+               "reactions":[],"delivered_to":[]}"""
+        }
+
+        val message = repository.sendMessage(12, "Reply", replyToId = 70, clientMessageId = "c-1")
+
+        assertEquals(70L, message.replyToId)
+        assertEquals("Original", message.replyContent)
+        assertEquals("Vishnu", message.replySenderName)
+    }
+
     @Test
     fun loadsReceiptsAndPostsReaction() {
         val captured = mutableListOf<ApiRequest>()

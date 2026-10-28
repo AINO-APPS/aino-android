@@ -444,6 +444,27 @@ class ChatModelsTest {
         assertEquals(merged, mergeIncomingMessage(merged, message))
     }
 
+    /**
+     * A quote painted before its text arrived (the send response used to omit
+     * it) must be completed by the realtime echo, not by a full thread refetch.
+     */
+    @Test
+    fun realtimeEchoBackfillsAQuoteTheRowOnScreenIsMissing() {
+        val optimistic = ChatMessage(
+            42, 12, 4, "Reply", "2026-09-15T00:00:05Z",
+            replyToId = 70, clientMessageId = "c9",
+        )
+        val echo = optimistic.copy(replyContent = "Original", replySenderName = "Vishnu")
+
+        val merged = mergeIncomingMessage(listOf(optimistic), echo).single()
+
+        assertEquals("Original", merged.replyContent)
+        assertEquals("Vishnu", merged.replySenderName)
+        // The echo's own quote never overwrites text the row already shows.
+        val renamed = echo.copy(replyContent = "Changed elsewhere")
+        assertEquals("Original", mergeIncomingMessage(listOf(merged), renamed).single().replyContent)
+    }
+
     @Test
     fun pinnedListTracksToggles() {
         val a = ChatMessage(1, 12, 4, "a", "2026-09-15T00:00:00Z")
