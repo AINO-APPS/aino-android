@@ -23,9 +23,10 @@ data class AinoUser(
     @SerialName("team_name") val teamName: String? = null,
     /**
      * The team has sprint config (an admin set a start date), so its work lives
-     * in sprints. Absent on older servers, which keeps today's behaviour.
+     * in sprints. Null means the server does not report it (an older build), in
+     * which case the caller falls back to inferring from the sprint list.
      */
-    @SerialName("team_sprint_enabled") val teamSprintEnabled: Boolean = false,
+    @SerialName("team_sprint_enabled") val teamSprintEnabled: Boolean? = null,
 )
 
 @Serializable

@@ -93,6 +93,17 @@ resolve.
 
 **D8 — Desktop is a rebuild**, not a code change.
 
+**D9 — An unreported flag is not "no sprints".** *Added during review.* Both clients
+treat `team_sprint_enabled` as tri-state: absent means the server predates the field,
+and the client falls back to the old sprint-list inference rather than dropping the
+Sprint tab for every team. The profile route also degrades column-by-column, so a
+tenant DB missing `notification_prefs` or `teams.sprint_start_date` still returns a
+profile instead of 500.
+
+**D10 — The stranded group is additive.** *Added during review.* The Backlog list
+renders the ordinary sprint-less rows and then the stranded-sprint group; it never
+renders one instead of the other.
+
 ## Out of scope
 
 - `sprint_mode` (`manual`/`auto`) does not affect tab visibility. It decides who

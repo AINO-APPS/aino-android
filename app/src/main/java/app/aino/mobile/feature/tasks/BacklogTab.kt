@@ -104,19 +104,19 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                             onActions = { actionsFor = task },
                         )
                     }
-                    val groups = ui.backlogGroups
-                    if (groups == null) {
-                        items(ui.sortedBacklog, key = { "b-${it.id}" }) { row(it) }
-                    } else {
-                        groups.forEach { group ->
-                            val isCollapsed = group.key in collapsed
-                            stickyHeader(key = "g-${group.key}") {
-                                BacklogGroupHeader(group, isCollapsed) {
-                                    collapsed = if (isCollapsed) collapsed - group.key else collapsed + group.key
-                                }
+                    // Stranded sprint tickets render in their own warning group
+                    // *after* the ordinary backlog rows — never instead of them.
+                    val stranded = ui.backlogGroups.orEmpty()
+                    val grouped = stranded.flatMap { group -> group.tasks.map { it.id } }.toSet()
+                    items(ui.sortedBacklog.filterNot { it.id in grouped }, key = { "b-${it.id}" }) { row(it) }
+                    stranded.forEach { group ->
+                        val isCollapsed = group.key in collapsed
+                        stickyHeader(key = "g-${group.key}") {
+                            BacklogGroupHeader(group, isCollapsed) {
+                                collapsed = if (isCollapsed) collapsed - group.key else collapsed + group.key
                             }
-                            if (!isCollapsed) items(group.tasks, key = { "b-${it.id}" }) { row(it) }
                         }
+                        if (!isCollapsed) items(group.tasks, key = { "b-${it.id}" }) { row(it) }
                     }
                     item(key = "footer") {
                         Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {

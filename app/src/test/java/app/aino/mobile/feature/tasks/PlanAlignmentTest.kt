@@ -47,6 +47,12 @@ class PlanAlignmentTest {
         // Config must not be inferred from rows: no sprint rows, still sprint-led.
         val configured = TaskUiState(agileEnabled = true, sprintEnabled = true, sprints = emptyList())
         assertTrue(configured.visibleTabs.contains(TaskTab.Sprint))
+        // An older server that does not report the flag keeps the old behaviour
+        // rather than silently dropping the Sprint tab for every team.
+        val unknown = TaskUiState(agileEnabled = true, sprintEnabled = null, sprints = listOf(sprint))
+        assertTrue(unknown.visibleTabs.contains(TaskTab.Sprint))
+        val unknownEmpty = TaskUiState(agileEnabled = true, sprintEnabled = null)
+        assertFalse(unknownEmpty.visibleTabs.contains(TaskTab.Sprint))
     }
 
     @Test fun aHiddenTabIsNeverSelectable() {
@@ -100,6 +106,28 @@ class PlanAlignmentTest {
         assertEquals(1, groups.size)
         assertEquals(listOf(7L), groups.single().tasks.map { it.id })
         assertTrue(groups.single().label.startsWith("Sprint 99"))
+    }
+
+    @Test fun strandedGroupDoesNotHideTheOrdinaryBacklogRows() {
+        // Regression: the list used to render `backlogGroups` *instead of* the
+        // backlog, so one stranded ticket removed every ordinary row.
+        val mixed = listOf(
+            Task(1, "Normal", plannedDate = "2026-11-01"),
+            Task(2, "Also normal"),
+            Task(7, "Orphan", sprintId = 99),
+        )
+        val ui = TaskUiState(
+            userId = 9, sprints = listOf(sprint), planTasks = mixed, planLoaded = true,
+        ).projectPlan()
+        assertEquals(listOf(1L, 2L, 7L), ui.sortedBacklog.map { it.id })
+        val stranded = ui.backlogGroups.orEmpty()
+        val grouped = stranded.flatMap { group -> group.tasks.map { it.id } }.toSet()
+        assertEquals(setOf(7L), grouped)
+        // What the list renders: ordinary rows first, then the stranded group.
+        assertEquals(
+            listOf(1L, 2L, 7L),
+            ui.sortedBacklog.filterNot { it.id in grouped }.map { it.id } + stranded.flatMap { g -> g.tasks.map { it.id } },
+        )
     }
 
     @Test fun allQuickFiltersPreservesAdvancedPredicatesAndEpic() {

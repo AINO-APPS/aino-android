@@ -89,8 +89,12 @@ data class TaskUiState(
      * presence of sprint rows, decides whether the team works in sprints: the
      * rows are created lazily, so inferring from the list makes the tab set
      * flicker on the second load.
+     *
+     * Null means the server did not report it (an older build); [sprintsEnabled]
+     * then falls back to the sprint list so an un-upgraded server keeps today's
+     * behaviour instead of silently losing the tab.
      */
-    val sprintEnabled: Boolean = false,
+    val sprintEnabled: Boolean? = null,
     val customFieldsEnabled: Boolean = false,
     // Metadata.
     val labels: List<TaskLabel> = emptyList(),
@@ -195,8 +199,10 @@ data class TaskUiState(
     val sortedBacklog: List<Task> get() = sortBacklog(backlog, backlogSort)
     /** Display sections for the backlog list, or `null` for a flat list. */
     val backlogGroups: List<BacklogGroup>? get() = strandedSprintGroups(sortedBacklog, sprints)
-    val sprintTabVisible: Boolean get() = sprintTabsVisible(agileEnabled, sprintEnabled)
-    val visibleTabs: List<TaskTab> get() = visibleTaskTabs(agileEnabled, sprintEnabled)
+    /** The resolved answer: the server's flag, or the sprint list when it is unknown. */
+    val sprintsEnabled: Boolean get() = sprintEnabled ?: sprints.isNotEmpty()
+    val sprintTabVisible: Boolean get() = sprintTabsVisible(agileEnabled, sprintsEnabled)
+    val visibleTabs: List<TaskTab> get() = visibleTaskTabs(agileEnabled, sprintsEnabled)
     val filterCount: Int get() = filterCount(filters, tab) + if (tab == TaskTab.Backlog) quickFilters.count + (if (selectedEpicId != null) 1 else 0) else 0
     /** Sprint planning is not narrowed by Backlog-only quick chips. */
     val planningBacklog: List<Task> get() = (if (planLoaded) planTasks else backlog).filter {
@@ -359,7 +365,7 @@ class TaskViewModel(
         agileEnabled: Boolean,
         customFieldsEnabled: Boolean = false,
         teamId: Long? = null,
-        sprintEnabled: Boolean = false,
+        sprintEnabled: Boolean? = null,
     ) {
         val current = _ui.value
         if (current.userId == userId && current.role == role && current.teamName == teamName &&
@@ -373,7 +379,7 @@ class TaskViewModel(
             sprintEnabled = sprintEnabled,
             // Agile or the team's sprint config switched off mid-session: bounce off Sprint.
             tab = if (changedUser) TaskTab.Backlog
-            else normalizeTab(current.tab, visibleTaskTabs(agileEnabled, sprintEnabled)),
+            else normalizeTab(current.tab, visibleTaskTabs(agileEnabled, sprintEnabled ?: current.sprints.isNotEmpty())),
         )
         loadPreferences()
         if (agileEnabled) loadEpics()
@@ -404,7 +410,7 @@ class TaskViewModel(
                     selectedSprintId = selected,
                     tab = normalizeTab(
                         if (!landingApplied) landingTab(s.tab, sprints, agile) else s.tab,
-                        visibleTaskTabs(agile, s.sprintEnabled),
+                        visibleTaskTabs(agile, s.sprintEnabled ?: sprints.isNotEmpty()),
                     ),
                 )
             }
@@ -691,9 +697,16 @@ class TaskViewModel(
         }
     }
 
-    /** Opens the Scheduled tab scrolled to [date]. */
+    /**
+     * Opens the Scheduled tab scrolled to [date]. A sprint team has no such
+     * tab, so the focus is kept for when it does and the tab is normalized like
+     * every other tab write instead of selecting a page that does not exist.
+     */
     fun showScheduled(date: String?) {
-        _ui.update { it.copy(tab = TaskTab.Scheduled, scheduledFocus = date, searchOpen = false) }
+        _ui.update {
+            val tab = normalizeTab(TaskTab.Scheduled, it.visibleTabs)
+            it.copy(tab = tab, scheduledFocus = date, searchOpen = false)
+        }
         loadScheduled()
     }
 
@@ -1008,7 +1021,7 @@ class TaskViewModel(
                 s.copy(
                     sprints = sprints,
                     selectedSprintId = selected,
-                    tab = normalizeTab(s.tab, visibleTaskTabs(s.agileEnabled, s.sprintEnabled)),
+                    tab = normalizeTab(s.tab, s.visibleTabs),
                 )
             }
         }

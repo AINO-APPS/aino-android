@@ -553,7 +553,8 @@ private fun AuthenticatedShell(
             customFieldsEnabled = ungated || user.tenantFeatures["custom_fields"] == true,
                 teamId = user.teamId,
                 // Per team, so it is not ungated by role: an admin who belongs
-                // to no team has no team sprint context to show.
+                // to no team has no team sprint context to show. Null when the
+                // server predates the field; Tasks then infers from its list.
                 sprintEnabled = user.teamSprintEnabled,
             )
         }
