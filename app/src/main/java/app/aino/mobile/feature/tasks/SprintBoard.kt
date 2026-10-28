@@ -2,6 +2,8 @@ package app.aino.mobile.feature.tasks
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -42,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -144,6 +147,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                 dropTarget = dragging != null,
                                 hovered = hoverKey == state.key,
                                 modifier = Modifier.onGloballyPositioned { headerBounds[state.key] = it.boundsInRoot() },
+                                onAdd = { viewModel.openCreateForColumn(state) },
                             )
                         }
                         if (columnTasks.isEmpty()) {
@@ -173,6 +177,9 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                     Modifier
                                         .padding(horizontal = 16.dp, vertical = 5.dp)
                                         .onGloballyPositioned { cardOrigin = it.boundsInRoot().topLeft }
+                                        // The slot the card left stays readable but
+                                        // faded; the lift happens on the floating
+                                        // copy (see the ghost below).
                                         .alpha(if (isDragged) 0.35f else 1f)
                                         .pointerInput(task.id, states, canMove) {
                                             if (!canMove) return@pointerInput
@@ -234,14 +241,26 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                     }
                 }
             }
-            // Floating ghost of the dragged card.
+            // Floating ghost of the dragged card: it lifts — grows, tilts and
+            // picks up a shadow — so the ticket under the finger is obviously
+            // the one being moved, and settles back when dropped.
             dragging?.let { task ->
                 val local = dragPos - boardOrigin
+                val lift by animateFloatAsState(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 160),
+                    label = "ghost-lift",
+                )
                 Box(
                     Modifier
                         .offset { IntOffset((local.x - 120.dp.toPx()).roundToInt(), (local.y - 36.dp.toPx()).roundToInt()) }
                         .widthIn(max = 260.dp)
-                        .rotate(-2f)
+                        .graphicsLayer {
+                            scaleX = 1f + 0.05f * lift
+                            scaleY = 1f + 0.05f * lift
+                            rotationZ = -2f + 4.5f * lift
+                            shadowElevation = 18.dp.toPx() * lift
+                        }
                         .shadow(12.dp, CardShape)
                         .clip(CardShape)
                         .background(colors.bgElevated)
@@ -276,6 +295,8 @@ internal fun ColumnHeader(
     dropTarget: Boolean,
     hovered: Boolean,
     modifier: Modifier = Modifier,
+    /** Creates a ticket in this column's state; hidden when null. */
+    onAdd: (() -> Unit)? = null,
 ) {
     val colors = LocalWebColors.current
     val tint = hexColor(state.color, colors.textMuted)
@@ -319,6 +340,17 @@ internal fun ColumnHeader(
             fontSize = 0.76.rem,
             fontWeight = FontWeight.Bold,
         )
+        if (onAdd != null) {
+            // Jira's column "+": the ticket is created in this sprint, already
+            // in this column's state — never in the backlog.
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .clickable(onClickLabel = "Add a ticket to ${stateLabel(state)}", onClick = onAdd),
+                contentAlignment = Alignment.Center,
+            ) { Icon(HeroIcons.Plus, "Add a ticket to ${stateLabel(state)}", Modifier.size(16.dp), tint = colors.textMuted) }
+        }
     }
 }
 
@@ -456,8 +488,6 @@ private fun SprintHeaderCard(ui: TaskUiState, viewModel: TaskViewModel, expanded
             }
         }
         Column(Modifier.padding(horizontal = 14.dp).padding(bottom = 12.dp)) {
-            // Board ⇄ Plan: the two surfaces of the Sprint tab (D21).
-            SprintViewSwitch(ui.sprintView, viewModel::setSprintView)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LinearProgressIndicator(
                     progress = { stats.percent / 100f },

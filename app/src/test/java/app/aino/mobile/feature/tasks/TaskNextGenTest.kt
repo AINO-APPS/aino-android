@@ -329,9 +329,9 @@ class TaskNextGenTest {
 
     @Test
     fun theSprintTabHasBothSurfaces() {
-        assertEquals(SprintView.Board, SprintView.fromKey("board"))
-        assertEquals(SprintView.Plan, SprintView.fromKey("plan"))
-        assertNull(SprintView.fromKey("nonsense"))
+        // The Board/Plan switch is gone; the planner is a Backlog action now.
+        assertEquals(TaskTab.Scheduled, TaskTab.fromKey("scheduled"))
+        assertNull(TaskTab.fromKey("nonsense"))
     }
 
     @Test

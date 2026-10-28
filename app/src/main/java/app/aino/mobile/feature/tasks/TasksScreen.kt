@@ -44,6 +44,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -200,8 +201,10 @@ fun TasksScreen(
                     userScrollEnabled = true,
                 ) { page ->
                     when (tabs.getOrNull(page)) {
-                        TaskTab.Sprint -> if (ui.sprintView == SprintView.Plan) SprintPlanPage(ui, viewModel, open) else SprintBoard(ui, viewModel, open)
-                        TaskTab.Backlog -> BacklogPage(ui, viewModel, open)
+                        // The Sprint tab is the board; the Plan split view is a
+                        // Backlog action (ADR-015), reached from "Plan sprint".
+                        TaskTab.Sprint -> SprintBoard(ui, viewModel, open)
+                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, viewModel, open) else BacklogPage(ui, viewModel, open)
                         TaskTab.Scheduled -> ScheduledPage(ui, viewModel, open)
                         TaskTab.ServiceDesk -> serviceDesk()
                         null -> Unit
@@ -252,8 +255,12 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Plan", color = colors.text, fontSize = 1.4.rem, fontWeight = FontWeight.ExtraBold, modifier = Modifier.semantics { heading() })
+            Text(ui.teamTitle, color = colors.text, fontSize = 1.4.rem, fontWeight = FontWeight.ExtraBold, modifier = Modifier.semantics { heading() })
             Text(headerSubtitle(ui), color = colors.textMuted, fontSize = 0.78.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (showsTeamPicker(ui.role)) {
+            TeamPicker(ui, viewModel)
+            Spacer(Modifier.width(8.dp))
         }
         RoundIconButton(HeroIcons.MagnifyingGlass, "Search tasks", viewModel::openSearch)
         Spacer(Modifier.width(8.dp))
@@ -292,6 +299,33 @@ internal fun MenuItem(icon: ImageVector, text: String, danger: Boolean = false, 
         text = { Text(text, color = tint) },
         onClick = onClick,
     )
+}
+
+/**
+ * Super admin and above pick one team at a time — there is no merged board,
+ * because one board cannot show several sprints. The chosen team drives the
+ * tabs, the landing and every list query.
+ */
+@Composable
+private fun TeamPicker(ui: TaskUiState, viewModel: TaskViewModel) {
+    val colors = LocalWebColors.current
+    var open by remember { mutableStateOf(false) }
+    val current = ui.teams.firstOrNull { it.id == ui.selectedTeamId }?.name ?: "Select team"
+    Box {
+        TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+            Text(current, color = colors.text, fontSize = 0.78.rem, maxLines = 1)
+            Icon(HeroIcons.ChevronDown, contentDescription = null, tint = colors.textMuted, modifier = Modifier.size(14.dp))
+        }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.background(colors.bgElevated)) {
+            MenuItem(HeroIcons.Users, "Unassigned") { open = false; viewModel.selectTeam(-1L) }
+            ui.teams.forEach { team ->
+                MenuItem(if (team.id == ui.selectedTeamId) HeroIcons.Check else HeroIcons.Users, team.name) {
+                    open = false
+                    viewModel.selectTeam(team.id)
+                }
+            }
+        }
+    }
 }
 
 private fun headerSubtitle(ui: TaskUiState): String = when (ui.tab) {

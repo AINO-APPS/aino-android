@@ -122,13 +122,13 @@ class TaskSyncTest {
     fun scheduledViewQueryGroupsAndMembership() {
         val today = java.time.LocalDate.of(2026, 10, 6)
         assertEquals(
-            "tasks?start_date=2026-09-06&end_date=2026-11-05&priority=high",
-            scheduledQuery(today.minusDays(30), today.plusDays(30), TaskFilters(priority = "high")),
+            "tasks/scheduled?priority=high&team_id=3",
+            scheduledQuery(TaskFilters(priority = "high"), TeamScope(teamId = 3)),
         )
         val groups = groupScheduled(
             listOf(
                 task(1, plannedDate = "2026-10-04"),                       // overdue
-                task(2, plannedDate = "2026-10-03", completedAt = "2026-10-03T10:00:00Z"), // past + done → hidden
+                task(2, plannedDate = "2026-10-03", completedAt = "2026-10-03T10:00:00Z"), // past + recently done → kept
                 task(3, plannedDate = "2026-10-06", priority = "low"),
                 task(4, plannedDate = "2026-10-06", priority = "high"),
                 task(5, plannedDate = "2026-10-07"),
@@ -137,9 +137,10 @@ class TaskSyncTest {
             ),
             today,
         )
-        assertEquals(listOf("Overdue", "Today", "Tomorrow", "Mon, Oct 12"), groups.map { it.label })
+        assertEquals(listOf("Overdue", "Sat, Oct 3", "Today", "Tomorrow", "Mon, Oct 12"), groups.map { it.label })
         assertEquals(listOf(1L), groups[0].tasks.map { it.id })
-        assertEquals(listOf(4L, 3L), groups[1].tasks.map { it.id })
+        assertEquals(listOf(2L), groups[1].tasks.map { it.id })
+        assertEquals(listOf(4L, 3L), groups[2].tasks.map { it.id })
         assertTrue(belongsToScheduled(task(plannedDate = "2026-10-07"), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
         assertFalse(belongsToScheduled(task(plannedDate = "2026-12-25"), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
         assertFalse(belongsToScheduled(task(), today.minusDays(30), today.plusDays(30), TaskFilters(), null))

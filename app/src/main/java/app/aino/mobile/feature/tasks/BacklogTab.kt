@@ -82,6 +82,15 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
             contentPadding = PaddingValues(bottom = 112.dp),
         ) {
             item(key = "controls") { BacklogControls(ui, viewModel) }
+            // "Plan sprint" is the only way into the split planner: the Sprint
+            // tab is the board (ADR-015).
+            if (ui.agileEnabled) {
+                item(key = "plan-sprint") {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        PillButton("Plan sprint", viewModel::openSprintPlan, tonal = true)
+                    }
+                }
+            }
             ui.error?.let { item(key = "error") { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) } }
 
             when {

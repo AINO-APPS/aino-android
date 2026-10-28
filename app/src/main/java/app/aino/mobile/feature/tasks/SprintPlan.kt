@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,14 +60,11 @@ internal fun SprintPlanPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (
             contentPadding = PaddingValues(bottom = 112.dp),
         ) {
             item(key = "header") { PlanHeader(ui, viewModel) }
-            // The switch lives on both surfaces so the Board stays reachable
-            // from Plan (it used to exist only in the board's header card).
-            item(key = "view-switch") {
-                SprintViewSwitch(
-                    selected = ui.sprintView,
-                    onSelect = viewModel::setSprintView,
+            item(key = "back-to-backlog") {
+                TextButton(
+                    onClick = viewModel::closeSprintPlan,
                     modifier = Modifier.padding(horizontal = 16.dp),
-                )
+                ) { Text("Back to backlog") }
             }
             ui.error?.let { item(key = "error") { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) } }
 

@@ -89,21 +89,30 @@ fun matchesPlanFilters(task: Task, filters: TaskFilters, quick: BacklogQuickFilt
         (!quick.unscheduled || task.plannedDate == null)
 
 /**
- * The two tab sets. A team that works in sprints plans work in one place — the
- * sprint — so the dated Schedule view is not offered beside it. A team with no
- * sprint config has no sprint to put work in, so its dated view is the only
- * place a due date means anything. Backlog is common to both.
+ * The tab set for the selected team, decided by its sprint state (ADR-015).
  *
- * Service Desk is a support queue, not a planning surface, so it keeps its own
- * visibility rule and is appended by the caller.
+ * A started sprint is the team's working surface: the board leads and Backlog
+ * and Scheduled sit beside it. With no active sprint there is no board to show,
+ * so Sprint is hidden. Service Desk is a support queue, not a planning surface,
+ * and always renders.
+ *
+ * [sprints] must already be narrowed to the selected team, so one team's sprint
+ * never drives another's tabs.
  */
-fun visibleTaskTabs(agileEnabled: Boolean, sprintEnabled: Boolean): List<TaskTab> = buildList {
-    add(TaskTab.Backlog)
-    if (agileEnabled && sprintEnabled) add(TaskTab.Sprint) else add(TaskTab.Scheduled)
-    add(TaskTab.ServiceDesk)
+fun planningTabs(agileEnabled: Boolean, sprints: List<AvailableSprint>): List<TaskTab> {
+    val active = agileEnabled && activeSprintId(sprints) != null
+    return buildList {
+        if (active) add(TaskTab.Sprint)
+        add(TaskTab.Backlog)
+        add(TaskTab.Scheduled)
+        add(TaskTab.ServiceDesk)
+    }
 }
 
-fun sprintTabsVisible(agileEnabled: Boolean, sprintEnabled: Boolean): Boolean = agileEnabled && sprintEnabled
+/** The running sprint of the selected team, if any. */
+fun activeSprintId(sprints: List<AvailableSprint>): Long? =
+    sprints.firstOrNull { it.status == "active" }?.id
+
 
 /**
  * A sprint-assigned ticket that reached the backlog snapshot even though its
@@ -142,23 +151,46 @@ private fun filterParams(filters: TaskFilters, includeStatus: Boolean): List<Pai
     filters.search.trim().takeIf(String::isNotEmpty)?.let { add("search" to it) }
 }
 
-/** Sprint board: `GET /tasks?sprint_id=…&<plannerFilters>`. */
-fun sprintTasksQuery(sprintId: Long, filters: TaskFilters): String =
-    withQuery("tasks", listOf("sprint_id" to sprintId.toString()) + filterParams(filters, includeStatus = true))
+/** The admin's team scope as query parameters. */
+private fun teamParams(scope: TeamScope): List<Pair<String, String>> = when {
+    scope.unassigned -> listOf("unassigned" to "1")
+    scope.teamId != null -> listOf("team_id" to scope.teamId.toString())
+    else -> emptyList()
+}
 
-/** Backlog page: `GET /tasks/backlog?<backlogFilters>&limit&offset`. */
-fun backlogQuery(filters: TaskFilters, limit: Int, offset: Int): String =
-    withQuery("tasks/backlog", filterParams(filters, includeStatus = false) + listOf("limit" to "$limit", "offset" to "$offset"))
+/** Sprint board: `GET /tasks?sprint_id=…&<plannerFilters>&<teamScope>`. */
+fun sprintTasksQuery(sprintId: Long, filters: TaskFilters, teamScope: TeamScope = TeamScope()): String =
+    withQuery(
+        "tasks",
+        listOf("sprint_id" to sprintId.toString()) + filterParams(filters, includeStatus = true) + teamParams(teamScope),
+    )
+
+/** Backlog page: `GET /tasks/backlog?<backlogFilters>&limit&offset&<teamScope>`. */
+fun backlogQuery(
+    filters: TaskFilters,
+    limit: Int,
+    offset: Int,
+    teamScope: TeamScope = TeamScope(),
+): String = withQuery(
+    "tasks/backlog",
+    filterParams(filters, includeStatus = false) + listOf("limit" to "$limit", "offset" to "$offset") + teamParams(teamScope),
+)
 
 fun searchQuery(q: String): String = withQuery("tasks/search", listOf("q" to q.trim()))
 
-/** Days back (for overdue) and ahead covered by the Scheduled view. */
+/** Days back (for overdue history) and ahead covered by the Scheduled view. */
 const val SCHEDULED_PAST_DAYS = 30L
 const val SCHEDULED_AHEAD_DAYS = 30L
 
-/** Scheduled view: `GET /tasks?start_date&end_date&<plannerFilters>` (planner-dated tasks in range). */
-fun scheduledQuery(from: LocalDate, to: LocalDate, filters: TaskFilters): String =
-    withQuery("tasks", listOf("start_date" to from.toString(), "end_date" to to.toString()) + filterParams(filters, includeStatus = true))
+/**
+ * Scheduled view: `GET /tasks/scheduled?<plannerFilters>&<teamScope>`.
+ *
+ * The server owns the container rule — unsprinted tickets with a planned or due
+ * date, no window — so a ticket dated months ahead still appears (under "Later")
+ * instead of vanishing from every surface.
+ */
+fun scheduledQuery(filters: TaskFilters, teamScope: TeamScope = TeamScope()): String =
+    withQuery("tasks/scheduled", filterParams(filters, includeStatus = true) + teamParams(teamScope))
 
 /** A dated section of the Scheduled view. `date == null` is the Overdue bucket. */
 data class ScheduledGroup(val key: String, val label: String, val date: LocalDate?, val tasks: List<Task>)
@@ -166,26 +198,52 @@ data class ScheduledGroup(val key: String, val label: String, val date: LocalDat
 private val DAY_HEADER = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)
 
 /**
- * Overdue (past planner date, not done) first, then one section per day from
- * today onward in date order. Completed past tasks are dropped — they are history.
+ * The day a scheduled ticket sits on: its planned date, else its due date.
+ *
+ * One rule for the list, the calendar and the day counts, so a ticket in
+ * Scheduled for its deadline alone still has a day.
+ */
+fun scheduleDateOf(task: Task): LocalDate? = localDateOf(task.plannedDate) ?: localDateOf(task.dueDate)
+
+/**
+ * Overdue (past day, not done) first, then one section per day for the next 30
+ * days, then everything further out under "Later" so no dated ticket goes
+ * missing. A ticket finished within the [SCHEDULED_PAST_DAYS] window keeps its
+ * past day (the server applies the same window); older finished work is history.
  */
 fun groupScheduled(tasks: List<Task>, today: LocalDate = LocalDate.now()): List<ScheduledGroup> {
-    val dated = tasks.mapNotNull { t -> localDateOf(t.plannedDate)?.let { it to t } }
+    val horizon = today.plusDays(SCHEDULED_AHEAD_DAYS - 1)
+    val historyFrom = today.minusDays(SCHEDULED_PAST_DAYS)
+    val dated = tasks.mapNotNull { t -> scheduleDateOf(t)?.let { it to t } }
     val overdue = dated.filter { (d, t) -> d.isBefore(today) && !t.isCompleted }
         .sortedWith(compareBy<Pair<LocalDate, Task>> { it.first }.thenBy { priorityRank(it.second.priority) })
         .map { it.second }
-    val upcoming = dated.filter { (d, _) -> !d.isBefore(today) }
-        .groupBy({ it.first }, { it.second })
-        .toSortedMap()
+    val byDay = sortedMapOf<LocalDate, MutableList<Task>>()
+    val later = mutableListOf<Pair<LocalDate, Task>>()
+    dated.forEach { entry ->
+        val (day, task) = entry
+        when {
+            day.isBefore(today) -> {
+                val finishedAt = localDateOf(task.completedAt)
+                if (finishedAt != null && !finishedAt.isBefore(historyFrom)) byDay.getOrPut(day) { mutableListOf() } += task
+            }
+            day.isAfter(horizon) -> later += entry
+            else -> byDay.getOrPut(day) { mutableListOf() } += task
+        }
+    }
     return buildList {
         if (overdue.isNotEmpty()) add(ScheduledGroup("overdue", "Overdue", null, overdue))
-        upcoming.forEach { (day, list) ->
+        byDay.forEach { (day, list) ->
             val label = when (ChronoUnit.DAYS.between(today, day)) {
                 0L -> "Today"
                 1L -> "Tomorrow"
                 else -> day.format(DAY_HEADER)
             }
             add(ScheduledGroup(day.toString(), label, day, list.sortedWith(compareBy<Task> { it.isCompleted }.thenBy { priorityRank(it.priority) })))
+        }
+        if (later.isNotEmpty()) {
+            later.sortWith(compareBy<Pair<LocalDate, Task>> { it.first }.thenBy { it.second.isCompleted }.thenBy { priorityRank(it.second.priority) })
+            add(ScheduledGroup("later", "Later", null, later.map { it.second }))
         }
     }
 }

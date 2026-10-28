@@ -51,6 +51,8 @@ data class BacklogDraft(
     val storyPoints: String? = null,
     val workItemTypeId: Long? = null,
     val projectId: Long? = null,
+    /** Set by a board column's "+": the ticket starts in that workflow state. */
+    val workflowStateId: Long? = null,
 )
 
 /** Title/description editor; every other field is edited inline from the properties card. */
@@ -96,6 +98,16 @@ data class TaskUiState(
      */
     val sprintEnabled: Boolean? = null,
     val customFieldsEnabled: Boolean = false,
+    /**
+     * The team the page is showing. Super admin and above pick one at a time;
+     * the selected team's sprint state drives the tabs and the landing. Null
+     * means "not chosen yet" — the user's own team, or the first in the org.
+     */
+    val selectedTeamId: Long? = null,
+    /** Options for the team picker, loaded only for super admin and above. */
+    val teams: List<TeamOption> = emptyList(),
+    /** False until the remembered team choice has been applied once. */
+    val teamResolved: Boolean = false,
     // Metadata.
     val labels: List<TaskLabel> = emptyList(),
     val assignableUsers: List<AssignableUser> = emptyList(),
@@ -104,8 +116,8 @@ data class TaskUiState(
     val agile: AgileConfig = AgileConfig(),
     // Page.
     val tab: TaskTab = TaskTab.Backlog,
-    /** Sprint tab shows the board or the split planner (D21). */
-    val sprintView: SprintView = SprintView.Board,
+    /** The Backlog is showing the Plan split view (backlog beside a sprint). */
+    val planOpen: Boolean = false,
     val selectedSprintId: Long? = null,
     val filters: TaskFilters = TaskFilters(),
     val sheet: TaskSheet? = null,
@@ -201,8 +213,23 @@ data class TaskUiState(
     val backlogGroups: List<BacklogGroup>? get() = strandedSprintGroups(sortedBacklog, sprints)
     /** The resolved answer: the server's flag, or the sprint list when it is unknown. */
     val sprintsEnabled: Boolean get() = sprintEnabled ?: sprints.isNotEmpty()
-    val sprintTabVisible: Boolean get() = sprintTabsVisible(agileEnabled, sprintsEnabled)
-    val visibleTabs: List<TaskTab> get() = visibleTaskTabs(agileEnabled, sprintsEnabled)
+    /** The sprint rows on screen belong to the selected team only. */
+    val teamSprints: List<AvailableSprint> get() = sprintsForTeam(sprints, selectedTeamId, showsTeamPicker(role))
+    /** A started sprint is what offers the board (ADR-015). */
+    val sprintTabVisible: Boolean get() = agileEnabled && activeSprintId(teamSprints) != null
+    val visibleTabs: List<TaskTab> get() = planningTabs(agileEnabled, teamSprints)
+    /** The query scope for backlog, scheduled and sprint loads. */
+    val teamScope: TeamScope get() = scopeForTeam(selectedTeamId)
+    /**
+     * The heading's team. The admin's pick wins; otherwise the user's own team,
+     * then the sprint's team for an admin browsing one.
+     */
+    val teamTitle: String
+        get() = teams.firstOrNull { it.id == selectedTeamId }?.name
+            ?: if (selectedTeamId == -1L) "Unassigned" else null
+            ?: teamName
+            ?: currentSprint?.teamName
+            ?: "Plan"
     val filterCount: Int get() = filterCount(filters, tab) + if (tab == TaskTab.Backlog) quickFilters.count + (if (selectedEpicId != null) 1 else 0) else 0
     /** Sprint planning is not narrowed by Backlog-only quick chips. */
     val planningBacklog: List<Task> get() = (if (planLoaded) planTasks else backlog).filter {
@@ -377,9 +404,10 @@ class TaskViewModel(
             userId = userId, role = role, teamName = teamName, teamId = teamId,
             agileEnabled = agileEnabled, customFieldsEnabled = customFieldsEnabled,
             sprintEnabled = sprintEnabled,
-            // Agile or the team's sprint config switched off mid-session: bounce off Sprint.
+            // Sprint switched off mid-session (agile, or no running sprint):
+            // bounce off the board rather than show a tab that is gone.
             tab = if (changedUser) TaskTab.Backlog
-            else normalizeTab(current.tab, visibleTaskTabs(agileEnabled, sprintEnabled ?: current.sprints.isNotEmpty())),
+            else normalizeTab(current.tab, planningTabs(agileEnabled, current.teamSprints)),
         )
         loadPreferences()
         if (agileEnabled) loadEpics()
@@ -400,17 +428,37 @@ class TaskViewModel(
             val sprints = if (agile) runCatching(repository::loadAvailableSprints).getOrDefault(emptyList()) else emptyList()
             val config = if (agile) runCatching(repository::loadAgileConfig).getOrNull() else null
             _ui.update { s ->
-                val selected = pickSprint(s.selectedSprintId, sprints)
+                // The admin's picker narrows the rows before anything reads
+                // them, so tabs, landing and the board all see one team.
+                val teams = if (showsTeamPicker(s.role)) {
+                    s.teams.ifEmpty { runCatching(repository::loadTeams).getOrDefault(emptyList()) }
+                } else {
+                    emptyList()
+                }
+                val teamId = if (showsTeamPicker(s.role)) {
+                    s.selectedTeamId ?: defaultTeamId(
+                        remembered = s.preferences.defaultTeamId,
+                        ownTeamId = s.teamId,
+                        teams = teams,
+                    )
+                } else {
+                    null
+                }
+                val scoped = sprintsForTeam(sprints, teamId, showsTeamPicker(s.role))
+                val selected = pickSprint(s.selectedSprintId, scoped)
                 s.copy(
                     labels = labels ?: s.labels,
                     assignableUsers = users ?: s.assignableUsers,
                     projects = projects ?: s.projects,
                     sprints = sprints,
+                    teams = teams,
+                    selectedTeamId = teamId,
+                    teamResolved = true,
                     agile = config ?: s.agile,
                     selectedSprintId = selected,
                     tab = normalizeTab(
-                        if (!landingApplied) landingTab(s.tab, sprints, agile) else s.tab,
-                        visibleTaskTabs(agile, s.sprintEnabled ?: sprints.isNotEmpty()),
+                        if (!landingApplied) landingTab(s.tab, scoped, agile) else s.tab,
+                        planningTabs(agile, scoped),
                     ),
                 )
             }
@@ -685,7 +733,11 @@ class TaskViewModel(
             // alongside the tasks rather than on a second round trip.
             runCatching { repository.loadScheduleOverlays(from.toString(), to.toString()) }
                 .onSuccess { list -> _ui.update { it.copy(overlays = list) } }
-            runCatching { repository.loadScheduled(from, to, _ui.value.filters) }.fold(
+            val scope = _ui.value.teamScope
+            // Overlays are read-only context for the same window, so they load
+            // alongside the tasks rather than on a second round trip.
+            val scheduled = runCatching { repository.loadScheduled(_ui.value.filters, scope) }
+            scheduled.fold(
                 onSuccess = { list -> if (gen == scheduledGen.get()) _ui.update { it.copy(scheduled = list, scheduledLoading = false, scheduledLoaded = true) } },
                 onFailure = {
                     if (gen != scheduledGen.get()) return@fold
@@ -710,13 +762,47 @@ class TaskViewModel(
         loadScheduled()
     }
 
-    /** Switch the Sprint tab between the board and the split planner. */
-    fun setSprintView(view: SprintView) {
-        _ui.update { it.copy(sprintView = view) }
-        if (view == SprintView.Plan) {
-            // The planner needs the ranked backlog beside the sprint.
-            if (_ui.value.backlog.isEmpty()) loadBacklog()
-            _ui.value.selectedSprintId?.let { loadBaseline(it) }
+    /**
+     * Open the Plan split view from the Backlog (its only entry point, as in
+     * Jira). With no planned or running sprint there is nothing to plan into,
+     * so the user is told where sprints come from instead of seeing an empty
+     * planner.
+     */
+    fun openSprintPlan() {
+        val s = _ui.value
+        val targetId = planTargetId(s.teamSprints)
+        if (targetId == null) {
+            notify(
+                if (canManageSprint(s.role)) "No sprint yet — create one in Admin → Teams"
+                else "No sprint yet — an admin can create one in Admin → Teams",
+            )
+            return
+        }
+        _ui.update { it.copy(planOpen = true, selectedSprintId = targetId) }
+        if (s.backlog.isEmpty()) loadBacklog()
+        loadSprint()
+        loadBaseline(targetId)
+    }
+
+    fun closeSprintPlan() = _ui.update { it.copy(planOpen = false) }
+
+    /**
+     * A board column's "+": the create sheet opens pre-filled with the sprint on
+     * screen and that column's workflow state, so the ticket lands on the board
+     * rather than in the backlog (Jira board behaviour).
+     */
+    fun openCreateForColumn(state: WorkflowState) {
+        val s = _ui.value
+        val sprintId = s.selectedSprintId ?: return
+        _ui.update {
+            it.copy(
+                sheet = TaskSheet.CreateTicket,
+                draft = BacklogDraft(
+                    sprintId = sprintId,
+                    workflowStateId = state.id.takeIf { id -> id != 0L },
+                    dueDate = s.sprints.firstOrNull { sp -> sp.id == sprintId }?.endDate?.take(10).orEmpty(),
+                ),
+            )
         }
     }
 
@@ -763,7 +849,9 @@ class TaskViewModel(
         _ui.update { s ->
             s.copy(
                 tab = tab,
-                selectedSprintId = if (tab == TaskTab.Sprint) pickSprint(s.selectedSprintId, s.sprints) else s.selectedSprintId,
+                // The planner belongs to the Backlog; any tab change leaves it.
+                planOpen = false,
+                selectedSprintId = if (tab == TaskTab.Sprint) pickSprint(s.selectedSprintId, s.teamSprints) else s.selectedSprintId,
                 searchOpen = false,
             )
         }
@@ -844,7 +932,8 @@ class TaskViewModel(
         _ui.update { it.copy(sprintLoading = it.tasks.isEmpty()) }
         sprintJob = io {
             val filters = _ui.value.filters
-            runCatching { repository.loadSprintTasks(sprintId, filters) }.fold(
+            val scope = _ui.value.teamScope
+            runCatching { repository.loadSprintTasks(sprintId, filters, scope) }.fold(
                 onSuccess = { result ->
                     _ui.update { if (it.selectedSprintId == sprintId) it.copy(tasks = result.tasks, stats = result.stats, sprintLoading = false) else it }
                 },
@@ -1038,7 +1127,7 @@ class TaskViewModel(
         backlogJob = io {
             val s = _ui.value
             val revision = planRevision.get()
-            runCatching { repository.loadPlanTasks() }.fold(
+            runCatching { repository.loadPlanTasks(s.teamScope) }.fold(
                 onSuccess = { tasks ->
                     if (gen != backlogGen.get()) return@fold
                     if (s.userId != _ui.value.userId) return@fold
@@ -1096,6 +1185,7 @@ class TaskViewModel(
                 storyPoints = draft.storyPoints,
                 workItemTypeId = draft.workItemTypeId,
                 projectId = draft.projectId,
+                workflowStateId = draft.workflowStateId,
             )
             runCatching { repository.createBacklogTask(payload) }.fold(
                 onSuccess = { created ->
@@ -1431,8 +1521,56 @@ class TaskViewModel(
         io {
             runCatching { repository.loadPreferences() }.onSuccess { prefs ->
                 _ui.update { it.copy(preferences = prefs) }
+                // The remembered team is only known once preferences land, so
+                // apply it here too (a cold start may beat the first refresh).
+                val s = _ui.value
+                if (showsTeamPicker(s.role) && s.selectedTeamId == null && s.teams.isNotEmpty()) {
+                    val teamId = defaultTeamId(prefs.defaultTeamId, s.teamId, s.teams)
+                    if (teamId != null) selectTeam(teamId, persist = false)
+                }
             }
         }
+    }
+
+    /**
+     * Show another team's sprint, backlog and scheduled tickets.
+     *
+     * Only super admin and above reach this. The chosen team narrows the sprint
+     * list, drives the tabs and is sent with every list query; the choice is
+     * remembered in the shared Tasks preferences (`default_team_id`).
+     */
+    fun selectTeam(teamId: Long?, persist: Boolean = true) {
+        val s = _ui.value
+        val scoped = sprintsForTeam(s.sprints, teamId, pickerVisible = true)
+        _ui.update {
+            // A team with a running sprint lands on its board; otherwise the
+            // tab set has no Sprint, so a Sprint view falls back to Backlog.
+            val tabs = planningTabs(it.agileEnabled, scoped)
+            it.copy(
+                selectedTeamId = teamId,
+                teamResolved = true,
+                preferences = it.preferences.copy(defaultTeamId = teamId?.takeIf { id -> id > 0 }),
+                planOpen = false,
+                planLoaded = false,
+                backlog = emptyList(),
+                scheduled = emptyList(),
+                scheduledLoaded = false,
+                selectedSprintId = pickSprint(it.selectedSprintId, scoped),
+                tab = if (activeSprintId(scoped) != null) TaskTab.Sprint else normalizeTab(it.tab, tabs),
+            )
+        }
+        if (persist) {
+            io {
+                runCatching {
+                    repository.savePreferences(
+                        buildJsonObject { put("default_team_id", teamId?.let { id -> JsonPrimitive(id) } ?: JsonNull) },
+                    )
+                }
+            }
+        }
+        loadBacklog()
+        loadScheduled()
+        if (_ui.value.tab == TaskTab.Sprint) loadSprint()
     }
 
     /** Toggle the completed section; the choice persists per user. */

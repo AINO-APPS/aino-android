@@ -96,6 +96,7 @@ class SprintBoardWiringTest {
         // One board-level state, carrying the message and both actions.
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("This sprint is empty"))
         compose.onNodeWithText("This sprint is empty").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Create ticket"))
         compose.onNodeWithText("Import from backlog").assertIsDisplayed()
         compose.onNodeWithText("Create ticket").assertIsDisplayed()
     }
@@ -114,8 +115,11 @@ class SprintBoardWiringTest {
         compose.onNodeWithText("Ship it").assertIsDisplayed()
         compose.onNodeWithText("This sprint is empty").assertDoesNotExist()
 
-        // The other three columns each get the thin dashed slot.
+        // The other three columns each get the thin dashed slot. The list only
+        // composes what is on screen, so scroll to the last column before
+        // counting rather than measuring from the top.
         compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(EMPTY_COLUMN_TAG))
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Done"))
         compose.onAllNodesWithTag(EMPTY_COLUMN_TAG)[0].assertIsDisplayed()
         compose.onAllNodesWithTag(EMPTY_COLUMN_TAG).assertCountEquals(3)
     }

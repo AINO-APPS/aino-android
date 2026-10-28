@@ -830,7 +830,7 @@
     {
       "method": "GET",
       "path": "/api/org/teams",
-      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
       "method": "POST",

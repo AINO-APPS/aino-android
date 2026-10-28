@@ -23,11 +23,18 @@ class TaskRepository(
     // @api GET tasks
     // @api GET tasks/backlog
     // @api GET tasks/search
-    fun loadSprintTasks(sprintId: Long, filters: TaskFilters): TaskListResponse =
-        decode(api.execute(ApiRequest(path = sprintTasksQuery(sprintId, filters))))
+    fun loadSprintTasks(
+        sprintId: Long,
+        filters: TaskFilters,
+        teamScope: TeamScope = TeamScope(),
+    ): TaskListResponse = decode(api.execute(ApiRequest(path = sprintTasksQuery(sprintId, filters, teamScope))))
 
-    fun loadBacklog(filters: TaskFilters, limit: Int, offset: Int): BacklogResponse =
-        decode(api.execute(ApiRequest(path = backlogQuery(filters, limit, offset))))
+    fun loadBacklog(
+        filters: TaskFilters,
+        limit: Int,
+        offset: Int,
+        teamScope: TeamScope = TeamScope(),
+    ): BacklogResponse = decode(api.execute(ApiRequest(path = backlogQuery(filters, limit, offset, teamScope))))
 
     /**
      * Drain the server's backlog pages before applying Plan filters.
@@ -38,12 +45,12 @@ class TaskRepository(
      * nothing else. Sprint work is loaded by [loadSprintTasks] for the board and
      * by the planner's sprint pane, never folded in here.
      */
-    fun loadPlanTasks(): List<Task> {
+    fun loadPlanTasks(teamScope: TeamScope = TeamScope()): List<Task> {
         val tasks = linkedMapOf<Long, Task>()
         var offset = 0
         do {
             val page = decode<BacklogResponse>(api.execute(ApiRequest(
-                path = backlogQuery(TaskFilters(), 500, offset) + "&include_completed=1&completed_since=0001-01-01",
+                path = backlogQuery(TaskFilters(), 500, offset, teamScope) + "&include_completed=1&completed_since=0001-01-01",
             )))
             page.tasks.forEach { tasks[it.id] = it }
             offset += page.tasks.size
@@ -55,8 +62,24 @@ class TaskRepository(
 
     fun search(q: String): List<Task> = decode(api.execute(ApiRequest(path = searchQuery(q))))
 
-    fun loadScheduled(from: java.time.LocalDate, to: java.time.LocalDate, filters: TaskFilters): List<Task> =
-        decode<TaskListResponse>(api.execute(ApiRequest(path = scheduledQuery(from, to, filters)))).tasks
+    /**
+     * `GET /tasks/scheduled` — every unsprinted ticket with a planned or due
+     * date. The date window still goes to the overlays endpoint (leave and
+     * holidays are calendar context, not the task set).
+     */
+    fun loadScheduled(filters: TaskFilters, teamScope: TeamScope = TeamScope()): List<Task> =
+        decode<TaskListResponse>(api.execute(ApiRequest(path = scheduledQuery(filters, teamScope)))).tasks
+
+    /**
+     * `GET /org/teams` — the admin's team picker options. The endpoint returns a
+     * plain array of team rows (see `modules/organization/teamListing.ts`).
+     */
+    fun loadTeams(): List<TeamOption> =
+        decode<JsonArray>(api.execute(ApiRequest(path = "org/teams"))).mapNotNull { element ->
+            val row = element.jsonObject
+            val id = row["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null
+            TeamOption(id, row["name"]?.jsonPrimitive?.content.orEmpty())
+        }
 
     // ── Next-generation surfaces ─────────────────────────────────────────
     /** `GET /tasks/by-key/:key` — a canonical `PROJ-123` reference resolves to one task. */

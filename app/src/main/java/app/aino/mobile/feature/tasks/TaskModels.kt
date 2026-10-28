@@ -399,6 +399,8 @@ data class CreateBacklogPayload(
     @SerialName("story_points") val storyPoints: String? = null,
     @SerialName("work_item_type_id") val workItemTypeId: Long? = null,
     @SerialName("project_id") val projectId: Long? = null,
+    /** Created straight into a board column starts in that workflow state. */
+    @SerialName("workflow_state_id") val workflowStateId: Long? = null,
 )
 
 /** `PUT /tasks/:id` from the detail editor (useTaskDetail `saveDetailEdit`). */
