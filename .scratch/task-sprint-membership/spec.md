@@ -115,8 +115,11 @@ renders one instead of the other.
 
 ## Issues
 
-- `01` Android: backlog exclusivity — delete the union.
-- `02` Platform: expose `sprint_enabled` per team.
-- `03` Android: two-tab rule.
-- `04` Web: two-tab rule + admin Start sprint control.
-- `05` Platform: clear `sprint_id` when sprint config is removed.
+- `01` Android: backlog exclusivity — delete the union. **Done** (`5b7e096`).
+- `02` Platform: expose `sprint_enabled` per team. **Done** (`a5f9c4b2`).
+- `03` Android: two-tab rule. **Done** (`5b7e096`, `15305d3`).
+- `04` Web: two-tab rule. **Done** (`a5f9c4b2`, `674e84b3`); admin Start control
+  dropped per D4.
+- `05` Platform: clear `sprint_id` when sprint config is removed. **Open** — blocked
+  by the auto-mode permission classifier on bulk `UPDATE tasks` statements.
+  Until it lands, D6's Android safety net keeps stranded tickets visible.
