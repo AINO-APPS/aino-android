@@ -21,6 +21,11 @@ data class AinoUser(
     @SerialName("tenant_plan") val tenantPlan: String? = null,
     @SerialName("team_id") val teamId: Long? = null,
     @SerialName("team_name") val teamName: String? = null,
+    /**
+     * The team has sprint config (an admin set a start date), so its work lives
+     * in sprints. Absent on older servers, which keeps today's behaviour.
+     */
+    @SerialName("team_sprint_enabled") val teamSprintEnabled: Boolean = false,
 )
 
 @Serializable

@@ -30,11 +30,15 @@ class TaskRepository(
         decode(api.execute(ApiRequest(path = backlogQuery(filters, limit, offset))))
 
     /**
-     * There is no planned-date-null API predicate. Drain the server's backlog
-     * pages before applying Plan filters, then add each available sprint.
+     * Drain the server's backlog pages before applying Plan filters.
      * Never filter a single page and present its count as the collection total.
+     *
+     * The backlog is `sprint_id IS NULL` on the server, and that is the whole
+     * rule: a ticket inside a sprint belongs to that sprint's board and to
+     * nothing else. Sprint work is loaded by [loadSprintTasks] for the board and
+     * by the planner's sprint pane, never folded in here.
      */
-    fun loadPlanTasks(sprints: List<AvailableSprint>): List<Task> {
+    fun loadPlanTasks(): List<Task> {
         val tasks = linkedMapOf<Long, Task>()
         var offset = 0
         do {
@@ -46,18 +50,6 @@ class TaskRepository(
             val hasMore = page.pagination?.let { it.hasMore || offset < it.total } ?: false
             check(!hasMore || page.tasks.isNotEmpty()) { "Backlog pagination did not advance" }
         } while (hasMore)
-        sprints.forEach { sprint ->
-            val rows = loadSprintTasks(sprint.id, TaskFilters()).tasks
-            rows.forEach { tasks[it.id] = it }
-            // GET /tasks caps a sprint at 500. The sprint rows endpoint is
-            // uncapped; detail hydrates only the overflow's people and labels.
-            if (rows.size >= 500) {
-                val known = rows.map { it.id }.toSet()
-                loadSprintTaskRows(sprint.id).filterNot { it.id in known }.forEach {
-                    tasks[it.id] = loadDetail(it.id)
-                }
-            }
-        }
         return tasks.values.toList()
     }
 

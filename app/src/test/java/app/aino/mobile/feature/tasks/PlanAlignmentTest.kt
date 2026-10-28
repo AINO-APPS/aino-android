@@ -16,14 +16,49 @@ class PlanAlignmentTest {
     )
 
     @Test fun planDefaultsToBacklogCompactAndExpandedCompleted() {
-        val ui = TaskUiState(agileEnabled = true, sprints = listOf(sprint))
+        val ui = TaskUiState(agileEnabled = true, sprintEnabled = true)
         assertEquals(TaskTab.Backlog, ui.tab)
-        assertEquals(listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.Sprint, TaskTab.ServiceDesk), ui.visibleTabs)
+        assertEquals(listOf(TaskTab.Backlog, TaskTab.Sprint, TaskTab.ServiceDesk), ui.visibleTabs)
         assertTrue(ui.quickFilters.isAll)
         assertTrue(ui.compact)
         assertTrue(ui.completedExpanded)
         assertFalse(ui.copy(selectedIds = setOf(1)).completedExpanded)
         assertFalse(ui.copy(agileEnabled = false).visibleTabs.contains(TaskTab.Sprint))
+    }
+
+    @Test fun tabSetFollowsTheTeamsSprintConfig() {
+        // A team that works in sprints plans in the sprint; the dated Schedule
+        // view is not offered beside it.
+        assertEquals(
+            listOf(TaskTab.Backlog, TaskTab.Sprint, TaskTab.ServiceDesk),
+            TaskUiState(agileEnabled = true, sprintEnabled = true).visibleTabs,
+        )
+        // A team with no sprint config has no sprint to put work in, so its
+        // dated view is the only place a due date means anything.
+        assertEquals(
+            listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk),
+            TaskUiState(agileEnabled = true, sprintEnabled = false).visibleTabs,
+        )
+        // Agile off loses the Sprint tab whatever the config says.
+        assertEquals(
+            listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk),
+            TaskUiState(agileEnabled = false, sprintEnabled = true).visibleTabs,
+        )
+        // Config must not be inferred from rows: no sprint rows, still sprint-led.
+        val configured = TaskUiState(agileEnabled = true, sprintEnabled = true, sprints = emptyList())
+        assertTrue(configured.visibleTabs.contains(TaskTab.Sprint))
+    }
+
+    @Test fun aHiddenTabIsNeverSelectable() {
+        // A sprint team has no Scheduled tab, a non-sprint team has no Sprint tab.
+        val sprintTeam = TaskUiState(agileEnabled = true, sprintEnabled = true)
+        assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Scheduled, sprintTeam.visibleTabs))
+        assertEquals(TaskTab.Sprint, normalizeTab(TaskTab.Sprint, sprintTeam.visibleTabs))
+        val datedTeam = TaskUiState(agileEnabled = true, sprintEnabled = false)
+        assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Sprint, datedTeam.visibleTabs))
+        assertEquals(TaskTab.Scheduled, normalizeTab(TaskTab.Scheduled, datedTeam.visibleTabs))
+        // Service Desk is a support queue and outlives both rules.
+        assertEquals(TaskTab.ServiceDesk, normalizeTab(TaskTab.ServiceDesk, datedTeam.visibleTabs))
     }
 
     @Test fun everyQuickFilterCombinationUsesAndSemantics() {
@@ -40,22 +75,37 @@ class PlanAlignmentTest {
         assertFalse(matchesPlanFilters(rows[0], TaskFilters(), BacklogQuickFilters(mine = true), null))
     }
 
-    @Test fun projectionGroupsSprintAndBacklogWithRealCountsAndPoints() {
+    @Test fun projectionExcludesSprintWorkFromTheBacklog() {
         val ui = TaskUiState(userId = 9, sprints = listOf(sprint), planTasks = rows, planLoaded = true).projectPlan()
-        assertEquals(3, ui.backlogTotal)
+        // Task 1 carries sprint_id 12, which is open: it belongs on the board only.
+        assertEquals(2, ui.backlogTotal)
+        assertEquals(listOf(2L, 3L), ui.backlog.map { it.id })
         assertEquals(1, ui.completedCount)
-        val groups = ui.backlogGroups!!
-        assertEquals(listOf("Release", "Backlog"), groups.map { it.label })
-        assertEquals(listOf(1, 2), groups.map { it.tasks.size })
-        assertEquals(listOf(3.0, 5.0), groups.map { it.tasks.sumOf { task -> task.storyPoints ?: 0.0 } })
+        assertNull(ui.backlogGroups)
+        // Task 2 carries a planned date, so the unscheduled chip drops it too.
         val unscheduled = ui.copy(quickFilters = BacklogQuickFilters(unscheduled = true)).projectPlan()
-        assertEquals(listOf(1L, 3L), unscheduled.backlog.map { it.id })
+        assertEquals(listOf(3L), unscheduled.backlog.map { it.id })
         assertEquals(1, unscheduled.completedCount)
+    }
+
+    @Test fun aStrandedSprintTicketStaysVisibleInItsOwnGroup() {
+        // The task's sprint is not in the open list (deleted, or completed and
+        // dropped from available-sprints), so the ticket must not vanish.
+        val stranded = listOf(Task(7, "Orphan", sprintId = 99))
+        val ui = TaskUiState(
+            userId = 9, sprints = listOf(sprint), planTasks = stranded, planLoaded = true,
+        ).projectPlan()
+        assertEquals(listOf(7L), ui.backlog.map { it.id })
+        val groups = ui.backlogGroups!!
+        assertEquals(1, groups.size)
+        assertEquals(listOf(7L), groups.single().tasks.map { it.id })
+        assertTrue(groups.single().label.startsWith("Sprint 99"))
     }
 
     @Test fun allQuickFiltersPreservesAdvancedPredicatesAndEpic() {
         val label = TaskLabel(7, "Mobile")
-        val task = rows[0].copy(labels = listOf(label), parentTaskId = 22)
+        // Backlog work: rows[0] otherwise carries sprint 12, which is open.
+        val task = rows[0].copy(labels = listOf(label), parentTaskId = 22, sprintId = null)
         val advanced = TaskFilters(assignee = "9", label = "7", priority = "high", search = "Assigned")
         val before = TaskUiState(
             userId = 9, sprints = listOf(sprint), planTasks = listOf(task), planLoaded = true,
@@ -77,14 +127,17 @@ class PlanAlignmentTest {
             """{"taskId":2,"fields":{"planned_date":null,"sprint_id":12}}""",
         ))!!
         val moved = base.copy(planTasks = base.planTasks.map { if (it.id == 2L) applyTaskDelta(it, delta) else it }).projectPlan()
-        assertEquals(2, moved.backlogGroups!!.first().tasks.size)
+        // Task 2 moved into an open sprint, so it leaves the backlog entirely.
+        assertEquals(listOf(3L), moved.backlog.map { it.id })
+        assertNull(moved.backlogGroups)
         // Completion is canonical server data, hydrated after workflow_state_id deltas.
         val patched = moved.copy(planTasks = moved.planTasks.map { if (it.id == 2L) it.copy(completedAt = "2026-10-26") else it }).projectPlan()
-        assertEquals(2, patched.completedCount)
-        assertEquals(2, patched.backlogTotal)
+        // Task 2 is completed but still inside open sprint 12, so it is not backlog work either way.
+        assertEquals(1, patched.completedCount)
+        assertEquals(1, patched.backlogTotal)
         val cleared = patched.copy(quickFilters = BacklogQuickFilters()).projectPlan()
-        assertEquals(2, cleared.completedCount)
-        assertEquals(2, cleared.backlogTotal)
+        assertFalse(cleared.backlog.any { it.id == 2L })
+        assertTrue(cleared.completed.any { it.id == 4L })
     }
 
     @Test fun repositoryDrainsAllServerPagesBeforePlanFiltering() {
@@ -96,38 +149,20 @@ class PlanAlignmentTest {
                     """{"tasks":[{"id":1,"title":"Dated","planned_date":"2026-11-01"}],"pagination":{"total":2,"hasMore":true}}"""
                 request.path.startsWith("tasks/backlog") ->
                     """{"tasks":[{"id":2,"title":"Unscheduled","priority":"high"}],"pagination":{"total":2,"hasMore":false}}"""
-                else -> """{"tasks":[{"id":3,"title":"Sprint work","sprint_id":12}]}"""
+                else -> """{"tasks":[]}"""
             }
             ApiResponse(200, emptyMap(), body.toByteArray())
         })
-        val all = repository.loadPlanTasks(listOf(sprint))
-        assertEquals(listOf(1L, 2L, 3L), all.map { it.id })
-        assertEquals(3, requests.size)
+        val all = repository.loadPlanTasks()
+        assertEquals(listOf(1L, 2L), all.map { it.id })
+        // The backlog is the only source: no sprint request is made.
+        assertEquals(2, requests.size)
+        assertTrue(requests.all { it.startsWith("tasks/backlog") })
         assertTrue(requests[0].contains("include_completed=1"))
         assertTrue(requests[1].contains("offset=1"))
-        assertEquals("tasks?sprint_id=12", requests.last())
-        assertEquals(listOf(2L, 3L), all.filter {
+        assertEquals(listOf(2L), all.filter {
             matchesPlanFilters(it, TaskFilters(), BacklogQuickFilters(unscheduled = true), null)
         }.map { it.id })
-    }
-
-    @Test fun repositoryHydratesSprintOverflowInsteadOfSilentlyCappingAt500() {
-        val requests = mutableListOf<String>()
-        val first500 = (1..500).joinToString(",") { """{"id":$it,"title":"Ticket $it","sprint_id":12}""" }
-        val repository = TaskRepository(ApiClient { request ->
-            requests += request.path
-            val body = when {
-                request.path.startsWith("tasks/backlog") -> """{"tasks":[]}"""
-                request.path == "tasks?sprint_id=12" -> """{"tasks":[$first500]}"""
-                request.path == "sprints/12/tasks" -> """{"tasks":[$first500,{"id":501,"title":"Overflow","sprint_id":12}]}"""
-                else -> """{"id":501,"title":"Overflow","sprint_id":12,"assignee":{"full_name":"Ada"}}"""
-            }
-            ApiResponse(200, emptyMap(), body.toByteArray())
-        })
-        val tasks = repository.loadPlanTasks(listOf(sprint))
-        assertEquals(501, tasks.size)
-        assertEquals("Ada", tasks.last().assignee?.display())
-        assertEquals("tasks/501/detail", requests.last())
     }
 
     @Test fun quickChipsDoNotNarrowSprintPlanningOrImport() {
@@ -135,6 +170,8 @@ class PlanAlignmentTest {
             planLoaded = true, planTasks = rows, sprints = listOf(sprint),
             quickFilters = BacklogQuickFilters(unscheduled = true),
         ).projectPlan()
+        // Sprint work is never offered for import, and the unscheduled chip does
+        // not narrow the pool further.
         assertEquals(listOf(2L, 3L), ui.importable.map { it.id })
     }
 }

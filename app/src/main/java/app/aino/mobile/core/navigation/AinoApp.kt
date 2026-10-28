@@ -545,13 +545,16 @@ private fun AuthenticatedShell(
 ) {
     val nav = rememberNavController()
     // Tasks read the signed-in context the web takes from AuthContext / FeaturesContext.
-    LaunchedEffect(user.id, user.role, user.teamName, user.teamId, user.tenantFeatures) {
+    LaunchedEffect(user.id, user.role, user.teamName, user.teamId, user.tenantFeatures, user.teamSprintEnabled) {
         val ungated = user.role == "platform_admin" && user.tenantId == null
         tasks.bind(
             user.id, user.role, user.teamName,
             agileEnabled = ungated || user.tenantFeatures["agile"] == true,
             customFieldsEnabled = ungated || user.tenantFeatures["custom_fields"] == true,
                 teamId = user.teamId,
+                // Per team, so it is not ungated by role: an admin who belongs
+                // to no team has no team sprint context to show.
+                sprintEnabled = user.teamSprintEnabled,
             )
         }
     val entry by nav.currentBackStackEntryAsState()

@@ -88,15 +88,35 @@ fun matchesPlanFilters(task: Task, filters: TaskFilters, quick: BacklogQuickFilt
         (!quick.high || task.priority == "high") &&
         (!quick.unscheduled || task.plannedDate == null)
 
-fun groupPlanBacklog(tasks: List<Task>, sprints: List<AvailableSprint>): List<BacklogGroup> {
-    val bySprint = tasks.groupBy { it.sprintId }
-    return buildList {
-        bySprint.filterKeys { it != null }.forEach { (id, rows) ->
-            val name = sprints.firstOrNull { it.id == id }?.name
-                ?: rows.firstNotNullOfOrNull { it.sprint?.name } ?: "Sprint $id"
-            add(BacklogGroup("sprint-$id", name, Tone.PrimaryLight, rows))
-        }
-        bySprint[null]?.let { add(BacklogGroup("backlog", "Backlog", null, it)) }
+/**
+ * The two tab sets. A team that works in sprints plans work in one place — the
+ * sprint — so the dated Schedule view is not offered beside it. A team with no
+ * sprint config has no sprint to put work in, so its dated view is the only
+ * place a due date means anything. Backlog is common to both.
+ *
+ * Service Desk is a support queue, not a planning surface, so it keeps its own
+ * visibility rule and is appended by the caller.
+ */
+fun visibleTaskTabs(agileEnabled: Boolean, sprintEnabled: Boolean): List<TaskTab> = buildList {
+    add(TaskTab.Backlog)
+    if (agileEnabled && sprintEnabled) add(TaskTab.Sprint) else add(TaskTab.Scheduled)
+    add(TaskTab.ServiceDesk)
+}
+
+fun sprintTabsVisible(agileEnabled: Boolean, sprintEnabled: Boolean): Boolean = agileEnabled && sprintEnabled
+
+/**
+ * A sprint-assigned ticket that reached the backlog snapshot even though its
+ * sprint is gone. It stays visible in its own group instead of disappearing:
+ * an unreachable ticket is worse than a stray heading.
+ */
+fun strandedSprintGroups(tasks: List<Task>, sprints: List<AvailableSprint>): List<BacklogGroup>? {
+    val orphaned = tasks.filter { it.sprintId != null }
+    if (orphaned.isEmpty()) return null
+    return orphaned.groupBy { it.sprintId!! }.map { (id, rows) ->
+        val name = sprints.firstOrNull { it.id == id }?.name
+            ?: rows.firstNotNullOfOrNull { it.sprint?.name } ?: "Sprint $id"
+        BacklogGroup("sprint-$id", "$name — not on this board", Tone.Warning, rows)
     }
 }
 
@@ -312,6 +332,10 @@ fun landingTab(current: TaskTab, sprints: List<AvailableSprint>, agileEnabled: B
     if (current != TaskTab.Backlog) return current
     return if (sprints.any { it.status == "active" }) TaskTab.Sprint else current
 }
+
+/** A tab the current team must not be shown is never selectable, whatever chose it. */
+fun normalizeTab(selected: TaskTab, visible: List<TaskTab>): TaskTab =
+    if (selected in visible) selected else TaskTab.Backlog
 
 /**
  * Which empty state the sprint board shows.

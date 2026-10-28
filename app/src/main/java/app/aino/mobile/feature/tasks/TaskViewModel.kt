@@ -84,6 +84,13 @@ data class TaskUiState(
     /** The caller's team, for the team-aware status permission. */
     val teamId: Long? = null,
     val agileEnabled: Boolean = false,
+    /**
+     * The team has sprint config (an admin set a start date). This, not the
+     * presence of sprint rows, decides whether the team works in sprints: the
+     * rows are created lazily, so inferring from the list makes the tab set
+     * flicker on the second load.
+     */
+    val sprintEnabled: Boolean = false,
     val customFieldsEnabled: Boolean = false,
     // Metadata.
     val labels: List<TaskLabel> = emptyList(),
@@ -187,9 +194,9 @@ data class TaskUiState(
     val currentSprint: AvailableSprint? get() = sprints.firstOrNull { it.id == selectedSprintId }
     val sortedBacklog: List<Task> get() = sortBacklog(backlog, backlogSort)
     /** Display sections for the backlog list, or `null` for a flat list. */
-    val backlogGroups: List<BacklogGroup>? get() = groupPlanBacklog(sortedBacklog, sprints)
-    val sprintTabVisible: Boolean get() = agileEnabled && sprints.isNotEmpty()
-    val visibleTabs: List<TaskTab> get() = TaskTab.entries.filter { it != TaskTab.Sprint || sprintTabVisible }
+    val backlogGroups: List<BacklogGroup>? get() = strandedSprintGroups(sortedBacklog, sprints)
+    val sprintTabVisible: Boolean get() = sprintTabsVisible(agileEnabled, sprintEnabled)
+    val visibleTabs: List<TaskTab> get() = visibleTaskTabs(agileEnabled, sprintEnabled)
     val filterCount: Int get() = filterCount(filters, tab) + if (tab == TaskTab.Backlog) quickFilters.count + (if (selectedEpicId != null) 1 else 0) else 0
     /** Sprint planning is not narrowed by Backlog-only quick chips. */
     val planningBacklog: List<Task> get() = (if (planLoaded) planTasks else backlog).filter {
@@ -212,10 +219,19 @@ data class TaskUiState(
     } ?: backlog
 }
 
-/** One projection for loading, quick/advanced filters, mutations and realtime. */
+/**
+ * One projection for loading, quick/advanced filters, mutations and realtime.
+ *
+ * Only sprint-less tickets are backlog. A sprint row that reaches us anyway — a
+ * stale page, or a task whose sprint was deleted server-side — is kept so it
+ * cannot vanish, but it is rendered in a separate "in a sprint" group rather
+ * than mixed into the backlog. A task whose sprint is still open is excluded:
+ * it belongs on that sprint's board and nowhere else.
+ */
 internal fun TaskUiState.projectPlan(): TaskUiState {
+    val openSprints = sprints.map { it.id }.toSet()
     val filtered = planTasks.filter {
-        (it.isBacklogItem || sprints.any { sprint -> sprint.id == it.sprintId }) &&
+        (it.sprintId == null || it.sprintId !in openSprints) &&
         matchesPlanFilters(it, filters, quickFilters, userId) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }
@@ -231,9 +247,10 @@ internal fun TaskUiState.projectPlan(): TaskUiState {
     )
 }
 
+/** Keep the plan snapshot in step with a mutation; a sprinted task leaves it. */
 private fun TaskUiState.patchPlan(task: Task): TaskUiState =
     if (!planLoaded) this else copy(
-        planTasks = upsertTask(planTasks, task, task.isBacklogItem || sprints.any { it.id == task.sprintId }),
+        planTasks = upsertTask(planTasks, task, task.isBacklogItem),
     ).projectPlan()
 
 /** The Scheduled view's fetch window, relative to today. */
@@ -335,18 +352,28 @@ class TaskViewModel(
     fun clearError() = _ui.update { it.copy(error = null) }
 
     /** The signed-in user context the web reads from AuthContext / FeaturesContext. */
-    fun bind(userId: Long, role: String, teamName: String?, agileEnabled: Boolean, customFieldsEnabled: Boolean = false, teamId: Long? = null) {
+    fun bind(
+        userId: Long,
+        role: String,
+        teamName: String?,
+        agileEnabled: Boolean,
+        customFieldsEnabled: Boolean = false,
+        teamId: Long? = null,
+        sprintEnabled: Boolean = false,
+    ) {
         val current = _ui.value
         if (current.userId == userId && current.role == role && current.teamName == teamName &&
-            current.teamId == teamId &&
+            current.teamId == teamId && current.sprintEnabled == sprintEnabled &&
             current.agileEnabled == agileEnabled && current.customFieldsEnabled == customFieldsEnabled
         ) return
         val changedUser = current.userId != null && current.userId != userId
         _ui.value = (if (changedUser) TaskUiState() else current).copy(
             userId = userId, role = role, teamName = teamName, teamId = teamId,
             agileEnabled = agileEnabled, customFieldsEnabled = customFieldsEnabled,
-            // Agile switched off mid-session: bounce off the Sprint tab.
-            tab = if (!agileEnabled && current.tab == TaskTab.Sprint) TaskTab.Backlog else if (changedUser) TaskTab.Backlog else current.tab,
+            sprintEnabled = sprintEnabled,
+            // Agile or the team's sprint config switched off mid-session: bounce off Sprint.
+            tab = if (changedUser) TaskTab.Backlog
+            else normalizeTab(current.tab, visibleTaskTabs(agileEnabled, sprintEnabled)),
         )
         loadPreferences()
         if (agileEnabled) loadEpics()
@@ -375,9 +402,10 @@ class TaskViewModel(
                     sprints = sprints,
                     agile = config ?: s.agile,
                     selectedSprintId = selected,
-                    tab = if (s.tab == TaskTab.Sprint && (!agile || sprints.isEmpty())) TaskTab.Backlog
-                    else if (!landingApplied) landingTab(s.tab, sprints, agile)
-                    else s.tab,
+                    tab = normalizeTab(
+                        if (!landingApplied) landingTab(s.tab, sprints, agile) else s.tab,
+                        visibleTaskTabs(agile, s.sprintEnabled),
+                    ),
                 )
             }
             landingApplied = true
@@ -716,7 +744,8 @@ class TaskViewModel(
 
     // ── Tabs, sheets, sprint picker, filters ─────────────────────────────
 
-    fun selectTab(tab: TaskTab) {
+    fun selectTab(requested: TaskTab) {
+        val tab = normalizeTab(requested, _ui.value.visibleTabs)
         if (tab == _ui.value.tab) return
         _ui.update { s ->
             s.copy(
@@ -979,7 +1008,7 @@ class TaskViewModel(
                 s.copy(
                     sprints = sprints,
                     selectedSprintId = selected,
-                    tab = if (s.tab == TaskTab.Sprint && sprints.isEmpty()) TaskTab.Backlog else s.tab,
+                    tab = normalizeTab(s.tab, visibleTaskTabs(s.agileEnabled, s.sprintEnabled)),
                 )
             }
         }
@@ -996,7 +1025,7 @@ class TaskViewModel(
         backlogJob = io {
             val s = _ui.value
             val revision = planRevision.get()
-            runCatching { repository.loadPlanTasks(s.sprints) }.fold(
+            runCatching { repository.loadPlanTasks() }.fold(
                 onSuccess = { tasks ->
                     if (gen != backlogGen.get()) return@fold
                     if (s.userId != _ui.value.userId) return@fold
@@ -1182,7 +1211,13 @@ class TaskViewModel(
 
     /** Web `?tab=` / `?sprint_id=` query params. */
     fun applyLink(tab: String?, sprintId: Long?) {
-        TaskTab.fromKey(tab)?.let { next -> _ui.update { it.copy(tab = next) } }
+        TaskTab.fromKey(tab)?.let { next ->
+            val visible = _ui.value
+            // A deep link may arrive before the team context resolves; keep the
+            // request until the tab is known to be visible rather than dropping it.
+            val target = if (visible.userId == null) next else normalizeTab(next, visible.visibleTabs)
+            _ui.update { it.copy(tab = target) }
+        }
 
         sprintId?.let { id -> _ui.update { it.copy(selectedSprintId = id) } }
         if (tab != null || sprintId != null) reloadTab()
