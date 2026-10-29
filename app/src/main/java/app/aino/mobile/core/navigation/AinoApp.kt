@@ -234,6 +234,8 @@ fun AinoApp(
     // and that stale error used to surface on the home screen after login.
     LaunchedEffect(tenantAuthenticated, authenticatedUser?.id) {
         if (tenantAuthenticated && authenticatedUser != null) {
+            // My Work is scoped to the signed-in user, so bind them first.
+            dashboard.setUser(authenticatedUser.id)
             dashboard.refresh()
             attendance.refresh()
         } else {
@@ -734,6 +736,16 @@ private fun AuthenticatedShell(
                     dashboard,
                     onCalendar = { navigate(AinoDestination.Calendar) },
                     onTasks = { navigate(AinoDestination.Tasks) },
+                    // The card's header goes to the surface it is summarising:
+                    // Scheduled for a week, that sprint's board for a sprint.
+                    onOpenTasksTab = { target, sprintId ->
+                        tasks.applyLink(target.key, sprintId)
+                        navigate(AinoDestination.Tasks)
+                    },
+                    onOpenTask = { id ->
+                        tasks.openDetailById(id)
+                        nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true }
+                    },
                     onOpenLink = { link -> openWebLink(link) },
                 )
             }

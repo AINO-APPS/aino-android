@@ -30,6 +30,18 @@ class DashboardViewModel(
     val ui: StateFlow<DashboardUiState> = _ui.asStateFlow()
     private var isManager: Boolean = false
 
+    /**
+     * Whose tickets the "My Work" card shows. Set by the shell once the signed-in
+     * user is known; until then the card has nobody to filter for.
+     */
+    private var userId: Long? = null
+
+    fun setUser(id: Long?) {
+        if (id == userId) return
+        userId = id
+        if (_ui.value.snapshot != null) refresh()
+    }
+
     // No refresh() in init: this ViewModel is created by MainActivity before
     // sign-in, and a token-less `tracker/status` is rejected by the server's
     // requireTenant (HTTP 400). The shell calls refresh() once a tenant
@@ -45,15 +57,18 @@ class DashboardViewModel(
         // Coalesce: a request that arrives mid-load (e.g. the manager flag flipping
         // during the first load) runs once after, instead of being dropped.
         if (_ui.value.loading) { refreshAgain = true; return }
+        // Without a signed-in user there is nobody to scope the card to, and the
+        // status read needs a tenant token anyway (see the note above init).
+        val uid = userId ?: return
         _ui.value = _ui.value.copy(loading = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             if (_ui.value.snapshot == null && warm != null) {
                 // A cache from an earlier day is not today's state: wait for the network instead.
-                runCatching { warm.load(isManager) }.getOrNull()?.takeIf { it.status.isFromDayOf(System.currentTimeMillis()) }?.let { cached ->
+                runCatching { warm.load(uid, isManager) }.getOrNull()?.takeIf { it.status.isFromDayOf(System.currentTimeMillis()) }?.let { cached ->
                     if (_ui.value.snapshot == null) _ui.value = _ui.value.copy(snapshot = cached)
                 }
             }
-            runCatching { repository.load(isManager) }.fold(
+            runCatching { repository.load(uid, isManager) }.fold(
                 onSuccess = { snapshot -> _ui.value = DashboardUiState(false, snapshot) },
                 onFailure = {
                     val keep = _ui.value.snapshot != null && isTransientFailure(it)
@@ -67,6 +82,7 @@ class DashboardViewModel(
     /** Sign-out: drop the previous user's snapshot and any stale error. */
     fun reset() {
         refreshAgain = false
+        userId = null
         _ui.value = DashboardUiState()
     }
 

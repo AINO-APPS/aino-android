@@ -40,7 +40,7 @@ class DashboardViewModelTest {
 
     @Test
     fun offlineRefreshKeepsTheSnapshotWithoutAnError() {
-        val vm = DashboardViewModel(DashboardRepository(api))
+        val vm = DashboardViewModel(DashboardRepository(api)).also { it.setUser(7) }
         vm.refreshAndWait()
         assertEquals("on_floor", vm.ui.value.snapshot?.status?.state)
 
@@ -53,9 +53,31 @@ class DashboardViewModelTest {
     @Test
     fun offlineWithNothingToShowGivesOneCalmMessage() {
         offline = true
-        val vm = DashboardViewModel(DashboardRepository(api))
+        val vm = DashboardViewModel(DashboardRepository(api)).also { it.setUser(7) }
         vm.refreshAndWait()
         assertNull(vm.ui.value.snapshot)
         assertEquals(NETWORK_ERROR_MESSAGE, vm.ui.value.error)
+    }
+
+    @Test
+    fun refreshBeforeSignInIsANoOp() {
+        // The ViewModel outlives sign-in; a token-less load would only produce
+        // an error on the home screen after login.
+        val vm = DashboardViewModel(DashboardRepository(api))
+        vm.refreshAndWait()
+        assertNull(vm.ui.value.snapshot)
+        assertNull(vm.ui.value.error)
+        assertEquals(false, vm.ui.value.loading)
+    }
+
+    @Test
+    fun signingOutDropsTheUserSoTheNextRefreshWaits() {
+        val vm = DashboardViewModel(DashboardRepository(api)).also { it.setUser(7) }
+        vm.refreshAndWait()
+        assertEquals("on_floor", vm.ui.value.snapshot?.status?.state)
+
+        vm.reset()
+        vm.refreshAndWait()
+        assertNull(vm.ui.value.snapshot)
     }
 }

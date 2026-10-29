@@ -17,8 +17,8 @@ import app.aino.mobile.core.auth.AinoUser
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.feature.home.component.EventReminderToast
 import app.aino.mobile.feature.home.component.GreetingBanner
+import app.aino.mobile.feature.home.component.MyWorkCard
 import app.aino.mobile.feature.home.component.PendingApprovalsCard
-import app.aino.mobile.feature.home.component.SprintProgressCard
 import app.aino.mobile.feature.home.component.TasksSummaryCard
 import app.aino.mobile.feature.home.component.TodayEventsCard
 
@@ -29,7 +29,7 @@ private val ROLE_LEVEL = mapOf(
 
 /**
  * Dashboard (P2). Render order at 430px: greeting banner, TodayEventsCard,
- * TasksSummary, SprintProgressCard, PendingApprovalsCard (manager-gated),
+ * TasksSummary, MyWorkCard, PendingApprovalsCard (manager-gated),
  * EventReminderToast. The work timer lives on Attendance only (TodayHeroCard).
  * Uses web-parity tokens, no glass/cream.
  */
@@ -40,6 +40,9 @@ fun HomeScreen(
     viewModel: DashboardViewModel,
     onCalendar: () -> Unit,
     onTasks: () -> Unit,
+    /** The Tasks tab to land on (Scheduled for the week, the board for a sprint). */
+    onOpenTasksTab: (target: MyWorkTarget, sprintId: Long?) -> Unit,
+    onOpenTask: (Long) -> Unit,
     onOpenLink: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -66,7 +69,16 @@ fun HomeScreen(
                 GreetingBanner(user.fullName, snapshot?.announcements.orEmpty())
                 TodayEventsCard(snapshot?.todayEvents.orEmpty(), snapshot?.tomorrowEvents.orEmpty(), onCalendar)
                 TasksSummaryCard(snapshot?.tasks, onTasks)
-                SprintProgressCard(snapshot?.sprint, snapshot?.sprintTasks.orEmpty(), snapshot?.backlogTasks.orEmpty(), onTasks)
+                snapshot?.myWork?.let { work ->
+                    MyWorkCard(
+                        work,
+                        onOpenAll = {
+                            val target = work.target()
+                            onOpenTasksTab(target, if (target == MyWorkTarget.Sprint) work.sprintId else null)
+                        },
+                        onOpenTask = onOpenTask,
+                    )
+                }
                 if (isManager) {
                     PendingApprovalsCard(
                         snapshot?.approvals.orEmpty(),

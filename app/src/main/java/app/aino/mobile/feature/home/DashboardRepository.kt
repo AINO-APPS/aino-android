@@ -1,6 +1,7 @@
 package app.aino.mobile.feature.home
 
 import app.aino.mobile.core.network.ApiClient
+import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.ApiRequest
 import app.aino.mobile.core.network.receivedAtEpochMs
 import app.aino.mobile.core.common.TrackerStatus
@@ -37,13 +38,42 @@ class DashboardRepository(
     fun loadAnnouncements(): List<DashboardAnnouncement> =
         get<AnnouncementEnvelope>("notifications/announcements").data
 
-    fun loadActiveSprint(): ActiveSprint? = runCatching<ActiveSprint> { get("sprints/active") }.getOrNull()
+    /**
+     * The team's running sprint, or null when there is none.
+     *
+     * A `runCatching` here would make "the server answered with no sprint",
+     * "the tenant lacks the `agile` feature" and "the response did not decode"
+     * indistinguishable, and this card's whole mode switch hangs on it — a
+     * decode failure would silently show the week to a team that has a sprint
+     * running. Only the two *expected* absences are absorbed; anything else
+     * propagates so [loadMyWork]'s caller sees it.
+     */
+    // @api GET sprints/active
+    fun loadActiveSprint(): ActiveSprint? =
+        try {
+            get<ActiveSprintEnvelope>("sprints/active").sprint
+        } catch (e: ApiError.Http) {
+            if (e.statusCode == 403) null else throw e // 403 = the agile feature is off
+        }
 
-    fun loadSprintTasks(sprintId: Long): List<SprintTask> =
-        runCatching { get<SprintTasksEnvelope>("sprints/$sprintId/tasks").tasks }.getOrDefault(emptyList())
+    // @api GET sprints/:id/tasks
+    fun loadSprintTasks(sprintId: Long): List<DashboardTask> =
+        runCatching { get<DashboardTaskList>("sprints/$sprintId/tasks").tasks }.getOrDefault(emptyList())
 
-    fun loadBacklog(): List<SprintTask> =
-        runCatching { get<SprintTasksEnvelope>("tasks/backlog?assignee=me").tasks }.getOrDefault(emptyList())
+    /**
+     * The planned-day range query. It is the ADR-015 Scheduled container
+     * (`sprint_id IS NULL AND planned_date BETWEEN …`), so a ticket in a sprint
+     * never leaks into the week, and completed rows come back in the same
+     * response — that is what the card's "N of M done" counts.
+     *
+     * Null means the query failed. An empty list is a real answer ("nothing
+     * planned") and the card says so; a failure must not borrow that sentence.
+     */
+    // @api GET tasks
+    fun loadTasks(from: LocalDate, to: LocalDate): List<DashboardTask>? =
+        runCatching {
+            get<DashboardTaskList>("tasks?start_date=$from&end_date=$to&assignee=me").tasks
+        }.getOrNull()
 
     fun loadApprovals(): List<Approval> =
         runCatching { get<List<Approval>>("manager/approvals?status=pending") }.getOrDefault(emptyList())
@@ -61,16 +91,17 @@ class DashboardRepository(
      * a partial failure never blanks the page. The status is the only hard
      * requirement (it drives the work timer); everything else degrades to empty.
      */
-    fun load(isManager: Boolean, nowEpochMs: Long? = null): DashboardSnapshot {
+    fun load(
+        userId: Long,
+        isManager: Boolean,
+        nowEpochMs: Long? = null,
+        today: LocalDate = LocalDate.now(),
+    ): DashboardSnapshot {
         val status = loadStatus(nowEpochMs)
         val tasks = runCatching { loadTaskSummary() }.getOrNull()
-        val today = LocalDate.now()
         val todayEvents = runCatching { loadEvents(today, today.plusDays(1)) }.getOrDefault(emptyList())
         val tomorrowEvents = runCatching { loadEvents(today.plusDays(1), today.plusDays(2)) }.getOrDefault(emptyList())
         val announcements = runCatching { loadAnnouncements() }.getOrDefault(emptyList())
-        val sprint = loadActiveSprint()
-        val sprintTasks = sprint?.let { loadSprintTasks(it.id) } ?: emptyList()
-        val backlogTasks = if (sprint == null) loadBacklog() else emptyList()
         val approvals = if (isManager) loadApprovals() else emptyList()
         return DashboardSnapshot(
             status = status,
@@ -78,10 +109,56 @@ class DashboardRepository(
             todayEvents = todayEvents,
             tomorrowEvents = tomorrowEvents,
             announcements = announcements,
-            sprint = sprint,
-            sprintTasks = sprintTasks,
-            backlogTasks = backlogTasks,
+            myWork = loadMyWork(userId, today),
             approvals = approvals,
+        )
+    }
+
+    /**
+     * Sprint mode when a sprint is running, the week otherwise (spec D1).
+     *
+     * The mode is the same rule the Tasks page uses (`planningTabs`): a
+     * sprint-enabled team with no *active* sprint works from the dated surface,
+     * so the card shows that surface too rather than a sprint that is not
+     * running.
+     */
+    fun loadMyWork(userId: Long, today: LocalDate = LocalDate.now()): MyWork {
+        val sprint = runCatching { loadActiveSprint() }.getOrElse {
+            // A decode or transport failure is not "no sprint": the card says it
+            // could not load rather than showing an empty week to someone whose
+            // sprint simply failed to arrive.
+            return MyWork(MyWorkMode.Week, "This Week", failed = true)
+        }
+        if (sprint != null) {
+            // One fetch: the sprint's rows serve the list and both counts.
+            val inSprint = loadSprintTasks(sprint.id)
+            val (groups, hidden) = capGroups(sprintGroups(myOpenTasks(inSprint, userId)))
+            return MyWork(
+                mode = MyWorkMode.Sprint,
+                title = sprint.name,
+                sprintId = sprint.id,
+                groups = groups,
+                done = myDoneCount(inSprint, userId),
+                total = myWorkCount(inSprint, userId),
+                hidden = hidden,
+            )
+        }
+        val week = weekRange(today)
+        val thisWeek = loadTasks(week.start, week.end) ?: return MyWork(MyWorkMode.Week, "This Week", failed = true)
+        val overdueFrom = previousWeekEnd(week.start).minusDays(OVERDUE_DAYS - 1)
+        // A failed Overdue lookup costs the Overdue group only: this week's rows
+        // are still the answer to the question the card asks.
+        val overdue = loadTasks(overdueFrom, previousWeekEnd(week.start)).orEmpty()
+        val (groups, hidden) = capGroups(
+            weekGroups(myOpenTasks(overdue, userId), myOpenTasks(thisWeek, userId), week.start),
+        )
+        return MyWork(
+            mode = MyWorkMode.Week,
+            title = "This Week",
+            groups = groups,
+            done = myDoneCount(thisWeek, userId),
+            total = myWorkCount(thisWeek, userId),
+            hidden = hidden,
         )
     }
 }

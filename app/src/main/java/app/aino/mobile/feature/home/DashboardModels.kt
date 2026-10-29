@@ -48,23 +48,50 @@ data class DashboardAnnouncement(
 data class AnnouncementEnvelope(val data: List<DashboardAnnouncement> = emptyList())
 
 @Serializable
-data class ActiveSprint(
-    val id: Long,
-    val name: String,
-    @SerialName("start_date") val startDate: String? = null,
-    @SerialName("end_date") val endDate: String? = null,
-)
+data class ActiveSprint(val id: Long, val name: String)
 
+/**
+ * `GET /sprints/active` answers with an envelope, not a bare sprint — the
+ * envelope is why the home card's sprint mode never rendered (it decoded the
+ * body straight into [ActiveSprint] and swallowed the failure).
+ */
 @Serializable
-data class SprintTask(
+data class ActiveSprintEnvelope(val sprint: ActiveSprint? = null)
+
+/**
+ * The subset of the enriched task row (`server/routes/tasks/_helpers/enrich.ts`)
+ * the home card reads.
+ *
+ * Deliberately not `feature.tasks.Task`: features may not import each other
+ * (`scripts/check-module-boundaries.mjs`), and this card needs a fifth of it.
+ * There is no `status` field — the workflow state is the only status, so
+ * completion is `completed_at` and the label is `workflow_state_name`.
+ */
+@Serializable
+data class DashboardTask(
     val id: Long,
     val title: String,
-    val status: String = "todo",
     val priority: String? = null,
-)
+    @SerialName("planned_date") val plannedDate: String? = null,
+    @SerialName("assigned_to") val assignedTo: Long? = null,
+    @SerialName("workflow_state_key") val workflowStateKey: String? = null,
+    @SerialName("workflow_state_name") val workflowStateName: String? = null,
+    @SerialName("workflow_state_category") val workflowStateCategory: String? = null,
+    @SerialName("completed_at") val completedAt: String? = null,
+) {
+    /** The team's own word for the state; the category is a reporting bucket. */
+    val stateLabel: String
+        get() = workflowStateName?.takeIf(String::isNotBlank)
+            ?: when (workflowStateCategory) {
+                "in_progress" -> "In Progress"
+                "in_review" -> "In Review"
+                "done" -> "Done"
+                else -> "Pending"
+            }
+}
 
 @Serializable
-data class SprintTasksEnvelope(val tasks: List<SprintTask> = emptyList())
+data class DashboardTaskList(val tasks: List<DashboardTask> = emptyList())
 
 @Serializable
 data class Approval(
@@ -80,9 +107,8 @@ data class DashboardSnapshot(
     val todayEvents: List<DashboardEvent> = emptyList(),
     val tomorrowEvents: List<DashboardEvent> = emptyList(),
     val announcements: List<DashboardAnnouncement> = emptyList(),
-    val sprint: ActiveSprint? = null,
-    val sprintTasks: List<SprintTask> = emptyList(),
-    val backlogTasks: List<SprintTask> = emptyList(),
+    /** The home "My Work" card: the running sprint's tickets, or this week's. */
+    val myWork: MyWork = MyWork(MyWorkMode.Week, "This Week"),
     val approvals: List<Approval> = emptyList(),
 )
 

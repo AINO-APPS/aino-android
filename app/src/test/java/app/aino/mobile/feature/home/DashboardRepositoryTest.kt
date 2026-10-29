@@ -21,7 +21,7 @@ class DashboardRepositoryTest {
             }
         }
 
-        val result = DashboardRepository(api).load(isManager = false, nowEpochMs = 123)
+        val result = DashboardRepository(api).load(userId = 7, isManager = false, nowEpochMs = 123)
 
         assertEquals("on_floor", result.status.state)
         assertEquals("remote", result.status.workMode)
@@ -38,7 +38,7 @@ class DashboardRepositoryTest {
             else throw ApiError.Network("GET", request.path, java.io.IOException("offline"))
         }
 
-        val result = DashboardRepository(api).load(isManager = false)
+        val result = DashboardRepository(api).load(userId = 7, isManager = false)
 
         assertEquals("logged_out", result.status.state)
         assertNull(result.tasks)
@@ -46,7 +46,6 @@ class DashboardRepositoryTest {
 
     private fun response(json: String) = ApiResponse(200, emptyMap(), json.toByteArray())
 }
-
 class DashboardModelsTest {
     @Test
     fun dashboardWeekEndsWithTodayAcrossSevenDays() {
@@ -72,7 +71,7 @@ class DashboardModelsTest {
             } else throw ApiError.Network("GET", request.path, java.io.IOException("Not cached"))
         }
 
-        val result = DashboardRepository(api).load(isManager = false, nowEpochMs = 999_999)
+        val result = DashboardRepository(api).load(userId = 7, isManager = false, nowEpochMs = 999_999)
 
         assertEquals(777L, result.status.receivedAtEpochMs)
         assertEquals(75, result.status.floorSeconds)
