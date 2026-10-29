@@ -137,6 +137,8 @@ jobs:
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_DIRECT_KEYSTORE_BASE64: ${{ secrets.ANDROID_DIRECT_KEYSTORE_BASE64 }}
+          ANDROID_DIRECT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DIRECT_KEYSTORE_PASSWORD }}
         run: |
           set -euo pipefail
           if [ -z "${ANDROID_KEYSTORE_BASE64}" ]; then
@@ -152,12 +154,30 @@ jobs:
           keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" > /dev/null
           echo "path=${KEYSTORE_PATH}" >> "$GITHUB_OUTPUT"
 
+          # Preserve the Play key while using the approved direct-channel key.
+          if [ -z "${ANDROID_DIRECT_KEYSTORE_BASE64}" ]; then
+            echo "::error::ANDROID_DIRECT_KEYSTORE_BASE64 is empty - the direct channel must be signed with its own rotatable key"
+            exit 1
+          fi
+          DIRECT_KEYSTORE_PATH="${RUNNER_TEMP}/aino-direct.jks"
+          printf '%s' "$ANDROID_DIRECT_KEYSTORE_BASE64" | base64 -d > "$DIRECT_KEYSTORE_PATH"
+          if [ ! -s "$DIRECT_KEYSTORE_PATH" ]; then
+            echo "::error::decoded direct keystore is empty - check the base64 secret"
+            exit 1
+          fi
+          keytool -list -keystore "$DIRECT_KEYSTORE_PATH" -storepass "$ANDROID_DIRECT_KEYSTORE_PASSWORD" > /dev/null
+          echo "direct_path=${DIRECT_KEYSTORE_PATH}" >> "$GITHUB_OUTPUT"
+
       - name: Build signed APK and AAB
         env:
           ANDROID_KEYSTORE_PATH: ${{ steps.keystore.outputs.path }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_DIRECT_KEYSTORE_PATH: ${{ steps.keystore.outputs.direct_path }}
+          ANDROID_DIRECT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DIRECT_KEYSTORE_PASSWORD }}
+          ANDROID_DIRECT_KEY_ALIAS: ${{ secrets.ANDROID_DIRECT_KEY_ALIAS }}
+          ANDROID_DIRECT_KEY_PASSWORD: ${{ secrets.ANDROID_DIRECT_KEY_PASSWORD }}
           # P2.5 TLS pins (current + backup SPKI). Unset = pinning off; see docs/CERT_PINNING_RUNBOOK.md.
           AINO_CERT_PINS: ${{ vars.AINO_CERT_PINS }}
         # `direct` APK: sideloaded pilots + the R2 self-update channel.
@@ -195,22 +215,49 @@ jobs:
           "$BUILD_TOOLS/zipalign" -c -P 16 4 "$PLAY_APK"
           echo "Play policy checks passed"
 
-      # Guard against silently shipping a DEBUG-signed artifact: if the signing
-      # config fails to apply, Gradle falls back to the debug keystore.
+      # Check the configured direct identity, not just a certificate's display name.
       - name: Verify release signature
+        env:
+          EXPECTED_DIRECT_SHA: ${{ vars.ANDROID_DIRECT_CERT_SHA256 }}
         run: |
           set -euo pipefail
           BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
-          "$BUILD_TOOLS/apksigner" verify --print-certs "release-assets/AINO-${VERSION}-direct.apk" | tee /tmp/certs.txt
-          if grep -qi 'CN=Android Debug' /tmp/certs.txt; then
-            echo "::error::APK is DEBUG-signed - the release signing config did not apply"
+          DIRECT_APK="release-assets/AINO-${VERSION}-direct.apk"
+          PLAY_APK="app/build/outputs/apk/play/release/app-play-release.apk"
+
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$DIRECT_APK" | tee /tmp/direct-certs.txt
+          if grep -qi 'CN=Android Debug' /tmp/direct-certs.txt; then
+            echo "::error::direct APK is DEBUG-signed - the release signing config did not apply"
             exit 1
           fi
-          if ! grep -qi 'CN=AINO' /tmp/certs.txt; then
-            echo "::error::APK is not signed by the expected AINO release key"
+
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$PLAY_APK" | tee /tmp/play-certs.txt
+          if grep -qi 'CN=Android Debug' /tmp/play-certs.txt; then
+            echo "::error::play APK is DEBUG-signed - the release signing config did not apply"
             exit 1
           fi
-          echo "Release signature verified"
+
+          DIRECT_SHA=$(grep -oP 'certificate SHA-256 digest:\s*\K[0-9a-f]+' /tmp/direct-certs.txt | head -1)
+          PLAY_SHA=$(grep -oP 'certificate SHA-256 digest:\s*\K[0-9a-f]+' /tmp/play-certs.txt | head -1)
+          if [ -z "$DIRECT_SHA" ] || [ -z "$PLAY_SHA" ]; then
+            echo "::error::could not read signing certificate digests"
+            exit 1
+          fi
+          echo "direct cert: $DIRECT_SHA"
+          echo "play cert:   $PLAY_SHA"
+          if [ -z "$EXPECTED_DIRECT_SHA" ] || [ "$DIRECT_SHA" != "$EXPECTED_DIRECT_SHA" ]; then
+            echo "::error::direct signing certificate does not match ANDROID_DIRECT_CERT_SHA256"
+            exit 1
+          fi
+          if [ "$PLAY_SHA" != "c490582bf04deaa2cf5575cbaa4d6b1c40e99ab5df7b950f56457cff4a9b6806" ]; then
+            echo "::error::Play signing identity changed unexpectedly"
+            exit 1
+          fi
+          if [ "$DIRECT_SHA" = "$PLAY_SHA" ]; then
+            echo "::error::direct and play are signed by the same key - the direct key rotation did not apply"
+            exit 1
+          fi
+          echo "Distinct channel keys verified"
 
       - name: Verify APK identity and version metadata
         env:
@@ -321,7 +368,15 @@ jobs:
             echo "### Install"
             echo
             echo "Direct install (pilots): download \`AINO-${VERSION}-direct.apk\` on an Android 8.0+ device."
-            echo "It updates itself in place: Profile → Check for updates, or the banner on launch."
+            if [ "$VERSION" = "0.27.13" ]; then
+              echo
+              echo "**Signing-key migration:** if AINO 0.27.12 or earlier is installed, uninstall it before installing this release. Uninstalling removes local app data; sync pending work and save any local-only files first."
+              echo "The package name is unchanged, but Android cannot update the old signing identity in place. The previous app cannot gain the new mismatch warning until it is replaced."
+              echo "Later releases signed with this same direct key can update in place."
+              echo
+            else
+              echo "Install over an existing app only when it uses the same signing key. Profile → Check for updates, or use the banner on launch."
+            fi
             echo "Google Play: upload \`AINO-${VERSION}-play.aab\` in the Play Console (Play handles updates)."
             echo "You may need to allow installs from unknown sources."
             echo

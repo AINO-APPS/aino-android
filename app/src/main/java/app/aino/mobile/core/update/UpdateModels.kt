@@ -28,6 +28,19 @@ fun compareVersions(left: String, right: String): Int {
     return a.zip(b).firstOrNull { (x, y) -> x != y }?.let { (x, y) -> x.compareTo(y) } ?: 0
 }
 
+/**
+ * Android refuses to replace an installed app with one signed by a different key
+ * (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), and the system installer reports that as an
+ * opaque failure. The `direct` channel rotates its signing key, so the updater has to
+ * spot the mismatch itself and tell the user to reinstall instead of handing the APK to
+ * an installer that is guaranteed to reject it.
+ *
+ * Returns `false` when either side is unknown, so a package-manager quirk can never block
+ * an install that would otherwise succeed - the installer remains the authority.
+ */
+fun signedByDifferentKey(installed: Set<String>, candidate: Set<String>): Boolean =
+    installed.isNotEmpty() && candidate.isNotEmpty() && installed != candidate
+
 fun requireTrustedApkUrl(baseUrl: String, apkUrl: String) {
     val base = URI(baseUrl)
     val apk = URI(apkUrl)

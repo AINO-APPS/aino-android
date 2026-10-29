@@ -49,6 +49,11 @@ are device-specific. Keep Play Protect enabled. The loop confirms Install
 or Update through the standard installer and can install the supplied APK;
 use only the intended AINO artifact on a diagnostic device.
 
+The script uninstalls `app.aino.mobile` before installing, so it measures a
+clean install rather than an in-place upgrade. It dismisses any leftover Play
+Protect card by tapping that card's own button, because the card ignores
+`KEYCODE_BACK` and a stale one makes the next poll report a false block.
+
 ```powershell
 & .\scripts\debug\play-protect-loop.ps1 -ApkUri content://media/external/downloads/1000042978 -ExpectedVersion 0.27.4
 ```
@@ -160,6 +165,10 @@ row, and the dead generated model file is deleted.
 
 ## Resolution and Verification
 
+> **Historical investigation.** The later device experiments and the approved
+> direct-channel signing migration are recorded below. They do not establish
+> Google's classification criteria or guarantee that a new release will pass.
+
 Official classification appeal:
 https://support.google.com/googleplay/android-developer/contact/protectappeals
 
@@ -188,6 +197,9 @@ are two ways to close this and neither is a source revert:
    the new build is blocked too, the classification is content-driven rather
    than per-hash, and the next diagnostic step is to bisect the Tasks commit
    through CI builds rather than to keep re-signing the same bytes.
+   *Later observation: multiple releases were blocked while 0.27.9 passed.
+   Re-signing changed the observed result, but also changed the APK hash;
+   these tests do not isolate Google's classification key.*
 
 Do not mutate or re-sign the blocked APK purely to change its hash, and do
 not walk users through disabling Play Protect. Both turn a false-positive
@@ -202,3 +214,69 @@ BUILD SUCCESSFUL in 4m 57s
 
 All five required Node guardrails also passed. Build and guardrail success
 does not validate or override a Play Protect classification.
+
+## Later device observations and approved signing migration
+
+Prior diagnostic runs reported blocks for 0.27.7, 0.27.8, 0.27.10,
+0.27.11 and 0.27.12, with 0.27.9 passing. Re-signed 0.27.12 test
+artifacts passed three repeated clean installs on the diagnostic device.
+A locally rebuilt APK using the new direct key also passed three attempts.
+These observations are not a guarantee for the next published APK.
+
+Re-signing changes both the signing certificate and the APK hash. The tests
+therefore support a signing/artifact-associated difference but do not prove
+that Google keys its verdict exclusively to the certificate or exclude all
+content heuristics. Matching certificate digests alone cannot transfer an
+installation result from one APK to another. The previously reported
+reason for 0.27.9 passing (install telemetry) was not established.
+
+The absence of a public Play listing and a Play upload step does not prove
+that a Play Console entry is absent, nor explain why an appeal email did not
+arrive. The earlier investigation recorded a successful appeal submission;
+its email delivery and review outcome remain unverified.
+
+### Approved migration: 0.27.13
+
+The user approved a new direct signing identity while retaining the package
+name and existing Play signing credentials. Local builds use
+ANDROID_DIRECT_KEYSTORE_PATH, ANDROID_DIRECT_KEYSTORE_PASSWORD,
+ANDROID_DIRECT_KEY_ALIAS and ANDROID_DIRECT_KEY_PASSWORD for the direct
+flavor. Release CI requires separate direct credentials and verifies the
+exact certificate against the ANDROID_DIRECT_CERT_SHA256 repository variable.
+Play credentials are unchanged.
+
+The GitHub Actions repository secrets are:
+
+- ANDROID_DIRECT_KEYSTORE_BASE64 (base64 of the keystore)
+- ANDROID_DIRECT_KEYSTORE_PASSWORD
+- ANDROID_DIRECT_KEY_ALIAS
+- ANDROID_DIRECT_KEY_PASSWORD
+
+Keep the keystore and password backed up outside source control. A lost key
+prevents future in-place updates. Never include their values in logs or
+release assets.
+
+Existing 0.27.12-and-earlier installs use the old key and cannot update in
+place to this release. Sync pending work and save local-only files before
+uninstalling, because uninstalling removes app data. Install the new direct
+APK and sign in again. Future releases signed with this direct key can
+update in place. Moving between direct and Play keys also needs a reinstall.
+
+The new updater detects a different current signer set before invoking the
+installer. Old installed binaries do not contain that new warning; release
+notes must provide the migration instruction. Unit tests cover the helper,
+not Google classification or an end-to-end upgrade of the old binary.
+
+### Verification limits and diagnostic cautions
+
+Verify the exact published APK, with Play Protect enabled, on a connected
+device. Compare its checksum and signing certificate against the release.
+If blocked, record that outcome and seek classification review; do not
+disable protection or interpret signing rotation as proof of safety.
+
+Clean-install and in-place-update results are different paths and should be
+reported separately. The clean-install diagnostic script is destructive:
+it removes the installed package and its local data. Use a diagnostic device.
+Dismiss stale Play Protect cards using OK, never Install anyway. A stale
+card can contaminate the next UI observation; BACK did not dismiss it on the
+tested device. The loop must verify the installed version after completion.

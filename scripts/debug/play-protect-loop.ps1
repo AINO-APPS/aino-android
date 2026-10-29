@@ -18,13 +18,31 @@ function Read-InstallerScreen {
     return $screen
 }
 
-try {
-    $screen = Read-InstallerScreen
-    if ($screen.SelectNodes('//node') | Where-Object {
-        $_.package -eq 'com.android.vending' -and $_.text -match '(?i)harmful'
-    }) {
-        & adb shell input keyevent KEYCODE_BACK | Out-Null
+# The Play Protect card ignores KEYCODE_BACK, so a dismissal attempt with BACK leaves it
+# on screen and the next poll reports a false block for an install that never happened.
+# It has to be dismissed by tapping its own button.
+function Dismiss-PlayProtect([xml]$screen) {
+    $buttons = @($screen.SelectNodes('//node') | Where-Object {
+        $_.package -eq 'com.android.vending' -and $_.text -eq 'OK'
+    })
+    foreach ($button in $buttons) {
+        $c = [regex]::Matches($button.bounds, '\d+')
+        if ($c.Count -eq 4) {
+            $x = ([int]$c[0].Value + [int]$c[2].Value) / 2
+            $y = ([int]$c[1].Value + [int]$c[3].Value) / 2
+            & adb shell input tap ([int]$x) ([int]$y) | Out-Null
+            Start-Sleep -Milliseconds 600
+        }
     }
+}
+
+try {
+    Dismiss-PlayProtect (Read-InstallerScreen)
+
+    # This is a destructive clean-install probe, not an in-place-update test.
+    Write-Warning "Removing $PackageName and its local app data for the clean-install test."
+    & adb shell pm uninstall $PackageName | Out-Null
+
     & adb shell am start -W -a android.intent.action.VIEW -d $ApkUri `
         -t application/vnd.android.package-archive -f 1 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw 'Could not launch the normal APK installer' }

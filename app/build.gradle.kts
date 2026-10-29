@@ -60,8 +60,8 @@ val ainoContractVersion = providers.gradleProperty("AINO_CONTRACT_VERSION")
 // Release signing is driven entirely by environment variables so the keystore
 // never has to exist inside the working tree. When they are absent (a normal
 // developer machine) the release build stays unsigned rather than silently
-// falling back to the debug key, and `android-release.yml` fails the build if
-// the resulting APK is not signed by `CN=AINO`.
+// falling back to the debug key. CI verifies both release signatures and the
+// expected direct-channel certificate before publishing.
 // NOTE: these are deliberately NOT named `keyAlias`/`keyPassword`. Inside a
 // `signingConfigs.create("release") { }` block the receiver is a SigningConfig,
 // which already declares properties with those names, so `keyPassword = keyPassword`
@@ -76,6 +76,17 @@ val hasReleaseSigning = !releaseKeystorePath.isNullOrBlank() &&
     !releaseKeyAlias.isNullOrBlank() &&
     !releaseKeyPassword.isNullOrBlank()
 
+// Separate credentials preserve the Play key while changing the direct-channel key.
+// CI requires these credentials; local builds retain the release-key fallback.
+val directKeystorePath = providers.environmentVariable("ANDROID_DIRECT_KEYSTORE_PATH").orNull
+val directKeystorePassword = providers.environmentVariable("ANDROID_DIRECT_KEYSTORE_PASSWORD").orNull
+val directKeyAlias = providers.environmentVariable("ANDROID_DIRECT_KEY_ALIAS").orNull
+val directKeyPassword = providers.environmentVariable("ANDROID_DIRECT_KEY_PASSWORD").orNull
+val hasDirectSigning = !directKeystorePath.isNullOrBlank() &&
+    !directKeystorePassword.isNullOrBlank() &&
+    !directKeyAlias.isNullOrBlank() &&
+    !directKeyPassword.isNullOrBlank()
+
 android {
     namespace = "app.aino.mobile"
     compileSdk = 35
@@ -89,8 +100,8 @@ android {
         // version: X.Y.Z -> X*1_000_000 + Y*1_000 + Z (each part 0..999).
         // `android-release.yml` re-derives this from the tag and fails on a mismatch.
         // Written without digit separators so the release workflow can parse it.
-        versionCode = 27012 // 0.27.12
-        versionName = "0.27.12"
+        versionCode = 27013 // 0.27.13
+        versionName = "0.27.13"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "AINO_API_URL", ainoApiUrl.asBuildConfigString())
@@ -111,6 +122,16 @@ android {
                 enableV2Signing = true
             }
         }
+        if (hasDirectSigning) {
+            create("direct") {
+                storeFile = file(directKeystorePath!!)
+                storePassword = directKeystorePassword
+                keyAlias = directKeyAlias
+                keyPassword = directKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        }
     }
 
     buildTypes {
@@ -121,33 +142,47 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = if (hasReleaseSigning) {
-                signingConfigs.getByName("release")
-            } else {
-                // Deliberately null: an unsigned artifact fails the release
-                // workflow's signature check loudly instead of shipping a
-                // debug-signed build that Android would refuse to update later.
-                null
-            }
+            // Deliberately null: the signing key is chosen per distribution channel in
+            // `productFlavors` below, because a build-type signingConfig takes
+            // precedence over the flavor's and would collapse both channels onto one
+            // key. An unsigned artifact then fails the release workflow's signature
+            // check loudly instead of shipping a debug-signed build that Android would
+            // refuse to update later.
+            signingConfig = null
+        }
+        debug {
+            // Pinned explicitly so the flavor-level release keys below cannot leak into
+            // local debug builds, which must keep working without any keystore present.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
     // `play`: Google Play build. Updates come from Play (In-App Updates API), no
     // REQUEST_INSTALL_PACKAGES, crash reporting on.
     // `direct`: sideloaded pilot build. Keeps the R2 APK self-updater.
-    // Same applicationId so a pilot can move to the Play build without a reinstall
-    // of a differently-named app (Play still requires the same signing key).
+    // Both retain the applicationId, but different signing keys require a reinstall
+    // when moving between distribution channels.
     flavorDimensions += "distribution"
     productFlavors {
         create("play") {
             dimension = "distribution"
             buildConfigField("boolean", "SELF_UPDATE", "false")
             buildConfigField("boolean", "CRASH_REPORTING", "true")
+            // The Play identity: pinned by Play Console, never rotated casually.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         create("direct") {
             dimension = "distribution"
             buildConfigField("boolean", "SELF_UPDATE", "true")
             buildConfigField("boolean", "CRASH_REPORTING", "false")
+            // Independent direct identity, with a local release-key fallback.
+            signingConfig = when {
+                hasDirectSigning -> signingConfigs.getByName("direct")
+                hasReleaseSigning -> signingConfigs.getByName("release")
+                else -> null
+            }
         }
     }
 

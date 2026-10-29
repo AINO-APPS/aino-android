@@ -39,7 +39,7 @@ What each one enforces:
 ## CI and release
 - `.github/workflows/android.yml` runs on every push and PR. It has a `guardrails` job (the 5 Node scripts) and a `build` job (JDK 21 plus the Gradle command above).
 - `.github/workflows/android-release.yml` runs only on `android-v*` tags. It requires `versionName = "X.Y.Z"` and `versionCode = X*1000000 + Y*1000 + Z` in `app/build.gradle.kts`, written without digit separators, for example `versionCode = 16000 // 0.16.0`. Do not bump the version unless asked. If you do bump it, update both values together.
-- BuildConfig endpoints (`AINO_API_URL`, `AINO_WS_URL`, `AINO_OTA_BASE_URL`, `AINO_CONTRACT_VERSION`) default to live servers. You can override them with `-P` or an environment variable. Release signing comes only from `ANDROID_KEYSTORE_*` / `ANDROID_KEY_*` environment variables.
+- BuildConfig endpoints (`AINO_API_URL`, `AINO_WS_URL`, `AINO_OTA_BASE_URL`, `AINO_CONTRACT_VERSION`) default to live servers. You can override them with `-P` or an environment variable. Release signing comes only from `ANDROID_KEYSTORE_*` / `ANDROID_KEY_*` environment variables. The `direct` flavor signs with `ANDROID_DIRECT_KEYSTORE_PATH` / `ANDROID_DIRECT_KEYSTORE_PASSWORD` / `ANDROID_DIRECT_KEY_ALIAS` / `ANDROID_DIRECT_KEY_PASSWORD` when they are set, so the sideload key can rotate without touching the Play identity; unset means it falls back to the release key. The release workflow requires the `direct` key and fails if both channels resolve to the same certificate. See `docs/PLAY_PROTECT_0.27.4.md` for why the channels are keyed separately.
 
 ## Layout (`app/src/main/java/app/aino/mobile/`)
 - `MainActivity.kt` is the entry point. `ComposeTestHostActivity.kt` is a test host.
