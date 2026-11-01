@@ -306,7 +306,7 @@ There are two product flavors, built from one codebase:
 
 | Flavor | Release asset | Updates |
 |---|---|---|
-| `direct` | `AINO-X.Y.Z-direct.apk` | Self-updater: reads the R2 channel, downloads the signed APK and hands it to the Android installer |
+| `direct` | `AINO-X.Y.Z-direct.apk` | Reads the R2 channel and opens the APK URL in the browser, which downloads and installs it. No `REQUEST_INSTALL_PACKAGES`: Play Protect blocks an in-app APK installer as harmful |
 | `play` | `AINO-X.Y.Z-play.aab` | Google Play (In-App Updates API, flexible flow). No `REQUEST_INSTALL_PACKAGES` |
 
 The `direct` channel:
@@ -319,7 +319,7 @@ Both flavors check silently on launch/resume and show a banner when an update
 exists. **Profile → Check for updates** checks on demand and also reports
 "up to date" or a failure. APK URLs must be HTTPS, match the configured CDN host,
 and use the native `android/releases/` prefix. Android may require the user to
-grant AINO permission to install unknown apps. An update installs in place (data
+grant the browser permission to install unknown apps. An update installs in place (data
 kept) only when it has the same package, the same `CN=AINO` signing key and a
 higher `versionCode`; debug builds cannot be updated by release APKs.
 

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Sideloaded pilot builds only: the R2 APK self-updater hands the APK to the package installer. -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-</manifest>
+<!--
+    Sideloaded pilot builds. Deliberately no REQUEST_INSTALL_PACKAGES: Play Protect's
+    server-side scan classified the in-app APK installer as POTENTIALLY_UNWANTED
+    (generic_malware) and blocked the direct APK. Updates open the APK URL in the browser.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

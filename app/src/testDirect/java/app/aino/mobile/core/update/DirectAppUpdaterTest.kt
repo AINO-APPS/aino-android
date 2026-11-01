@@ -1,6 +1,8 @@
 package app.aino.mobile.core.update
 
 import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
 import app.aino.mobile.BuildConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -10,11 +12,13 @@ import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 
 @RunWith(RobolectricTestRunner::class)
 class DirectAppUpdaterTest {
@@ -63,5 +67,29 @@ class DirectAppUpdaterTest {
         assertNull(updater.ui.value.available)
         updater.check(activity, userInitiated = true)
         assertEquals("999.0.0", updater.ui.value.available?.version)
+    }
+
+    // Play Protect's server-side scan classified the in-app APK installer as
+    // POTENTIALLY_UNWANTED/generic_malware; the same build without it scanned SAFE.
+    @Test
+    fun directBuildDoesNotRequestPackageInstalls() {
+        val info = activity.packageManager.getPackageInfo(activity.packageName, PackageManager.GET_PERMISSIONS)
+        assertFalse(info.requestedPermissions.orEmpty().contains("android.permission.REQUEST_INSTALL_PACKAGES"))
+    }
+
+    @Test
+    fun installOpensTheReleaseInTheBrowserInsteadOfThePackageInstaller() {
+        val updater = updater(200, "999.0.0")
+        updater.check(activity)
+        updater.install(activity)
+
+        val intent = shadowOf(activity).nextStartedActivity
+        assertEquals(Intent.ACTION_VIEW, intent.action)
+        assertEquals(
+            "https://cdn.test/android/releases/android-v999.0.0/AINO-999.0.0-direct.apk",
+            intent.data.toString(),
+        )
+        assertNull(intent.type)
+        assertEquals(UpdateUiState(), updater.ui.value)
     }
 }

@@ -75,7 +75,7 @@ service providers below process data on AINO's behalf, so the data is
 | `FOREGROUND_SERVICE_MICROPHONE` / `FOREGROUND_SERVICE_CAMERA` | **Foreground service** declaration: *Microphone* / *Camera* | "Keeps the microphone and camera running during an active call or meeting when the user leaves the app." |
 | `MANAGE_OWN_CALLS` | None | Self-managed calls through `ConnectionService`-style integration |
 | `READ_MEDIA_IMAGES` / `READ_MEDIA_VIDEO` | **Photo and video permissions** declaration | "Shows recent photos in the chat attachment tray so users can share them with colleagues." If Play rejects this, switch the tray to the system photo picker and remove these permissions. |
-| `REQUEST_INSTALL_PACKAGES` | Not in the Play build | Only the `direct` (sideloaded) flavor has it; `android-release.yml` fails if it leaks into `play` |
+| `REQUEST_INSTALL_PACKAGES` | Not requested | Neither flavor has it (Play Protect blocks it as harmful in the `direct` APK); `android-release.yml` fails if it appears in either |
 
 ## Release artifact
 

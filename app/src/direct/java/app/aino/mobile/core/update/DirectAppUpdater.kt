@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-/** Sideloaded pilot builds: the R2 `android/latest.json` channel and the system package installer. */
+/** Sideloaded pilot builds: the R2 `android/latest.json` channel; the browser downloads and installs the APK. */
 class DirectAppUpdater(
     private val repository: UpdateRepository = UpdateRepository(),
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
@@ -41,13 +41,12 @@ class DirectAppUpdater(
     override fun install(activity: Activity) {
         val update = _ui.value.available ?: return
         if (_ui.value.loading) return
-        _ui.value = _ui.value.copy(loading = true, message = null)
-        val context = activity.applicationContext
-        scope.launch {
-            runCatching { repository.downloadAndInstall(context, update) }
-                .onSuccess { _ui.value = _ui.value.copy(loading = false) }
-                .onFailure { _ui.value = _ui.value.copy(loading = false, message = it.message ?: "Could not download the update.") }
-        }
+        runCatching { repository.openDownload(activity, update) }
+            .onSuccess {
+                dismissedVersion = update.version
+                _ui.value = UpdateUiState()
+            }
+            .onFailure { _ui.value = _ui.value.copy(message = "Could not open the download. Try again later.") }
     }
 
     override fun dismiss() {

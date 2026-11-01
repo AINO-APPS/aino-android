@@ -13,7 +13,7 @@ Prerequisites: JDK 21, Android SDK Platform 35, `ANDROID_HOME` or an untracked `
 ./gradlew --no-daemon testPlayDebugUnitTest lintPlayDebug assemblePlayDebug testDirectDebugUnitTest assembleDirectDebug
 ```
 - Time: about 5 minutes when compile and test are already cached. `lintAnalyzeDebug*` takes most of that. A cold run with dependency downloads takes longer, and the CI job timeout is 20 minutes. Use a long command timeout of 10 minutes or more. Do not cancel early.
-- There are two product flavors: `play` (Google Play: Play In-App Updates and Crashlytics, no `REQUEST_INSTALL_PACKAGES`) and `direct` (sideloaded pilots: the R2 APK self-updater). Flavor-only code lives in `app/src/play/` and `app/src/direct/`; everything else is in `main`.
+- There are two product flavors: `play` (Google Play: Play In-App Updates and Crashlytics, no `REQUEST_INSTALL_PACKAGES`) and `direct` (sideloaded pilots: checks the R2 channel and opens the APK in the browser; never `REQUEST_INSTALL_PACKAGES`, which Play Protect blocks as harmful). Flavor-only code lives in `app/src/play/` and `app/src/direct/`; everything else is in `main`.
 - After a source change, `./gradlew testPlayDebugUnitTest` (incremental compile plus all unit tests) takes about 2 minutes.
 - To run one test class: `./gradlew testPlayDebugUnitTest --tests "app.aino.mobile.core.common.LenientNumbersTest"` (about 30 seconds).
 - Unit tests use JUnit 4, Robolectric, Turbine, MockWebServer and Compose UI test (`unitTests.isIncludeAndroidResources = true`). Instrumentation tests (`connectedDebugAndroidTest`, `app/src/androidTest/`) need a device or emulator and are **not** run in CI.

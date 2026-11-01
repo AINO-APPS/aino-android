@@ -1,6 +1,49 @@
 # Play Protect block: direct 0.27.4
 
-## Status
+## Root cause (2026-11-01)
+
+The direct flavor's in-app APK installer is what Play Protect classifies
+as harmful. That installer is `REQUEST_INSTALL_PACKAGES` plus downloading
+an APK from a URL in a remote `latest.json` and launching the package
+installer. No release regression or signing key causes the block, and
+every direct build since the self-updater shipped carries the same content
+signal.
+
+Evidence from the Nothing A063 (Android 15). Play Protect was left on.
+"Scan app" uploads the APK, and `adb logcat` then prints
+`VerifyApps: JIT scan response`. Each APK below was re-signed with a
+throwaway key so it had a hash Google had never seen:
+
+| APK content | JIT verdict |
+| --- | --- |
+| Published direct 0.27.9 bytes | `POTENTIALLY_UNWANTED`, `threatType: generic_malware` |
+| Published direct 0.27.10 bytes | `POTENTIALLY_UNWANTED`, `threatType: generic_malware` |
+| Same 0.27.10 bytes, only the `REQUEST_INSTALL_PACKAGES` manifest entry renamed | `SAFE` |
+| Local Play flavor (no installer) | `SAFE` |
+| Fixed direct 0.27.14 (browser hand-off, no permission) | `SAFE`; normal install then gets `response=15` and installs |
+
+Published-hash verdicts were not monotonic: 0.27.4, 0.27.8 and
+0.27.10–0.27.13 were blocked, while 0.27.2, 0.27.3, 0.27.5, 0.27.7 and
+0.27.9 were allowed. Google has scanned some hashes and not yet reached
+others, so 0.27.9 passing is a stale per-hash verdict, not evidence of
+safer code. Rotating the direct key in 0.27.13 could not help, and it cut
+existing installs off from in-place updates.
+
+Fix in 0.27.14:
+
+- Neither flavor declares `REQUEST_INSTALL_PACKAGES`. The direct updater
+  opens the trusted CDN APK URL in the browser.
+- Both flavors are signed with the original release key (`c490582b…`) again,
+  so 0.27.12-and-earlier installs update in place.
+- `android-release.yml` fails if either APK requests the permission or
+  is signed with any other key.
+
+Existing installs still run the old updater, so their in-app Update button
+downloads the new APK and hands it to the installer itself. Play Protect
+judges the new APK, not the installing app, so the update should pass.
+If it does not, install from the browser.
+
+## Status (historical)
 
 Investigated on 2026-10-27. The exact published direct 0.27.4 APK is
 repeatedly blocked by Play Protect on Nothing A063, Android 15. Direct

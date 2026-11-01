@@ -23,7 +23,7 @@ function Read-InstallerScreen {
 # It has to be dismissed by tapping its own button.
 function Dismiss-PlayProtect([xml]$screen) {
     $buttons = @($screen.SelectNodes('//node') | Where-Object {
-        $_.package -eq 'com.android.vending' -and $_.text -eq 'OK'
+        $_.package -eq 'com.android.vending' -and $_.text -match "^(OK|Don't install app|Don't install)$"
     })
     foreach ($button in $buttons) {
         $c = [regex]::Matches($button.bounds, '\d+')
@@ -58,6 +58,15 @@ try {
         if ($harmful.Count -gt 0) {
             $harmful | ForEach-Object { Write-Output "PLAY_PROTECT: $($_.text)" }
             throw 'REPRO_RED: Play Protect blocked the APK as harmful'
+        }
+        # A hash Google has never seen gets "App scan recommended" (response=9), not a verdict.
+        # Tapping "Scan app" uploads it; adb logcat "JIT scan response" then shows the result.
+        $unknown = @($nodes | Where-Object {
+            $_.package -eq 'com.android.vending' -and $_.text -match '(?i)scan recommended'
+        })
+        if ($unknown.Count -gt 0) {
+            Dismiss-PlayProtect $screen
+            throw 'REPRO_UNKNOWN: Play Protect has no verdict for this APK hash yet'
         }
 
         $confirmation = $nodes | Where-Object {
