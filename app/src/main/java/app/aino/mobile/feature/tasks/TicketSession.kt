@@ -10,15 +10,62 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 /** Shared Ticket ownership beneath the existing Tasks ViewModel. */
 class TicketSession {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    internal val store = TicketStore(scope)
+    val key: String = UUID.randomUUID().toString()
+    internal val job = SupervisorJob()
+    private val scope = CoroutineScope(job + Dispatchers.Main.immediate)
+    private val lock = Any()
+    private var closed = false
+    private val resets = mutableListOf<() -> Unit>()
+    internal val store = TicketStore(scope, state(TicketSnapshot()))
+
+    /**
+     * Closing also clears retained Activity ViewModels. Ignore late responses
+     * from blocking HTTP calls that cannot observe coroutine cancellation yet.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi::class)
+    internal fun <T> state(initial: T): MutableStateFlow<T> = synchronized(lock) {
+        val flow = MutableStateFlow(initial)
+        if (!closed) resets += { flow.value = initial }
+        object : MutableStateFlow<T> by flow {
+            override var value: T
+                get() = flow.value
+                set(value) = synchronized(lock) { if (!closed) flow.value = value }
+
+            override fun compareAndSet(expect: T, update: T): Boolean = synchronized(lock) {
+                closed || flow.compareAndSet(expect, update)
+            }
+
+            override suspend fun emit(value: T) { this.value = value }
+
+            override fun tryEmit(value: T): Boolean {
+                this.value = value
+                return true
+            }
+        }
+    }
+
+    internal fun onClose(action: () -> Unit) {
+        val runNow = synchronized(lock) {
+            if (closed) true else {
+                resets.add(action)
+                false
+            }
+        }
+        if (runNow) action()
+    }
 
     fun close() {
+        val actions = synchronized(lock) {
+            if (closed) return
+            closed = true
+            resets.toList().also { resets.clear() }
+        }
         scope.cancel()
-        store.clear()
+        actions.forEach { it() }
     }
 }
 
@@ -30,8 +77,10 @@ internal data class TicketSnapshot(
 )
 
 /** Accepts enriched [Task] rows, never picker/insight rows or network clients. */
-internal class TicketStore(private val scope: CoroutineScope) {
-    private val mutable = MutableStateFlow(TicketSnapshot())
+internal class TicketStore(
+    private val scope: CoroutineScope,
+    private val mutable: MutableStateFlow<TicketSnapshot>,
+) {
     val state = mutable.asStateFlow()
     private val highlights = mutableMapOf<Long, Job>()
     // Serialize snapshot writes so identity-checked restores cannot race with upserts.

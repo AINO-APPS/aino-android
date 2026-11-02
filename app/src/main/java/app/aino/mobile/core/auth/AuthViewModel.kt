@@ -52,6 +52,7 @@ class AuthViewModel(
             // the exact stored scope. A transient network failure leaves the
             // credential intact, so preserve offline cache for the next retry.
             if (restored.isSuccess || !repository.hasStoredCredential()) persistOrClearScope(state)
+            else app.aino.mobile.core.AppContainer.get(context).setTicketSessionScope(null)
             // Sessions never time out, so a rejected stored credential was revoked (password change, removal, sign-out elsewhere).
             val pending = SessionRevocation.consumePendingMessage(context)
             val message = pending?.takeIf { state is AuthState.SignedOut }
@@ -82,6 +83,7 @@ class AuthViewModel(
     }
 
     fun cancelRealmChoice() {
+        app.aino.mobile.core.AppContainer.get(context).setTicketSessionScope(null)
         _ui.value = AuthUiState(state = AuthState.SignedOut, biometricEnrolled = biometricCredentials.isEnrolled())
     }
 
@@ -98,6 +100,7 @@ class AuthViewModel(
     fun logout() {
         executeWithScopeCleanup {
             repository.logout()
+            app.aino.mobile.core.AppContainer.get(context).setTicketSessionScope(null)
             wipeUserMedia()
             AuthState.SignedOut
         }
@@ -372,6 +375,7 @@ class AuthViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             runCatching {
                 val state = action()
+                app.aino.mobile.core.AppContainer.get(context).setTicketSessionScope(null)
                 val currentScope = user?.tenantId?.let { tenantId ->
                     if (user.id > 0) CacheScope(tenantId, user.id) else null
                 } ?: scopeStore.read()
@@ -404,14 +408,17 @@ class AuthViewModel(
             else -> null
         }
         val tenantId = user?.tenantId
-        val responses = app.aino.mobile.core.AppContainer.get(context).responses
+        val container = app.aino.mobile.core.AppContainer.get(context)
+        val responses = container.responses
         if (tenantId != null && user.id > 0) {
             val next = CacheScope(tenantId, user.id)
             // A different user signed in: never show their predecessor's data.
             if (scopeStore.read().let { it != null && it != next }) responses.clearAll()
             responses.scope = "${tenantId}_${user.id}"
             scopeStore.save(next)
+            container.setTicketSessionScope(if (state is AuthState.Authenticated) next else null)
         } else if (state is AuthState.SignedOut) {
+            container.setTicketSessionScope(null)
             responses.scope = null
             responses.clearAll()
             val stale = scopeStore.read()
@@ -420,6 +427,8 @@ class AuthViewModel(
                 AinoDatabase.get(context).dao().clearScope(stale.tenantId, stale.userId)
             }
             scopeStore.clear()
+        } else {
+            container.setTicketSessionScope(null)
         }
     }
 

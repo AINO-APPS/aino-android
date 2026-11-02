@@ -311,7 +311,7 @@ fun AinoApp(
             OutboxWorker.enqueue(appContext, reconnectScope!!)
         }
     }
-    LaunchedEffect(tenantAuthenticated) {
+    LaunchedEffect(tenantAuthenticated, tasks) {
         if (tenantAuthenticated) {
             realtime.events.collect { event ->
                 when (val callEvent = CallRealtimeRouter.decode(event)) {
@@ -400,7 +400,7 @@ fun AinoApp(
         }
     }
     val resync by realtime.resync.collectAsStateWithLifecycle()
-    LaunchedEffect(resync) {
+    LaunchedEffect(resync, tasks) {
         if (resync == 0L || !tenantAuthenticated) return@LaunchedEffect
         chat.refresh()
         chat.refreshThread()
@@ -547,7 +547,7 @@ private fun AuthenticatedShell(
 ) {
     val nav = rememberNavController()
     // Tasks read the signed-in context the web takes from AuthContext / FeaturesContext.
-    LaunchedEffect(user.id, user.role, user.teamName, user.teamId, user.tenantFeatures, user.teamSprintEnabled) {
+    LaunchedEffect(tasks, user.tenantId, user.id, user.role, user.teamName, user.teamId, user.tenantFeatures, user.teamSprintEnabled) {
         val ungated = user.role == "platform_admin" && user.tenantId == null
         tasks.bind(
             user.id, user.role, user.teamName,
@@ -636,7 +636,7 @@ private fun AuthenticatedShell(
     // Web refetches on window focus/visibility; mirror that on app resume for
     // the visible route (the first resume is the initial load, already done).
     var resumedOnce by androidx.compose.runtime.remember { mutableStateOf(false) }
-    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+    androidx.lifecycle.compose.LifecycleResumeEffect(tasks) {
         if (resumedOnce) {
             chat.refresh()
             when (nav.currentDestination?.route) {
