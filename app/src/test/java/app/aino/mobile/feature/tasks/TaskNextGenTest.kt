@@ -26,6 +26,7 @@ class TaskNextGenTest {
         loggedMinutes: Int = 0,
         estimatedMinutes: Int? = null,
         teamId: Long? = null,
+        container: String? = null,
     ) = Task(
         id = id,
         title = title,
@@ -37,6 +38,7 @@ class TaskNextGenTest {
         loggedMinutes = loggedMinutes,
         estimatedMinutes = estimatedMinutes,
         teamId = teamId,
+        container = container,
     )
 
     // ── Field deltas ─────────────────────────────────────────────────────
@@ -136,13 +138,10 @@ class TaskNextGenTest {
     }
 
     @Test
-    fun aDueDateIsMetadataButAPlannedDayIsAContainer() {
-        // ADR-015: a planned day moves a ticket to Scheduled, a sprint wins over
-        // both, and a due date is only a deadline — it never removes a ticket
-        // from the backlog it was created in.
-        assertTrue(task(dueDate = "2026-10-25").isBacklogItem)
-        assertFalse(task(plannedDate = "2026-10-25").isBacklogItem)
-        assertFalse(task(sprintId = 4).isBacklogItem)
+    fun serverContainerIsStoredWithoutBeingRecomputed() {
+        assertEquals("backlog", task(dueDate = "2026-10-25", container = "backlog").container)
+        assertEquals("scheduled", task(plannedDate = "2026-10-25", container = "scheduled").container)
+        assertEquals("sprint", task(sprintId = 4, container = "sprint").container)
     }
 
     // ── Preferences ──────────────────────────────────────────────────────

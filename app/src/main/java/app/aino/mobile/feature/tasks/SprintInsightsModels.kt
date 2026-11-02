@@ -159,10 +159,10 @@ fun sprintGroups(sprints: List<AvailableSprint>): List<Pair<String, List<Availab
         sprints.filter { it.status == status }.takeIf { it.isNotEmpty() }?.let { status.replaceFirstChar(Char::uppercase) to it }
     }
 
-/** Initial pick: a valid `?sprint_id=`, else active, else the first. */
-fun initialInsightsSprint(sprints: List<AvailableSprint>, requested: Long?): Long? =
+/** Initial pick: a valid `?sprint_id=`, else the server's current sprint, else the first. */
+fun initialInsightsSprint(sprints: List<AvailableSprint>, requested: Long?, currentSprintId: Long?): Long? =
     requested?.takeIf { id -> sprints.any { it.id == id } }
-        ?: sprints.firstOrNull { it.status == "active" }?.id
+        ?: currentSprintId?.takeIf { id -> sprints.any { it.id == id } }
         ?: sprints.firstOrNull()?.id
 
 val MOODS = listOf("😡" to "Very low", "😟" to "Low", "😐" to "OK", "🙂" to "Good", "😄" to "Great")

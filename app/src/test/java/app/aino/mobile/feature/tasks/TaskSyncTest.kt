@@ -81,19 +81,6 @@ class TaskSyncTest {
     }
 
     @Test
-    fun membershipFollowsSprintAndBacklogPredicates() {
-        assertTrue(belongsToSprint(task(sprintId = 4), 4, TaskFilters(), null))
-        assertFalse(belongsToSprint(task(sprintId = 5), 4, TaskFilters(), null))
-        assertFalse(belongsToSprint(task(sprintId = 4), null, TaskFilters(), null))
-        assertTrue(belongsToBacklog(task(), TaskFilters(), null))
-        assertFalse(belongsToBacklog(task(sprintId = 4), TaskFilters(), null))
-        // A planned day is the Scheduled container (ADR-015); a due date is a
-        // deadline, so it stays in the backlog.
-        assertFalse(belongsToBacklog(task(plannedDate = "2026-10-06"), TaskFilters(), null))
-        assertTrue(belongsToBacklog(task(dueDate = "2026-10-06"), TaskFilters(), null))
-    }
-
-    @Test
     fun upsertReplacesAppendsOrDrops() {
         val a = task(1)
         val b = task(2)
@@ -144,9 +131,6 @@ class TaskSyncTest {
         assertEquals(listOf(1L), groups[0].tasks.map { it.id })
         assertEquals(listOf(2L), groups[1].tasks.map { it.id })
         assertEquals(listOf(4L, 3L), groups[2].tasks.map { it.id })
-        assertTrue(belongsToScheduled(task(plannedDate = "2026-10-07"), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
-        assertFalse(belongsToScheduled(task(plannedDate = "2026-12-25"), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
-        assertFalse(belongsToScheduled(task(), today.minusDays(30), today.plusDays(30), TaskFilters(), null))
         assertEquals(1, filterCount(TaskFilters(status = "done"), TaskTab.Scheduled))
         assertEquals(TaskTab.Scheduled, TaskTab.fromKey("scheduled"))
     }

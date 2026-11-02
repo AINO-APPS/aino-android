@@ -23,13 +23,13 @@ class CompletedCountTest {
     private val api = ApiClient { request ->
         val body = when {
             request.path.startsWith("tasks/backlog") ->
-                """{"tasks":[{"id":4,"title":"Ship"},
-                   {"id":5,"title":"Done 1","completed_at":"2026-10-25"},
-                   {"id":6,"title":"Done 2","completed_at":"2026-10-25"},
-                   {"id":7,"title":"Done 3","completed_at":"2026-10-25"}],"completed_count":3}"""
+                """{"tasks":[{"id":4,"title":"Ship","container":"backlog"},
+                   {"id":5,"title":"Done 1","completed_at":"2026-10-25","container":"backlog"},
+                   {"id":6,"title":"Done 2","completed_at":"2026-10-25","container":"backlog"},
+                   {"id":7,"title":"Done 3","completed_at":"2026-10-25","container":"backlog"}],"completed_count":3}"""
             request.path == "tasks/carry-forward" -> """{"carried":0}"""
             request.path == "tasks/4/detail" ->
-                """{"id":4,"title":"Ship","priority":"high","workflow_state_id":5,"completed_at":"2026-10-26"}"""
+                """{"id":4,"title":"Ship","priority":"high","workflow_state_id":5,"completed_at":"2026-10-26","container":"backlog"}"""
             else -> "[]"
         }
         ApiResponse(200, emptyMap(), body.toByteArray())

@@ -93,10 +93,16 @@ fun SprintInsightsScreen(viewModel: TaskViewModel, onBack: () -> Unit, requested
     var refreshing by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
 
-    LaunchedEffect(reloadKey) {
-        val list = withContext(Dispatchers.IO) { runCatching(repo::loadTeamSprints).getOrDefault(sprints) }
-        sprints = list
-        if (selectedId == null) selectedId = initialInsightsSprint(list, requestedSprintId)
+    LaunchedEffect(reloadKey, ui.selectedTeamId) {
+        val teamId = ui.selectedTeamId.takeIf { showsTeamPicker(ui.role) }
+        val list = withContext(Dispatchers.IO) {
+            runCatching { repo.loadTeamSprints(teamId) }
+                .getOrDefault(SprintListResponse(sprints = sprints, currentSprintId = ui.currentSprintId))
+        }
+        sprints = list.sprints
+        if (selectedId == null || list.sprints.none { it.id == selectedId }) {
+            selectedId = initialInsightsSprint(list.sprints, requestedSprintId, list.currentSprintId)
+        }
     }
     LaunchedEffect(selectedId, reloadKey) {
         val id = selectedId ?: run { refreshing = false; return@LaunchedEffect }

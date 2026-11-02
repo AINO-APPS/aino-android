@@ -89,30 +89,25 @@ fun matchesPlanFilters(task: Task, filters: TaskFilters, quick: BacklogQuickFilt
         (!quick.unscheduled || task.plannedDate == null)
 
 /**
- * The tab set for the selected team, decided by its sprint state (ADR-015).
+ * The tab set for the selected team, decided by the server's current sprint.
  *
  * Sprint and Scheduled are **alternatives**, never companions: a team that
  * plans work in a sprint plans it there, and a dated list beside it is noise.
- * A started sprint therefore shows Sprint, Backlog and Service Desk; with no
- * started sprint, Scheduled takes the board's place and the team works from
+ * A current sprint therefore shows Sprint, Backlog and Service Desk; with no
+ * current sprint, Scheduled takes the board's place and the team works from
  * Backlog and Scheduled. Service Desk always renders.
  *
  * [sprints] must already be narrowed to the selected team, so one team's sprint
  * never drives another's tabs.
  */
-fun planningTabs(agileEnabled: Boolean, sprints: List<AvailableSprint>): List<TaskTab> {
-    val active = agileEnabled && activeSprintId(sprints) != null
-    return if (active) {
+fun planningTabs(agileEnabled: Boolean, sprints: List<AvailableSprint>, currentSprintId: Long?): List<TaskTab> {
+    val hasCurrentSprint = agileEnabled && currentSprintId != null && sprints.any { it.id == currentSprintId }
+    return if (hasCurrentSprint) {
         listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk)
     } else {
         listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk)
     }
 }
-
-/** The running sprint of the selected team, if any. */
-fun activeSprintId(sprints: List<AvailableSprint>): Long? =
-    sprints.firstOrNull { it.status == "active" }?.id
-
 
 /**
  * A sprint-assigned ticket that reached the backlog snapshot even though its
@@ -185,7 +180,7 @@ const val SCHEDULED_AHEAD_DAYS = 30L
 /**
  * Scheduled view: `GET /tasks/scheduled?<plannerFilters>&<teamScope>`.
  *
- * The server owns the container rule — unsprinted tickets with a planned or due
+ * The server owns the container rule — unsprinted tickets with a planned day
  * date, no window — so a ticket dated months ahead still appears (under "Later")
  * instead of vanishing from every surface.
  */
@@ -197,12 +192,7 @@ data class ScheduledGroup(val key: String, val label: String, val date: LocalDat
 
 private val DAY_HEADER = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)
 
-/**
- * The day a scheduled ticket sits on: its planned date, else its due date.
- *
- * One rule for the list, the calendar and the day counts, so a ticket in
- * Scheduled for its deadline alone still has a day.
- */
+/** The displayed day for a Scheduled row. */
 fun scheduleDateOf(task: Task): LocalDate? = localDateOf(task.plannedDate) ?: localDateOf(task.dueDate)
 
 /**
@@ -370,11 +360,11 @@ fun sprintDaysLeft(endDate: String, today: LocalDate = LocalDate.now()): Long {
     return maxOf(0, ChronoUnit.DAYS.between(today, end))
 }
 
-/** Keep the current pick, else the active sprint, else the first (Tasks.tsx effect). */
-fun pickSprint(current: Long?, sprints: List<AvailableSprint>): Long? {
+/** Keep a valid selection, else use the server's current sprint, then the first option. */
+fun pickSprint(current: Long?, sprints: List<AvailableSprint>, currentSprintId: Long?): Long? {
     if (sprints.isEmpty()) return current
     if (current != null && sprints.any { it.id == current }) return current
-    return sprints.firstOrNull { it.status == "active" }?.id ?: sprints.first().id
+    return currentSprintId?.takeIf { id -> sprints.any { it.id == id } } ?: sprints.first().id
 }
 
 /**
@@ -385,10 +375,10 @@ fun pickSprint(current: Long?, sprints: List<AvailableSprint>): Long? {
  * is still on the default Backlog tab and has not chosen a tab themselves, so an
  * explicit choice is never overridden.
  */
-fun landingTab(current: TaskTab, sprints: List<AvailableSprint>, agileEnabled: Boolean): TaskTab {
+fun landingTab(current: TaskTab, sprints: List<AvailableSprint>, currentSprintId: Long?, agileEnabled: Boolean): TaskTab {
     if (!agileEnabled) return current
     if (current != TaskTab.Backlog) return current
-    return if (sprints.any { it.status == "active" }) TaskTab.Sprint else current
+    return if (currentSprintId != null && sprints.any { it.id == currentSprintId }) TaskTab.Sprint else current
 }
 
 /** A tab the current team must not be shown is never selectable, whatever chose it. */
