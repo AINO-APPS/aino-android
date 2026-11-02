@@ -670,20 +670,21 @@ class TaskViewModel(
     }
 
     /** Upserts [task] into the sprint board and backlog according to the server's list rules. */
-    private fun patchTask(task: Task, highlight: Boolean) {
+    private fun patchTask(task: Task, highlight: Boolean, writeToStore: Boolean = true): Task {
         planRevision.incrementAndGet()
-        ticketSession.store.upsert(task)
+        val current = if (writeToStore) ticketSession.store.upsert(task) else task
         _ui.update { s ->
             val (from, to) = scheduledWindow()
-            val scheduledDay = if (task.container == "scheduled") localDateOf(task.plannedDate) else null
+            val scheduledDay = if (current.container == "scheduled") localDateOf(current.plannedDate) else null
             val inScheduled = scheduledDay != null && !scheduledDay.isBefore(from) && !scheduledDay.isAfter(to) &&
-                matchesFilters(task, s.filters, s.userId, includeStatus = true)
+                matchesFilters(current, s.filters, s.userId, includeStatus = true)
             s.copy(
-                scheduled = if (s.scheduledLoaded) upsertTask(s.scheduled, task, inScheduled) else s.scheduled,
-                searchResults = s.searchResults.map { if (it.id == task.id) task else it },
+                scheduled = if (s.scheduledLoaded) upsertTask(s.scheduled, current, inScheduled) else s.scheduled,
+                searchResults = s.searchResults.map { if (it.id == current.id) current else it },
             )
         }
-        if (highlight) flash(task.id)
+        if (highlight) flash(current.id)
+        return current
     }
 
     private fun removeTask(id: Long, remote: Boolean) {
@@ -963,13 +964,14 @@ class TaskViewModel(
      * limit 409) snaps the card back.
      */
     fun moveTask(task: Task, state: WorkflowState) {
-        if (task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)) return
+        val current = ticketSession.store.state.value.tickets[task.id] ?: task.copy(comments = emptyList())
+        if (current.workflowStateKey == state.key || (state.id != 0L && current.workflowStateId == state.id)) return
         val columnAccepting = _ui.value.sprintBoard?.columns?.firstOrNull { it.stateId == state.id }?.accepting ?: false
-        val decision = task.dropTargetDecision(state.id, columnAccepting)
+        val decision = current.dropTargetDecision(state.id, columnAccepting)
         if (!decision.allowed) return notify(decision.reasonCopy())
-        val previous = task
-        val moved = task.copy(workflowStateKey = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: task.workflowStateId)
-        applyTask(moved)
+        val previous = current
+        val moved = previous.copy(workflowStateKey = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: previous.workflowStateId)
+        val optimistic = applyTask(moved)
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(
                 onSuccess = { saved ->
@@ -978,7 +980,9 @@ class TaskViewModel(
                     notify("Moved to ${state.name.ifEmpty { state.key }}", "Undo") { revertMove(previous, state) }
                 },
                 onFailure = { e ->
-                    applyTask(previous)
+                    if (ticketSession.store.restoreIfCurrent(optimistic, previous)) {
+                        patchTask(previous, highlight = false, writeToStore = false)
+                    }
                     fail(failure(e, "Failed to move item"))
                 },
             )
