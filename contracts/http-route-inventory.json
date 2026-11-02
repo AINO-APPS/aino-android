@@ -8,8 +8,8 @@
   "scopeNote": "All Express router mounts are inventoried. Baseline groups have every current operation in OpenAPI; detailed payload schemas remain incremental.",
   "totals": {
     "routerMounts": 34,
-    "concreteEndpoints": 505,
-    "openApiOperations": 234
+    "concreteEndpoints": 508,
+    "openApiOperations": 238
   },
   "standaloneRoutes": [
     {
@@ -85,7 +85,7 @@
       "mountPath": "/api/tasks",
       "source": "server/routes/tasks/index.ts",
       "coverage": "baseline",
-      "endpointCount": 46
+      "endpointCount": 47
     },
     {
       "id": "sprints",
@@ -2336,7 +2336,7 @@
     {
       "method": "GET",
       "path": "/api/sprints",
-      "coverage": "inventory-only"
+      "coverage": "operation"
     },
     {
       "method": "POST",
@@ -2362,6 +2362,11 @@
       "method": "POST",
       "path": "/api/sprints/:id/baseline",
       "coverage": "inventory-only"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:id/board",
+      "coverage": "operation"
     },
     {
       "method": "GET",
@@ -2584,6 +2589,11 @@
       "coverage": "operation"
     },
     {
+      "method": "POST",
+      "path": "/api/tasks/:id/transfer",
+      "coverage": "operation"
+    },
+    {
       "method": "PATCH",
       "path": "/api/tasks/:id/unschedule",
       "coverage": "operation"
@@ -2661,6 +2671,11 @@
     {
       "method": "GET",
       "path": "/api/tasks/schedule-overlays",
+      "coverage": "operation"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/scheduled",
       "coverage": "operation"
     },
     {

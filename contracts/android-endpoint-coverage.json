@@ -5,10 +5,10 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 505,
-    "covered": 270,
+    "platform": 508,
+    "covered": 271,
     "waived": 233,
-    "missing": 4,
+    "missing": 6,
     "unmatched": 1
   },
   "covered": [
@@ -980,6 +980,11 @@
     {
       "method": "GET",
       "path": "/api/sprints/:param/baseline",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sprints/:param/board",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {

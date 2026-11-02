@@ -123,9 +123,9 @@ class TaskLogicTest {
     fun sprintSelectionAndRoles() {
         val active = AvailableSprint(id = 2, name = "S2", startDate = "2026-09-20", endDate = "2026-10-01", status = "active")
         val planned = AvailableSprint(id = 3, name = "S3", startDate = "2026-10-02", endDate = "2026-10-15")
-        assertEquals(2L, pickSprint(null, listOf(planned, active)))
-        assertEquals(3L, pickSprint(3, listOf(planned, active)))
-        assertEquals(3L, pickSprint(99, listOf(planned)))
+        assertEquals(2L, pickSprint(null, listOf(planned, active), currentSprintId = 2L))
+        assertEquals(3L, pickSprint(3, listOf(planned, active), currentSprintId = 2L))
+        assertEquals(3L, pickSprint(99, listOf(planned), currentSprintId = null))
         assertTrue(canManageSprint("team_lead"))
         assertFalse(canManageSprint("employee"))
     }
@@ -195,67 +195,6 @@ class TaskLogicTest {
         )
         assertEquals(TaskStats(total = 4, done = 2, inProgress = 1, percent = 50), recomputeStats(tasks))
     }
-
-    @Test
-        fun onlyAssigneeReporterOrgAdminOrOwningTeamCanChangeStatus() {
-            val task = Task(1, "a", userId = 2, assignedTo = 3, teamId = 7)
-        assertTrue(canChangeStatus(task, 2, "employee"))
-        assertTrue(canChangeStatus(task, 3, "employee"))
-        assertTrue(canChangeStatus(task, 9, "hr_admin"))
-        assertFalse(canChangeStatus(task, 9, "manager"))
-        assertFalse(canChangeStatus(task, null, "employee"))
-            // Any member of the owning team may move it (server
-            // `canChangeTaskStatus` with team ownership on).
-            assertTrue(canChangeStatus(task, 9, "employee", teamId = 7))
-            assertFalse(canChangeStatus(task, 9, "employee", teamId = 8))
-            assertFalse(canChangeStatus(task, 9, "employee", teamId = null))
-        }
-
-        @Test
-        fun aTicketsTeamDoesNotLeakThroughANullTeamId() {
-            // A ticket with no owning team must not match a caller whose team is
-            // also unknown — otherwise every unteamed user could move every row.
-            val orphan = Task(1, "a", userId = 2, assignedTo = 3, teamId = null)
-            assertFalse(canChangeStatus(orphan, 9, "employee", teamId = null))
-        }
-
-        @Test
-        fun noTransitionRowsMeansTheWorkflowIsUnrestricted() {
-            val config = AgileConfig()
-            assertTrue(config.transitions.isEmpty())
-            assertTrue(config.canTransition(1, 2))
-            assertEquals(config.workflowStates.size, config.legalTargets(1).size)
-        }
-
-        @Test
-        fun transitionsRestrictTheOfferedTargets() {
-            val config = AgileConfig(
-                workflowStates = listOf(
-                    WorkflowState(1, "pending", "New", "open"),
-                    WorkflowState(2, "in_progress", "In Progress", "in_progress"),
-                    WorkflowState(3, "done", "Done", "done", isTerminal = true),
-                ),
-                transitions = listOf(WorkflowTransition(fromStateId = 1, toStateId = 2)),
-            )
-            assertTrue(config.canTransition(1, 2))
-            assertFalse(config.canTransition(2, 1))
-            // Staying put is always allowed, so the current state stays visible.
-            assertTrue(config.canTransition(1, 1))
-            // A missing endpoint cannot be evaluated, so it is not blocked.
-            assertTrue(config.canTransition(null, 2))
-            // The current state plus the one legal edge; state 3 is not offered.
-            assertEquals(listOf(1L, 2L), config.legalTargets(1).map { it.id })
-        }
-
-        @Test
-        fun fallbackStatesAreOfferedWhenTheyCarryNoId() {
-            // Before `/agile/config` resolves every fallback state has `id: 0` and
-            // so cannot be matched against the graph; none may disappear.
-            val config = AgileConfig(
-                transitions = listOf(WorkflowTransition(fromStateId = 1, toStateId = 2)),
-            )
-            assertEquals(config.workflowStates.size, config.legalTargets(1).size)
-        }
 
     @Test
     fun newTicketsStartInNew() {

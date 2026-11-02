@@ -29,6 +29,10 @@ class TaskRepository(
         teamScope: TeamScope = TeamScope(),
     ): TaskListResponse = decode(api.execute(ApiRequest(path = sprintTasksQuery(sprintId, filters, teamScope))))
 
+    // @api GET sprints/:id/board
+    fun loadSprintBoard(sprintId: Long): SprintBoardResponse =
+        decode(api.execute(ApiRequest(path = "sprints/$sprintId/board")))
+
     fun loadBacklog(
         filters: TaskFilters,
         limit: Int,
@@ -63,9 +67,9 @@ class TaskRepository(
     fun search(q: String): List<Task> = decode(api.execute(ApiRequest(path = searchQuery(q))))
 
     /**
-     * `GET /tasks/scheduled` — every unsprinted ticket with a planned or due
-     * date. The date window still goes to the overlays endpoint (leave and
-     * holidays are calendar context, not the task set).
+     * `GET /tasks/scheduled` — every unsprinted ticket with a planned day only.
+     * The date window still goes to the overlays endpoint (leave and holidays
+     * are calendar context, not the task set).
      */
     fun loadScheduled(filters: TaskFilters, teamScope: TeamScope = TeamScope()): List<Task> =
         decode<TaskListResponse>(api.execute(ApiRequest(path = scheduledQuery(filters, teamScope)))).tasks
@@ -152,8 +156,9 @@ class TaskRepository(
 
     fun loadSprintStats(sprintId: Long): SprintStats = decode(api.execute(ApiRequest(path = "sprints/$sprintId/stats")))
 
-    fun loadTeamSprints(): List<AvailableSprint> =
-        decode<SprintListResponse>(api.execute(ApiRequest(path = "sprints"))).sprints
+    /** `GET /sprints[?team_id=…]` — rows plus the server-selected current sprint. */
+    fun loadTeamSprints(teamId: Long? = null): SprintListResponse =
+        decode(api.execute(ApiRequest(path = "sprints" + (teamId?.let { "?team_id=$it" } ?: ""))))
 
     // ── Sprint lifecycle ─────────────────────────────────────────────────
     fun startSprint(id: Long): SprintEnvelope = mutate("sprints/$id/start", Unit)
@@ -286,12 +291,13 @@ class TaskRepository(
     }
 
     /**
-     * The server returns `{ "error": "..." }` for every handled failure. Surface
-     * that text verbatim so policy messages (WIP limits, creator-only delete,
-     * cross-org assignment) reach the user instead of a generic string.
+     * Capability errors use their shared client copy; other server messages
+     * remain verbatim so validation and policy detail is not lost.
      */
     private fun serverMessage(error: ApiError.Http): String? = runCatching {
-        json.parseToJsonElement(error.responseBody).jsonObject["error"]?.jsonPrimitive?.content
+        val body = json.parseToJsonElement(error.responseBody).jsonObject
+        val code = body["code"]?.jsonPrimitive?.content
+        capabilityFailureCopy(code) ?: body["error"]?.jsonPrimitive?.content
     }.getOrNull()
 
     /**

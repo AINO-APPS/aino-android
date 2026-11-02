@@ -9,10 +9,10 @@ import org.junit.Test
 class PlanAlignmentTest {
     private val sprint = AvailableSprint(id = 12, name = "Release", status = "active")
     private val rows = listOf(
-        Task(1, "Assigned", assignedTo = 9, priority = "high", sprintId = 12, storyPoints = 3.0),
-        Task(2, "Created", userId = 9, priority = "high", plannedDate = "2026-11-01", storyPoints = 5.0),
-        Task(3, "Someone else's", userId = 9, assignedTo = 8, priority = "low"),
-        Task(4, "Done", assignedTo = 9, priority = "high", completedAt = "2026-10-25"),
+        Task(1, "Assigned", assignedTo = 9, priority = "high", sprintId = 12, storyPoints = 3.0, container = "sprint"),
+        Task(2, "Created", userId = 9, priority = "high", plannedDate = "2026-11-01", storyPoints = 5.0, container = "scheduled"),
+        Task(3, "Someone else's", userId = 9, assignedTo = 8, priority = "low", container = "backlog"),
+        Task(4, "Done", assignedTo = 9, priority = "high", completedAt = "2026-10-25", container = "backlog"),
     )
 
     @Test fun planDefaultsToBacklogCompactAndExpandedCompleted() {
@@ -32,13 +32,18 @@ class PlanAlignmentTest {
         // to the board, never a companion (ADR-015).
         assertEquals(
             listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk),
-            TaskUiState(agileEnabled = true, sprints = listOf(sprint)).visibleTabs,
+            TaskUiState(agileEnabled = true, sprints = listOf(sprint), currentSprintId = sprint.id).visibleTabs,
         )
         // Only a planned sprint is not a board, so Sprint is hidden.
         val planned = sprint.copy(id = 13, status = "planned")
         assertEquals(
             listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk),
             TaskUiState(agileEnabled = true, sprints = listOf(planned)).visibleTabs,
+        )
+        val paused = sprint.copy(status = "paused")
+        assertEquals(
+            listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk),
+            TaskUiState(agileEnabled = true, sprints = listOf(paused), currentSprintId = paused.id).visibleTabs,
         )
         // Agile off loses the Sprint tab whatever is running.
         assertFalse(TaskUiState(agileEnabled = false, sprints = listOf(sprint)).visibleTabs.contains(TaskTab.Sprint))
@@ -48,7 +53,7 @@ class PlanAlignmentTest {
     }
 
     @Test fun aHiddenTabIsNeverSelectable() {
-        val running = TaskUiState(agileEnabled = true, sprints = listOf(sprint))
+        val running = TaskUiState(agileEnabled = true, sprints = listOf(sprint), currentSprintId = sprint.id)
         assertEquals(TaskTab.Sprint, normalizeTab(TaskTab.Sprint, running.visibleTabs))
         // A sprint team has no Scheduled tab.
         assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Scheduled, running.visibleTabs))
@@ -89,7 +94,7 @@ class PlanAlignmentTest {
     @Test fun aStrandedSprintTicketStaysVisibleInItsOwnGroup() {
         // The task's sprint is not in the open list (deleted, or completed and
         // dropped from available-sprints), so the ticket must not vanish.
-        val stranded = listOf(Task(7, "Orphan", sprintId = 99))
+        val stranded = listOf(Task(7, "Orphan", sprintId = 99, container = "sprint"))
         val ui = TaskUiState(
             userId = 9, sprints = listOf(sprint), planTasks = stranded, planLoaded = true,
         ).projectPlan()
@@ -105,9 +110,9 @@ class PlanAlignmentTest {
         // backlog, so one stranded ticket removed every ordinary row.
         val mixed = listOf(
             // A due date is metadata: this ticket stays in the backlog (ADR-015).
-            Task(1, "Normal", dueDate = "2026-11-01"),
-            Task(2, "Also normal"),
-            Task(7, "Orphan", sprintId = 99),
+            Task(1, "Normal", dueDate = "2026-11-01", container = "backlog"),
+            Task(2, "Also normal", container = "backlog"),
+            Task(7, "Orphan", sprintId = 99, container = "sprint"),
         )
         val ui = TaskUiState(
             userId = 9, sprints = listOf(sprint), planTasks = mixed, planLoaded = true,
@@ -126,7 +131,7 @@ class PlanAlignmentTest {
     @Test fun allQuickFiltersPreservesAdvancedPredicatesAndEpic() {
         val label = TaskLabel(7, "Mobile")
         // Backlog work: rows[0] otherwise carries sprint 12, which is open.
-        val task = rows[0].copy(labels = listOf(label), parentTaskId = 22, sprintId = null)
+        val task = rows[0].copy(labels = listOf(label), parentTaskId = 22, sprintId = null, container = "backlog")
         val advanced = TaskFilters(assignee = "9", label = "7", priority = "high", search = "Assigned")
         val before = TaskUiState(
             userId = 9, sprints = listOf(sprint), planTasks = listOf(task), planLoaded = true,

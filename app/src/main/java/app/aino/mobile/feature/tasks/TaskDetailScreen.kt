@@ -140,19 +140,20 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
                                 Icon(HeroIcons.EllipsisVertical, "More actions", Modifier.size(20.dp), tint = colors.text)
                             }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(colors.bgElevated)) {
-                                MenuItem(HeroIcons.PencilSquare, "Edit title & description") { menu = false; viewModel.startEdit() }
+                                val canEdit = task.capability(TaskCapability.Edit)
+                                MenuItem(HeroIcons.PencilSquare, "Edit title & description", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) { menu = false; viewModel.startEdit() }
                                 if (ui.agile.features.blockers) {
-                                    MenuItem(HeroIcons.NoSymbol, if (task.isBlocked) "Clear blocker" else "Mark blocked") { menu = false; blockSheet = true }
+                                    MenuItem(HeroIcons.NoSymbol, if (task.isBlocked) "Clear blocker" else "Mark blocked", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) { menu = false; blockSheet = true }
                                 }
-                                MenuItem(HeroIcons.CalendarDays, if (task.isScheduled) "Reschedule" else "Schedule to a day") { menu = false; scheduleOpen = true }
-                                if (task.isScheduled) {
-                                    MenuItem(HeroIcons.ArchiveBox, "Move to backlog") { menu = false; viewModel.unschedule(task.id, task.title, closeAfter = true) }
+                                val canSchedule = task.capability(TaskCapability.Schedule)
+                                MenuItem(HeroIcons.CalendarDays, if (task.container == "scheduled") "Reschedule" else "Schedule to a day", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { menu = false; scheduleOpen = true }
+                                if (task.container == "scheduled") {
+                                    MenuItem(HeroIcons.ArchiveBox, "Move to backlog", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { menu = false; viewModel.unschedule(task.id, task.title, closeAfter = true) }
                                 }
                                 MenuItem(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") { menu = false; copyKey() }
                                 MenuItem(HeroIcons.ArrowPath, "Refresh") { menu = false; viewModel.refreshDetail() }
-                                if (ui.userId != null && ui.userId == task.userId) {
-                                    MenuItem(HeroIcons.Trash, "Delete", danger = true) { menu = false; viewModel.requestDelete(task) }
-                                }
+                                val canCancel = task.capability(TaskCapability.Cancel)
+                                MenuItem(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { menu = false; viewModel.requestDelete(task) }
                             }
                         }
                     }
@@ -186,17 +187,28 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
     if (statusSheet) {
         val current = stateOf(task, ui.agile)
         val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
-            // Only legal moves are offered. `legalTargets` returns every state when
-            // the tenant has no transition rows, so a default workflow is unchanged.
-            val targets = ui.agile.legalTargets(current?.id ?: task.workflowStateId)
-            SelectSheet(
-                "Status",
-                targets.map { SelectOption(it.key, stateLabel(it), color = hexColor(it.color, colors.textMuted)) },
-                setOfNotNull(current?.key ?: task.workflowStateKey),
-                onDismiss = { statusSheet = false },
-                onSelect = { keys -> targets.firstOrNull { it.key == keys.firstOrNull() }?.let { haptics.confirm(); viewModel.setStatus(task, it) } },
-                icon = HeroIcons.CheckCircle,
+        val targets = ui.agile.workflowStates.map { state ->
+            val isCurrent = current?.id == state.id || task.workflowStateKey == state.key
+            val accepting = if (task.sprintId != null && task.sprintId == ui.selectedSprintId) {
+                ui.sprintBoard?.columns?.firstOrNull { it.stateId == state.id }?.accepting ?: false
+            } else true
+            val decision = task.dropTargetDecision(state.id, accepting)
+            SelectOption(
+                state.key,
+                stateLabel(state),
+                subtitle = if (isCurrent) "Current status" else if (decision.allowed) null else decision.reasonCopy(),
+                color = hexColor(state.color, colors.textMuted),
+                enabled = !isCurrent && decision.allowed,
             )
+        }
+        SelectSheet(
+            "Status",
+            targets,
+            setOfNotNull(current?.key ?: task.workflowStateKey),
+            onDismiss = { statusSheet = false },
+            onSelect = { keys -> ui.agile.workflowStates.firstOrNull { it.key == keys.firstOrNull() }?.let { haptics.confirm(); viewModel.setStatus(task, it) } },
+            icon = HeroIcons.CheckCircle,
+        )
         }
     if (blockSheet) BlockerSheet(task, viewModel) { blockSheet = false }
     if (scheduleOpen) {
@@ -220,8 +232,8 @@ private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, dr
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             WorkItemTypeBadge(task.workItemTypeId, ui.agile)
             when {
-                task.isScheduled -> MetaPill(HeroIcons.CalendarDays, formatDate(task.plannedDate), colors.primary)
-                task.isBacklogItem -> MetaPill(HeroIcons.ArchiveBox, "Backlog", colors.warning)
+                task.container == "scheduled" -> MetaPill(HeroIcons.CalendarDays, formatDate(task.plannedDate), colors.primary)
+                task.container == "backlog" -> MetaPill(HeroIcons.ArchiveBox, "Backlog", colors.warning)
             }
         }
         if (ui.detailEditing) {
@@ -233,7 +245,11 @@ private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, dr
                 fontSize = 1.3.rem,
                 fontWeight = FontWeight.Bold,
                 lineHeight = 1.3.rem * 1.25f,
-                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClickLabel = "Edit title", onClick = viewModel::startEdit),
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(
+                    enabled = task.capability(TaskCapability.Edit).allowed,
+                    onClickLabel = "Edit title",
+                    onClick = viewModel::startEdit,
+                ),
             )
         }
         // Status and blocker sit directly under the title: they are the two
@@ -243,7 +259,7 @@ private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, dr
             StatusPill(
                 stateLabel(state),
                 hexColor(state.color, colors.textMuted),
-                onClick = if (canChangeStatus(task, ui.userId, ui.role, ui.teamId)) onStatus else null,
+                onClick = onStatus,
             )
         }
         if (task.isBlocked && ui.agile.features.blockers) {
@@ -312,8 +328,9 @@ private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel
     var picker by remember { mutableStateOf<String?>(null) }
     var dueOpen by remember { mutableStateOf(false) }
     var pointsOpen by remember { mutableStateOf(false) }
+    val canEdit = task.capability(TaskCapability.Edit)
     SectionCard(padding = 8.dp) {
-        PropertyRow(HeroIcons.User, "Assignee", { picker = "assignee" }) {
+        PropertyRow(HeroIcons.User, "Assignee", if (canEdit.allowed) ({ picker = "assignee" }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
             val a = task.assignee
             if (a != null) Row(verticalAlignment = Alignment.CenterVertically) {
                 UserAvatar(a.display(), avatarPath(a.avatar), 22.dp)
@@ -321,7 +338,7 @@ private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel
                 PropertyText(a.display())
             } else PropertyText("Unassigned", muted = true)
         }
-        PropertyRow(HeroIcons.Flag, "Priority", { picker = "priority" }) {
+        PropertyRow(HeroIcons.Flag, "Priority", if (canEdit.allowed) ({ picker = "priority" }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
             val p = priorityOf(task.priority)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PriorityGlyph(task.priority)
@@ -329,44 +346,49 @@ private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel
                 PropertyText(p.label, color = colors.tone(p.tone))
             }
         }
-        val canStatus = canChangeStatus(task, ui.userId, ui.role, ui.teamId)
-        PropertyRow(HeroIcons.CheckCircle, "Status", if (canStatus) onStatus else null) {
+        PropertyRow(HeroIcons.CheckCircle, "Status", onStatus) {
             val state = stateOf(task, ui.agile)
             val column = columnOf(task.workflowStateKey)
             StatusPill(state?.let(::stateLabel) ?: column.label, hexColor(state?.color, colors.tone(column.tone)))
         }
-        PropertyRow(HeroIcons.CalendarDays, "Due date", { dueOpen = true }) {
+        PropertyRow(HeroIcons.CalendarDays, "Due date", if (canEdit.allowed) ({ dueOpen = true }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
             val due = formatDueDate(task.dueDate)
             val overdue = isDueOverdue(task.dueDate) && !task.isCompleted
             if (due != null) PropertyText("${formatDate(task.dueDate)} · $due", color = if (overdue) colors.danger else null)
             else PropertyText("No due date", muted = true)
         }
         if (ui.agileEnabled && ui.sprints.isNotEmpty()) {
-            PropertyRow(HeroIcons.RocketLaunch, "Sprint", { picker = "sprint" }) {
+            val canPlace = task.capability(TaskCapability.PlaceInSprint)
+            PropertyRow(HeroIcons.RocketLaunch, "Sprint", if (canPlace.allowed) ({ picker = "sprint" }) else null, reason = if (canPlace.allowed) null else canPlace.reasonCopy()) {
                 val name = task.sprint?.name ?: task.sprintId?.let { id -> ui.sprints.firstOrNull { it.id == id }?.name ?: "Sprint #$id" }
                 PropertyText(name ?: "Backlog (no sprint)", muted = name == null)
             }
         }
         if (ui.labels.isNotEmpty() || task.labels.isNotEmpty()) {
-            PropertyRow(HeroIcons.Tag, "Labels", { picker = "labels" }) {
+            PropertyRow(HeroIcons.Tag, "Labels", if (canEdit.allowed) ({ picker = "labels" }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
                 if (task.labels.isEmpty()) PropertyText("None", muted = true)
                 else FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { task.labels.forEach { LabelPill(it) } }
             }
         }
         if (ui.agile.features.storyPoints) {
-            PropertyRow(HeroIcons.ChartBar, "Estimate", { pointsOpen = true }) {
+            PropertyRow(HeroIcons.ChartBar, "Estimate", if (canEdit.allowed) ({ pointsOpen = true }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
                 val pts = formatPoints(task.storyPoints)
                 PropertyText(if (pts.isEmpty()) "Not estimated" else "$pts ${ui.agile.unitLabel}", muted = pts.isEmpty())
             }
         }
         if (ui.agile.workItemTypes.any { it.id != 0L }) {
-            PropertyRow(HeroIcons.Square3Stack3d, "Type", { picker = "type" }) {
+            PropertyRow(HeroIcons.Square3Stack3d, "Type", if (canEdit.allowed) ({ picker = "type" }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
                 PropertyText(ui.agile.type(task.workItemTypeId)?.name ?: "Default", muted = task.workItemTypeId == null)
             }
         }
         if (ui.projects.isNotEmpty() || task.project != null) {
             // One-way: an issue key is permanent once a project is set.
-            PropertyRow(HeroIcons.Folder, "Project", if (task.projectId == null) ({ picker = "project" }) else null) {
+            PropertyRow(
+                HeroIcons.Folder,
+                "Project",
+                if (task.projectId == null && canEdit.allowed) ({ picker = "project" }) else null,
+                reason = if (task.projectId == null && !canEdit.allowed) canEdit.reasonCopy() else null,
+            ) {
                 val p = task.project
                 PropertyText(p?.let { listOfNotNull(it.key, it.name).joinToString(" · ") } ?: "No project", muted = p == null, color = p?.color?.let { hexColor(it) })
             }

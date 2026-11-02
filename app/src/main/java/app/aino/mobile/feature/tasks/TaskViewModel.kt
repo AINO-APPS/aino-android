@@ -113,6 +113,8 @@ data class TaskUiState(
     val assignableUsers: List<AssignableUser> = emptyList(),
     val projects: List<ProjectOption> = emptyList(),
     val sprints: List<AvailableSprint> = emptyList(),
+    val currentSprintId: Long? = null,
+    val currentSprintRow: AvailableSprint? = null,
     val agile: AgileConfig = AgileConfig(),
     // Page.
     val tab: TaskTab = TaskTab.Backlog,
@@ -135,6 +137,7 @@ data class TaskUiState(
     val searchOpen: Boolean = false,
     // Sprint board.
     val tasks: List<Task> = emptyList(),
+    val sprintBoard: SprintBoardResponse? = null,
     val stats: TaskStats = TaskStats(),
     val sprintStats: SprintStats? = null,
     val sprintLoading: Boolean = true,
@@ -207,17 +210,20 @@ data class TaskUiState(
     /** "Updated by <name>" flashes keyed by task id, from realtime deltas. */
     val attribution: Map<Long, String> = emptyMap(),
 ) {
-    val currentSprint: AvailableSprint? get() = sprints.firstOrNull { it.id == selectedSprintId }
+    val currentSprint: AvailableSprint? get() = teamSprints.firstOrNull { it.id == selectedSprintId }
     val sortedBacklog: List<Task> get() = sortBacklog(backlog, backlogSort)
     /** Display sections for the backlog list, or `null` for a flat list. */
     val backlogGroups: List<BacklogGroup>? get() = strandedSprintGroups(sortedBacklog, sprints)
     /** The resolved answer: the server's flag, or the sprint list when it is unknown. */
     val sprintsEnabled: Boolean get() = sprintEnabled ?: sprints.isNotEmpty()
     /** The sprint rows on screen belong to the selected team only. */
-    val teamSprints: List<AvailableSprint> get() = sprintsForTeam(sprints, selectedTeamId, showsTeamPicker(role))
-    /** A started sprint is what offers the board (ADR-015). */
-    val sprintTabVisible: Boolean get() = agileEnabled && activeSprintId(teamSprints) != null
-    val visibleTabs: List<TaskTab> get() = planningTabs(agileEnabled, teamSprints)
+    val teamSprints: List<AvailableSprint> get() {
+        val scoped = sprintsForTeam(sprints, selectedTeamId, showsTeamPicker(role))
+        val current = currentSprintRow?.takeIf { it.id == currentSprintId }
+        return if (current != null && scoped.none { it.id == current.id }) scoped + current else scoped
+    }
+    val sprintTabVisible: Boolean get() = agileEnabled && currentSprintId != null && teamSprints.any { it.id == currentSprintId }
+    val visibleTabs: List<TaskTab> get() = planningTabs(agileEnabled, teamSprints, currentSprintId)
     /** The query scope for backlog, scheduled and sprint loads. */
     val teamScope: TeamScope get() = scopeForTeam(selectedTeamId)
     /**
@@ -233,7 +239,7 @@ data class TaskUiState(
     val filterCount: Int get() = filterCount(filters, tab) + if (tab == TaskTab.Backlog) quickFilters.count + (if (selectedEpicId != null) 1 else 0) else 0
     /** Sprint planning is not narrowed by Backlog-only quick chips. */
     val planningBacklog: List<Task> get() = (if (planLoaded) planTasks else backlog).filter {
-        it.isBacklogItem && !it.isCompleted && matchesFilters(it, filters, userId, includeStatus = false) &&
+        it.container == "backlog" && !it.isCompleted && matchesFilters(it, filters, userId, includeStatus = false) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }
     val importable: List<Task> get() = planningBacklog
@@ -264,9 +270,9 @@ data class TaskUiState(
 internal fun TaskUiState.projectPlan(): TaskUiState {
     val openSprints = sprints.map { it.id }.toSet()
     val filtered = planTasks.filter {
-        // Backlog = no sprint and no planned day. A stranded sprint row (its
-        // sprint is gone) is kept so it cannot vanish (D6).
-        (it.isBacklogItem || (it.sprintId != null && it.sprintId !in openSprints)) &&
+        // Keep a sprint ticket whose sprint is no longer available, but trust the
+        // server container for every normal placement.
+        (it.container == "backlog" || (it.container == "sprint" && it.sprintId != null && it.sprintId !in openSprints)) &&
         matchesPlanFilters(it, filters, quickFilters, userId) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }
@@ -285,7 +291,7 @@ internal fun TaskUiState.projectPlan(): TaskUiState {
 /** Keep the plan snapshot in step with a mutation; a sprinted task leaves it. */
 private fun TaskUiState.patchPlan(task: Task): TaskUiState =
     if (!planLoaded) this else copy(
-        planTasks = upsertTask(planTasks, task, task.isBacklogItem),
+        planTasks = upsertTask(planTasks, task, task.container == "backlog"),
     ).projectPlan()
 
 /** The Scheduled view's fetch window, relative to today. */
@@ -344,9 +350,25 @@ class TaskViewModel(
         else fail(message)
     }
 
-    private fun failure(e: Throwable, fallback: String): String =
-        if (e is ApiError) userFacingMessage(e, fallback)
+    private fun failure(e: Throwable, fallback: String): String {
+        val message = if (e is ApiError) userFacingMessage(e, fallback)
         else e.message?.takeIf { it.isNotBlank() && it != "Task action failed" && !it.startsWith("HTTP ") } ?: fallback
+        return capabilityFailureCopy(message) ?: message
+    }
+
+    private fun visibleTask(id: Long): Task? {
+        val s = _ui.value
+        return (s.tasks + s.backlog + s.scheduled + s.planTasks + listOfNotNull(s.detail))
+            .firstOrNull { it.id == id }
+    }
+
+    private fun statusDecision(task: Task, stateId: Long): TaskCapabilityDecision {
+        val s = _ui.value
+        val accepting = if (task.sprintId != null && task.sprintId == s.selectedSprintId) {
+            s.sprintBoard?.columns?.firstOrNull { it.stateId == stateId }?.accepting ?: false
+        } else true
+        return task.dropTargetDecision(stateId, accepting)
+    }
 
         /** Status code of a failed call, whichever error shape carried it. */
         private fun statusOf(e: Throwable): Int = when (e) {
@@ -406,10 +428,10 @@ class TaskViewModel(
             userId = userId, role = role, teamName = teamName, teamId = teamId,
             agileEnabled = agileEnabled, customFieldsEnabled = customFieldsEnabled,
             sprintEnabled = sprintEnabled,
-            // Sprint switched off mid-session (agile, or no running sprint):
+            // Sprint switched off mid-session (agile, or no current sprint):
             // bounce off the board rather than show a tab that is gone.
             tab = if (changedUser) TaskTab.Backlog
-            else normalizeTab(current.tab, planningTabs(agileEnabled, current.teamSprints)),
+            else normalizeTab(current.tab, planningTabs(agileEnabled, current.teamSprints, current.currentSprintId)),
         )
         loadPreferences()
         if (agileEnabled) loadEpics()
@@ -429,38 +451,61 @@ class TaskViewModel(
             // A feature-gate 403 means "no sprints", not a retryable failure.
             val sprints = if (agile) runCatching(repository::loadAvailableSprints).getOrDefault(emptyList()) else emptyList()
             val config = if (agile) runCatching(repository::loadAgileConfig).getOrNull() else null
+            val before = _ui.value
+            val teams = if (showsTeamPicker(before.role)) {
+                before.teams.ifEmpty { runCatching(repository::loadTeams).getOrDefault(emptyList()) }
+            } else {
+                emptyList()
+            }
+            val teamId = if (showsTeamPicker(before.role)) {
+                before.selectedTeamId ?: defaultTeamId(
+                    remembered = before.preferences.defaultTeamId,
+                    ownTeamId = before.teamId,
+                    teams = teams,
+                )
+            } else {
+                null
+            }
+            val sprintList = if (agile) {
+                runCatching { repository.loadTeamSprints(teamId.takeIf { showsTeamPicker(before.role) }) }.getOrNull()
+            } else {
+                null
+            }
             _ui.update { s ->
                 // The admin's picker narrows the rows before anything reads
                 // them, so tabs, landing and the board all see one team.
-                val teams = if (showsTeamPicker(s.role)) {
-                    s.teams.ifEmpty { runCatching(repository::loadTeams).getOrDefault(emptyList()) }
-                } else {
-                    emptyList()
+                val resolvedTeams = if (showsTeamPicker(s.role)) s.teams.ifEmpty { teams } else emptyList()
+                val resolvedTeamId = if (showsTeamPicker(s.role)) s.selectedTeamId ?: teamId else null
+                val sameTeam = resolvedTeamId == teamId
+                val currentSprintId = when {
+                    sameTeam && sprintList != null -> sprintList.currentSprintId
+                    resolvedTeamId == s.selectedTeamId -> s.currentSprintId
+                    else -> null
                 }
-                val teamId = if (showsTeamPicker(s.role)) {
-                    s.selectedTeamId ?: defaultTeamId(
-                        remembered = s.preferences.defaultTeamId,
-                        ownTeamId = s.teamId,
-                        teams = teams,
-                    )
-                } else {
-                    null
+                val currentSprintRow = when {
+                    sameTeam && sprintList != null -> sprintList.sprints.firstOrNull { it.id == currentSprintId }
+                    currentSprintId == s.currentSprintId && resolvedTeamId == s.selectedTeamId -> s.currentSprintRow
+                    else -> null
                 }
-                val scoped = sprintsForTeam(sprints, teamId, showsTeamPicker(s.role))
-                val selected = pickSprint(s.selectedSprintId, scoped)
+                val scoped = sprintsForTeam(sprints, resolvedTeamId, showsTeamPicker(s.role))
+                val current = currentSprintRow?.takeIf { it.id == currentSprintId }
+                val teamSprints = if (current != null && scoped.none { it.id == current.id }) scoped + current else scoped
+                val selected = pickSprint(s.selectedSprintId, teamSprints, currentSprintId)
                 s.copy(
                     labels = labels ?: s.labels,
                     assignableUsers = users ?: s.assignableUsers,
                     projects = projects ?: s.projects,
                     sprints = sprints,
-                    teams = teams,
-                    selectedTeamId = teamId,
+                    currentSprintId = currentSprintId,
+                    currentSprintRow = currentSprintRow,
+                    teams = resolvedTeams,
+                    selectedTeamId = resolvedTeamId,
                     teamResolved = true,
                     agile = config ?: s.agile,
                     selectedSprintId = selected,
                     tab = normalizeTab(
-                        if (!landingApplied) landingTab(s.tab, scoped, agile) else s.tab,
-                        planningTabs(agile, scoped),
+                        if (!landingApplied) landingTab(s.tab, teamSprints, currentSprintId, agile) else s.tab,
+                        planningTabs(agile, teamSprints, currentSprintId),
                     ),
                 )
             }
@@ -486,13 +531,6 @@ class TaskViewModel(
     /** Raw `task_*` envelope from the shell; falls back to a reload when the payload is unusable. */
     fun onTaskEvent(type: String, data: JsonElement?) {
         if (_ui.value.userId == null) return
-        // A field-level delta patches the card in place, so a teammate's edit
-        // lands without a refetch and without flicker.
-        val delta = if (type == "task_updated") parseTaskDelta(data) else null
-        if (delta != null) {
-            applyDelta(delta)
-            return
-        }
         val event = parseTaskEvent(type, data)
         synchronized(pendingEvents) {
             if (event == null) pendingReload = true else pendingEvents += event
@@ -500,57 +538,7 @@ class TaskViewModel(
         scheduleSync()
     }
 
-    /** Per-task timestamp of the last delta applied, so an out-of-order frame cannot roll a field back. */
-    private val deltaAppliedAt = mutableMapOf<Long, String>()
     private val planRevision = java.util.concurrent.atomic.AtomicInteger()
-
-    /**
-     * Patch one task from a field-level delta.
-     *
-     * Only the fields in the frame are touched, so two people editing different
-     * fields of the same ticket both survive. The later write wins per field.
-     */
-    private fun applyDelta(delta: TaskDelta) {
-        val previous = deltaAppliedAt[delta.taskId]
-        if (delta.at != null && previous != null && delta.at < previous) return
-        if (delta.at != null) deltaAppliedAt[delta.taskId] = delta.at
-
-        planRevision.incrementAndGet()
-        var patched: Task? = null
-        _ui.update { s ->
-            fun Task.patched(): Task =
-                if (id == delta.taskId) applyTaskDelta(this, delta, previous).also { patched = it } else this
-            s.copy(
-                tasks = s.tasks.map { it.patched() },
-                backlog = s.backlog.map { it.patched() },
-                planTasks = s.planTasks.map { it.patched() },
-                completed = s.completed.map { it.patched() },
-                scheduled = s.scheduled.map { it.patched() },
-                searchResults = s.searchResults.map { it.patched() },
-                detail = s.detail?.patched(),
-                attribution = delta.actorName?.let { s.attribution + (delta.taskId to it) } ?: s.attribution,
-            ).let { if (it.planLoaded) it.projectPlan() else it }
-        }
-        if (patched == null) {
-            synchronized(pendingEvents) { pendingReload = true }
-            scheduleSync()
-        } else if (delta.fields.keys.any { it in setOf("workflow_state_id", "assigned_to", "sprint_id", "project_id") }) {
-            // IDs alone cannot update completion, avatars or joined names.
-            synchronized(pendingEvents) { pendingEvents += TaskEvent(delta.taskId, TaskAction.Updated) }
-            scheduleSync()
-        }
-        patched?.let { flash(delta.taskId) }
-        // The attribution is a flash, not a permanent label.
-        delta.actorName?.let { name ->
-            viewModelScope.launch(Dispatchers.Main.immediate) {
-                delay(ATTRIBUTION_MS)
-                _ui.update { s ->
-                    if (s.attribution[delta.taskId] == name) s.copy(attribution = s.attribution - delta.taskId)
-                    else s
-                }
-            }
-        }
-    }
 
     /** Reconnect catch-up: the server keeps no replay log, so revalidate everything visible. */
     fun onTaskEvent() {
@@ -589,12 +577,14 @@ class TaskViewModel(
         byTask.forEach { (id, actions) ->
             when {
                 TaskAction.Deleted in actions -> removeTask(id, remote = true)
-                actions == setOf(TaskAction.Comment) -> syncComments(id)
-                else -> if (!syncTask(id)) needsReload = true
+                else -> {
+                    if (!syncTask(id)) needsReload = true
+                    if (TaskAction.Comment in actions) syncComments(id)
+                }
             }
         }
         if (needsReload) reloadTab()
-        if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
+        if (_ui.value.tab == TaskTab.Sprint) loadSprint()
     }
 
     /** Fetches one task and patches every view of it. `false` = the fetch failed (caller reloads). */
@@ -657,21 +647,29 @@ class TaskViewModel(
     private fun patchTask(task: Task, highlight: Boolean) {
         planRevision.incrementAndGet()
         _ui.update { s ->
-            val onBoard = belongsToSprint(task, s.selectedSprintId, s.filters, s.userId)
+            val onBoard = task.container == "sprint" && task.sprintId == s.selectedSprintId &&
+                matchesFilters(task, s.filters, s.userId, includeStatus = true)
             val tasks = upsertTask(s.tasks, task, onBoard)
             val oldBacklog = s.backlog.firstOrNull { it.id == task.id }
-            val inBacklog = belongsToBacklog(task, s.filters, s.userId)
+            val inBacklog = task.container == "backlog" &&
+                matchesFilters(task, s.filters, s.userId, includeStatus = false)
             val backlog = upsertTask(s.backlog, task, inBacklog)
             val summary = adjustSummary(s.backlogSummary, oldBacklog, if (inBacklog) task else null)
             val totalDelta = (if (inBacklog) 1 else 0) - (if (oldBacklog != null) 1 else 0)
             val (from, to) = scheduledWindow()
+            val scheduledDay = if (task.container == "scheduled") localDateOf(task.plannedDate) else null
+            val inScheduled = scheduledDay != null && !scheduledDay.isBefore(from) && !scheduledDay.isAfter(to) &&
+                matchesFilters(task, s.filters, s.userId, includeStatus = true)
             s.copy(
                 tasks = tasks,
+                sprintBoard = s.sprintBoard?.let { board ->
+                    board.copy(tickets = upsertTask(board.tickets, task, task.container == "sprint" && task.sprintId == board.sprint.id))
+                },
                 stats = if (tasks !== s.tasks) recomputeStats(tasks) else s.stats,
                 backlog = backlog,
                 backlogSummary = summary,
                 backlogTotal = maxOf(0, s.backlogTotal + totalDelta),
-                scheduled = if (s.scheduledLoaded) upsertTask(s.scheduled, task, belongsToScheduled(task, from, to, s.filters, s.userId)) else s.scheduled,
+                scheduled = if (s.scheduledLoaded) upsertTask(s.scheduled, task, inScheduled) else s.scheduled,
                 searchResults = s.searchResults.map { if (it.id == task.id) task else it },
             ).patchPlan(task)
         }
@@ -772,7 +770,7 @@ class TaskViewModel(
      */
     fun openSprintPlan() {
         val s = _ui.value
-        val targetId = planTargetId(s.teamSprints)
+        val targetId = planTargetId(s.teamSprints, s.currentSprintId)
         if (targetId == null) {
             notify(
                 if (canManageSprint(s.role)) "No sprint yet — create one in Admin → Teams"
@@ -853,7 +851,7 @@ class TaskViewModel(
                 tab = tab,
                 // The planner belongs to the Backlog; any tab change leaves it.
                 planOpen = false,
-                selectedSprintId = if (tab == TaskTab.Sprint) pickSprint(s.selectedSprintId, s.teamSprints) else s.selectedSprintId,
+                selectedSprintId = if (tab == TaskTab.Sprint) pickSprint(s.selectedSprintId, s.teamSprints, s.currentSprintId) else s.selectedSprintId,
                 searchOpen = false,
             )
         }
@@ -928,16 +926,25 @@ class TaskViewModel(
         val sprintId = _ui.value.selectedSprintId
         sprintJob?.cancel()
         if (sprintId == null) {
-            _ui.update { it.copy(tasks = emptyList(), stats = TaskStats(), sprintStats = null, sprintLoading = false) }
+            _ui.update { it.copy(tasks = emptyList(), sprintBoard = null, stats = TaskStats(), sprintStats = null, sprintLoading = false) }
             return
         }
         _ui.update { it.copy(sprintLoading = it.tasks.isEmpty()) }
         sprintJob = io {
             val filters = _ui.value.filters
-            val scope = _ui.value.teamScope
-            runCatching { repository.loadSprintTasks(sprintId, filters, scope) }.fold(
+            runCatching { repository.loadSprintBoard(sprintId) }.fold(
                 onSuccess = { result ->
-                    _ui.update { if (it.selectedSprintId == sprintId) it.copy(tasks = result.tasks, stats = result.stats, sprintLoading = false) else it }
+                    val tickets = result.tickets.filter {
+                        it.workflowStateKey != "cancelled" && matchesFilters(it, filters, _ui.value.userId, includeStatus = true)
+                    }
+                    _ui.update {
+                        if (it.selectedSprintId == sprintId) it.copy(
+                            sprintBoard = result,
+                            tasks = tickets,
+                            stats = recomputeStats(tickets),
+                            sprintLoading = false,
+                        ) else it
+                    }
                 },
                 onFailure = {
                     val hadData = _ui.value.tasks.isNotEmpty()
@@ -962,15 +969,17 @@ class TaskViewModel(
      */
     fun moveTask(task: Task, state: WorkflowState) {
         if (task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)) return
-        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role, _ui.value.teamId)) return notify(STATUS_FORBIDDEN)
+        val columnAccepting = _ui.value.sprintBoard?.columns?.firstOrNull { it.stateId == state.id }?.accepting ?: false
+        val decision = task.dropTargetDecision(state.id, columnAccepting)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         val previous = task
         val moved = task.copy(workflowStateKey = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: task.workflowStateId)
         applyTask(moved)
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(
                 onSuccess = { saved ->
-                    patchServerTask(saved, moved)
-                    refreshSprintStats()
+                    patchServerTask(saved)
+                    loadSprint()
                     notify("Moved to ${state.name.ifEmpty { state.key }}", "Undo") { revertMove(previous, state) }
                 },
                 onFailure = { e ->
@@ -986,7 +995,7 @@ class TaskViewModel(
         applyTask(previous)
         io {
             runCatching { repository.updateStatus(previous.id, previous.workflowStateKey.orEmpty()) }.fold(
-                onSuccess = { refreshSprintStats() },
+                onSuccess = { saved -> patchServerTask(saved); loadSprint() },
                 onFailure = { e ->
                     applyTask(current.copy(workflowStateKey = from.key))
                     fail(failure(e, "Failed to undo move"))
@@ -995,16 +1004,11 @@ class TaskViewModel(
         }
     }
 
-    /** Status/field writes return the bare row; keep the enrichment (labels, people) we already have. */
-    private fun patchServerTask(saved: Task, local: Task) {
-        val merged = local.copy(
-            workflowStateKey = saved.workflowStateKey ?: local.workflowStateKey,
-            workflowStateCategory = saved.workflowStateCategory ?: local.workflowStateCategory,
-            workflowStateId = saved.workflowStateId ?: local.workflowStateId,
-            completedAt = saved.completedAt,
-        )
-        applyTask(merged)
-        _ui.update { s -> s.copy(detail = s.detail?.let { if (it.id == merged.id) it.copy(workflowStateKey = merged.workflowStateKey, workflowStateId = merged.workflowStateId, completedAt = merged.completedAt) else it }) }
+    private fun patchServerTask(saved: Task) {
+        patchTask(saved, highlight = false)
+        _ui.update { s ->
+            if (s.detail?.id == saved.id) s.copy(detail = saved) else s
+        }
     }
 
     private fun applyTask(task: Task) = _ui.update { s ->
@@ -1085,7 +1089,9 @@ class TaskViewModel(
         val sprint = _ui.value.currentSprint ?: return
         _ui.update { it.copy(completing = true, rolloverTo = "backlog") }
         io {
-            val options = runCatching(repository::loadTeamSprints).getOrDefault(emptyList())
+            val options = runCatching {
+                repository.loadTeamSprints(sprint.teamId.takeIf { showsTeamPicker(_ui.value.role) }).sprints
+            }.getOrDefault(emptyList())
                 .filter { it.id != sprint.id && it.status != "completed" }
             _ui.update { it.copy(rolloverOptions = options) }
             // The pre-flight summary is what makes the dialog honest (D32).
@@ -1106,13 +1112,30 @@ class TaskViewModel(
     /** `onChanged`: refresh the sprint list (badge/controls), tasks and stats. */
     private suspend fun lifecycleChanged() {
         val sprints = runCatching(repository::loadAvailableSprints).getOrNull()
-        if (sprints != null) {
+        val sprintList = runCatching {
+            val current = _ui.value
+            repository.loadTeamSprints(current.selectedTeamId.takeIf { showsTeamPicker(current.role) })
+        }.getOrNull()
+        if (sprints != null || sprintList != null) {
             _ui.update { s ->
-                val selected = pickSprint(s.selectedSprintId, sprints)
+                val allSprints = sprints ?: s.sprints
+                val currentSprintId = sprintList?.currentSprintId ?: s.currentSprintId.takeIf { sprintList == null }
+                val currentSprintRow = if (sprintList != null) {
+                    sprintList.sprints.firstOrNull { it.id == currentSprintId }
+                } else {
+                    s.currentSprintRow
+                }
+                val teamSprints = sprintsForTeam(allSprints, s.selectedTeamId, showsTeamPicker(s.role))
+                    .let { rows ->
+                        currentSprintRow?.takeIf { it.id == currentSprintId && rows.none { row -> row.id == it.id } }
+                            ?.let(rows::plus) ?: rows
+                    }
                 s.copy(
-                    sprints = sprints,
-                    selectedSprintId = selected,
-                    tab = normalizeTab(s.tab, s.visibleTabs),
+                    sprints = allSprints,
+                    currentSprintId = currentSprintId,
+                    currentSprintRow = currentSprintRow,
+                    selectedSprintId = pickSprint(s.selectedSprintId, teamSprints, currentSprintId),
+                    tab = normalizeTab(s.tab, planningTabs(s.agileEnabled, teamSprints, currentSprintId)),
                 )
             }
         }
@@ -1216,6 +1239,9 @@ class TaskViewModel(
      */
     fun schedule(taskId: Long, date: String, closeAfter: Boolean = false) {
         if (date.isEmpty()) return
+        val task = visibleTask(taskId)
+        val decision = task?.capability(TaskCapability.Schedule) ?: TaskCapabilityDecision()
+        if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.scheduleTask(taskId, date) }.fold(
                 onSuccess = {
@@ -1224,13 +1250,15 @@ class TaskViewModel(
                     notify("Scheduled for ${formatDate(date)}", "View") { showScheduled(date) }
                     if (closeAfter) withContext(Dispatchers.Main) { closeDetail() }
                 },
-                onFailure = { fail("Failed to schedule task") },
+                onFailure = { e -> fail(failure(e, "Failed to schedule task")) },
             )
         }
     }
 
     /** `handleUnscheduleTask`; the confirm dialog is skipped for the Scheduled list's swipe (it has Undo). */
     fun unschedule(taskId: Long, title: String?, closeAfter: Boolean = false, ask: Boolean = true) {
+        val decision = visibleTask(taskId)?.capability(TaskCapability.Schedule) ?: TaskCapabilityDecision()
+        if (!decision.allowed) return notify(decision.reasonCopy())
         val previousDate = (_ui.value.scheduled + _ui.value.tasks + _ui.value.planTasks).firstOrNull { it.id == taskId }?.plannedDate ?: _ui.value.detail?.takeIf { it.id == taskId }?.plannedDate
         val run = {
             io {
@@ -1252,13 +1280,15 @@ class TaskViewModel(
 
     /** Backlog swipe / detail sprint picker (`PATCH /tasks/:id/assign-sprint`). */
     fun assignSprint(task: Task, sprintId: Long?) {
+        val decision = task.capability(TaskCapability.PlaceInSprint)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.assignSprint(task.id, sprintId) }.fold(
                 onSuccess = {
                     val name = sprintId?.let { id -> _ui.value.sprints.firstOrNull { it.id == id }?.name }
                     notify(if (name != null) "Added to $name" else "Moved to backlog")
                     if (!syncTask(task.id)) reloadTab()
-                    if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
+                    if (_ui.value.tab == TaskTab.Sprint) loadSprint()
                 },
                 onFailure = { e -> fail(failure(e, "Failed to assign sprint")) },
             )
@@ -1273,6 +1303,8 @@ class TaskViewModel(
      * survive and it can be moved back to an open state.
      */
     fun requestDelete(task: Task) {
+        val decision = task.capability(TaskCapability.Cancel)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         confirm(
             "Cancel ticket",
             "Cancel \"${task.title}\"? The ticket and its history are kept, and it leaves the open work.",
@@ -1284,7 +1316,7 @@ class TaskViewModel(
                     onSuccess = {
                         removeTask(task.id, remote = false)
                         notify("Cancelled ${task.displayKey}")
-                        if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
+                        if (_ui.value.tab == TaskTab.Sprint) loadSprint()
                     },
                     onFailure = { e -> fail(failure(e, "Failed to cancel ticket")) },
                 )
@@ -1344,7 +1376,11 @@ class TaskViewModel(
 
     fun setDetailTab(tab: DetailTab) = _ui.update { it.copy(detailTab = tab) }
 
-    fun startEdit() = _ui.update { it.copy(detailEditing = true) }
+    fun startEdit() {
+        val decision = _ui.value.detail?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
+        if (!decision.allowed) return notify(decision.reasonCopy())
+        _ui.update { it.copy(detailEditing = true) }
+    }
 
     fun cancelEdit() {
         val stale = _ui.value.detailStale
@@ -1383,15 +1419,14 @@ class TaskViewModel(
      * (assignee, labels, sprint, issue key) stay authoritative.
      */
     fun updateFields(task: Task, fields: JsonObject, done: String? = null, onSaved: () -> Unit = {}) {
+        val decision = task.capability(TaskCapability.Edit)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.patchFields(task.id, fields) }.fold(
-                onSuccess = {
+                onSuccess = { saved ->
+                    patchServerTask(saved)
                     withContext(Dispatchers.Main) { onSaved() }
                     done?.let { notify(it) }
-                    runCatching { repository.loadDetail(task.id) }.onSuccess { data ->
-                        _ui.update { if (it.detail?.id == task.id) it.copy(detail = data, detailComments = data.comments, detailStale = false) else it }
-                        patchTask(data, highlight = false)
-                    }
                     refreshHistory(task.id)
                     if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
                 },
@@ -1418,17 +1453,15 @@ class TaskViewModel(
     /** Detail status chip (`handleDetailStatusChange`), workflow-state aware. */
     fun setStatus(task: Task, state: WorkflowState) {
         if (task.workflowStateKey == state.key) return
-        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role, _ui.value.teamId)) return notify(STATUS_FORBIDDEN)
+        val decision = statusDecision(task, state.id)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(
-                onSuccess = {
+                onSuccess = { saved ->
+                    patchServerTask(saved)
                     notify("Status: ${state.name.ifEmpty { state.key }}")
-                    runCatching { repository.loadDetail(task.id) }.onSuccess { data ->
-                        _ui.update { if (it.detail?.id == task.id) it.copy(detail = data, detailComments = data.comments) else it }
-                        patchTask(data, highlight = false)
-                    }
                     refreshHistory(task.id)
-                    if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
+                    if (_ui.value.tab == TaskTab.Sprint) loadSprint()
                 },
                 onFailure = { e -> fail(failure(e, "Failed to update status")) },
             )
@@ -1549,22 +1582,52 @@ class TaskViewModel(
     fun selectTeam(teamId: Long?, persist: Boolean = true) {
         val s = _ui.value
         val scoped = sprintsForTeam(s.sprints, teamId, pickerVisible = true)
-        _ui.update {
-            // A team with a running sprint lands on its board; otherwise the
-            // tab set has no Sprint, so a Sprint view falls back to Backlog.
-            val tabs = planningTabs(it.agileEnabled, scoped)
-            it.copy(
+        _ui.update { state ->
+            val currentSprintId = state.currentSprintId.takeIf { teamId == state.selectedTeamId }
+            val currentSprintRow = state.currentSprintRow.takeIf { teamId == state.selectedTeamId && it?.id == currentSprintId }
+            val teamSprints = if (currentSprintRow != null && scoped.none { row -> row.id == currentSprintRow.id }) {
+                scoped + currentSprintRow
+            } else {
+                scoped
+            }
+            val tabs = planningTabs(state.agileEnabled, teamSprints, currentSprintId)
+            val selectedSprintId = state.selectedSprintId.takeIf { teamId == state.selectedTeamId }
+            state.copy(
                 selectedTeamId = teamId,
                 teamResolved = true,
-                preferences = it.preferences.copy(defaultTeamId = teamId?.takeIf { id -> id > 0 }),
+                preferences = state.preferences.copy(defaultTeamId = teamId?.takeIf { id -> id > 0 }),
                 planOpen = false,
                 planLoaded = false,
                 backlog = emptyList(),
                 scheduled = emptyList(),
                 scheduledLoaded = false,
-                selectedSprintId = pickSprint(it.selectedSprintId, scoped),
-                tab = if (activeSprintId(scoped) != null) TaskTab.Sprint else normalizeTab(it.tab, tabs),
+                currentSprintId = currentSprintId,
+                currentSprintRow = currentSprintRow,
+                selectedSprintId = pickSprint(selectedSprintId, teamSprints, currentSprintId),
+                tab = if (currentSprintId != null) TaskTab.Sprint else normalizeTab(state.tab, tabs),
             )
+        }
+        io {
+            val sprintList = runCatching { repository.loadTeamSprints(teamId) }.getOrNull() ?: return@io
+            _ui.update { current ->
+                if (current.selectedTeamId != teamId) return@update current
+                val rows = sprintsForTeam(current.sprints, teamId, pickerVisible = true)
+                val currentSprintId = sprintList.currentSprintId
+                val currentSprintRow = sprintList.sprints.firstOrNull { it.id == currentSprintId }
+                val teamSprints = if (currentSprintRow != null && rows.none { it.id == currentSprintRow.id }) {
+                    rows + currentSprintRow
+                } else {
+                    rows
+                }
+                val tabs = planningTabs(current.agileEnabled, teamSprints, currentSprintId)
+                current.copy(
+                    currentSprintId = currentSprintId,
+                    currentSprintRow = currentSprintRow,
+                    selectedSprintId = pickSprint(current.selectedSprintId, teamSprints, currentSprintId),
+                    tab = if (currentSprintId != null) TaskTab.Sprint else normalizeTab(current.tab, tabs),
+                )
+            }
+            if (_ui.value.tab == TaskTab.Sprint) loadSprint()
         }
         if (persist) {
             io {
@@ -1637,6 +1700,20 @@ class TaskViewModel(
     fun bulkAction(action: String, value: String? = null) {
         val ids = _ui.value.selectedIds.toList()
         if (ids.isEmpty()) return
+        val denied = ids.asSequence().map { id ->
+            val task = visibleTask(id) ?: return@map TaskCapabilityDecision()
+            when (action) {
+                "delete" -> task.capability(TaskCapability.Cancel)
+                "move_to_sprint" -> task.capability(TaskCapability.PlaceInSprint)
+                "assign" -> task.capability(TaskCapability.Edit)
+                "status" -> {
+                    val target = _ui.value.agile.workflowStates.firstOrNull { it.key == value }
+                    target?.let { statusDecision(task, it.id) } ?: TaskCapabilityDecision()
+                }
+                else -> TaskCapabilityDecision()
+            }
+        }.firstOrNull { !it.allowed }
+        if (denied != null) return notify(denied.reasonCopy())
         io {
             runCatching { repository.bulkAction(BulkPayload(ids, action, value)) }.fold(
                 onSuccess = { result ->
@@ -1656,7 +1733,7 @@ class TaskViewModel(
          *  than reduced to a count. */
         private fun bulkSummary(result: BulkResult): String {
             if (result.failed == 0) return "${result.changed} updated"
-            val first = result.failures.firstOrNull()?.error
+            val first = result.failures.firstOrNull()?.error?.let { capabilityFailureCopy(it) ?: it }
             return if (first.isNullOrBlank()) {
                 "${result.changed} updated, ${result.failed} skipped"
             } else {
@@ -1680,6 +1757,8 @@ class TaskViewModel(
 
         /** Move a backlog row between two neighbours; the server computes the rank. */
         fun reorder(taskId: Long, beforeId: Long?, afterId: Long?) {
+            val decision = visibleTask(taskId)?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
+            if (!decision.allowed) return notify(decision.reasonCopy())
             io {
                 runCatching { repository.rankTask(taskId, beforeId, afterId) }.fold(
                     onSuccess = { ranked -> patchTask(ranked, highlight = false) },

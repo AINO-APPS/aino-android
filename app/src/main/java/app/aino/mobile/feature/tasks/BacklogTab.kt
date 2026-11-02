@@ -363,11 +363,13 @@ private fun BacklogRow(
     onActions: () -> Unit,
 ) {
     val colors = LocalWebColors.current
-    val canSprint = ui.agileEnabled && ui.sprints.isNotEmpty()
+    val canSchedule = task.capability(TaskCapability.Schedule)
+    val canPlaceInSprint = task.capability(TaskCapability.PlaceInSprint)
+    val canSprint = ui.agileEnabled && ui.sprints.isNotEmpty() && canPlaceInSprint.allowed
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> onSchedule()
+                SwipeToDismissBoxValue.StartToEnd -> if (canSchedule.allowed) onSchedule()
                 SwipeToDismissBoxValue.EndToStart -> if (canSprint) onSprint()
                 SwipeToDismissBoxValue.Settled -> Unit
             }
@@ -382,12 +384,13 @@ private fun BacklogRow(
             .semantics {
                 customActions = buildList {
                     add(CustomAccessibilityAction("Select") { viewModel.toggleSelection(task.id); true })
-                    add(CustomAccessibilityAction("Schedule") { onSchedule(); true })
+                    add(CustomAccessibilityAction(if (canSchedule.allowed) "Schedule" else "Schedule — ${canSchedule.reasonCopy()}") { if (canSchedule.allowed) onSchedule(); true })
                     if (canSprint) add(CustomAccessibilityAction("Add to sprint") { onSprint(); true })
                     add(CustomAccessibilityAction("More actions") { onActions(); true })
                 }
             },
-        enableDismissFromEndToStart = canSprint,
+            enableDismissFromStartToEnd = canSchedule.allowed,
+            enableDismissFromEndToStart = canSprint,
         backgroundContent = {
             val direction = state.dismissDirection
             if (direction == SwipeToDismissBoxValue.Settled) return@SwipeToDismissBox
@@ -420,17 +423,20 @@ private fun BacklogRow(
                 { SelectionToggle(task.id in ui.selectedIds) { viewModel.toggleSelection(task.id) } }
             } else null,
             trailing = if (!ui.compact) ({
-                Row(
-                    Modifier
-                        .clip(ChipShape)
-                        .background(colors.primary.copy(alpha = 0.12f))
-                        .clickable(onClickLabel = "Schedule", onClick = onSchedule)
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(HeroIcons.CalendarDays, null, Modifier.size(14.dp), tint = colors.primaryLight)
-                    Spacer(Modifier.width(4.dp))
-                    Text("Schedule", color = colors.primaryLight, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Column {
+                    Row(
+                        Modifier
+                            .clip(ChipShape)
+                            .background(colors.primary.copy(alpha = if (canSchedule.allowed) 0.12f else 0.06f))
+                            .clickable(enabled = canSchedule.allowed, onClickLabel = "Schedule", onClick = onSchedule)
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(HeroIcons.CalendarDays, null, Modifier.size(14.dp), tint = if (canSchedule.allowed) colors.primaryLight else colors.textMuted)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Schedule", color = if (canSchedule.allowed) colors.primaryLight else colors.textMuted, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
+                    if (!canSchedule.allowed) Text(canSchedule.reasonCopy(), color = colors.textMuted, fontSize = 0.68.rem, maxLines = 2)
                 }
             }) else null,
             // Long-press selects; the overflow keeps the row actions one tap away.
@@ -459,8 +465,10 @@ private fun BacklogActionsSheet(
     TaskSheetScaffold(task.displayKey, onDismiss) {
         Text(task.title, color = colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp))
         ActionRow(HeroIcons.ArrowTopRightOnSquare, "Open details") { onDismiss(); onOpen() }
-        ActionRow(HeroIcons.CalendarDays, "Schedule to a day") { onDismiss(); onSchedule() }
-        if (ui.agileEnabled && ui.sprints.isNotEmpty()) ActionRow(HeroIcons.RocketLaunch, "Add to sprint") { onDismiss(); onSprint() }
+        val canSchedule = task.capability(TaskCapability.Schedule)
+        ActionRow(HeroIcons.CalendarDays, "Schedule to a day", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { onDismiss(); onSchedule() }
+        val canPlaceInSprint = task.capability(TaskCapability.PlaceInSprint)
+        if (ui.agileEnabled && ui.sprints.isNotEmpty()) ActionRow(HeroIcons.RocketLaunch, "Add to sprint", enabled = canPlaceInSprint.allowed, reason = canPlaceInSprint.reasonCopy()) { onDismiss(); onSprint() }
         ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { onDismiss(); viewModel.openComments(task.id) }
         ActionRow(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") {
             clipboard.setText(androidx.compose.ui.text.AnnotatedString(task.displayKey))
@@ -471,22 +479,22 @@ private fun BacklogActionsSheet(
                 // the moved row; see its doc for why the pair order matters.
                 if (ui.backlogSort == BacklogSort.Rank) {
                     val ids = ui.sortedBacklog.map { it.id }
+                    val canEdit = task.capability(TaskCapability.Edit)
                     rankNeighbours(ids, task.id, up = true)?.let { (before, after) ->
-                        ActionRow(HeroIcons.ChevronUp, "Move up") {
+                        ActionRow(HeroIcons.ChevronUp, "Move up", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) {
                             onDismiss()
                             viewModel.reorder(task.id, before, after)
                         }
                     }
                     rankNeighbours(ids, task.id, up = false)?.let { (before, after) ->
-                        ActionRow(HeroIcons.ChevronDown, "Move down") {
+                        ActionRow(HeroIcons.ChevronDown, "Move down", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) {
                             onDismiss()
                             viewModel.reorder(task.id, before, after)
                         }
                     }
                 }
-        if (ui.userId != null && ui.userId == task.userId) {
-            ActionRow(HeroIcons.Trash, "Delete", danger = true) { onDismiss(); viewModel.requestDelete(task) }
-        }
+        val canCancel = task.capability(TaskCapability.Cancel)
+        ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { onDismiss(); viewModel.requestDelete(task) }
     }
 }
 

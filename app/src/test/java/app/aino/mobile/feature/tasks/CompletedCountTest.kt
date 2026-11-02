@@ -20,16 +20,19 @@ import kotlinx.serialization.json.Json
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class CompletedCountTest {
+    @Volatile
+    private var detailBody =
+        """{"id":4,"title":"Ship","priority":"high","workflow_state_id":5,"container":"backlog"}"""
+
     private val api = ApiClient { request ->
         val body = when {
             request.path.startsWith("tasks/backlog") ->
-                """{"tasks":[{"id":4,"title":"Ship"},
-                   {"id":5,"title":"Done 1","completed_at":"2026-10-25"},
-                   {"id":6,"title":"Done 2","completed_at":"2026-10-25"},
-                   {"id":7,"title":"Done 3","completed_at":"2026-10-25"}],"completed_count":3}"""
+                """{"tasks":[{"id":4,"title":"Ship","container":"backlog"},
+                   {"id":5,"title":"Done 1","completed_at":"2026-10-25","container":"backlog"},
+                   {"id":6,"title":"Done 2","completed_at":"2026-10-25","container":"backlog"},
+                   {"id":7,"title":"Done 3","completed_at":"2026-10-25","container":"backlog"}],"completed_count":3}"""
             request.path == "tasks/carry-forward" -> """{"carried":0}"""
-            request.path == "tasks/4/detail" ->
-                """{"id":4,"title":"Ship","priority":"high","workflow_state_id":5,"completed_at":"2026-10-26"}"""
+            request.path == "tasks/4/detail" -> detailBody
             else -> "[]"
         }
         ApiResponse(200, emptyMap(), body.toByteArray())
@@ -83,11 +86,14 @@ class CompletedCountTest {
         vm.onTaskEvent("task_updated", Json.parseToJsonElement(
             """{"taskId":4,"fields":{"priority":"high"}}""",
         ))
+        waitFor { vm.ui.value.backlogTotal == 1 }
         assertEquals(1, vm.ui.value.backlogTotal)
         vm.setQuickFilters(BacklogQuickFilters())
         assertEquals("Ship", vm.ui.value.filters.search)
         assertEquals(1, vm.ui.value.backlogTotal)
         vm.toggleSelection(4)
+        detailBody =
+            """{"id":4,"title":"Ship","priority":"high","workflow_state_id":5,"completed_at":"2026-10-26","container":"backlog"}"""
         vm.onTaskEvent("task_updated", Json.parseToJsonElement(
             """{"taskId":4,"fields":{"workflow_state_id":5}}""",
         ))
