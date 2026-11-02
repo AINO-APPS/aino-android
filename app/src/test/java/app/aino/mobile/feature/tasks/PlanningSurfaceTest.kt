@@ -39,7 +39,7 @@ class PlanningSurfaceTest {
 
     @Test
     fun aSprintTeamsScheduledTabIsNotSelectable() {
-        val running = TaskUiState(agileEnabled = true, sprints = listOf(active), currentSprintId = active.id)
+        val running = TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = listOf(active), currentSprintId = active.id))
         assertFalse(running.visibleTabs.contains(TaskTab.Scheduled))
         // The snackbar's "View" action on a scheduled ticket lands on Backlog.
         assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Scheduled, running.visibleTabs))

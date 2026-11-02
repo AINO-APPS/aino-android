@@ -70,6 +70,13 @@ Tasks ViewModel owns its default session, or accepts a shared session from its
 caller; it closes only a session it owns. App-shell lifetime wiring and the other
 Plan surfaces remain separate migration steps.
 
+The session also owns a read-only `PlanScope` for user and Team context, feature
+flags, sprint selection, shared filters and metadata. Only `TaskViewModel` writes
+it; other Plan ViewModels observe the session instead of each other. Team changes
+retain cached Ticket ids and restore a viewed Team's Board, Backlog and Scheduled
+immediately while fresh requests run. UI state exposes projections of the shared
+scope.
+
 ## Push registration (Signal `FcmRefreshJob` parity)
 
 - The FCM token is registered per **session** (tenant, user, JWT `sid`): every

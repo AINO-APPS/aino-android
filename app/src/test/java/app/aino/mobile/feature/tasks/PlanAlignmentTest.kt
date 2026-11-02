@@ -16,7 +16,7 @@ class PlanAlignmentTest {
     )
 
     @Test fun planDefaultsToBacklogCompactAndExpandedCompleted() {
-        val ui = TaskUiState(agileEnabled = true)
+        val ui = TaskUiState(planScope = PlanScope(agileEnabled = true))
         assertEquals(TaskTab.Backlog, ui.tab)
         // No running sprint: no board, so no Sprint tab.
         assertEquals(listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk), ui.visibleTabs)
@@ -24,7 +24,7 @@ class PlanAlignmentTest {
         assertTrue(ui.compact)
         assertTrue(ui.completedExpanded)
         assertFalse(ui.copy(selectedIds = setOf(1)).completedExpanded)
-        assertFalse(ui.copy(agileEnabled = false).visibleTabs.contains(TaskTab.Sprint))
+        assertFalse(ui.copy(planScope = ui.planScope.copy(agileEnabled = false)).visibleTabs.contains(TaskTab.Sprint))
     }
 
     @Test fun tabSetFollowsTheSelectedTeamsSprintState() {
@@ -32,32 +32,32 @@ class PlanAlignmentTest {
         // to the board, never a companion (ADR-015).
         assertEquals(
             listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk),
-            TaskUiState(agileEnabled = true, sprints = listOf(sprint), currentSprintId = sprint.id).visibleTabs,
+            TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = listOf(sprint), currentSprintId = sprint.id)).visibleTabs,
         )
         // Only a planned sprint is not a board, so Sprint is hidden.
         val planned = sprint.copy(id = 13, status = "planned")
         assertEquals(
             listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk),
-            TaskUiState(agileEnabled = true, sprints = listOf(planned)).visibleTabs,
+            TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = listOf(planned))).visibleTabs,
         )
         val paused = sprint.copy(status = "paused")
         assertEquals(
             listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk),
-            TaskUiState(agileEnabled = true, sprints = listOf(paused), currentSprintId = paused.id).visibleTabs,
+            TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = listOf(paused), currentSprintId = paused.id)).visibleTabs,
         )
         // Agile off loses the Sprint tab whatever is running.
-        assertFalse(TaskUiState(agileEnabled = false, sprints = listOf(sprint)).visibleTabs.contains(TaskTab.Sprint))
+        assertFalse(TaskUiState(planScope = PlanScope(agileEnabled = false, sprints = listOf(sprint))).visibleTabs.contains(TaskTab.Sprint))
         // The sprint config alone is not enough: there must be a running sprint.
-        val configured = TaskUiState(agileEnabled = true, sprintEnabled = true, sprints = emptyList())
+        val configured = TaskUiState(planScope = PlanScope(agileEnabled = true, sprintEnabled = true, sprints = emptyList()))
         assertFalse(configured.visibleTabs.contains(TaskTab.Sprint))
     }
 
     @Test fun aHiddenTabIsNeverSelectable() {
-        val running = TaskUiState(agileEnabled = true, sprints = listOf(sprint), currentSprintId = sprint.id)
+        val running = TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = listOf(sprint), currentSprintId = sprint.id))
         assertEquals(TaskTab.Sprint, normalizeTab(TaskTab.Sprint, running.visibleTabs))
         // A sprint team has no Scheduled tab.
         assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Scheduled, running.visibleTabs))
-        val idle = TaskUiState(agileEnabled = true, sprints = emptyList())
+        val idle = TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = emptyList()))
         assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Sprint, idle.visibleTabs))
         assertEquals(TaskTab.Scheduled, normalizeTab(TaskTab.Scheduled, idle.visibleTabs))
         // Service Desk is a support queue and outlives both rules.
@@ -78,7 +78,7 @@ class PlanAlignmentTest {
     }
 
     @Test fun projectionExcludesSprintAndScheduledWorkFromTheBacklog() {
-        val ui = TaskUiState(userId = 9, sprints = listOf(sprint), tickets = rows.associateBy { it.id }, planTicketIds = rows.map { it.id }, planLoaded = true).projectPlan()
+        val ui = TaskUiState(planScope = PlanScope(userId = 9, sprints = listOf(sprint)), tickets = rows.associateBy { it.id }, planTicketIds = rows.map { it.id }, planLoaded = true).projectPlan()
         // Task 1 carries sprint_id 12, which is open: it belongs on the board only.
         // Task 2 carries a planned day: it belongs to Scheduled (ADR-015).
         assertEquals(1, ui.backlogTotal)
@@ -96,7 +96,7 @@ class PlanAlignmentTest {
         // dropped from available-sprints), so the ticket must not vanish.
         val stranded = listOf(Task(7, "Orphan", sprintId = 99, container = "sprint"))
         val ui = TaskUiState(
-            userId = 9, sprints = listOf(sprint), tickets = stranded.associateBy { it.id }, planTicketIds = stranded.map { it.id }, planLoaded = true,
+            planScope = PlanScope(userId = 9, sprints = listOf(sprint)), tickets = stranded.associateBy { it.id }, planTicketIds = stranded.map { it.id }, planLoaded = true,
         ).projectPlan()
         assertEquals(listOf(7L), ui.backlog.map { it.id })
         val groups = ui.backlogGroups!!
@@ -115,7 +115,7 @@ class PlanAlignmentTest {
             Task(7, "Orphan", sprintId = 99, container = "sprint"),
         )
         val ui = TaskUiState(
-            userId = 9, sprints = listOf(sprint), tickets = mixed.associateBy { it.id }, planTicketIds = mixed.map { it.id }, planLoaded = true,
+            planScope = PlanScope(userId = 9, sprints = listOf(sprint)), tickets = mixed.associateBy { it.id }, planTicketIds = mixed.map { it.id }, planLoaded = true,
         ).projectPlan()
         assertEquals(listOf(1L, 2L, 7L), ui.sortedBacklog.map { it.id })
         val stranded = ui.backlogGroups.orEmpty()
@@ -134,19 +134,20 @@ class PlanAlignmentTest {
         val task = rows[0].copy(labels = listOf(label), parentTaskId = 22, sprintId = null, container = "backlog")
         val advanced = TaskFilters(assignee = "9", label = "7", priority = "high", search = "Assigned")
         val before = TaskUiState(
-            userId = 9, sprints = listOf(sprint), tickets = mapOf(task.id to task), planTicketIds = listOf(task.id), planLoaded = true,
-            filters = advanced, selectedEpicId = 22, quickFilters = BacklogQuickFilters(true, true, true),
+            planScope = PlanScope(userId = 9, sprints = listOf(sprint), filters = advanced, selectedEpicId = 22),
+            tickets = mapOf(task.id to task), planTicketIds = listOf(task.id), planLoaded = true,
+            quickFilters = BacklogQuickFilters(true, true, true),
         ).projectPlan()
         val reset = before.copy(quickFilters = BacklogQuickFilters()).projectPlan()
         assertEquals(advanced, reset.filters)
         assertEquals(22L, reset.selectedEpicId)
         assertEquals(listOf(task), reset.backlog)
-        assertTrue(reset.copy(filters = advanced.copy(priority = "low")).projectPlan().backlog.isEmpty())
+        assertTrue(reset.copy(planScope = reset.planScope.copy(filters = advanced.copy(priority = "low"))).projectPlan().backlog.isEmpty())
     }
 
     @Test fun realtimeProjectionMovesHiddenRowsBetweenGroupsAndCompletion() {
         val base = TaskUiState(
-            sprints = listOf(sprint), tickets = rows.associateBy { it.id }, planTicketIds = rows.map { it.id }, planLoaded = true,
+            planScope = PlanScope(sprints = listOf(sprint)), tickets = rows.associateBy { it.id }, planTicketIds = rows.map { it.id }, planLoaded = true,
             quickFilters = BacklogQuickFilters(unscheduled = true),
         ).projectPlan()
         val delta = parseTaskDelta(Json.parseToJsonElement(
@@ -193,7 +194,7 @@ class PlanAlignmentTest {
 
     @Test fun quickChipsDoNotNarrowSprintPlanningOrImport() {
         val ui = TaskUiState(
-            planLoaded = true, tickets = rows.associateBy { it.id }, planTicketIds = rows.map { it.id }, sprints = listOf(sprint),
+            planLoaded = true, tickets = rows.associateBy { it.id }, planTicketIds = rows.map { it.id }, planScope = PlanScope(sprints = listOf(sprint)),
             quickFilters = BacklogQuickFilters(unscheduled = true),
         ).projectPlan()
         // Sprint work and planned work are never offered for import, and the

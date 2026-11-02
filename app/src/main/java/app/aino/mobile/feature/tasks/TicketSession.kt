@@ -15,10 +15,18 @@ import kotlinx.coroutines.launch
 class TicketSession {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal val store = TicketStore(scope)
+    private val mutablePlanScope = MutableStateFlow(PlanScope())
+    val planScope = mutablePlanScope.asStateFlow()
+    internal val planScopeLock = Any()
+
+    internal fun writePlanScope(value: PlanScope) {
+        mutablePlanScope.value = value
+    }
 
     fun close() {
         scope.cancel()
         store.clear()
+        mutablePlanScope.value = PlanScope()
     }
 }
 

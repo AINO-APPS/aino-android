@@ -65,12 +65,15 @@ class SprintBoardWiringTest {
             WorkflowState(id = 4, key = "done", name = "Done", category = "done", color = "#10b981", isTerminal = true, sortOrder = 4),
         )
         return TaskUiState(
-            userId = 1,
-            role = "employee",
-            teamName = "Payments",
-            agileEnabled = true,
-            sprints = listOf(sprint),
-            selectedSprintId = sprint.id,
+            planScope = PlanScope(
+                userId = 1,
+                role = "employee",
+                teamName = "Payments",
+                agileEnabled = true,
+                sprints = listOf(sprint),
+                selectedSprintId = sprint.id,
+                agile = AgileConfig(workflowStates = states),
+            ),
             tab = TaskTab.Sprint,
             sprintLoading = false,
             tickets = tasks.associateBy { it.id },
@@ -80,9 +83,6 @@ class SprintBoardWiringTest {
                 columns = states.map { state ->
                     SprintBoardColumn(state.id, tasksForColumn(tasks, state).size, state.wipLimit, accepting = true)
                 },
-            ),
-            agile = AgileConfig(
-                workflowStates = states,
             ),
         )
     }
@@ -148,15 +148,17 @@ class SprintBoardWiringTest {
             board = board.copy(tickets = emptyList()),
             tickets = board.tickets.associateBy { it.id },
             boardTicketIds = board.tickets.map { it.id },
-            selectedSprintId = board.sprint.id,
-            filters = TaskFilters(status = "done"),
-            agile = AgileConfig(
+            planScope = PlanScope(
+                selectedSprintId = board.sprint.id,
+                filters = TaskFilters(status = "done"),
+                agile = AgileConfig(
                 workflowStates = listOf(
                     WorkflowState(id = 101, key = "todo", name = "To Do", wipLimit = 1),
                     WorkflowState(id = 102, key = "in_progress", name = "In Progress"),
                     WorkflowState(id = 103, key = "cancelled", name = "Cancelled"),
                 ),
                 features = AgileFeatures(wipLimits = true),
+                ),
             ),
         )
         show(ui)
@@ -172,7 +174,8 @@ class SprintBoardWiringTest {
             WorkflowState(id = 102, key = "in_progress", name = "In Progress"),
             WorkflowState(id = 103, key = "cancelled", name = "Cancelled"),
         )
-        return state(board.tickets).copy(board = board.copy(tickets = emptyList()), selectedSprintId = board.sprint.id, agile = AgileConfig(workflowStates = states))
+        val ui = state(board.tickets)
+        return ui.copy(board = board.copy(tickets = emptyList()), planScope = ui.planScope.copy(selectedSprintId = board.sprint.id, agile = AgileConfig(workflowStates = states)))
     }
 
     @Test
