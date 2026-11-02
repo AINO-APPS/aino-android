@@ -16,6 +16,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.time.LocalDate
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TicketSessionUiTest {
@@ -62,21 +63,118 @@ class TicketSessionUiTest {
     }
 
     @Test
-    fun aCancelledFullTicketLeavesBothBoardProjectionsButRemainsOpenInDetail() {
+    fun aCancelledTicketLeavesEveryLoadedViewIncludingDetailAndInlineComments() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
+        harness.await { harness.viewModel.ui.value.scheduledLoaded }
+        harness.searchRows = harness.original
+        harness.viewModel.setSearch("Ship")
+        harness.await { harness.viewModel.ui.value.searchResults.size == 1 }
+        harness.viewModel.openComments(201)
+        harness.await { harness.viewModel.ui.value.inlineComments?.loading == false }
+
         harness.saved = harness.original.replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
         harness.detailViewModel.updateFields(
             harness.detailViewModel.ui.value.detail!!,
             buildJsonObject { put("workflow_state_key", "cancelled") },
         )
         harness.await {
-            harness.detailViewModel.ui.value.detail?.workflowStateKey == "cancelled" &&
-                harness.viewModel.ui.value.tasks.isEmpty()
+            harness.detailViewModel.ui.value.detail == null &&
+                harness.viewModel.ui.value.tasks.isEmpty() &&
+                harness.viewModel.ui.value.searchResults.isEmpty() &&
+                harness.viewModel.ui.value.inlineComments == null
         }
 
         assertTrue(harness.viewModel.ui.value.sprintBoard!!.tickets.isEmpty())
-        assertEquals(201L, harness.detailViewModel.ui.value.detail?.id)
+        assertTrue(harness.viewModel.ui.value.backlog.none { it.id == 201L })
+        assertTrue(harness.viewModel.ui.value.scheduled.none { it.id == 201L })
+    }
+
+    @Test
+    fun searchResultsResolveTheLatestTicketFromAnotherViewModel() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.searchRows = harness.original
+        harness.viewModel.setSearch("Ship")
+        harness.await { harness.viewModel.ui.value.searchResults.size == 1 }
+
+        val updatedTitle = "Ship release v2"
+        harness.saved = harness.original.replace("Ship release", updatedTitle)
+        harness.detailViewModel.updateFields(
+            harness.detailViewModel.ui.value.detail!!,
+            buildJsonObject { put("title", updatedTitle) },
+        )
+        harness.await {
+            harness.writes == 1 &&
+                harness.detailViewModel.ui.value.detail?.title == updatedTitle &&
+                harness.viewModel.ui.value.searchResults.singleOrNull()?.title == updatedTitle
+        }
+
+        assertEquals(updatedTitle, harness.viewModel.ui.value.searchResults.single().title)
+    }
+
+    @Test
+    fun aCancelledScheduledTicketLeavesScheduledAndSearchResults() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.await { harness.viewModel.ui.value.scheduledLoaded }
+        val plannedDay = LocalDate.now().plusDays(1).toString()
+        val scheduled = harness.original
+            .replace("\"sprint_id\":10", "\"sprint_id\":null")
+            .replace("\"container\":\"sprint\"", "\"container\":\"scheduled\",\"planned_date\":\"$plannedDay\"")
+
+        harness.saved = scheduled
+        harness.detailViewModel.schedule(201, plannedDay)
+        harness.await { harness.writes == 1 && harness.viewModel.ui.value.scheduled.size == 1 }
+        harness.searchRows = scheduled
+        harness.viewModel.setSearch("Ship")
+        harness.await { harness.viewModel.ui.value.searchResults.size == 1 }
+
+        harness.saved = scheduled.replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
+        harness.detailViewModel.updateFields(
+            harness.detailViewModel.ui.value.detail!!,
+            buildJsonObject { put("workflow_state_key", "cancelled") },
+        )
+        harness.await {
+            harness.writes == 2 &&
+                harness.viewModel.ui.value.scheduled.isEmpty() &&
+                harness.viewModel.ui.value.searchResults.isEmpty() &&
+                harness.detailViewModel.ui.value.detail == null
+        }
+
+        assertTrue(harness.viewModel.ui.value.scheduled.none { it.id == 201L })
+        assertTrue(harness.viewModel.ui.value.searchResults.none { it.id == 201L })
+    }
+
+    @Test
+    fun removingATicketFromTheSharedStoreRemovesItFromEveryLoadedView() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.await { harness.viewModel.ui.value.scheduledLoaded }
+        val plannedDay = LocalDate.now().plusDays(1).toString()
+        val scheduled = harness.original
+            .replace("\"sprint_id\":10", "\"sprint_id\":null")
+            .replace("\"container\":\"sprint\"", "\"container\":\"scheduled\",\"planned_date\":\"$plannedDay\"")
+        harness.saved = scheduled
+        harness.detailViewModel.schedule(201, plannedDay)
+        harness.await { harness.writes == 1 && harness.viewModel.ui.value.scheduled.size == 1 }
+        harness.searchRows = scheduled
+        harness.viewModel.setSearch("Ship")
+        harness.await { harness.viewModel.ui.value.searchResults.size == 1 }
+        harness.viewModel.openComments(201)
+        harness.await { harness.viewModel.ui.value.inlineComments?.loading == false }
+
+        harness.session.store.remove(201)
+        harness.await {
+            harness.viewModel.ui.value.tasks.isEmpty() &&
+                harness.viewModel.ui.value.backlog.none { it.id == 201L } &&
+                harness.viewModel.ui.value.scheduled.isEmpty() &&
+                harness.viewModel.ui.value.searchResults.isEmpty() &&
+                harness.viewModel.ui.value.detail == null &&
+                harness.viewModel.ui.value.inlineComments == null
+        }
+
+        assertTrue(harness.session.store.state.value.tickets[201L] == null)
     }
 
     @Test
@@ -153,6 +251,30 @@ class TicketSessionUiTest {
         harness.await { harness.writes == 2 && harness.detailViewModel.ui.value.detail?.container == "backlog" }
         assertEquals(listOf(201L), harness.viewModel.ui.value.backlog.map { it.id })
         assertEquals(1, harness.detailReads)
+    }
+
+    @Test
+    fun scheduledResultsFollowTheSharedPlannedDayIntoAndOutOfTheWindow() {
+        val harness = harness()
+        val plannedDay = LocalDate.now().plusDays(1).toString()
+        val scheduled = harness.original
+            .replace("\"sprint_id\":10", "\"sprint_id\":null")
+            .replace("\"container\":\"sprint\"", "\"container\":\"scheduled\",\"planned_date\":\"$plannedDay\"")
+        val outsideWindow = LocalDate.now().plusDays(90).toString()
+        harness.loadBoardPlanAndDetail()
+        harness.await { harness.viewModel.ui.value.scheduledLoaded && harness.viewModel.ui.value.scheduled.isEmpty() }
+
+        harness.saved = scheduled
+        harness.detailViewModel.schedule(201, plannedDay)
+        harness.await {
+            harness.writes == 1 && harness.viewModel.ui.value.scheduled.singleOrNull()?.plannedDate == plannedDay
+        }
+        assertEquals(plannedDay, harness.viewModel.ui.value.scheduled.single().plannedDate)
+
+        harness.saved = scheduled.replace(plannedDay, outsideWindow)
+        harness.detailViewModel.schedule(201, outsideWindow)
+        harness.await { harness.writes == 2 && harness.viewModel.ui.value.scheduled.isEmpty() }
+        assertTrue(harness.viewModel.ui.value.scheduled.none { it.id == 201L })
     }
 
     @Test
@@ -250,6 +372,8 @@ internal class TicketSessionHarness {
     @Volatile var detailReads = 0
     @Volatile var planReads = 0
     @Volatile var planRows = ""
+    @Volatile var scheduledRows = ""
+    @Volatile var searchRows = ""
     @Volatile var detailResponse = original
     @Volatile var rejectPlanLoads = false
     @Volatile var rejectDetailReads = false
@@ -267,6 +391,8 @@ internal class TicketSessionHarness {
                 if (rejectPlanLoads) throw java.io.IOException("offline")
                 """{"tasks":[$planRows],"pagination":{"total":0,"hasMore":false}}"""
             }
+            request.path.startsWith("tasks/scheduled") -> """{"tasks":[$scheduledRows]}"""
+            request.path.startsWith("tasks/search?") -> "[$searchRows]"
             request.path == "tasks/201/detail" -> {
                 detailReads++
                 if (rejectDetailReads) throw java.io.IOException("offline")
