@@ -53,25 +53,14 @@ data class BacklogDraft(
     val workflowStateId: Long? = null,
 )
 
-/** Title/description editor; every other field is edited inline from the properties card. */
-data class TaskEditDraft(
-    val title: String,
-    val description: String,
-    val descriptionHtml: String,
-) {
-    companion object {
-        fun from(task: Task): TaskEditDraft =
-            TaskEditDraft(title = task.title, description = stripHtml(task.description), descriptionHtml = task.description.orEmpty())
-    }
-}
-
-enum class DetailTab(val label: String) { Comments("Comments"), History("Activity"), Checklist("Checklist"), Links("Links"), Fields("Fields") }
-
-/** One Ticket's shared comments, projected into Detail and the inline panel. */
-data class CommentThread(val taskId: Long, val items: List<TaskComment> = emptyList(), val loading: Boolean = true)
-
 /** One-shot snackbar; [action] runs when its button is tapped (e.g. Undo). */
-data class TaskNotice(val text: String, val actionLabel: String? = null, val action: (() -> Unit)? = null)
+data class TaskNotice(
+    val text: String,
+    val actionLabel: String? = null,
+    val action: (() -> Unit)? = null,
+    val openTicketId: Long? = null,
+    val scheduledDate: String? = null,
+)
 
 /** Shared bottom sheets on the Tasks page. */
 enum class TaskSheet { Filters, CreateTicket, Import, SprintPicker }
@@ -87,8 +76,6 @@ data class TaskUiState(
     /** Ids patched by a realtime event a moment ago (cards flash briefly). */
     val recentlyUpdated: Set<Long> = emptySet(),
     val tickets: Map<Long, Task> = emptyMap(),
-    /** The open detail changed elsewhere while the user was editing it. */
-    val detailStale: Boolean = false,
     val error: String? = null,
     val confirm: ConfirmRequest? = null,
     // Global search.
@@ -131,13 +118,6 @@ data class TaskUiState(
     val scheduledLoaded: Boolean = false,
     /** Day to bring into view after "View" on the schedule snackbar or a day-picker jump. */
     val scheduledFocus: String? = null,
-    // Detail.
-    val detailId: Long? = null,
-    val detailLoading: Boolean = false,
-    val detailEditing: Boolean = false,
-    val detailTab: DetailTab = DetailTab.Comments,
-    val history: List<TaskHistoryEntry> = emptyList(),
-    val commentThreads: Map<Long, CommentThread> = emptyMap(),
     // Inline comment panel (the card's 💬).
     val inlineCommentTaskId: Long? = null,
     /** Bumped on refresh while the Service Desk tab is visible; the tab reloads on change. */
@@ -162,9 +142,6 @@ data class TaskUiState(
     val completionPreview: CompletionPreview? = null,
     /** Committed points and the scope delta for the selected sprint. */
         val baseline: BaselineResponse? = null,
-    /** Time tracking for the open detail. */
-    val timerRunning: Boolean = false,
-    val timerBusy: Boolean = false,
     /** "Updated by <name>" flashes keyed by task id, from realtime deltas. */
     val attribution: Map<Long, String> = emptyMap(),
 ) {
@@ -189,10 +166,6 @@ data class TaskUiState(
     val filters get() = planScope.filters
     val selectedEpicId get() = planScope.selectedEpicId
 
-    val detailComments: List<TaskComment>
-        get() = detailId?.let { commentThreads[it]?.items }.orEmpty()
-    val inlineComments: CommentThread?
-        get() = inlineCommentTaskId?.let { commentThreads[it] ?: CommentThread(it) }
 
     internal fun inScope(ticket: Task): Boolean = when {
         !showsTeamPicker(role) -> teamId == null || ticket.teamId == teamId
@@ -241,7 +214,6 @@ data class TaskUiState(
     val backlogTotal: Int get() = readPlanTotals().total
     val completedCount: Int get() = readPlanTotals().completed
     val backlogSummary: BacklogSummary get() = readPlanTotals().summary
-    val detail: Task? get() = tickets[detailId]?.takeUnless { it.workflowStateKey == "cancelled" }
     val currentSprint: AvailableSprint? get() = planScope.currentSprint
     val sortedBacklog: List<Task> get() = sortBacklog(backlog, backlogSort)
     /** Display sections for the backlog list, or `null` for a flat list. */
@@ -310,7 +282,7 @@ class TaskViewModel(
     private val repository: TaskRepository,
     internal val serviceDesk: ServiceDeskRepository? = null,
     ticketSession: TicketSession? = null,
-) : ViewModel() {
+) : ViewModel(), TicketCommentActions {
     private val ownsTicketSession = ticketSession == null
     val ticketSession = ticketSession ?: TicketSession()
     private val ticketSync = this.ticketSession.sync(repository)
@@ -331,8 +303,6 @@ class TaskViewModel(
             this@TaskViewModel.ticketSession.store.state.collect { snapshot ->
                 _ui.update { current ->
                     val changed = snapshot.tickets.values.filter { it !== current.tickets[it.id] }
-                    val detailUnavailable = current.detailId?.let(snapshot.tickets::get)
-                        ?.let { it.workflowStateKey == "cancelled" } ?: (current.detailId != null)
                     val scheduledIds = current.scheduledTicketIds
                         .filter { id -> snapshot.tickets[id]?.let(current::containsScheduledTicket) == true }
                     val newlyScheduledIds = if (current.scheduledLoaded) {
@@ -342,9 +312,6 @@ class TaskViewModel(
                     }
                     val searchableIds = current.searchResultIds.filter { id ->
                         snapshot.tickets[id]?.workflowStateKey?.let { it != "cancelled" } == true
-                    }
-                    val commentThreads = current.commentThreads.filterKeys { id ->
-                        snapshot.tickets[id]?.let { it.workflowStateKey != "cancelled" } == true
                     }
                     current.copy(
                         tickets = snapshot.tickets,
@@ -359,25 +326,11 @@ class TaskViewModel(
                             ).distinct(),
                         scheduledTicketIds = (scheduledIds + newlyScheduledIds).distinct(),
                         searchResultIds = searchableIds,
-                        commentThreads = commentThreads,
-                        history = if (detailUnavailable) emptyList() else current.history,
-                        detailStale = current.detailStale && !detailUnavailable,
                         inlineCommentTaskId = current.inlineCommentTaskId?.takeIf { id ->
                             snapshot.tickets[id]?.let { it.workflowStateKey != "cancelled" } == true
                         },
                     ).projectPlan()
                         .let { state -> state.copy(stats = recomputeStats(state.tasks)) }
-                }
-            }
-        }
-        ticketScope.launch {
-            this@TaskViewModel.ticketSession.commentThreads.collect { threads ->
-                _ui.update { state ->
-                    state.copy(
-                        commentThreads = threads.filterKeys { id ->
-                            state.tickets[id]?.let { it.workflowStateKey != "cancelled" } == true
-                        },
-                    )
                 }
             }
         }
@@ -629,26 +582,20 @@ class TaskViewModel(
         when (signal) {
             TicketSyncSignal.VisiblePoll -> {
                 val state = _ui.value
-                val hasLoadedList = state.board != null || state.planLoaded || state.scheduledLoaded
-                if (state.userId != null && (state.detailId == null || hasLoadedList) &&
-                    !state.detailEditing && state.sheet != TaskSheet.CreateTicket
+                if (state.userId != null && state.sheet != TaskSheet.CreateTicket
                 ) reloadTab()
             }
             TicketSyncSignal.FullReload -> {
-                val state = _ui.value
-                val hasLoadedList = state.board != null || state.planLoaded || state.scheduledLoaded
-                if (hasLoadedList || state.detailId == null || state.tab == TaskTab.ServiceDesk) reloadTab()
-                if (state.detail != null && !state.detailEditing) refreshDetail()
+                reloadTab()
             }
             TicketSyncSignal.Reconnect -> {
                 val state = _ui.value
                 if (state.board != null || state.tab == TaskTab.Sprint) loadSprint()
                 if (state.planLoaded) loadBacklog()
                 if (state.scheduledLoaded) loadScheduled()
-                if (state.detail != null && !state.detailEditing) refreshDetail()
                 if (state.tab == TaskTab.ServiceDesk) reloadTab()
                 if (state.board == null && !state.planLoaded && !state.scheduledLoaded &&
-                    state.detailId == null && state.tab != TaskTab.ServiceDesk
+                    state.tab != TaskTab.ServiceDesk
                 ) {
                     reloadTab()
                 }
@@ -660,34 +607,9 @@ class TaskViewModel(
         when (change) {
             is TicketSyncChange.Updated -> {
                 val state = _ui.value
-                if (state.detailId == change.ticketId) {
-                    if (change.staleDetail && state.detailEditing) {
-                        _ui.update { it.copy(detailStale = true) }
-                    } else {
-                        if (change.staleDetail) {
-                            ticketSession.setCommentThreadIfAbsent(
-                                CommentThread(change.ticketId, change.comments, loading = false),
-                            )
-                        }
-                        ticketScope.launch { refreshHistory(change.ticketId) }
-                    }
-                }
                 if (change.refreshBoard && state.tab == TaskTab.Sprint) loadSprint()
             }
-            is TicketSyncChange.Removed -> {
-                val wasOpen = _ui.value.detailId == change.ticketId
-                _ui.update { state ->
-                    if (!wasOpen) state
-                    else state.copy(
-                        detailId = null,
-                        detailLoading = false,
-                        detailEditing = false,
-                        detailStale = false,
-                        history = emptyList(),
-                    )
-                }
-                if (wasOpen && change.reason == RemovalReason.Deleted) notify("This task was deleted")
-            }
+            is TicketSyncChange.Removed -> Unit
         }
     }
 
@@ -701,15 +623,12 @@ class TaskViewModel(
 
     private fun removeTask(id: Long, remote: Boolean) {
         ticketSession.planRevision.incrementAndGet()
-        val wasOpen = _ui.value.detail?.id == id
         ticketSession.store.remove(id, preventReinsert = remote)
         _ui.update { s ->
             s.copy(
                 inlineCommentTaskId = s.inlineCommentTaskId?.takeIf { it != id },
-                detailId = s.detailId?.takeIf { it != id },
             ).let { if (it.planLoaded) it.projectPlan() else it }
         }
-        if (remote && wasOpen) notify("This task was deleted")
     }
 
     /** Callable from any thread; the job map is only touched on Main. */
@@ -1285,7 +1204,7 @@ class TaskViewModel(
                 onSuccess = { created ->
                     patchServerTask(created)
                     _ui.update { it.copy(draft = BacklogDraft(), sheet = null, creating = false) }
-                    notify("Created ${created.displayKey}", "Open") { openDetail(created) }
+                    ticketSession.publishNotice(TaskNotice("Created ${created.displayKey}", "Open", openTicketId = created.id))
                     loadBacklog()
                     if (draft.sprintId != null && _ui.value.tab == TaskTab.Sprint) loadSprint()
                 },
@@ -1302,7 +1221,7 @@ class TaskViewModel(
      * confirmation. Also reschedules an already-dated task. The snackbar's
      * "View" jumps to that day in the Scheduled tab.
      */
-    fun schedule(taskId: Long, date: String, closeAfter: Boolean = false) {
+    fun schedule(taskId: Long, date: String) {
         if (date.isEmpty()) return
         val task = visibleTask(taskId)
         val decision = task?.capability(TaskCapability.Schedule) ?: TaskCapabilityDecision()
@@ -1313,7 +1232,6 @@ class TaskViewModel(
                     patchTask(saved, highlight = true)
                     if (_ui.value.tab == TaskTab.Scheduled) loadScheduled()
                     notify("Scheduled for ${formatDate(date)}", "View") { showScheduled(date) }
-                    if (closeAfter) withContext(Dispatchers.Main) { closeDetail() }
                 },
                 onFailure = { e -> fail(failure(e, "Failed to schedule task")) },
             )
@@ -1321,10 +1239,10 @@ class TaskViewModel(
     }
 
     /** `handleUnscheduleTask`; the confirm dialog is skipped for the Scheduled list's swipe (it has Undo). */
-    fun unschedule(taskId: Long, title: String?, closeAfter: Boolean = false, ask: Boolean = true) {
+    fun unschedule(taskId: Long, title: String?, ask: Boolean = true) {
         val decision = visibleTask(taskId)?.capability(TaskCapability.Schedule) ?: TaskCapabilityDecision()
         if (!decision.allowed) return notify(decision.reasonCopy())
-        val previousDate = (_ui.value.scheduled + _ui.value.tasks + _ui.value.planTasks).firstOrNull { it.id == taskId }?.plannedDate ?: _ui.value.detail?.takeIf { it.id == taskId }?.plannedDate
+        val previousDate = ticketSession.store.state.value.tickets[taskId]?.plannedDate
         val run = {
             io {
                 runCatching { repository.unscheduleTask(taskId) }.fold(
@@ -1332,7 +1250,6 @@ class TaskViewModel(
                         patchTask(saved, highlight = true)
                         val back = previousDate?.take(10)
                         if (back != null) notify("Moved to backlog", "Undo") { schedule(taskId, back) } else notify("Moved to backlog")
-                        if (closeAfter) withContext(Dispatchers.Main) { closeDetail() }
                     },
                     onFailure = { fail("Failed to move task to backlog") },
                 )
@@ -1389,44 +1306,6 @@ class TaskViewModel(
         }
     }
 
-    // ── Detail (`useTaskDetail`) ─────────────────────────────────────────
-
-    fun openDetail(task: Task) {
-        if (task.id !in ticketSession.store.state.value.tickets) ticketSession.store.upsert(task)
-        openTicketDetail(task.id)
-    }
-
-    private fun openTicketDetail(id: Long) {
-        val threads = ticketSession.commentThreads.value
-        _ui.update {
-            it.copy(
-                detailId = id, detailLoading = true, commentThreads = threads, detailTab = DetailTab.Comments,
-                history = emptyList(), detailEditing = false, detailStale = false, searchOpen = false,
-            )
-        }
-        io {
-            runCatching { repository.loadDetail(id) }.fold(
-                onSuccess = { data ->
-                    ticketSession.store.upsert(data)
-                    ticketSession.setCommentThreadIfAbsent(CommentThread(id, data.comments, loading = false))
-                },
-                onFailure = {
-                    if (ticketSession.commentThreads.value[id] == null) {
-                        val loaded = runCatching { repository.loadComments(id) }.getOrDefault(emptyList())
-                        ticketSession.setCommentThreadIfAbsent(CommentThread(id, loaded, loading = false))
-                    }
-                },
-            )
-            _ui.update { it.copy(detailLoading = false) }
-            refreshHistory(id)
-            // The timer state belongs to the open task, so it loads with it.
-            loadTimer(id)
-        }
-    }
-
-    /** Replaces the open detail (Epic ↔ child links) or opens a `?task=<id>` deep link. */
-    fun openDetailById(id: Long) = openTicketDetail(id)
-
     /** Web `?tab=` / `?sprint_id=` query params. */
     fun applyLink(tab: String?, sprintId: Long?) {
         TaskTab.fromKey(tab)?.let { next ->
@@ -1441,115 +1320,12 @@ class TaskViewModel(
         if (tab != null || sprintId != null) reloadTab()
     }
 
-    private suspend fun refreshHistory(taskId: Long) {
-        val history = runCatching { repository.loadHistory(taskId) }.getOrNull() ?: return
-        _ui.update { if (it.detail?.id == taskId) it.copy(history = history) else it }
-    }
-
-    fun closeDetail() = _ui.update {
-        it.copy(detailId = null, detailEditing = false, history = emptyList(), detailTab = DetailTab.Comments, detailStale = false)
-    }
-
-    fun setDetailTab(tab: DetailTab) = _ui.update { it.copy(detailTab = tab) }
-
-    fun startEdit() {
-        val decision = _ui.value.detail?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
-        if (!decision.allowed) return notify(decision.reasonCopy())
-        _ui.update { it.copy(detailEditing = true) }
-    }
-
-    fun cancelEdit() {
-        val stale = _ui.value.detailStale
-        _ui.update { it.copy(detailEditing = false) }
-        if (stale) refreshDetail()
-    }
-
-    /** Re-fetch the open detail after a panel change (blocker, parent…) and patch the lists. */
-    fun refreshDetail() {
-        val id = _ui.value.detail?.id ?: return
-        _ui.update { it.copy(detailStale = false) }
-        io {
-            runCatching { repository.loadDetail(id) }.onSuccess { data ->
-                ticketSession.setCommentThreadIfAbsent(CommentThread(id, data.comments, loading = false))
-                patchTask(data, highlight = false)
-            }
-            refreshHistory(id)
-        }
-    }
-
-    /** Title + description editor (`saveDetailEdit`). */
-    fun saveEdit(draft: TaskEditDraft) {
-        val task = _ui.value.detail ?: return
-        if (draft.title.isBlank()) return
-        // Untouched text keeps the original rich HTML instead of flattening it.
-        val description = if (draft.description == stripHtml(draft.descriptionHtml)) draft.descriptionHtml else plainTextToHtml(draft.description)
-        updateFields(task, buildJsonObject {
-            put("title", draft.title.trim())
-            put("description", description)
-        }, "Saved") { _ui.update { it.copy(detailEditing = false) } }
-    }
-
-    /**
-     * Inline property edit from the detail page: `PUT /tasks/:id` with just
-     * the changed keys, then a detail re-fetch so the enriched fields
-     * (assignee, labels, sprint, issue key) stay authoritative.
-     */
-    fun updateFields(task: Task, fields: JsonObject, done: String? = null, onSaved: () -> Unit = {}) {
-        val decision = task.capability(TaskCapability.Edit)
-        if (!decision.allowed) return notify(decision.reasonCopy())
-        io {
-            runCatching { repository.patchFields(task.id, fields) }.fold(
-                onSuccess = { saved ->
-                    patchServerTask(saved)
-                    withContext(Dispatchers.Main) { onSaved() }
-                    done?.let { notify(it) }
-                    refreshHistory(task.id)
-                    if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
-                },
-                onFailure = { e -> fail(failure(e, "Failed to update item")) },
-            )
-        }
-    }
-
-    fun setPriority(task: Task, value: String) = updateFields(task, buildJsonObject { put("priority", value) })
-
-    fun setAssignee(task: Task, userId: Long?) = updateFields(task, buildJsonObject { put("assigned_to", userId?.let(::JsonPrimitive) ?: JsonNull) })
-
-    fun setDueDate(task: Task, date: String) = updateFields(task, buildJsonObject { put("due_date", date.ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull) })
-
-    fun setLabels(task: Task, ids: List<Long>) = updateFields(task, buildJsonObject { put("label_ids", JsonArray(ids.map(::JsonPrimitive))) })
-
-    fun setStoryPoints(task: Task, value: String?) = updateFields(task, buildJsonObject { put("story_points", value?.ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull) })
-
-    fun setWorkItemType(task: Task, id: Long?) = updateFields(task, buildJsonObject { put("work_item_type_id", id?.let(::JsonPrimitive) ?: JsonNull) })
-
-    /** One-way: an issue key is permanent once a project is set. */
-    fun setProject(task: Task, id: Long) = updateFields(task, buildJsonObject { put("project_id", id) })
-
-    /** Detail status chip (`handleDetailStatusChange`), workflow-state aware. */
-    fun setStatus(task: Task, state: WorkflowState) {
-        if (task.workflowStateKey == state.key) return
-        val decision = statusDecision(task, state.id)
-        if (!decision.allowed) return notify(decision.reasonCopy())
-        io {
-            runCatching { repository.updateStatus(task.id, state.key) }.fold(
-                onSuccess = { saved ->
-                    patchServerTask(saved)
-                    notify("Status: ${state.name.ifEmpty { state.key }}")
-                    refreshHistory(task.id)
-                    if (_ui.value.tab == TaskTab.Sprint) loadSprint()
-                },
-                onFailure = { e -> fail(failure(e, "Failed to update status")) },
-            )
-        }
-    }
-
     // ── Comments (detail + inline panel) ─────────────────────────────────
 
     fun openComments(taskId: Long) {
         val threads = ticketSession.commentThreads.value
         val cached = threads[taskId]
-        _ui.update { it.copy(inlineCommentTaskId = taskId, commentThreads = threads) }
+        _ui.update { it.copy(inlineCommentTaskId = taskId) }
         ticketSession.setCommentThread((cached ?: CommentThread(taskId)).copy(loading = true))
         io {
             val items = runCatching { repository.loadComments(taskId) }.getOrDefault(emptyList())
@@ -1574,7 +1350,7 @@ class TaskViewModel(
     }
 
     /** Text and/or one attachment (`CommentSection.handleAdd`). */
-    fun addComment(taskId: Long, text: String, file: CommentFile? = null, mentions: Map<String, Long> = emptyMap(), onDone: () -> Unit = {}) {
+    override fun addComment(taskId: Long, text: String, file: CommentFile?, mentions: Map<String, Long>, onDone: () -> Unit) {
         val html = plainTextToHtml(text, mentions)
         if (text.isBlank() && file == null) return
         validateComment(text).takeIf { file == null }?.let { fail(it); return }
@@ -1587,14 +1363,13 @@ class TaskViewModel(
                     updateComments(taskId) { list -> if (list.any { it.id == comment.id }) list else list + comment }
                     bumpCommentCount(taskId, 1)
                     ticketScope.launch { onDone() }
-                    if (_ui.value.detail?.id == taskId) refreshHistory(taskId)
                 },
                 onFailure = { fail("Failed to add comment") },
             )
         }
     }
 
-    fun editComment(taskId: Long, commentId: Long, text: String, onDone: () -> Unit = {}) {
+    override fun editComment(taskId: Long, commentId: Long, text: String, onDone: () -> Unit) {
         if (text.isBlank()) return
         io {
             runCatching { repository.updateComment(taskId, commentId, plainTextToHtml(text)) }.fold(
@@ -1610,21 +1385,19 @@ class TaskViewModel(
                         }
                     }
                     ticketScope.launch { onDone() }
-                    if (_ui.value.detail?.id == taskId) refreshHistory(taskId)
                 },
                 onFailure = { fail("Failed to update comment") },
             )
         }
     }
 
-    fun deleteComment(taskId: Long, commentId: Long) {
+    override fun deleteComment(taskId: Long, commentId: Long) {
         confirm("Delete Comment", "Are you sure you want to delete this comment? This cannot be undone.", "Delete", danger = true) {
             io {
                 runCatching { repository.deleteComment(taskId, commentId) }.fold(
                     onSuccess = {
                         updateComments(taskId) { list -> list.filterNot { it.id == commentId } }
                         bumpCommentCount(taskId, -1)
-                        if (_ui.value.detail?.id == taskId) refreshHistory(taskId)
                     },
                     onFailure = { fail("Failed to delete comment") },
                 )
@@ -1913,73 +1686,6 @@ class TaskViewModel(
             runCatching { repository.loadBaseline(sprintId) }.onSuccess { baseline ->
                 _ui.update { it.copy(baseline = baseline) }
             }
-        }
-    }
-
-    // ── Time tracking ────────────────────────────────────────────────────
-
-    /** Is a timer running for the open task? */
-    fun loadTimer(taskId: Long) {
-        io {
-            runCatching { repository.loadTimer(taskId) }.onSuccess { state ->
-                _ui.update { it.copy(timerRunning = state.running) }
-            }
-        }
-    }
-
-    /** Start a timer attributed to this task; the elapsed time rolls into the timesheet. */
-    fun startTimer(taskId: Long) {
-        _ui.update { it.copy(timerBusy = true) }
-        io {
-            runCatching { repository.startTimer(taskId) }.fold(
-                onSuccess = { state ->
-                    _ui.update { it.copy(timerRunning = state.running, timerBusy = false) }
-                },
-                onFailure = {
-                    _ui.update { it.copy(timerBusy = false) }
-                    fail(failure(it, "Could not start the timer"))
-                },
-            )
-        }
-    }
-
-    /** Stop the timer and add the elapsed minutes to the task. */
-    fun stopTimer(taskId: Long) {
-        _ui.update { it.copy(timerBusy = true) }
-        io {
-            runCatching { repository.stopTimer(taskId) }.fold(
-                onSuccess = { stop ->
-                    ticketSession.store.state.value.tickets[taskId]?.let {
-                        ticketSession.store.upsert(it.copy(loggedMinutes = it.loggedMinutes + stop.minutes))
-                    }
-                    _ui.update { s ->
-                        s.copy(
-                            timerRunning = false,
-                            timerBusy = false,
-                        )
-                    }
-                    notify("Logged ${stop.minutes}m")
-                },
-                onFailure = {
-                    _ui.update { it.copy(timerBusy = false) }
-                    fail(failure(it, "Could not stop the timer"))
-                },
-            )
-        }
-    }
-
-    // ── Canonical key lookup ─────────────────────────────────────────────
-
-    /** Resolve a `PROJ-123` reference to its task and open it. */
-    fun openByKey(key: String) {
-        io {
-            runCatching { repository.loadByKey(key) }.fold(
-                onSuccess = { task ->
-                    ticketSession.store.upsert(task)
-                    ticketScope.launch { openDetail(task) }
-                },
-                onFailure = { fail(failure(it, "No task matches $key")) },
-            )
         }
     }
 

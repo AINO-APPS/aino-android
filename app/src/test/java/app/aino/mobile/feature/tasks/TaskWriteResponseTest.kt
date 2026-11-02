@@ -42,9 +42,10 @@ class TaskWriteResponseTest {
             }
             ApiResponse(200, emptyMap(), body.toByteArray())
         })
-        val vm = TaskViewModel(repository)
         val task = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<Task>(original)
-        vm.openDetail(task)
+        val session = TicketSession()
+        session.store.upsert(task)
+        val vm = TicketDetailViewModel(task.id, repository, session)
         waitFor { vm.ui.value.detail?.title == "Old title" }
 
         vm.updateFields(task, buildJsonObject { put("title", "Changed") })
@@ -53,6 +54,8 @@ class TaskWriteResponseTest {
         assertEquals("high", vm.ui.value.detail?.priority)
         assertEquals(false, vm.ui.value.detail?.capabilities?.can?.edit?.allowed)
         assertEquals("SPRINT_FROZEN", vm.ui.value.detail?.capabilities?.transitions?.single()?.reason)
+        androidx.lifecycle.ViewModelStore().apply { put("detail", vm); clear() }
+        session.close()
     }
 
     private fun waitFor(condition: () -> Boolean) {

@@ -71,6 +71,8 @@ class TicketSession {
         noticeChannel.trySend(notice)
     }
 
+    internal fun launch(block: suspend () -> Unit) = scope.launch { block() }
+
     fun onRealtimeEvent(type: String, data: JsonElement?) {
         ticketSync?.onRealtimeEvent(type, data)
     }

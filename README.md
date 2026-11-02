@@ -45,6 +45,15 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
 
 ## Plan on Android
 
+Ticket Detail has an id-keyed, route-scoped `TicketDetailViewModel`. It reads the
+same session Ticket store as the lists and owns editing, Activity history, tabs,
+Placement, comments and timers. Blocker and parent writes refetch the full Ticket
+before publishing it because those endpoints return relationship metadata.
+Notifications and links enter the same Detail route; key lookups publish their
+full Ticket before opening the id-keyed route. Comment threads remain shared with
+the inline panel, and session notices keep Open, View and Undo available after a
+Detail route closes.
+
 Plan opens on Backlog, followed by Scheduled and Sprint (when enabled); Sprint
 retains its board and planning views. Backlog groups live work by sprint and
 backlog with matching ticket/point totals. All resets only the independent Mine,

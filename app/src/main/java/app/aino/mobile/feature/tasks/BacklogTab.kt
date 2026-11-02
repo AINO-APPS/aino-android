@@ -601,7 +601,7 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel) {
     }
     TaskPickers(
         picker = picker,
-        ui = ui,
+        ui = ui.planScope,
         assignee = d.assignedTo,
         typeId = d.workItemTypeId,
         sprintId = d.sprintId,
@@ -620,7 +620,7 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel) {
 @Composable
 internal fun TaskPickers(
     picker: String?,
-    ui: TaskUiState,
+    ui: PlanScope,
     assignee: Long?,
     typeId: Long?,
     sprintId: Long?,

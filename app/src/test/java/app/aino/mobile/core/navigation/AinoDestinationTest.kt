@@ -9,6 +9,15 @@ import org.junit.Test
 
 class AinoDestinationTest {
     @Test
+    fun ticketDetailRouteKeepsTheTicketIdAndTasksNavigation() {
+        assertEquals("tasks/detail/{ticketId}", TASK_DETAIL_ROUTE)
+        assertEquals("tasks/detail/201", ticketDetailRoute(201))
+        assertTrue(isFullScreenRoute(TASK_DETAIL_ROUTE))
+        assertEquals(AinoDestination.Tasks.route, bottomBarRoute(TASK_DETAIL_ROUTE))
+        assertEquals(taskLinkRoute("APP-201", null, null), webLinkToRoute("/tasks?task=APP-201"))
+    }
+
+    @Test
     fun destinationFor_matchesLabelsIgnoringCase() {
         assertEquals(AinoDestination.Dashboard, destinationFor("home"))
         assertEquals(AinoDestination.Calendar, destinationFor("CALENDAR"))

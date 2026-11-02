@@ -643,7 +643,6 @@ private fun AuthenticatedShell(
                 AinoDestination.Dashboard.route -> dashboard.refresh()
                 AinoDestination.ChatThread.route -> chat.refreshThread()
                 AinoDestination.Tasks.route -> tasks.refresh()
-                TASK_DETAIL_ROUTE -> tasks.refreshDetail()
                 AinoDestination.Profile.route -> profile.refresh()
                 else -> if (nav.currentDestination?.route?.startsWith(AinoDestination.Attendance.route) == true) attendance.refresh()
             }
@@ -743,8 +742,7 @@ private fun AuthenticatedShell(
                         navigate(AinoDestination.Tasks)
                     },
                     onOpenTask = { id ->
-                        tasks.openDetailById(id)
-                        nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true }
+                        nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true }
                     },
                     onOpenLink = { link -> openWebLink(link) },
                 )
@@ -753,35 +751,55 @@ private fun AuthenticatedShell(
                 ForegroundPoll(TASKS_POLL_MS, tasks.ticketSession::pollVisible)
                 TasksScreen(
                     viewModel = tasks,
-                    onOpenDetail = { nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true } },
+                    onOpenDetail = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
                     onOpenInsights = { nav.navigate(SPRINT_INSIGHTS_ROUTE) { launchSingleTop = true } },
                     serviceDesk = { app.aino.mobile.feature.tasks.ServiceDeskTab(tasks, user.role) },
                 )
             }
-            composable(TASK_DETAIL_ROUTE) {
+            composable(TASK_DETAIL_ROUTE, arguments = listOf(navArgument("ticketId") { type = NavType.LongType })) { entry ->
+                val ticketId = entry.arguments!!.getLong("ticketId")
+                val detail = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.tasks.TicketDetailViewModel>(
+                    viewModelStoreOwner = entry,
+                    key = "ticket-detail-${tasks.ticketSession.key}-$ticketId",
+                    factory = app.aino.mobile.feature.tasks.TicketDetailViewModel.factory(shellContext, ticketId, tasks.ticketSession),
+                )
                 val closeDetail = {
-                    tasks.closeDetail()
+                    detail.closeDetail()
                     Unit
                 }
                 BackHandler(onBack = closeDetail)
-                app.aino.mobile.feature.tasks.TaskDetailScreen(tasks, onClose = { nav.popBackStack() })
+                app.aino.mobile.feature.tasks.TaskDetailScreen(
+                    detail,
+                    onClose = { nav.popBackStack() },
+                    onOpenTicket = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
+                )
             }
             composable(
                 TASK_LINK_ROUTE,
                 arguments = listOf("task", "tab", "sprint_id").map { name -> navArgument(name) { defaultValue = "" } },
             ) { entry ->
-                val taskId = entry.arguments?.getString("task")?.toLongOrNull()
+                val ticketReference = entry.arguments?.getString("task")?.ifEmpty { null }
                 val tab = entry.arguments?.getString("tab")?.ifEmpty { null }
                 val sprintId = entry.arguments?.getString("sprint_id")?.toLongOrNull()
                 LaunchedEffect(Unit) {
+                    val taskId = ticketReference?.toLongOrNull() ?: ticketReference?.let { key ->
+                        runCatching {
+                            val container = app.aino.mobile.core.AppContainer.get(shellContext)
+                            app.aino.mobile.feature.tasks.TicketDetailViewModel.resolveKey(
+                                app.aino.mobile.feature.tasks.TaskRepository(container.api), tasks.ticketSession, key,
+                            )
+                        }.getOrElse {
+                            tasks.ticketSession.publishNotice(app.aino.mobile.feature.tasks.TaskNotice("No task matches $key"))
+                            null
+                        }
+                    }
                     tasks.applyLink(tab, sprintId)
                     nav.navigate(AinoDestination.Tasks.route) {
                         launchSingleTop = true
                         popUpTo(TASK_LINK_ROUTE) { inclusive = true }
                     }
                     if (taskId != null) {
-                        tasks.openDetailById(taskId)
-                        nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true }
+                        nav.navigate(ticketDetailRoute(taskId)) { launchSingleTop = true }
                     }
                 }
             }
@@ -790,8 +808,7 @@ private fun AuthenticatedShell(
                     tasks,
                     onBack = { nav.popBackStack() },
                     onOpenTask = { id ->
-                        tasks.openDetailById(id)
-                        nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true }
+                        nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true }
                     },
                 )
             }
@@ -1319,6 +1336,11 @@ private fun AuthenticatedShell(
     app.aino.mobile.feature.tasks.TaskNoticeHost(
         tasks.ticketSession,
         modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = if (fullScreen) 8.dp else 72.dp),
+        onOpenTicket = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
+        onShowScheduled = { date ->
+            tasks.showScheduled(date)
+            nav.navigate(AinoDestination.Tasks.route) { launchSingleTop = true }
+        },
     )
     // Direct Share: keep the latest chats published as share-sheet targets.
     val shareTargets = androidx.compose.runtime.remember(chatUi.conversations) {

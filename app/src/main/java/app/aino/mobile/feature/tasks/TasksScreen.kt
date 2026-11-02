@@ -97,15 +97,15 @@ internal fun tabLabel(tab: TaskTab): String = when (tab) {
 @Composable
 fun TasksScreen(
     viewModel: TaskViewModel,
-    onOpenDetail: () -> Unit,
+    onOpenDetail: (Long) -> Unit,
     onOpenInsights: () -> Unit,
     serviceDesk: @Composable () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val colors = LocalWebColors.current
     val open: (Task) -> Unit = { task ->
-        viewModel.openDetail(task)
-        onOpenDetail()
+        viewModel.closeSearch()
+        onOpenDetail(task.id)
     }
 
     // ---- Pager <-> tab ----------------------------------------------------
@@ -222,7 +222,8 @@ fun TasksScreen(
         TaskSheet.SprintPicker -> SprintPickerSheet(ui, viewModel)
         null -> Unit
     }
-    ui.inlineComments?.let { thread ->
+    val commentThreads by viewModel.ticketSession.commentThreads.collectAsStateWithLifecycle()
+    ui.inlineCommentTaskId?.let { commentThreads[it] ?: CommentThread(it) }?.let { thread ->
         val task = (ui.tasks + ui.backlog).firstOrNull { it.id == thread.taskId }
         TaskSheetScaffold("Comments", viewModel::closeComments, HeroIcons.ChatBubbleOvalLeft) {
             task?.let {

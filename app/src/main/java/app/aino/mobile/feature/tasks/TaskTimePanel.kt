@@ -32,7 +32,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
  * separate counter.
  */
 @Composable
-internal fun TaskTimePanel(task: Task, ui: TaskUiState, viewModel: TaskViewModel) {
+internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel) {
     val colors = LocalWebColors.current
     val estimated = task.estimatedMinutes ?: 0
     val logged = task.loggedMinutes

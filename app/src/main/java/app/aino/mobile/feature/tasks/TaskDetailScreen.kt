@@ -46,7 +46,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,7 +67,6 @@ import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.rem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -89,10 +87,22 @@ import app.aino.mobile.core.designsystem.icons.HeroIcons
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
+fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOpenTicket: (Long) -> Unit) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val task = ui.detail
-    LaunchedEffect(task == null) { if (task == null) onClose() }
+    LaunchedEffect(ui.closed) { if (ui.closed) onClose() }
+    var resumedOnce by remember(viewModel) { mutableStateOf(false) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(viewModel) {
+        if (resumedOnce && !viewModel.ui.value.detailEditing) viewModel.refreshDetail()
+        resumedOnce = true
+        onPauseOrDispose { }
+    }
+    if (task == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            if (ui.detailLoading) CircularProgressIndicator()
+            else Text(ui.error ?: "Ticket unavailable")
+        }
+    }
     task ?: return
     val colors = LocalWebColors.current
     var draft by remember(task.id, ui.detailEditing) { mutableStateOf(TaskEditDraft.from(task)) }
@@ -179,7 +189,7 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
                 Spacer(Modifier.height(16.dp))
                 PropertiesCard(task, ui, viewModel, onStatus = { statusSheet = true })
                 Spacer(Modifier.height(20.dp))
-                DetailSections(task, ui, viewModel)
+                DetailSections(task, ui, viewModel, onOpenTicket)
             }
         }
     }
@@ -225,7 +235,7 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, draft: TaskEditDraft, onDraft: (TaskEditDraft) -> Unit, onStatus: () -> Unit) {
+private fun DetailHero(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, draft: TaskEditDraft, onDraft: (TaskEditDraft) -> Unit, onStatus: () -> Unit) {
     val colors = LocalWebColors.current
     var expanded by remember(task.id) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -323,7 +333,7 @@ private fun MetaPill(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel, onStatus: () -> Unit) {
+private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onStatus: () -> Unit) {
     val colors = LocalWebColors.current
     var picker by remember { mutableStateOf<String?>(null) }
     var dueOpen by remember { mutableStateOf(false) }
@@ -420,7 +430,7 @@ private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel
         null -> Unit
         else -> TaskPickers(
             picker = picker,
-            ui = ui,
+            ui = ui.planScope,
             assignee = task.assignedTo,
             typeId = task.workItemTypeId,
             sprintId = task.sprintId,
@@ -446,7 +456,7 @@ private fun PropertiesCard(task: Task, ui: TaskUiState, viewModel: TaskViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DueDateSheet(task: Task, viewModel: TaskViewModel, onDismiss: () -> Unit) {
+private fun DueDateSheet(task: Task, viewModel: TicketDetailViewModel, onDismiss: () -> Unit) {
     val colors = LocalWebColors.current
     val start = localDateOf(task.dueDate) ?: java.time.LocalDate.now()
     val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli())
@@ -469,20 +479,17 @@ private fun DueDateSheet(task: Task, viewModel: TaskViewModel, onDismiss: () -> 
 
 /** Set / clear the blocker with a reason (`PATCH /tasks/:id/block`). */
 @Composable
-private fun BlockerSheet(task: Task, viewModel: TaskViewModel, onDismiss: () -> Unit) {
+private fun BlockerSheet(task: Task, viewModel: TicketDetailViewModel, onDismiss: () -> Unit) {
     val colors = LocalWebColors.current
-    val scope = rememberCoroutineScope()
     var reason by remember(task.id) { mutableStateOf(task.blockedReason.orEmpty()) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     fun apply(blocked: Boolean, why: String?) {
         busy = true
-        scope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { viewModel.repo.setBlocker(task.id, blocked, why) } }
-            busy = false
-            result.onSuccess { viewModel.refreshDetail(); onDismiss() }
-                .onFailure { error = it.message?.takeIf { m -> m != "Task action failed" } ?: "Failed to update blocker" }
-        }
+        viewModel.setBlocker(task.id, blocked, why,
+            onDone = { busy = false; onDismiss() },
+            onError = { busy = false; error = it },
+        )
     }
     TaskSheetScaffold(if (task.isBlocked) "Blocked" else "Mark as blocked", onDismiss, HeroIcons.NoSymbol) {
         WebTextField(reason, { reason = it }, "Why is this blocked?", singleLine = false, minLines = 3, maxLength = 500)
@@ -503,7 +510,7 @@ private fun BlockerSheet(task: Task, viewModel: TaskViewModel, onDismiss: () -> 
 // ── Sections ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun DetailSections(task: Task, ui: TaskUiState, viewModel: TaskViewModel) {
+private fun DetailSections(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onOpenTicket: (Long) -> Unit) {
     val sections = buildList {
         add(DetailTab.Comments)
         add(DetailTab.History)
@@ -536,9 +543,9 @@ private fun DetailSections(task: Task, ui: TaskUiState, viewModel: TaskViewModel
         DetailTab.History -> HistoryList(ui.history)
         DetailTab.Checklist -> AcceptanceCriteriaEditor(task.id, ui, viewModel)
         DetailTab.Links -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ParentChildPanel(task, ui, viewModel)
+            ParentChildPanel(task, ui, viewModel, onOpenTicket)
             val isEpic = ui.agile.type(task.workItemTypeId)?.isEpic == true
-            if (!isEpic) DependenciesPanel(task.id, ui, viewModel)
+            if (!isEpic) DependenciesPanel(task.id, ui, viewModel, onOpenTicket)
         }
         DetailTab.Fields -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             CustomFieldsEditor(task, viewModel)
@@ -548,10 +555,9 @@ private fun DetailSections(task: Task, ui: TaskUiState, viewModel: TaskViewModel
 
 /** `AcceptanceCriteria`: optimistic checklist; every change PUTs the whole list. */
 @Composable
-private fun AcceptanceCriteriaEditor(taskId: Long, ui: TaskUiState, viewModel: TaskViewModel) {
+private fun AcceptanceCriteriaEditor(taskId: Long, ui: TicketDetailUiState, viewModel: TicketDetailViewModel) {
     if (!ui.agile.features.acceptanceCriteria) return
     val colors = LocalWebColors.current
-    val scope = rememberCoroutineScope()
     val items = remember(taskId) { mutableStateListOf<AcceptanceCriterion>() }
     var loading by remember(taskId) { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
@@ -564,13 +570,10 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TaskUiState, viewModel: T
     fun persist(next: List<AcceptanceCriterion>) {
         saving = true
         error = ""
-        scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { viewModel.repo.saveCriteria(taskId, next.map { CriterionPayload(it.id, it.text, it.done) }) }
-            }
-            result.onSuccess { items.clear(); items.addAll(it) }.onFailure { error = it.message?.takeIf { m -> m != "Task action failed" } ?: "Failed to save" }
-            saving = false
-        }
+        viewModel.saveCriteria(taskId, next.map { CriterionPayload(it.id, it.text, it.done) },
+            onDone = { items.clear(); items.addAll(it); saving = false },
+            onError = { error = it; saving = false },
+        )
     }
     val done = items.count { it.done }
     val pct = if (items.isEmpty()) 0 else Math.round(done * 100f / items.size)
@@ -659,10 +662,9 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TaskUiState, viewModel: T
 
 /** ParentChildPanel: Epics list children + rollup; others show "Part of" + a picker. */
 @Composable
-private fun ParentChildPanel(task: Task, ui: TaskUiState, viewModel: TaskViewModel) {
+private fun ParentChildPanel(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onOpenTicket: (Long) -> Unit) {
     if (!ui.agile.features.epics) return
     val colors = LocalWebColors.current
-    val scope = rememberCoroutineScope()
     val isEpic = ui.agile.type(task.workItemTypeId)?.isEpic == true
     var loading by remember(task.id, isEpic) { mutableStateOf(true) }
     var children by remember(task.id) { mutableStateOf<ChildrenResponse?>(null) }
@@ -683,14 +685,13 @@ private fun ParentChildPanel(task: Task, ui: TaskUiState, viewModel: TaskViewMod
         loading = false
     }
     fun setParent(id: Long?) {
-        scope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { viewModel.repo.setParent(task.id, id) } }
-            result.onSuccess {
+        viewModel.setParent(task.id, id,
+            onDone = {
                 picking = false
                 reloadKey++
-                viewModel.refreshDetail()
-            }.onFailure { error = it.message?.takeIf { m -> m != "Task action failed" } ?: "Failed to set parent" }
-        }
+            },
+            onError = { error = it },
+        )
     }
     if (loading) {
         Text("Loading…", color = colors.textMuted, fontSize = 0.8.rem)
@@ -726,7 +727,7 @@ private fun ParentChildPanel(task: Task, ui: TaskUiState, viewModel: TaskViewMod
                         Spacer(Modifier.width(6.dp))
                         Text(
                             c.title, color = colors.primary, fontSize = 0.82.rem, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f).clickable { openLinked(viewModel, c.id) },
+                            modifier = Modifier.weight(1f).clickable { onOpenTicket(c.id) },
                         )
                         c.stateName?.let { name ->
                             val tint = hexColor(c.stateColor, Color(0xFF6B7280))
@@ -753,7 +754,7 @@ private fun ParentChildPanel(task: Task, ui: TaskUiState, viewModel: TaskViewMod
                     Text("Part of ", color = colors.textMuted, fontSize = 0.75.rem)
                     Text(
                         "#${p.id} ${p.title}", color = colors.primary, fontSize = 0.75.rem, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false).clickable { openLinked(viewModel, p.id) },
+                        modifier = Modifier.weight(1f, fill = false).clickable { onOpenTicket(p.id) },
                     )
                     Spacer(Modifier.width(4.dp))
                     Icon(HeroIcons.XMark, "Detach from parent", Modifier.size(11.dp).clickable { setParent(null) }, tint = colors.textMuted)
@@ -783,16 +784,13 @@ private fun ParentChildPanel(task: Task, ui: TaskUiState, viewModel: TaskViewMod
     }
 }
 
-private fun openLinked(viewModel: TaskViewModel, id: Long) = viewModel.openDetailById(id)
-
 private val DEP_TYPES = listOf("blocks" to "Blocks", "relates" to "Relates to", "duplicates" to "Duplicates", "clones" to "Clones")
 
 /** `DependenciesPanel`. */
 @Composable
-private fun DependenciesPanel(taskId: Long, ui: TaskUiState, viewModel: TaskViewModel) {
+private fun DependenciesPanel(taskId: Long, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onOpenTicket: (Long) -> Unit) {
     if (!ui.agile.features.dependencies) return
     val colors = LocalWebColors.current
-    val scope = rememberCoroutineScope()
     var data by remember(taskId) { mutableStateOf(DependenciesResponse()) }
     var loading by remember(taskId) { mutableStateOf(true) }
     var adding by remember { mutableStateOf(false) }
@@ -821,11 +819,10 @@ private fun DependenciesPanel(taskId: Long, ui: TaskUiState, viewModel: TaskView
                 excludeId = taskId,
                 viewModel = viewModel,
                 onPick = { other ->
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) { runCatching { viewModel.repo.addDependency(taskId, other.id, linkType) } }
-                        result.onSuccess { adding = false; reloadKey++ }
-                            .onFailure { error = it.message?.takeIf { m -> m != "Task action failed" } ?: "Failed to add link" }
-                    }
+                    viewModel.addDependency(taskId, other.id, linkType,
+                        onDone = { adding = false; reloadKey++ },
+                        onError = { error = it },
+                    )
                 },
                 onCancel = null,
             )
@@ -841,13 +838,13 @@ private fun DependenciesPanel(taskId: Long, ui: TaskUiState, viewModel: TaskView
                     Spacer(Modifier.width(6.dp))
                     Text(
                         dep.title, color = if (dep.isBlocked) colors.danger else colors.text, fontSize = 0.82.rem, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f).clickable { openLinked(viewModel, dep.id) },
+                        modifier = Modifier.weight(1f).clickable { onOpenTicket(dep.id) },
                     )
                     Icon(HeroIcons.XMark, "Remove link", Modifier.size(14.dp).clickable {
-                        scope.launch {
-                            val result = withContext(Dispatchers.IO) { runCatching { viewModel.repo.removeDependency(taskId, dep.linkId) } }
-                            result.onSuccess { reloadKey++ }.onFailure { error = it.message?.takeIf { m -> m != "Task action failed" } ?: "Failed to remove link" }
-                        }
+                        viewModel.removeDependency(taskId, dep.linkId,
+                            onDone = { reloadKey++ },
+                            onError = { error = it },
+                        )
                     }, tint = colors.textMuted)
                 }
             }
@@ -861,7 +858,7 @@ private fun DependenciesPanel(taskId: Long, ui: TaskUiState, viewModel: TaskView
 private fun TaskPicker(
     placeholder: String,
     excludeId: Long,
-    viewModel: TaskViewModel,
+    viewModel: TicketDetailViewModel,
     onPick: (QuickTask) -> Unit,
     onCancel: (() -> Unit)?,
     sort: (List<QuickTask>) -> List<QuickTask> = { it },
@@ -928,7 +925,7 @@ private fun PanelBox(content: @Composable () -> Unit) {
 
 /** Loads the org's field definitions + this task's values once per task. */
 @Composable
-private fun rememberCustomFields(taskId: Long, viewModel: TaskViewModel, reloadKey: Int = 0): Pair<List<CustomFieldDef>, JsonObject?> {
+private fun rememberCustomFields(taskId: Long, viewModel: TicketDetailViewModel, reloadKey: Int = 0): Pair<List<CustomFieldDef>, JsonObject?> {
     var defs by remember { mutableStateOf<List<CustomFieldDef>>(emptyList()) }
     var values by remember(taskId) { mutableStateOf<JsonObject?>(null) }
     LaunchedEffect(taskId, reloadKey) {
@@ -961,7 +958,7 @@ private fun displayValue(field: CustomFieldDef, value: JsonElement?): String = w
 /** `CustomFieldsSummary` (view mode). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CustomFieldsSummary(taskId: Long, viewModel: TaskViewModel) {
+private fun CustomFieldsSummary(taskId: Long, viewModel: TicketDetailViewModel) {
     val colors = LocalWebColors.current
     val (defs, values) = rememberCustomFields(taskId, viewModel)
     val shown = defs.filter { !values?.get(it.id.toString()).isEmptyValue() }
@@ -978,9 +975,8 @@ private fun CustomFieldsSummary(taskId: Long, viewModel: TaskViewModel) {
 
 /** `CustomFieldsEditor` (edit mode): per-type inputs + "Save" when dirty. */
 @Composable
-private fun CustomFieldsEditor(task: Task, viewModel: TaskViewModel) {
+private fun CustomFieldsEditor(task: Task, viewModel: TicketDetailViewModel) {
     val colors = LocalWebColors.current
-    val scope = rememberCoroutineScope()
     val (defs, loaded) = rememberCustomFields(task.id, viewModel)
     val visible = defs.filter { f -> f.appliesToTypes.isNullOrEmpty() || task.workItemTypeId == null || task.workItemTypeId in f.appliesToTypes }
     if (visible.isEmpty()) return
@@ -1000,12 +996,10 @@ private fun CustomFieldsEditor(task: Task, viewModel: TaskViewModel) {
                         return@WebButton
                     }
                     saving = true
-                    scope.launch {
-                        val result = withContext(Dispatchers.IO) { runCatching { viewModel.repo.saveCustomFieldValues(task.id, values) } }
-                        result.onSuccess { fresh -> values = fresh; original = fresh; error = "" }
-                            .onFailure { error = it.message?.takeIf { m -> m != "Task action failed" } ?: "Failed to save custom fields" }
-                        saving = false
-                    }
+                    viewModel.saveCustomFieldValues(task.id, values,
+                        onDone = { fresh -> values = fresh; original = fresh; error = ""; saving = false },
+                        onError = { error = it; saving = false },
+                    )
                 }, style = BtnStyle.Primary, small = true, enabled = !saving, icon = HeroIcons.DocumentCheck)
             }
         }

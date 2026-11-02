@@ -155,8 +155,10 @@ class PagedBacklogTotalsTest {
 
     private fun write(ticket: Task) {
         val written = AtomicBoolean()
-        vm.updateFields(ticket, buildJsonObject { put("title", "Ship") }) { written.set(true) }
+        val detail = TicketDetailViewModel(ticket.id, TaskRepository(api), vm.ticketSession)
+        detail.updateFields(ticket, buildJsonObject { put("title", "Ship") }) { written.set(true) }
         await { written.get() }
+        androidx.lifecycle.ViewModelStore().apply { put("detail", detail); clear() }
     }
 
     @Test fun aNewlyLoadedBacklogTicketRaisesThePaginationTotal() {

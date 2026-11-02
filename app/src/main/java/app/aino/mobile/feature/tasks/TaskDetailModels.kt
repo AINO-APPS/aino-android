@@ -9,6 +9,22 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+/** Title/description editor; the other fields are edited inline. */
+data class TaskEditDraft(
+    val title: String,
+    val description: String,
+    val descriptionHtml: String,
+) {
+    companion object {
+        fun from(task: Task): TaskEditDraft =
+            TaskEditDraft(task.title, stripHtml(task.description), task.description.orEmpty())
+    }
+}
+
+enum class DetailTab(val label: String) {
+    Comments("Comments"), History("Activity"), Checklist("Checklist"), Links("Links"), Fields("Fields"),
+}
+
 /** `GET /tasks/:id/dependencies` row (`d.id AS link_id, d.type, t.*`). */
 @Serializable
 data class DependencyLink(
