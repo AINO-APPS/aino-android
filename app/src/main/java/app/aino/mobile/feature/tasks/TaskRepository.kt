@@ -29,6 +29,10 @@ class TaskRepository(
         teamScope: TeamScope = TeamScope(),
     ): TaskListResponse = decode(api.execute(ApiRequest(path = sprintTasksQuery(sprintId, filters, teamScope))))
 
+    // @api GET sprints/:id/board
+    fun loadSprintBoard(sprintId: Long): SprintBoardResponse =
+        decode(api.execute(ApiRequest(path = "sprints/$sprintId/board")))
+
     fun loadBacklog(
         filters: TaskFilters,
         limit: Int,
@@ -287,12 +291,13 @@ class TaskRepository(
     }
 
     /**
-     * The server returns `{ "error": "..." }` for every handled failure. Surface
-     * that text verbatim so policy messages (WIP limits, creator-only delete,
-     * cross-org assignment) reach the user instead of a generic string.
+     * Capability errors use their shared client copy; other server messages
+     * remain verbatim so validation and policy detail is not lost.
      */
     private fun serverMessage(error: ApiError.Http): String? = runCatching {
-        json.parseToJsonElement(error.responseBody).jsonObject["error"]?.jsonPrimitive?.content
+        val body = json.parseToJsonElement(error.responseBody).jsonObject
+        val code = body["code"]?.jsonPrimitive?.content
+        capabilityFailureCopy(code) ?: body["error"]?.jsonPrimitive?.content
     }.getOrNull()
 
     /**

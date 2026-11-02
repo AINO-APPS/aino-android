@@ -84,9 +84,10 @@ import kotlin.math.roundToInt
 internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
     val haptics = LocalHapticFeedback.current
-    // Cancelled is a terminal state, not a work-in-progress column: a cancelled
-    // ticket leaves the board rather than sitting in a fifth column.
-    val states = ui.agile.workflowStates.filter { it.key != "cancelled" }
+    val states = ui.sprintBoard?.columns.orEmpty().mapNotNull { column ->
+        ui.agile.workflowStates.firstOrNull { it.id == column.stateId && it.key != "cancelled" }
+            ?.let { it to column }
+    }
     var progressOpen by rememberSaveable { mutableStateOf(false) }
     var actionsFor by remember { mutableStateOf<Task?>(null) }
 
@@ -137,15 +138,18 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                     // full empty state per column (four of them stacked ~800dp of
                     // illustrations and repeated "Nothing in …" copy).
                     val empty = boardEmptyState(hasTasks = ui.tasks.isNotEmpty(), filterCount = ui.filterCount)
-                    states.forEach { state ->
+                    states.forEach { (state, boardColumn) ->
                         val columnTasks = tasksForColumn(ui.tasks, state)
                         item(key = "col-${state.key}") {
                             ColumnHeader(
                                 state = state,
-                                count = columnTasks.size,
-                                wip = state.wipLimit?.takeIf { ui.agile.features.wipLimits && it > 0 },
+                                count = boardColumn.count,
+                                wip = boardColumn.limit,
+                                accepting = boardColumn.accepting,
                                 dropTarget = dragging != null,
                                 hovered = hoverKey == state.key,
+                                dropAllowed = dragging?.dropTargetDecision(state.id, boardColumn.accepting)?.allowed,
+                                dropReason = dragging?.dropTargetDecision(state.id, boardColumn.accepting)?.reasonCopy(),
                                 modifier = Modifier.onGloballyPositioned { headerBounds[state.key] = it.boundsInRoot() },
                                 onAdd = { viewModel.openCreateForColumn(state) },
                             )
@@ -172,7 +176,9 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                 var cardOrigin by remember { mutableStateOf(Offset.Zero) }
                                 // pointerInput keeps its first lambdas; read the latest row (realtime may have patched it).
                                 val currentTask by rememberUpdatedState(task)
-                                val canMove = canChangeStatus(task, ui.userId, ui.role, ui.teamId)
+                                val canMove = states.any { (target, column) ->
+                                    target.id != task.workflowStateId && task.dropTargetDecision(target.id, column.accepting).allowed
+                                }
                                 Box(
                                     Modifier
                                         .padding(horizontal = 16.dp, vertical = 5.dp)
@@ -199,15 +205,22 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                                     val moved = dragging?.let { d -> viewModel.ui.value.tasks.firstOrNull { it.id == d.id } ?: d }
                                                     dragging = null
                                                     if (moved != null && target != null) {
-                                                        states.firstOrNull { it.key == target }?.let { haptics.performHapticFeedback(HapticFeedbackType.LongPress); viewModel.moveTask(moved, it) }
+                                                        states.firstOrNull { it.first.key == target }?.let { (state, column) ->
+                                                            if (moved.dropTargetDecision(state.id, column.accepting).allowed) {
+                                                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                viewModel.moveTask(moved, state)
+                                                            }
+                                                        }
                                                     }
                                                 },
                                                 onDragCancel = { dragging = null },
                                             )
                                         }
                                         .semantics {
-                                            if (canMove) customActions = states.filter { it.key != task.workflowStateKey }.map { s ->
-                                                CustomAccessibilityAction("Move to ${stateLabel(s)}") { viewModel.moveTask(task, s); true }
+                                            if (canMove) customActions = states.filter { (state, column) ->
+                                                state.key != task.workflowStateKey && task.dropTargetDecision(state.id, column.accepting).allowed
+                                            }.map { (state, _) ->
+                                                CustomAccessibilityAction("Move to ${stateLabel(state)}") { viewModel.moveTask(task, state); true }
                                             }
                                         },
                                 ) {
@@ -292,64 +305,76 @@ internal fun ColumnHeader(
     state: WorkflowState,
     count: Int,
     wip: Int?,
+    accepting: Boolean,
     dropTarget: Boolean,
     hovered: Boolean,
+    dropAllowed: Boolean? = null,
+    dropReason: String? = null,
     modifier: Modifier = Modifier,
     /** Creates a ticket in this column's state; hidden when null. */
     onAdd: (() -> Unit)? = null,
 ) {
     val colors = LocalWebColors.current
     val tint = hexColor(state.color, colors.textMuted)
-    val exceeded = wip != null && count > wip
+    val full = wip != null && !accepting
     val bg by animateColorAsState(
         when {
+            hovered && dropAllowed == false -> colors.danger.copy(alpha = 0.16f)
             hovered -> tint.copy(alpha = 0.22f)
             dropTarget -> colors.surfaceHover
             else -> colors.surface
         },
         label = "columnHeaderBg",
     )
-    Row(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(top = 14.dp, bottom = 4.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(bg)
-            .border(
-                if (hovered) 1.5.dp else 1.dp,
-                if (exceeded) colors.danger else if (hovered) tint else colors.border,
-                RoundedCornerShape(10.dp),
+    Column(modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(top = 14.dp, bottom = 4.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(bg)
+                .border(
+                    if (hovered) 1.5.dp else 1.dp,
+                    if (full || (hovered && dropAllowed == false)) colors.danger else if (hovered) tint else colors.border,
+                    RoundedCornerShape(10.dp),
+                )
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(9.dp).background(tint, CircleShape))
+            Spacer(Modifier.width(9.dp))
+            Text(
+                stateLabel(state),
+                color = colors.text,
+                fontSize = 0.82.rem,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
             )
-            .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(9.dp).background(tint, CircleShape))
-        Spacer(Modifier.width(9.dp))
-        Text(
-            stateLabel(state),
-            color = colors.text,
-            fontSize = 0.82.rem,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            if (wip != null) "$count/$wip" else "$count",
-            color = if (exceeded) colors.danger else colors.textMuted,
-            fontSize = 0.76.rem,
-            fontWeight = FontWeight.Bold,
-        )
-        if (onAdd != null) {
-            // Jira's column "+": the ticket is created in this sprint, already
-            // in this column's state — never in the backlog.
-            Box(
-                Modifier
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .clickable(onClickLabel = "Add a ticket to ${stateLabel(state)}", onClick = onAdd),
-                contentAlignment = Alignment.Center,
-            ) { Icon(HeroIcons.Plus, "Add a ticket to ${stateLabel(state)}", Modifier.size(16.dp), tint = colors.textMuted) }
+            Text(
+                if (wip != null) "$count/$wip" else "$count",
+                color = if (full) colors.danger else colors.textMuted,
+                fontSize = 0.76.rem,
+                fontWeight = FontWeight.Bold,
+            )
+            if (onAdd != null) {
+                Box(
+                    Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .clickable(onClickLabel = "Add a ticket to ${stateLabel(state)}", onClick = onAdd),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(HeroIcons.Plus, "Add a ticket to ${stateLabel(state)}", Modifier.size(16.dp), tint = colors.textMuted) }
+            }
+        }
+        if (hovered && dropAllowed == false && dropReason != null) {
+            Text(
+                dropReason,
+                color = colors.danger,
+                fontSize = 0.72.rem,
+                modifier = Modifier.padding(start = 32.dp, end = 16.dp, bottom = 4.dp),
+            )
         }
     }
 }
@@ -625,23 +650,30 @@ internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewMo
     val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
     TaskSheetScaffold(task.displayKey, onDismiss) {
         Text(task.title, color = colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp))
-        if (task.sprintId != null && canChangeStatus(task, ui.userId, ui.role, ui.teamId)) {
+        if (task.sprintId != null) {
             SectionTitle("Move to", Modifier.padding(bottom = 6.dp))
             ui.agile.workflowStates.forEach { state ->
                 val current = task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)
+                val accepting = ui.sprintBoard?.columns?.firstOrNull { it.stateId == state.id }?.accepting ?: false
+                val decision = task.dropTargetDecision(state.id, accepting)
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (current) colors.primary.copy(alpha = 0.08f) else androidx.compose.ui.graphics.Color.Transparent)
-                        .clickable(enabled = !current) { haptics.confirm(); onDismiss(); viewModel.moveTask(task, state) }
+                        .clickable(enabled = !current && decision.allowed) { haptics.confirm(); onDismiss(); viewModel.moveTask(task, state) }
                         .padding(horizontal = 10.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.size(10.dp).background(hexColor(state.color, colors.textMuted), CircleShape))
                     Spacer(Modifier.width(12.dp))
-                    Text(stateLabel(state), color = if (current) colors.textMuted else colors.text, fontSize = 0.92.rem, modifier = Modifier.weight(1f))
-                    if (current) Text("Current", color = colors.textMuted, fontSize = 0.74.rem)
+                    Column(Modifier.weight(1f)) {
+                        Text(stateLabel(state), color = if (current || !decision.allowed) colors.textMuted else colors.text, fontSize = 0.92.rem)
+                        when {
+                            current -> Text("Current", color = colors.textMuted, fontSize = 0.74.rem)
+                            !decision.allowed -> Text(decision.reasonCopy(), color = colors.textMuted, fontSize = 0.74.rem)
+                        }
+                    }
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -652,22 +684,31 @@ internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewMo
             clipboard.setText(androidx.compose.ui.text.AnnotatedString(task.displayKey))
             onDismiss()
         }
-        if (ui.userId != null && ui.userId == task.userId) {
-            ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true) { onDismiss(); viewModel.requestDelete(task) }
-        }
+        val canCancel = task.capability(TaskCapability.Cancel)
+        ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { onDismiss(); viewModel.requestDelete(task) }
     }
 }
 
 @Composable
-internal fun ActionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, danger: Boolean = false, onClick: () -> Unit) {
+internal fun ActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    danger: Boolean = false,
+    enabled: Boolean = true,
+    reason: String? = null,
+    onClick: () -> Unit,
+) {
     val colors = LocalWebColors.current
-    val tint = if (danger) colors.danger else colors.text
+    val tint = if (!enabled) colors.textMuted else if (danger) colors.danger else colors.text
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 13.dp),
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(enabled = enabled, onClick = onClick).padding(horizontal = 10.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(icon, null, Modifier.size(19.dp), tint = if (danger) colors.danger else colors.textSecondary)
         Spacer(Modifier.width(14.dp))
-        Text(text, color = tint, fontSize = 0.92.rem)
+        Column {
+            Text(text, color = tint, fontSize = 0.92.rem)
+            if (!enabled) Text(reason ?: capabilityReasonCopy(null), color = colors.textMuted, fontSize = 0.72.rem)
+        }
     }
 }

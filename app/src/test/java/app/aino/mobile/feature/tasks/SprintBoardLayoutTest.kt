@@ -43,6 +43,7 @@ class SprintBoardLayoutTest {
                             state = state,
                             count = 0,
                             wip = null,
+                            accepting = true,
                             dropTarget = false,
                             hovered = false,
                         )

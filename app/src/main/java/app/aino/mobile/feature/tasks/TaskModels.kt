@@ -358,32 +358,10 @@ data class AgileConfig(
     val unitLabel: String = "SP",
     val features: AgileFeatures = AgileFeatures(),
     val canEdit: Boolean = false,
-    /** Allowed transitions. Empty means the workflow is unrestricted. */
+    /** Retained as config data only; transition decisions come from each ticket's capabilities. */
     val transitions: List<WorkflowTransition> = emptyList(),
 ) {
     fun type(id: Long?): WorkItemType? = id?.let { wanted -> workItemTypes.firstOrNull { it.id == wanted && it.id != 0L } }
-
-    /**
-     * May this ticket move to [toStateId]?
-     *
-     * Falls back to "allowed" when the tenant has no transition rows, so a
-     * tenant on the default workflow is never blocked by a missing config, and
-     * an older server that omits the field degrades to today's behaviour.
-     */
-    fun canTransition(fromStateId: Long?, toStateId: Long?): Boolean {
-        if (transitions.isEmpty()) return true
-        if (fromStateId == null || toStateId == null) return true
-        if (fromStateId == toStateId) return true
-        return transitions.any { it.fromStateId == fromStateId && it.toStateId == toStateId }
-    }
-
-    /** The states this ticket may be moved to, in configured order.
-         *
-         * States that carry no id (the `id: 0` fallback set, used before
-         * `/agile/config` resolves) cannot be matched against the graph at all, so
-         * they are always offered rather than silently dropped. */
-        fun legalTargets(fromStateId: Long?): List<WorkflowState> =
-            workflowStates.filter { it.id == 0L || canTransition(fromStateId, it.id) }
 
     companion object {
         fun from(response: AgileConfigResponse): AgileConfig {

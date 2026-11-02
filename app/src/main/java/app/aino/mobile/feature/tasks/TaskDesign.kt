@@ -620,6 +620,7 @@ data class SelectOption<K>(
     val subtitle: String? = null,
     val color: Color? = null,
     val avatar: Pair<String, String?>? = null,
+    val enabled: Boolean = true,
 )
 
 /**
@@ -657,7 +658,7 @@ internal fun <K> SelectSheet(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (on && !multi) colors.primary.copy(alpha = 0.10f) else Color.Transparent)
-                        .clickable(role = if (multi) Role.Checkbox else Role.RadioButton) {
+                        .clickable(enabled = option.enabled, role = if (multi) Role.Checkbox else Role.RadioButton) {
                             if (multi) picked = if (on) picked - option.key else picked + option.key
                             else { onSelect(setOf(option.key)); onDismiss() }
                         }
@@ -670,8 +671,8 @@ internal fun <K> SelectSheet(
                     }
                     if (option.avatar != null || option.color != null) Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(option.label, color = colors.text, fontSize = 0.92.rem, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        option.subtitle?.let { Text(it, color = colors.textMuted, fontSize = 0.74.rem, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        Text(option.label, color = if (option.enabled) colors.text else colors.textMuted, fontSize = 0.92.rem, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        option.subtitle?.let { Text(it, color = colors.textMuted, fontSize = 0.74.rem, maxLines = 2, overflow = TextOverflow.Ellipsis) }
                     }
                     if (multi) {
                         Checkbox(checked = on, onCheckedChange = null, colors = CheckboxDefaults.colors(checkedColor = colors.primary, uncheckedColor = colors.textMuted))
@@ -742,6 +743,7 @@ internal fun PropertyRow(
     label: String,
     onClick: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    reason: String? = null,
     value: @Composable () -> Unit,
 ) {
     val colors = LocalWebColors.current
@@ -757,7 +759,10 @@ internal fun PropertyRow(
         Icon(icon, null, Modifier.size(18.dp), tint = colors.textMuted)
         Spacer(Modifier.width(12.dp))
         Text(label, color = colors.textSecondary, fontSize = 0.84.rem, modifier = Modifier.width(96.dp), maxLines = 1)
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) { value() }
+        Column(Modifier.weight(1f)) {
+            Box(contentAlignment = Alignment.CenterStart) { value() }
+            reason?.let { Text(it, color = colors.textMuted, fontSize = 0.68.rem, maxLines = 2) }
+        }
         if (onClick != null) Icon(HeroIcons.ChevronRight, null, Modifier.size(16.dp), tint = colors.textMuted.copy(alpha = 0.6f))
     }
 }
