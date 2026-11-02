@@ -77,7 +77,6 @@ class MainActivity : FragmentActivity() {
     private val realtimeViewModel by viewModels<RealtimeViewModel> { RealtimeViewModel.factory(applicationContext) }
     private val dashboardViewModel by viewModels<DashboardViewModel> { DashboardViewModel.factory(applicationContext) }
     private val attendanceViewModel by viewModels<AttendanceViewModel> { AttendanceViewModel.factory(applicationContext) }
-    private val taskViewModel by viewModels<TaskViewModel> { TaskViewModel.factory(applicationContext) }
     private val profileViewModel by viewModels<ProfileViewModel> { ProfileViewModel.factory(applicationContext) }
     private val chatViewModel by viewModels<ChatViewModel> { ChatViewModel.factory(applicationContext) }
     private val incomingCallViewModel by viewModels<IncomingCallViewModel> { IncomingCallViewModel.factory(applicationContext) }
@@ -117,6 +116,11 @@ class MainActivity : FragmentActivity() {
         // A ring left behind by a process that died is cleared once it expired.
         app.aino.mobile.core.call.CallReconciler.clearStaleRing(applicationContext)
         setContent {
+            val ticketSession by app.aino.mobile.core.AppContainer.get(applicationContext).ticketSession.collectAsState()
+            val taskViewModel = androidx.lifecycle.viewmodel.compose.viewModel<TaskViewModel>(
+                key = "tasks-${ticketSession.key}",
+                factory = TaskViewModel.factory(applicationContext, ticketSession),
+            )
             val themeStore = ThemePreferenceStore(applicationContext)
             val isDark by themeStore.isDark.collectAsState(initial = true)
             val themeScope = rememberCoroutineScope()
