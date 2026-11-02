@@ -73,13 +73,13 @@ class SprintBoardWiringTest {
             selectedSprintId = sprint.id,
             tab = TaskTab.Sprint,
             sprintLoading = false,
-            tasks = tasks,
-            sprintBoard = SprintBoardResponse(
+            tickets = tasks.associateBy { it.id },
+            boardTicketIds = tasks.map { it.id },
+            board = SprintBoardResponse(
                 sprint = sprint,
                 columns = states.map { state ->
                     SprintBoardColumn(state.id, tasksForColumn(tasks, state).size, state.wipLimit, accepting = true)
                 },
-                tickets = tasks,
             ),
             agile = AgileConfig(
                 workflowStates = states,
@@ -121,7 +121,7 @@ class SprintBoardWiringTest {
         show(
             state(
                 tasks = listOf(
-                    Task(id = 7, title = "Ship it", workflowStateKey = "pending", workflowStateId = 1, sprintId = 12),
+                    Task(id = 7, title = "Ship it", workflowStateKey = "pending", workflowStateId = 1, sprintId = 12, container = "sprint"),
                 ),
             ),
         )
@@ -145,7 +145,10 @@ class SprintBoardWiringTest {
             requireNotNull(javaClass.classLoader?.getResource("contracts/sprint-board.json")).readText(),
         )
         val ui = state(tasks = emptyList()).copy(
-            sprintBoard = board,
+            board = board.copy(tickets = emptyList()),
+            tickets = board.tickets.associateBy { it.id },
+            boardTicketIds = board.tickets.map { it.id },
+            selectedSprintId = board.sprint.id,
             filters = TaskFilters(status = "done"),
             agile = AgileConfig(
                 workflowStates = listOf(
@@ -169,7 +172,7 @@ class SprintBoardWiringTest {
             WorkflowState(id = 102, key = "in_progress", name = "In Progress"),
             WorkflowState(id = 103, key = "cancelled", name = "Cancelled"),
         )
-        return state(board.tickets).copy(sprintBoard = board, agile = AgileConfig(workflowStates = states))
+        return state(board.tickets).copy(board = board.copy(tickets = emptyList()), selectedSprintId = board.sprint.id, agile = AgileConfig(workflowStates = states))
     }
 
     @Test

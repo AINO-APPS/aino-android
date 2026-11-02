@@ -62,6 +62,14 @@ use that same complete snapshot, never a locally filtered server page. Refresh
 keeps the prior snapshot if any page fails. This trades extra initial requests
 for correct combined-filter totals without changing server contracts.
 
+Board, Plan (Backlog and Completed), and open Detail resolve ordered Ticket ids
+against one network-free `TicketSession` store. Full enriched repository responses
+replace whole Tickets, so a change is visible across these views without reopening
+Detail. Detail comment threads remain separate from stored Tickets. The existing
+Tasks ViewModel owns its default session, or accepts a shared session from its
+caller; it closes only a session it owns. App-shell lifetime wiring and the other
+Plan surfaces remain separate migration steps.
+
 ## Push registration (Signal `FcmRefreshJob` parity)
 
 - The FCM token is registered per **session** (tenant, user, JWT `sid`): every
