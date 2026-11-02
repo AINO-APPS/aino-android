@@ -114,10 +114,12 @@ internal class TicketStore(
     private val highlights = mutableMapOf<Long, Job>()
     // Serialize snapshot writes so identity-checked restores cannot race with upserts.
     private val ticketLock = Any()
+    private val removedIds = mutableSetOf<Long>()
 
     fun upsert(ticket: Task): Task {
         val stored = withoutComments(ticket)
         synchronized(ticketLock) {
+            if (stored.id in removedIds) return stored
             mutable.update { snapshot ->
                 snapshot.copy(tickets = snapshot.tickets + (stored.id to stored), ticketRevision = snapshot.ticketRevision + 1)
             }
@@ -128,14 +130,29 @@ internal class TicketStore(
     fun upsert(tickets: List<Task>) {
         val stored = tickets.associate { ticket -> ticket.id to withoutComments(ticket) }
         synchronized(ticketLock) {
+            val accepted = stored.filterKeys { it !in removedIds }
+            if (accepted.isEmpty()) return
             mutable.update { snapshot ->
-                snapshot.copy(tickets = snapshot.tickets + stored, ticketRevision = snapshot.ticketRevision + 1)
+                snapshot.copy(tickets = snapshot.tickets + accepted, ticketRevision = snapshot.ticketRevision + 1)
             }
         }
     }
 
-    fun remove(id: Long) {
+    fun update(id: Long, transform: (Task) -> Task) {
         synchronized(ticketLock) {
+            val snapshot = mutable.value
+            val current = snapshot.tickets[id] ?: return
+            val updated = withoutComments(transform(current))
+            mutable.value = snapshot.copy(
+                tickets = snapshot.tickets + (id to updated),
+                ticketRevision = snapshot.ticketRevision + 1,
+            )
+        }
+    }
+
+    fun remove(id: Long, preventReinsert: Boolean = false) {
+        synchronized(ticketLock) {
+            if (preventReinsert) removedIds += id
             mutable.update { it.copy(tickets = it.tickets - id, recentlyChanged = it.recentlyChanged - id) }
         }
     }
@@ -166,6 +183,7 @@ internal class TicketStore(
 
     fun clear() {
         synchronized(ticketLock) {
+            removedIds.clear()
             mutable.value = TicketSnapshot()
         }
     }

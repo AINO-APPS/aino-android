@@ -344,6 +344,9 @@ class TaskViewModel(
                     val searchableIds = current.searchResultIds.filter { id ->
                         snapshot.tickets[id]?.workflowStateKey?.let { it != "cancelled" } == true
                     }
+                    val commentThreads = current.commentThreads.filterKeys { id ->
+                        snapshot.tickets[id]?.let { it.workflowStateKey != "cancelled" } == true
+                    }
                     current.copy(
                         tickets = snapshot.tickets,
                         recentlyUpdated = snapshot.recentlyChanged,
@@ -357,11 +360,11 @@ class TaskViewModel(
                             ).distinct(),
                         scheduledTicketIds = (scheduledIds + newlyScheduledIds).distinct(),
                         searchResultIds = searchableIds,
-                        detailComments = if (detailUnavailable) emptyList() else current.detailComments,
+                        commentThreads = commentThreads,
                         history = if (detailUnavailable) emptyList() else current.history,
                         detailStale = current.detailStale && !detailUnavailable,
-                        inlineComments = current.inlineComments?.takeIf { thread ->
-                            snapshot.tickets[thread.taskId]?.workflowStateKey?.let { it != "cancelled" } == true
+                        inlineCommentTaskId = current.inlineCommentTaskId?.takeIf { id ->
+                            snapshot.tickets[id]?.let { it.workflowStateKey != "cancelled" } == true
                         },
                     ).projectPlan()
                         .let { state -> state.copy(stats = recomputeStats(state.tasks)) }
@@ -370,7 +373,13 @@ class TaskViewModel(
         }
         ticketScope.launch {
             this@TaskViewModel.ticketSession.commentThreads.collect { threads ->
-                _ui.update { it.copy(commentThreads = threads) }
+                _ui.update { state ->
+                    state.copy(
+                        commentThreads = threads.filterKeys { id ->
+                            state.tickets[id]?.let { it.workflowStateKey != "cancelled" } == true
+                        },
+                    )
+                }
             }
         }
     }
@@ -702,7 +711,10 @@ class TaskViewModel(
             }
         }
         if (needsReload) reloadTab()
-        if (_ui.value.tab == TaskTab.Sprint) loadSprint()
+        val refreshSprint = byTask.values.none { actions ->
+            TaskAction.Deleted in actions || TaskAction.Comment in actions
+        }
+        if (_ui.value.tab == TaskTab.Sprint && refreshSprint) loadSprint()
     }
 
     /** Fetches one task and patches every view of it. `false` = the fetch failed (caller reloads). */
@@ -737,13 +749,13 @@ class TaskViewModel(
         if (!watching) {
             // Only the count is visible on cards; one fetch keeps it right.
             val count = runCatching { repository.loadComments(id).size }.getOrNull() ?: return
-            _ui.value.tickets[id]?.let { ticketSession.store.upsert(it.copy(commentCount = count)) }
+            ticketSession.store.update(id) { it.copy(commentCount = count) }
             flash(id)
             return
         }
         val items = runCatching { repository.loadComments(id) }.getOrNull() ?: return
         ticketSession.setCommentThread(CommentThread(id, items, loading = false))
-        _ui.value.tickets[id]?.let { ticketSession.store.upsert(it.copy(commentCount = items.size)) }
+        ticketSession.store.update(id) { it.copy(commentCount = items.size) }
         if (_ui.value.detail?.id == id) refreshHistory(id)
         flash(id)
     }
@@ -759,7 +771,7 @@ class TaskViewModel(
     private fun removeTask(id: Long, remote: Boolean) {
         planRevision.incrementAndGet()
         val wasOpen = _ui.value.detail?.id == id
-        ticketSession.store.remove(id)
+        ticketSession.store.remove(id, preventReinsert = remote)
         _ui.update { s ->
             s.copy(
                 scheduledTicketIds = s.scheduledTicketIds.filterNot { it == id },
@@ -1577,8 +1589,8 @@ class TaskViewModel(
     fun closeComments() = _ui.update { it.copy(inlineCommentTaskId = null) }
 
     private fun bumpCommentCount(taskId: Long, delta: Int) {
-        _ui.value.tickets[taskId]?.let {
-            ticketSession.store.upsert(it.copy(commentCount = maxOf(0, it.commentCount + delta)))
+        ticketSession.store.update(taskId) {
+            it.copy(commentCount = maxOf(0, it.commentCount + delta))
         }
     }
 

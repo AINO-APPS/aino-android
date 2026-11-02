@@ -192,6 +192,7 @@ class TicketSessionUiTest {
     fun aCancelledTicketLeavesEveryLoadedViewIncludingDetailAndInlineComments() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
+        harness.viewModel.loadScheduled()
         harness.await { harness.viewModel.ui.value.scheduledLoaded }
         harness.searchRows = harness.original
         harness.viewModel.setSearch("Ship")
@@ -261,6 +262,7 @@ class TicketSessionUiTest {
     fun aCancelledScheduledTicketLeavesScheduledAndSearchResults() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
+        harness.viewModel.loadScheduled()
         harness.await { harness.viewModel.ui.value.scheduledLoaded }
         val plannedDay = LocalDate.now().plusDays(1).toString()
         val scheduled = harness.original
@@ -294,6 +296,7 @@ class TicketSessionUiTest {
     fun removingATicketFromTheSharedStoreRemovesItFromEveryLoadedView() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
+        harness.viewModel.loadScheduled()
         harness.await { harness.viewModel.ui.value.scheduledLoaded }
         val plannedDay = LocalDate.now().plusDays(1).toString()
         val scheduled = harness.original
@@ -308,17 +311,25 @@ class TicketSessionUiTest {
         harness.viewModel.openComments(201)
         harness.await { harness.viewModel.ui.value.inlineComments?.loading == false }
 
-        harness.session.store.remove(201)
+        harness.viewModel.onTaskEvent("task_updated", buildJsonObject {
+            put("taskId", 201)
+            put("action", "deleted")
+        })
         harness.await {
             harness.viewModel.ui.value.tasks.isEmpty() &&
                 harness.viewModel.ui.value.backlog.none { it.id == 201L } &&
                 harness.viewModel.ui.value.scheduled.isEmpty() &&
                 harness.viewModel.ui.value.searchResults.isEmpty() &&
                 harness.viewModel.ui.value.detail == null &&
-                harness.viewModel.ui.value.inlineComments == null
+                harness.viewModel.ui.value.inlineComments == null &&
+                harness.session.store.state.value.tickets[201L] == null
         }
 
+        harness.viewModel.loadSprint()
+        harness.await { !harness.viewModel.ui.value.sprintLoading }
+
         assertTrue(harness.session.store.state.value.tickets[201L] == null)
+        assertTrue(harness.viewModel.ui.value.tasks.isEmpty())
     }
 
     @Test
@@ -406,6 +417,7 @@ class TicketSessionUiTest {
             .replace("\"container\":\"sprint\"", "\"container\":\"scheduled\",\"planned_date\":\"$plannedDay\"")
         val outsideWindow = LocalDate.now().plusDays(90).toString()
         harness.loadBoardPlanAndDetail()
+        harness.viewModel.loadScheduled()
         harness.await { harness.viewModel.ui.value.scheduledLoaded && harness.viewModel.ui.value.scheduled.isEmpty() }
 
         harness.saved = scheduled
@@ -577,6 +589,7 @@ internal class TicketSessionHarness {
     @Volatile var writes = 0
     @Volatile var detailReads = 0
     @Volatile var planReads = 0
+    @Volatile var commentReads = 0
     @Volatile var commentWrites = 0
     @Volatile var commentsResponse = "[]"
     @Volatile var planRows = ""
@@ -610,7 +623,10 @@ internal class TicketSessionHarness {
                 if (rejectDetailReads) throw java.io.IOException("offline")
                 detailResponse
             }
-            request.path == "tasks/201/comments" && request.method == "GET" -> commentsResponse
+            request.path == "tasks/201/comments" && request.method == "GET" -> {
+                commentReads++
+                commentsResponse
+            }
             request.path == "tasks/201/comments" && request.method == "POST" -> {
                 commentWrites++
                 """{"id":$commentWrites,"content":"${if (commentWrites == 1) "From inline" else "From detail"}","user_id":1}"""
@@ -679,6 +695,14 @@ internal class TicketSessionHarness {
     fun await(condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000
         while (!condition() && System.currentTimeMillis() < deadline) Thread.sleep(10)
-        assertTrue("Timed out waiting for UI state", condition())
+        val state = viewModel.ui.value
+        assertTrue(
+            "Timed out waiting for UI state: user=${state.userId}, tickets=${state.tickets.mapValues { it.value.workflowStateKey to it.value.plannedDate }}, " +
+                "board=${state.boardTicketIds}, plan=${state.planTicketIds}, scheduled=${state.scheduledTicketIds}, " +
+                "search=${state.searchResultIds}, inline=${state.inlineCommentTaskId}, threads=${state.commentThreads.mapValues { it.value.items.size }}, " +
+                "counts=${state.tickets.mapValues { it.value.commentCount }}, store=${session.store.state.value.tickets.mapValues { it.value.commentCount }}, " +
+                "detail=${detailViewModel.ui.value.detail?.id}, commentReads=$commentReads, writes=$writes",
+            condition(),
+        )
     }
 }
