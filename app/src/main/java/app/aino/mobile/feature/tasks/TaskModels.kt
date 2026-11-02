@@ -46,6 +46,36 @@ data class TaskSprint(
 )
 
 @Serializable
+data class TaskTransition(
+    val to: Long,
+    val allowed: Boolean = false,
+    val reason: String? = null,
+)
+
+@Serializable
+data class TaskCapabilityDecision(
+    val allowed: Boolean = false,
+    val reason: String? = null,
+)
+
+@Serializable
+data class TaskCapabilityActions(
+    val edit: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val changeState: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val cancel: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val transfer: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val delete: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val placeInSprint: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val schedule: TaskCapabilityDecision = TaskCapabilityDecision(),
+)
+
+@Serializable
+data class TaskCapabilities(
+    val transitions: List<TaskTransition> = emptyList(),
+    val can: TaskCapabilityActions = TaskCapabilityActions(),
+)
+
+@Serializable
 data class Task(
     val id: Long,
     val title: String,
@@ -63,6 +93,8 @@ data class Task(
     @SerialName("comment_count") val commentCount: Int = 0,
     @SerialName("issue_key") val issueKey: String? = null,
     @SerialName("sprint_id") val sprintId: Long? = null,
+    val container: String? = null,
+    val capabilities: TaskCapabilities? = null,
     @SerialName("team_id") val teamId: Long? = null,
     /** LexoRank string, unique per team. Server-computed from before/after ids. */
     val rank: String? = null,
@@ -90,19 +122,6 @@ data class Task(
 ) {
     /** `issue_key || "#id"` (TaskCard / BacklogTab). */
     val displayKey: String get() = issueKey ?: "#$id"
-
-    /**
-     * Backlog membership: not in a sprint and not planned onto a day
-     * (`t.sprint_id IS NULL AND t.planned_date IS NULL`, ADR-015).
-     *
-     * A due date is a deadline, not a container, so it never removes a ticket
-     * from the backlog — a ticket created from the Backlog with a due date
-     * stays there.
-     */
-    val isBacklogItem: Boolean get() = sprintId == null && plannedDate == null
-
-    /** True when the task has a planner day, which is what "Move to Backlog" clears. */
-    val isScheduled: Boolean get() = plannedDate != null
 
     /** The single definition of complete: the server derives `completed_at` (D5). */
     val isCompleted: Boolean get() = completedAt != null
@@ -213,7 +232,25 @@ data class AvailableSprint(
 }
 
 @Serializable
-data class SprintListResponse(val sprints: List<AvailableSprint> = emptyList())
+data class SprintListResponse(
+    val sprints: List<AvailableSprint> = emptyList(),
+    val currentSprintId: Long? = null,
+)
+
+@Serializable
+data class SprintBoardColumn(
+    val stateId: Long,
+    val count: Int,
+    val limit: Int? = null,
+    val accepting: Boolean,
+)
+
+@Serializable
+data class SprintBoardResponse(
+    val sprint: AvailableSprint,
+    val columns: List<SprintBoardColumn> = emptyList(),
+    val tickets: List<Task> = emptyList(),
+)
 
 @Serializable
 data class SprintEnvelope(val sprint: AvailableSprint? = null)

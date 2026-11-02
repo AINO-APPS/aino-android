@@ -48,7 +48,7 @@ class TaskRepositoryTest {
         assertEquals(listOf("Builds", "Ships"), task.acceptanceCriteria.map { it.text })
         assertTrue(task.acceptanceCriteria.first().done)
         assertEquals("lead", task.creator?.display())
-        assertFalse(task.isBacklogItem)
+        assertNull(task.container)
         assertEquals(1, result.stats.inProgress)
     }
 
@@ -57,7 +57,7 @@ class TaskRepositoryTest {
         val repository = TaskRepository(client(mutableListOf()) { """{"tasks":[{"id":1,"title":"x"}]}""" })
         val result = repository.loadBacklog(TaskFilters(), 25, 0)
         assertNull(result.pagination)
-        assertTrue(result.tasks.single().isBacklogItem)
+        assertNull(result.tasks.single().container)
     }
 
     @Test
@@ -87,14 +87,29 @@ class TaskRepositoryTest {
                     "tasks/available-sprints" -> """[{"id":2,"name":"S2","start_date":"2026-09-20","end_date":"2026-10-01","status":"active","goal":null,"team_id":1,"team_name":"Core"}]"""
                     "sprints/2/stats" -> """{"sprint":{"id":2},"totals":{"tasks":4,"points":"13","doneTasks":1,"donePoints":5,"remainingPoints":8,"unestimatedTasks":1,"blockedTasks":0,"percentByPoints":38,"percentByTasks":25},"byState":[]}"""
                     "projects" -> """[{"id":1,"key":"WEB","name":"Web","color":null,"task_count":3,"lead_name":"x"}]"""
-                    else -> """{"sprints":[{"id":3,"name":"S3","status":"planned","velocity_points":"21.00"}]}"""
+                    else -> """{"sprints":[{"id":3,"name":"S3","status":"planned","velocity_points":"21.00"}],"currentSprintId":3}"""
                 }
             },
         )
         assertEquals("Core", repository.loadAvailableSprints().single().teamName)
         assertEquals(13.0, repository.loadSprintStats(2).totals.points, 0.0)
         assertEquals("WEB", repository.loadProjects().single().key)
-        assertEquals(21.0, repository.loadTeamSprints().single().velocityPoints!!, 0.0)
+        assertEquals(21.0, repository.loadTeamSprints().sprints.single().velocityPoints!!, 0.0)
+        assertEquals(3L, repository.loadTeamSprints().currentSprintId)
+    }
+
+    @Test
+    fun requestsTheSelectedTeamsCurrentSprintForTheTeamPicker() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = TaskRepository(
+            client(captured) { """{"sprints":[{"id":31,"name":"Paused","status":"paused","team_id":7}],"currentSprintId":31}""" },
+        )
+
+        val sprintList = repository.loadTeamSprints(teamId = 7)
+
+        assertEquals("sprints?team_id=7", captured.single().path)
+        assertEquals(31L, sprintList.currentSprintId)
+        assertEquals("paused", sprintList.sprints.single().status)
     }
 
     @Test

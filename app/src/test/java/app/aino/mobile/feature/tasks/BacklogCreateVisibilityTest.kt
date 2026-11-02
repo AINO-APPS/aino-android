@@ -108,7 +108,7 @@ class BacklogCreateVisibilityTest {
                 backlog && visible
             }
             val body = rows.joinToString(",", """{"tasks":[""", """],"pagination":{"total":${rows.size},"hasMore":false}}""") { r ->
-                """{"id":${r.id},"title":"${r.title}","user_id":${r.createdBy},"team_id":${r.teamId ?: "null"},"sprint_id":${r.sprintId ?: "null"}}"""
+                """{"id":${r.id},"title":"${r.title}","user_id":${r.createdBy},"team_id":${r.teamId ?: "null"},"sprint_id":${r.sprintId ?: "null"},"container":"backlog"}"""
             }
             return json(body)
         }
@@ -138,7 +138,7 @@ class BacklogCreateVisibilityTest {
             )
             tasks += row
             return json(
-                """{"id":${row.id},"title":"${row.title}","user_id":${row.createdBy},"team_id":${row.teamId ?: "null"},"sprint_id":null,"priority":"medium"}""",
+                """{"id":${row.id},"title":"${row.title}","user_id":${row.createdBy},"team_id":${row.teamId ?: "null"},"sprint_id":null,"priority":"medium","container":"backlog"}""",
             )
         }
     }

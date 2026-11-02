@@ -144,8 +144,8 @@ fun TaskDetailScreen(viewModel: TaskViewModel, onClose: () -> Unit) {
                                 if (ui.agile.features.blockers) {
                                     MenuItem(HeroIcons.NoSymbol, if (task.isBlocked) "Clear blocker" else "Mark blocked") { menu = false; blockSheet = true }
                                 }
-                                MenuItem(HeroIcons.CalendarDays, if (task.isScheduled) "Reschedule" else "Schedule to a day") { menu = false; scheduleOpen = true }
-                                if (task.isScheduled) {
+                                MenuItem(HeroIcons.CalendarDays, if (task.container == "scheduled") "Reschedule" else "Schedule to a day") { menu = false; scheduleOpen = true }
+                                if (task.container == "scheduled") {
                                     MenuItem(HeroIcons.ArchiveBox, "Move to backlog") { menu = false; viewModel.unschedule(task.id, task.title, closeAfter = true) }
                                 }
                                 MenuItem(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") { menu = false; copyKey() }
@@ -220,8 +220,8 @@ private fun DetailHero(task: Task, ui: TaskUiState, viewModel: TaskViewModel, dr
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             WorkItemTypeBadge(task.workItemTypeId, ui.agile)
             when {
-                task.isScheduled -> MetaPill(HeroIcons.CalendarDays, formatDate(task.plannedDate), colors.primary)
-                task.isBacklogItem -> MetaPill(HeroIcons.ArchiveBox, "Backlog", colors.warning)
+                task.container == "scheduled" -> MetaPill(HeroIcons.CalendarDays, formatDate(task.plannedDate), colors.primary)
+                task.container == "backlog" -> MetaPill(HeroIcons.ArchiveBox, "Backlog", colors.warning)
             }
         }
         if (ui.detailEditing) {

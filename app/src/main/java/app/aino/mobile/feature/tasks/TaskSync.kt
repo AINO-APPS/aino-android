@@ -69,20 +69,6 @@ fun matchesFilters(task: Task, filters: TaskFilters, userId: Long?, includeStatu
     return true
 }
 
-/** Sprint board membership: the selected sprint and the active filters. */
-fun belongsToSprint(task: Task, sprintId: Long?, filters: TaskFilters, userId: Long?): Boolean =
-    sprintId != null && task.sprintId == sprintId && matchesFilters(task, filters, userId, includeStatus = true)
-
-/** Backlog membership (`date IS NULL AND sprint_id IS NULL`) and the active filters. */
-fun belongsToBacklog(task: Task, filters: TaskFilters, userId: Long?): Boolean =
-    task.isBacklogItem && matchesFilters(task, filters, userId, includeStatus = false)
-
-/** Scheduled view membership: a planner date inside the loaded window, plus the active filters. */
-fun belongsToScheduled(task: Task, from: java.time.LocalDate, to: java.time.LocalDate, filters: TaskFilters, userId: Long?): Boolean {
-    val day = localDateOf(task.plannedDate) ?: return false
-    return !day.isBefore(from) && !day.isAfter(to) && matchesFilters(task, filters, userId, includeStatus = true)
-}
-
 /** Replace in place, append when new, or drop when it no longer belongs. */
 fun upsertTask(list: List<Task>, task: Task, belongs: Boolean): List<Task> {
     val index = list.indexOfFirst { it.id == task.id }

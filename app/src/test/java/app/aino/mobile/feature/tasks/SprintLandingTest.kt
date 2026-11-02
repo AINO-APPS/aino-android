@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Landing on Tasks opens the sprint that is actually running.
+ * Landing on Tasks opens the sprint named current by the server.
  *
  * Once a team's sprint is started, the sprint is where the work is; the backlog
  * is only the pool of unplanned tickets. The rule is narrow: it only applies
@@ -16,24 +16,30 @@ class SprintLandingTest {
     private val planned = AvailableSprint(id = 2, name = "Sprint #2", status = "planned")
 
     @Test
-    fun anActiveSprintMakesTheSprintTabTheLanding() {
-        assertEquals(TaskTab.Sprint, landingTab(TaskTab.Backlog, listOf(active, planned), agileEnabled = true))
+    fun aCurrentSprintMakesTheSprintTabTheLanding() {
+        assertEquals(TaskTab.Sprint, landingTab(TaskTab.Backlog, listOf(active, planned), active.id, agileEnabled = true))
     }
 
     @Test
-    fun noActiveSprintKeepsTheBacklog() {
-        assertEquals(TaskTab.Backlog, landingTab(TaskTab.Backlog, listOf(planned), agileEnabled = true))
-        assertEquals(TaskTab.Backlog, landingTab(TaskTab.Backlog, emptyList(), agileEnabled = true))
+    fun aPausedCurrentSprintStillMakesTheSprintTabTheLanding() {
+        val paused = active.copy(status = "paused")
+        assertEquals(TaskTab.Sprint, landingTab(TaskTab.Backlog, listOf(paused), paused.id, agileEnabled = true))
+    }
+
+    @Test
+    fun noCurrentSprintKeepsTheBacklog() {
+        assertEquals(TaskTab.Backlog, landingTab(TaskTab.Backlog, listOf(planned), null, agileEnabled = true))
+        assertEquals(TaskTab.Backlog, landingTab(TaskTab.Backlog, emptyList(), null, agileEnabled = true))
     }
 
     @Test
     fun agileDisabledNeverLandsOnTheSprint() {
-        assertEquals(TaskTab.Backlog, landingTab(TaskTab.Backlog, listOf(active), agileEnabled = false))
+        assertEquals(TaskTab.Backlog, landingTab(TaskTab.Backlog, listOf(active), active.id, agileEnabled = false))
     }
 
     @Test
     fun anExplicitTabIsNeverOverridden() {
-        assertEquals(TaskTab.Scheduled, landingTab(TaskTab.Scheduled, listOf(active), agileEnabled = true))
-        assertEquals(TaskTab.ServiceDesk, landingTab(TaskTab.ServiceDesk, listOf(active), agileEnabled = true))
+        assertEquals(TaskTab.Scheduled, landingTab(TaskTab.Scheduled, listOf(active), active.id, agileEnabled = true))
+        assertEquals(TaskTab.ServiceDesk, landingTab(TaskTab.ServiceDesk, listOf(active), active.id, agileEnabled = true))
     }
 }

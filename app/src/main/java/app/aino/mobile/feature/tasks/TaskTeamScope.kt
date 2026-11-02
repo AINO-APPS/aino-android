@@ -37,9 +37,9 @@ fun scopeForTeam(teamId: Long?): TeamScope = when (teamId) {
     else -> TeamScope(teamId = teamId)
 }
 
-/** The sprint "Plan sprint" opens: the running one, else the next planned one. */
-fun planTargetId(sprints: List<AvailableSprint>): Long? =
-    sprints.firstOrNull { it.status == "active" }?.id
+/** The sprint "Plan sprint" opens: the server's current sprint, else the next planned one. */
+fun planTargetId(sprints: List<AvailableSprint>, currentSprintId: Long?): Long? =
+    currentSprintId?.takeIf { id -> sprints.any { it.id == id } }
         ?: sprints.firstOrNull { it.status == "planned" }?.id
 
 /**

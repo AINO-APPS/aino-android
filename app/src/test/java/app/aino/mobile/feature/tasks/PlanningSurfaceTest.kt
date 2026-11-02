@@ -10,7 +10,7 @@ import java.time.LocalDate
 /**
  * The Android Tasks surfaces follow the same rules as the web (ADR-015).
  *
- * Tabs are decided by the *selected team's* sprint state. Sprint and Scheduled
+ * Tabs are decided by the *selected team's* current sprint. Sprint and Scheduled
  * are alternatives, never companions: a running sprint shows the board, Backlog
  * and Service Desk; with no running sprint, Scheduled takes the board's place.
  * Service Desk always renders.
@@ -33,13 +33,13 @@ class PlanningSurfaceTest {
         // never be offered the dated list.
         assertEquals(
             listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk),
-            planningTabs(agileEnabled = true, sprints = listOf(active, planned)),
+            planningTabs(agileEnabled = true, sprints = listOf(active, planned), currentSprintId = active.id),
         )
     }
 
     @Test
     fun aSprintTeamsScheduledTabIsNotSelectable() {
-        val running = TaskUiState(agileEnabled = true, sprints = listOf(active))
+        val running = TaskUiState(agileEnabled = true, sprints = listOf(active), currentSprintId = active.id)
         assertFalse(running.visibleTabs.contains(TaskTab.Scheduled))
         // The snackbar's "View" action on a scheduled ticket lands on Backlog.
         assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Scheduled, running.visibleTabs))
@@ -49,31 +49,44 @@ class PlanningSurfaceTest {
     fun onlyAPlannedSprintHidesTheSprintTab() {
         assertEquals(
             listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk),
-            planningTabs(agileEnabled = true, sprints = listOf(planned)),
+            planningTabs(agileEnabled = true, sprints = listOf(planned), currentSprintId = null),
         )
         assertEquals(
             listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk),
-            planningTabs(agileEnabled = true, sprints = emptyList()),
+            planningTabs(agileEnabled = true, sprints = emptyList(), currentSprintId = null),
         )
     }
 
     @Test
     fun agileOffNeverOffersSprintEvenWhenItIsRunning() {
-        assertFalse(planningTabs(agileEnabled = false, sprints = listOf(active)).contains(TaskTab.Sprint))
+        assertFalse(planningTabs(agileEnabled = false, sprints = listOf(active), currentSprintId = active.id).contains(TaskTab.Sprint))
     }
 
     @Test
-    fun theActiveSprintIdIsTheBoardsDefault() {
-        assertEquals(12L, activeSprintId(listOf(planned, active)))
-        assertNull(activeSprintId(listOf(planned)))
+    fun theServerCurrentSprintIsTheBoardsDefaultEvenWhenPaused() {
+        assertEquals(12L, pickSprint(null, listOf(planned, active), currentSprintId = 12L))
+        val paused = active.copy(id = 14, status = "paused")
+        assertEquals(14L, pickSprint(null, listOf(paused), currentSprintId = 14L))
+        assertEquals(planned.id, pickSprint(null, listOf(planned), currentSprintId = null))
     }
 
     @Test
     fun landingIsTheBoardWhenTheTeamHasAnActiveSprint() {
-        assertEquals(TaskTab.Sprint, landingTab(TaskTab.Backlog, listOf(active), agileEnabled = true))
-        assertEquals(TaskTab.Backlog, landingTab(TaskTab.Backlog, listOf(planned), agileEnabled = true))
+        assertEquals(TaskTab.Sprint, landingTab(TaskTab.Backlog, listOf(active), currentSprintId = active.id, agileEnabled = true))
+        val paused = active.copy(status = "paused")
+        assertEquals(TaskTab.Sprint, landingTab(TaskTab.Backlog, listOf(paused), currentSprintId = paused.id, agileEnabled = true))
+        assertEquals(TaskTab.Backlog, landingTab(TaskTab.Backlog, listOf(planned), currentSprintId = null, agileEnabled = true))
         // A tab the user chose is never overridden.
-        assertEquals(TaskTab.Scheduled, landingTab(TaskTab.Scheduled, listOf(active), agileEnabled = true))
+        assertEquals(TaskTab.Scheduled, landingTab(TaskTab.Scheduled, listOf(active), currentSprintId = active.id, agileEnabled = true))
+    }
+
+    @Test
+    fun sprintInsightsPreferTheServerCurrentSprint() {
+        val paused = active.copy(id = 14, status = "paused")
+        val sprints = listOf(planned, paused)
+
+        assertEquals(paused.id, initialInsightsSprint(sprints, requested = null, currentSprintId = paused.id))
+        assertEquals(planned.id, initialInsightsSprint(sprints, requested = planned.id, currentSprintId = paused.id))
     }
 
     @Test
@@ -158,9 +171,9 @@ class PlanningSurfaceTest {
     @Test
     fun thePlanSplitViewIsReachableFromBacklogForTheRunningSprintFirst() {
         // "Plan sprint" targets the running sprint, else the next planned one.
-        assertEquals(active.id, planTargetId(listOf(planned, active)))
-        assertEquals(planned.id, planTargetId(listOf(planned)))
-        assertNull(planTargetId(emptyList()))
+        assertEquals(active.id, planTargetId(listOf(planned, active), currentSprintId = active.id))
+        assertEquals(planned.id, planTargetId(listOf(planned), currentSprintId = null))
+        assertNull(planTargetId(emptyList(), currentSprintId = null))
     }
 
     @Test

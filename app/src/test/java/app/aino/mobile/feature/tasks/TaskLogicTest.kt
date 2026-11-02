@@ -123,9 +123,9 @@ class TaskLogicTest {
     fun sprintSelectionAndRoles() {
         val active = AvailableSprint(id = 2, name = "S2", startDate = "2026-09-20", endDate = "2026-10-01", status = "active")
         val planned = AvailableSprint(id = 3, name = "S3", startDate = "2026-10-02", endDate = "2026-10-15")
-        assertEquals(2L, pickSprint(null, listOf(planned, active)))
-        assertEquals(3L, pickSprint(3, listOf(planned, active)))
-        assertEquals(3L, pickSprint(99, listOf(planned)))
+        assertEquals(2L, pickSprint(null, listOf(planned, active), currentSprintId = 2L))
+        assertEquals(3L, pickSprint(3, listOf(planned, active), currentSprintId = 2L))
+        assertEquals(3L, pickSprint(99, listOf(planned), currentSprintId = null))
         assertTrue(canManageSprint("team_lead"))
         assertFalse(canManageSprint("employee"))
     }

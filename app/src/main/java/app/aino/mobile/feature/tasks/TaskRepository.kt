@@ -152,8 +152,9 @@ class TaskRepository(
 
     fun loadSprintStats(sprintId: Long): SprintStats = decode(api.execute(ApiRequest(path = "sprints/$sprintId/stats")))
 
-    fun loadTeamSprints(): List<AvailableSprint> =
-        decode<SprintListResponse>(api.execute(ApiRequest(path = "sprints"))).sprints
+    /** `GET /sprints[?team_id=…]` — rows plus the server-selected current sprint. */
+    fun loadTeamSprints(teamId: Long? = null): SprintListResponse =
+        decode(api.execute(ApiRequest(path = "sprints" + (teamId?.let { "?team_id=$it" } ?: ""))))
 
     // ── Sprint lifecycle ─────────────────────────────────────────────────
     fun startSprint(id: Long): SprintEnvelope = mutate("sprints/$id/start", Unit)
