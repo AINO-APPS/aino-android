@@ -50,6 +50,18 @@ internal fun BulkActionBar(
     if (!ui.hasSelection) return
     var picker by remember { mutableStateOf<String?>(null) }
     val count = ui.selectedIds.size
+    val selected = ui.backlog.filter { it.id in ui.selectedIds }
+    fun decision(action: TaskCapability): TaskCapabilityDecision =
+        if (selected.size != count) TaskCapabilityDecision()
+        else selected.firstOrNull { !it.capability(action).allowed }?.capability(action) ?: TaskCapabilityDecision(true)
+
+    val canSprint = decision(TaskCapability.PlaceInSprint)
+    val canEdit = decision(TaskCapability.Edit)
+    val canCancel = decision(TaskCapability.Cancel)
+    val canChangeStatus = if (selected.size != count) TaskCapabilityDecision() else {
+        selected.firstOrNull { !it.capability(TaskCapability.ChangeState).allowed }
+            ?.capability(TaskCapability.ChangeState) ?: TaskCapabilityDecision(true)
+    }
 
     Column(
         modifier
@@ -80,11 +92,11 @@ internal fun BulkActionBar(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (ui.agileEnabled && ui.sprints.isNotEmpty()) {
-                BulkAction(HeroIcons.RocketLaunch, "Sprint") { picker = "sprint" }
+                BulkAction(HeroIcons.RocketLaunch, "Sprint", enabled = canSprint.allowed, reason = canSprint.reasonCopy()) { picker = "sprint" }
             }
-            BulkAction(HeroIcons.ArrowPath, "Status") { picker = "status" }
-            BulkAction(HeroIcons.User, "Assign") { picker = "assignee" }
-            BulkAction(HeroIcons.Trash, "Delete", danger = true) {
+            BulkAction(HeroIcons.ArrowPath, "Status", enabled = canChangeStatus.allowed, reason = canChangeStatus.reasonCopy()) { picker = "status" }
+            BulkAction(HeroIcons.User, "Assign", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) { picker = "assignee" }
+            BulkAction(HeroIcons.Trash, "Cancel", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) {
                 viewModel.confirmBulkDelete()
             }
         }
@@ -93,8 +105,8 @@ internal fun BulkActionBar(
     when (picker) {
         "sprint" -> SelectSheet(
             "Move to sprint",
-            listOf(SelectOption<Long?>(null, "Backlog (no sprint)")) + ui.sprints.map {
-                SelectOption<Long?>(it.id, it.name, it.status, color = if (it.status == "active") colors.success else colors.primaryLight)
+            listOf(SelectOption<Long?>(null, "Backlog (no sprint)", subtitle = if (canSprint.allowed) null else canSprint.reasonCopy(), enabled = canSprint.allowed)) + ui.sprints.map {
+                SelectOption<Long?>(it.id, it.name, subtitle = if (canSprint.allowed) it.status else canSprint.reasonCopy(), color = if (it.status == "active") colors.success else colors.primaryLight, enabled = canSprint.allowed)
             },
             emptySet(), { picker = null },
             { ids -> viewModel.bulkAction("move_to_sprint", ids.firstOrNull()?.toString() ?: "") },
@@ -102,7 +114,18 @@ internal fun BulkActionBar(
         )
         "status" -> SelectSheet(
             "Set status",
-            ui.agile.workflowStates.map { SelectOption(it.key, stateLabel(it), color = hexColor(it.color)) },
+            ui.agile.workflowStates.map { state ->
+                val denied = if (selected.size != count) TaskCapabilityDecision()
+                else selected.firstOrNull { !it.dropTargetDecision(state.id, accepting = true).allowed }
+                    ?.dropTargetDecision(state.id, accepting = true) ?: TaskCapabilityDecision(true)
+                SelectOption(
+                    state.key,
+                    stateLabel(state),
+                    subtitle = if (denied.allowed) null else denied.reasonCopy(),
+                    color = hexColor(state.color),
+                    enabled = denied.allowed,
+                )
+            },
             emptySet(), { picker = null },
             { ids -> ids.firstOrNull()?.let { viewModel.bulkAction("status", it) } },
             icon = HeroIcons.ArrowPath,
@@ -124,22 +147,29 @@ private fun BulkAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     danger: Boolean = false,
+    enabled: Boolean = true,
+    reason: String? = null,
     onClick: () -> Unit,
 ) {
     val colors = LocalWebColors.current
-    val tint = if (danger) colors.danger else colors.textSecondary
+    val tint = if (!enabled) colors.textMuted else if (danger) colors.danger else colors.textSecondary
     Row(
         Modifier
             .clip(ChipShape)
-            .background((if (danger) colors.danger else colors.primary).copy(alpha = 0.10f))
-            .clickable(onClickLabel = label, onClick = onClick)
-            .semantics { customActions = listOf(CustomAccessibilityAction(label) { onClick(); true }) }
+            .background((if (danger) colors.danger else colors.primary).copy(alpha = if (enabled) 0.10f else 0.04f))
+            .clickable(enabled = enabled, onClickLabel = label, onClick = onClick)
+            .semantics { if (enabled) customActions = listOf(CustomAccessibilityAction(label) { onClick(); true }) }
             .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, Modifier.size(15.dp), tint = tint)
-        Spacer(Modifier.width(5.dp))
-        Text(label, color = tint, fontSize = 0.76.rem, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, null, Modifier.size(15.dp), tint = tint)
+                Spacer(Modifier.width(5.dp))
+                Text(label, color = tint, fontSize = 0.76.rem, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (!enabled) Text(reason ?: capabilityReasonCopy(null), color = colors.textMuted, fontSize = 0.65.rem, maxLines = 2)
+        }
     }
 }
 

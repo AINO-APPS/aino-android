@@ -20,6 +20,21 @@ class TaskRepositoryTest {
     private fun body(request: ApiRequest) = request.body!!.toString(Charsets.UTF_8)
 
     @Test
+    fun sprintBoardReadsTheBoardEndpointAndItsSharedContract() {
+        val captured = mutableListOf<ApiRequest>()
+        val fixture = requireNotNull(javaClass.classLoader?.getResource("contracts/sprint-board.json")).readText()
+        val repository = TaskRepository(client(captured) { fixture })
+
+        val board = repository.loadSprintBoard(10)
+
+        assertEquals("sprints/10/board", captured.single().path)
+        assertEquals(10L, board.sprint.id)
+        assertEquals(listOf(101L, 102L), board.columns.map { it.stateId })
+        assertFalse(board.columns.first().accepting)
+        assertEquals("sprint", board.tickets.single().container)
+    }
+
+    @Test
     fun decodesAnEnrichedSprintRowWithNumericStoryPointsAndCriteria() {
         val captured = mutableListOf<ApiRequest>()
         val repository = TaskRepository(
@@ -142,7 +157,7 @@ class TaskRepositoryTest {
     }
 
     @Test
-    fun surfacesTheServerErrorMessageVerbatim() {
+    fun usesSharedCapabilityReasonCopyForRejectedWrites() {
         val repository = TaskRepository(
             ApiClient {
                 throw ApiError.Http(
@@ -158,7 +173,7 @@ class TaskRepositoryTest {
             fail("expected a TaskFailure")
         } catch (failure: TaskFailure) {
             assertEquals(409, failure.statusCode)
-            assertTrue(failure.message!!.startsWith("WIP limit reached"))
+            assertEquals(capabilityReasonCopy("WIP_EXCEEDED"), failure.message)
         }
     }
 

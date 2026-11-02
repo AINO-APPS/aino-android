@@ -137,6 +137,7 @@ data class TaskUiState(
     val searchOpen: Boolean = false,
     // Sprint board.
     val tasks: List<Task> = emptyList(),
+    val sprintBoard: SprintBoardResponse? = null,
     val stats: TaskStats = TaskStats(),
     val sprintStats: SprintStats? = null,
     val sprintLoading: Boolean = true,
@@ -349,9 +350,25 @@ class TaskViewModel(
         else fail(message)
     }
 
-    private fun failure(e: Throwable, fallback: String): String =
-        if (e is ApiError) userFacingMessage(e, fallback)
+    private fun failure(e: Throwable, fallback: String): String {
+        val message = if (e is ApiError) userFacingMessage(e, fallback)
         else e.message?.takeIf { it.isNotBlank() && it != "Task action failed" && !it.startsWith("HTTP ") } ?: fallback
+        return capabilityFailureCopy(message) ?: message
+    }
+
+    private fun visibleTask(id: Long): Task? {
+        val s = _ui.value
+        return (s.tasks + s.backlog + s.scheduled + s.planTasks + listOfNotNull(s.detail))
+            .firstOrNull { it.id == id }
+    }
+
+    private fun statusDecision(task: Task, stateId: Long): TaskCapabilityDecision {
+        val s = _ui.value
+        val accepting = if (task.sprintId != null && task.sprintId == s.selectedSprintId) {
+            s.sprintBoard?.columns?.firstOrNull { it.stateId == stateId }?.accepting ?: false
+        } else true
+        return task.dropTargetDecision(stateId, accepting)
+    }
 
         /** Status code of a failed call, whichever error shape carried it. */
         private fun statusOf(e: Throwable): Int = when (e) {
@@ -514,13 +531,6 @@ class TaskViewModel(
     /** Raw `task_*` envelope from the shell; falls back to a reload when the payload is unusable. */
     fun onTaskEvent(type: String, data: JsonElement?) {
         if (_ui.value.userId == null) return
-        // A field-level delta patches the card in place, so a teammate's edit
-        // lands without a refetch and without flicker.
-        val delta = if (type == "task_updated") parseTaskDelta(data) else null
-        if (delta != null) {
-            applyDelta(delta)
-            return
-        }
         val event = parseTaskEvent(type, data)
         synchronized(pendingEvents) {
             if (event == null) pendingReload = true else pendingEvents += event
@@ -528,57 +538,7 @@ class TaskViewModel(
         scheduleSync()
     }
 
-    /** Per-task timestamp of the last delta applied, so an out-of-order frame cannot roll a field back. */
-    private val deltaAppliedAt = mutableMapOf<Long, String>()
     private val planRevision = java.util.concurrent.atomic.AtomicInteger()
-
-    /**
-     * Patch one task from a field-level delta.
-     *
-     * Only the fields in the frame are touched, so two people editing different
-     * fields of the same ticket both survive. The later write wins per field.
-     */
-    private fun applyDelta(delta: TaskDelta) {
-        val previous = deltaAppliedAt[delta.taskId]
-        if (delta.at != null && previous != null && delta.at < previous) return
-        if (delta.at != null) deltaAppliedAt[delta.taskId] = delta.at
-
-        planRevision.incrementAndGet()
-        var patched: Task? = null
-        _ui.update { s ->
-            fun Task.patched(): Task =
-                if (id == delta.taskId) applyTaskDelta(this, delta, previous).also { patched = it } else this
-            s.copy(
-                tasks = s.tasks.map { it.patched() },
-                backlog = s.backlog.map { it.patched() },
-                planTasks = s.planTasks.map { it.patched() },
-                completed = s.completed.map { it.patched() },
-                scheduled = s.scheduled.map { it.patched() },
-                searchResults = s.searchResults.map { it.patched() },
-                detail = s.detail?.patched(),
-                attribution = delta.actorName?.let { s.attribution + (delta.taskId to it) } ?: s.attribution,
-            ).let { if (it.planLoaded) it.projectPlan() else it }
-        }
-        if (patched == null) {
-            synchronized(pendingEvents) { pendingReload = true }
-            scheduleSync()
-        } else if (delta.fields.keys.any { it in setOf("workflow_state_id", "assigned_to", "sprint_id", "project_id") }) {
-            // IDs alone cannot update completion, avatars or joined names.
-            synchronized(pendingEvents) { pendingEvents += TaskEvent(delta.taskId, TaskAction.Updated) }
-            scheduleSync()
-        }
-        patched?.let { flash(delta.taskId) }
-        // The attribution is a flash, not a permanent label.
-        delta.actorName?.let { name ->
-            viewModelScope.launch(Dispatchers.Main.immediate) {
-                delay(ATTRIBUTION_MS)
-                _ui.update { s ->
-                    if (s.attribution[delta.taskId] == name) s.copy(attribution = s.attribution - delta.taskId)
-                    else s
-                }
-            }
-        }
-    }
 
     /** Reconnect catch-up: the server keeps no replay log, so revalidate everything visible. */
     fun onTaskEvent() {
@@ -617,12 +577,14 @@ class TaskViewModel(
         byTask.forEach { (id, actions) ->
             when {
                 TaskAction.Deleted in actions -> removeTask(id, remote = true)
-                actions == setOf(TaskAction.Comment) -> syncComments(id)
-                else -> if (!syncTask(id)) needsReload = true
+                else -> {
+                    if (!syncTask(id)) needsReload = true
+                    if (TaskAction.Comment in actions) syncComments(id)
+                }
             }
         }
         if (needsReload) reloadTab()
-        if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
+        if (_ui.value.tab == TaskTab.Sprint) loadSprint()
     }
 
     /** Fetches one task and patches every view of it. `false` = the fetch failed (caller reloads). */
@@ -700,6 +662,9 @@ class TaskViewModel(
                 matchesFilters(task, s.filters, s.userId, includeStatus = true)
             s.copy(
                 tasks = tasks,
+                sprintBoard = s.sprintBoard?.let { board ->
+                    board.copy(tickets = upsertTask(board.tickets, task, task.container == "sprint" && task.sprintId == board.sprint.id))
+                },
                 stats = if (tasks !== s.tasks) recomputeStats(tasks) else s.stats,
                 backlog = backlog,
                 backlogSummary = summary,
@@ -961,16 +926,25 @@ class TaskViewModel(
         val sprintId = _ui.value.selectedSprintId
         sprintJob?.cancel()
         if (sprintId == null) {
-            _ui.update { it.copy(tasks = emptyList(), stats = TaskStats(), sprintStats = null, sprintLoading = false) }
+            _ui.update { it.copy(tasks = emptyList(), sprintBoard = null, stats = TaskStats(), sprintStats = null, sprintLoading = false) }
             return
         }
         _ui.update { it.copy(sprintLoading = it.tasks.isEmpty()) }
         sprintJob = io {
             val filters = _ui.value.filters
-            val scope = _ui.value.teamScope
-            runCatching { repository.loadSprintTasks(sprintId, filters, scope) }.fold(
+            runCatching { repository.loadSprintBoard(sprintId) }.fold(
                 onSuccess = { result ->
-                    _ui.update { if (it.selectedSprintId == sprintId) it.copy(tasks = result.tasks, stats = result.stats, sprintLoading = false) else it }
+                    val tickets = result.tickets.filter {
+                        it.workflowStateKey != "cancelled" && matchesFilters(it, filters, _ui.value.userId, includeStatus = true)
+                    }
+                    _ui.update {
+                        if (it.selectedSprintId == sprintId) it.copy(
+                            sprintBoard = result,
+                            tasks = tickets,
+                            stats = recomputeStats(tickets),
+                            sprintLoading = false,
+                        ) else it
+                    }
                 },
                 onFailure = {
                     val hadData = _ui.value.tasks.isNotEmpty()
@@ -995,15 +969,17 @@ class TaskViewModel(
      */
     fun moveTask(task: Task, state: WorkflowState) {
         if (task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)) return
-        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role, _ui.value.teamId)) return notify(STATUS_FORBIDDEN)
+        val columnAccepting = _ui.value.sprintBoard?.columns?.firstOrNull { it.stateId == state.id }?.accepting ?: false
+        val decision = task.dropTargetDecision(state.id, columnAccepting)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         val previous = task
         val moved = task.copy(workflowStateKey = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: task.workflowStateId)
         applyTask(moved)
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(
                 onSuccess = { saved ->
-                    patchServerTask(saved, moved)
-                    refreshSprintStats()
+                    patchServerTask(saved)
+                    loadSprint()
                     notify("Moved to ${state.name.ifEmpty { state.key }}", "Undo") { revertMove(previous, state) }
                 },
                 onFailure = { e ->
@@ -1019,7 +995,7 @@ class TaskViewModel(
         applyTask(previous)
         io {
             runCatching { repository.updateStatus(previous.id, previous.workflowStateKey.orEmpty()) }.fold(
-                onSuccess = { refreshSprintStats() },
+                onSuccess = { saved -> patchServerTask(saved); loadSprint() },
                 onFailure = { e ->
                     applyTask(current.copy(workflowStateKey = from.key))
                     fail(failure(e, "Failed to undo move"))
@@ -1028,16 +1004,11 @@ class TaskViewModel(
         }
     }
 
-    /** Status/field writes return the bare row; keep the enrichment (labels, people) we already have. */
-    private fun patchServerTask(saved: Task, local: Task) {
-        val merged = local.copy(
-            workflowStateKey = saved.workflowStateKey ?: local.workflowStateKey,
-            workflowStateCategory = saved.workflowStateCategory ?: local.workflowStateCategory,
-            workflowStateId = saved.workflowStateId ?: local.workflowStateId,
-            completedAt = saved.completedAt,
-        )
-        applyTask(merged)
-        _ui.update { s -> s.copy(detail = s.detail?.let { if (it.id == merged.id) it.copy(workflowStateKey = merged.workflowStateKey, workflowStateId = merged.workflowStateId, completedAt = merged.completedAt) else it }) }
+    private fun patchServerTask(saved: Task) {
+        patchTask(saved, highlight = false)
+        _ui.update { s ->
+            if (s.detail?.id == saved.id) s.copy(detail = saved) else s
+        }
     }
 
     private fun applyTask(task: Task) = _ui.update { s ->
@@ -1268,6 +1239,9 @@ class TaskViewModel(
      */
     fun schedule(taskId: Long, date: String, closeAfter: Boolean = false) {
         if (date.isEmpty()) return
+        val task = visibleTask(taskId)
+        val decision = task?.capability(TaskCapability.Schedule) ?: TaskCapabilityDecision()
+        if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.scheduleTask(taskId, date) }.fold(
                 onSuccess = {
@@ -1283,6 +1257,8 @@ class TaskViewModel(
 
     /** `handleUnscheduleTask`; the confirm dialog is skipped for the Scheduled list's swipe (it has Undo). */
     fun unschedule(taskId: Long, title: String?, closeAfter: Boolean = false, ask: Boolean = true) {
+        val decision = visibleTask(taskId)?.capability(TaskCapability.Schedule) ?: TaskCapabilityDecision()
+        if (!decision.allowed) return notify(decision.reasonCopy())
         val previousDate = (_ui.value.scheduled + _ui.value.tasks + _ui.value.planTasks).firstOrNull { it.id == taskId }?.plannedDate ?: _ui.value.detail?.takeIf { it.id == taskId }?.plannedDate
         val run = {
             io {
@@ -1304,13 +1280,15 @@ class TaskViewModel(
 
     /** Backlog swipe / detail sprint picker (`PATCH /tasks/:id/assign-sprint`). */
     fun assignSprint(task: Task, sprintId: Long?) {
+        val decision = task.capability(TaskCapability.PlaceInSprint)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.assignSprint(task.id, sprintId) }.fold(
                 onSuccess = {
                     val name = sprintId?.let { id -> _ui.value.sprints.firstOrNull { it.id == id }?.name }
                     notify(if (name != null) "Added to $name" else "Moved to backlog")
                     if (!syncTask(task.id)) reloadTab()
-                    if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
+                    if (_ui.value.tab == TaskTab.Sprint) loadSprint()
                 },
                 onFailure = { e -> fail(failure(e, "Failed to assign sprint")) },
             )
@@ -1325,6 +1303,8 @@ class TaskViewModel(
      * survive and it can be moved back to an open state.
      */
     fun requestDelete(task: Task) {
+        val decision = task.capability(TaskCapability.Cancel)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         confirm(
             "Cancel ticket",
             "Cancel \"${task.title}\"? The ticket and its history are kept, and it leaves the open work.",
@@ -1336,7 +1316,7 @@ class TaskViewModel(
                     onSuccess = {
                         removeTask(task.id, remote = false)
                         notify("Cancelled ${task.displayKey}")
-                        if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
+                        if (_ui.value.tab == TaskTab.Sprint) loadSprint()
                     },
                     onFailure = { e -> fail(failure(e, "Failed to cancel ticket")) },
                 )
@@ -1396,7 +1376,11 @@ class TaskViewModel(
 
     fun setDetailTab(tab: DetailTab) = _ui.update { it.copy(detailTab = tab) }
 
-    fun startEdit() = _ui.update { it.copy(detailEditing = true) }
+    fun startEdit() {
+        val decision = _ui.value.detail?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
+        if (!decision.allowed) return notify(decision.reasonCopy())
+        _ui.update { it.copy(detailEditing = true) }
+    }
 
     fun cancelEdit() {
         val stale = _ui.value.detailStale
@@ -1435,15 +1419,14 @@ class TaskViewModel(
      * (assignee, labels, sprint, issue key) stay authoritative.
      */
     fun updateFields(task: Task, fields: JsonObject, done: String? = null, onSaved: () -> Unit = {}) {
+        val decision = task.capability(TaskCapability.Edit)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.patchFields(task.id, fields) }.fold(
-                onSuccess = {
+                onSuccess = { saved ->
+                    patchServerTask(saved)
                     withContext(Dispatchers.Main) { onSaved() }
                     done?.let { notify(it) }
-                    runCatching { repository.loadDetail(task.id) }.onSuccess { data ->
-                        _ui.update { if (it.detail?.id == task.id) it.copy(detail = data, detailComments = data.comments, detailStale = false) else it }
-                        patchTask(data, highlight = false)
-                    }
                     refreshHistory(task.id)
                     if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
                 },
@@ -1470,17 +1453,15 @@ class TaskViewModel(
     /** Detail status chip (`handleDetailStatusChange`), workflow-state aware. */
     fun setStatus(task: Task, state: WorkflowState) {
         if (task.workflowStateKey == state.key) return
-        if (!canChangeStatus(task, _ui.value.userId, _ui.value.role, _ui.value.teamId)) return notify(STATUS_FORBIDDEN)
+        val decision = statusDecision(task, state.id)
+        if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(
-                onSuccess = {
+                onSuccess = { saved ->
+                    patchServerTask(saved)
                     notify("Status: ${state.name.ifEmpty { state.key }}")
-                    runCatching { repository.loadDetail(task.id) }.onSuccess { data ->
-                        _ui.update { if (it.detail?.id == task.id) it.copy(detail = data, detailComments = data.comments) else it }
-                        patchTask(data, highlight = false)
-                    }
                     refreshHistory(task.id)
-                    if (_ui.value.tab == TaskTab.Sprint) refreshSprintStats()
+                    if (_ui.value.tab == TaskTab.Sprint) loadSprint()
                 },
                 onFailure = { e -> fail(failure(e, "Failed to update status")) },
             )
@@ -1719,6 +1700,20 @@ class TaskViewModel(
     fun bulkAction(action: String, value: String? = null) {
         val ids = _ui.value.selectedIds.toList()
         if (ids.isEmpty()) return
+        val denied = ids.asSequence().map { id ->
+            val task = visibleTask(id) ?: return@map TaskCapabilityDecision()
+            when (action) {
+                "delete" -> task.capability(TaskCapability.Cancel)
+                "move_to_sprint" -> task.capability(TaskCapability.PlaceInSprint)
+                "assign" -> task.capability(TaskCapability.Edit)
+                "status" -> {
+                    val target = _ui.value.agile.workflowStates.firstOrNull { it.key == value }
+                    target?.let { statusDecision(task, it.id) } ?: TaskCapabilityDecision()
+                }
+                else -> TaskCapabilityDecision()
+            }
+        }.firstOrNull { !it.allowed }
+        if (denied != null) return notify(denied.reasonCopy())
         io {
             runCatching { repository.bulkAction(BulkPayload(ids, action, value)) }.fold(
                 onSuccess = { result ->
@@ -1738,7 +1733,7 @@ class TaskViewModel(
          *  than reduced to a count. */
         private fun bulkSummary(result: BulkResult): String {
             if (result.failed == 0) return "${result.changed} updated"
-            val first = result.failures.firstOrNull()?.error
+            val first = result.failures.firstOrNull()?.error?.let { capabilityFailureCopy(it) ?: it }
             return if (first.isNullOrBlank()) {
                 "${result.changed} updated, ${result.failed} skipped"
             } else {
@@ -1762,6 +1757,8 @@ class TaskViewModel(
 
         /** Move a backlog row between two neighbours; the server computes the rank. */
         fun reorder(taskId: Long, beforeId: Long?, afterId: Long?) {
+            val decision = visibleTask(taskId)?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
+            if (!decision.allowed) return notify(decision.reasonCopy())
             io {
                 runCatching { repository.rankTask(taskId, beforeId, afterId) }.fold(
                     onSuccess = { ranked -> patchTask(ranked, highlight = false) },

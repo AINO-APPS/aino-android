@@ -286,7 +286,14 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
 }
 
 @Composable
-internal fun MenuItem(icon: ImageVector, text: String, danger: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun MenuItem(
+    icon: ImageVector,
+    text: String,
+    danger: Boolean = false,
+    enabled: Boolean = true,
+    reason: String? = null,
+    onClick: () -> Unit,
+) {
     val colors = LocalWebColors.current
     val tint = when {
         !enabled -> colors.textMuted
@@ -296,7 +303,12 @@ internal fun MenuItem(icon: ImageVector, text: String, danger: Boolean = false, 
     androidx.compose.material3.DropdownMenuItem(
         enabled = enabled,
         leadingIcon = { Icon(icon, null, Modifier.size(18.dp), tint = tint) },
-        text = { Text(text, color = tint) },
+        text = {
+            Column {
+                Text(text, color = tint)
+                if (!enabled) Text(reason ?: capabilityReasonCopy(null), color = colors.textMuted, fontSize = 0.72.rem)
+            }
+        },
         onClick = onClick,
     )
 }

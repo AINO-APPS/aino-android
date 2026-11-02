@@ -2,12 +2,15 @@ package app.aino.mobile.feature.tasks
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToNode
@@ -17,6 +20,8 @@ import app.aino.mobile.core.designsystem.tokens.WebColorsDark
 import app.aino.mobile.core.network.ApiClient
 import app.aino.mobile.core.network.ApiRequest
 import app.aino.mobile.core.network.ApiResponse
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.json.Json
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -52,25 +57,35 @@ class SprintBoardWiringTest {
         return TaskViewModel(TaskRepository(client))
     }
 
-    private fun state(tasks: List<Task>) = TaskUiState(
-        userId = 1,
-        role = "employee",
-        teamName = "Payments",
-        agileEnabled = true,
-        sprints = listOf(sprint),
-        selectedSprintId = sprint.id,
-        tab = TaskTab.Sprint,
-        sprintLoading = false,
-        tasks = tasks,
-        agile = AgileConfig(
-            workflowStates = listOf(
-                WorkflowState(id = 1, key = "pending", name = "New", category = "open", color = "#6b7280", isInitial = true, sortOrder = 1),
-                WorkflowState(id = 2, key = "in_progress", name = "In Progress", category = "in_progress", color = "#f59e0b", sortOrder = 2),
-                WorkflowState(id = 3, key = "in_review", name = "In Review", category = "in_review", color = "#3b82f6", sortOrder = 3),
-                WorkflowState(id = 4, key = "done", name = "Done", category = "done", color = "#10b981", isTerminal = true, sortOrder = 4),
+    private fun state(tasks: List<Task>): TaskUiState {
+        val states = listOf(
+            WorkflowState(id = 1, key = "pending", name = "New", category = "open", color = "#6b7280", isInitial = true, sortOrder = 1),
+            WorkflowState(id = 2, key = "in_progress", name = "In Progress", category = "in_progress", color = "#f59e0b", sortOrder = 2),
+            WorkflowState(id = 3, key = "in_review", name = "In Review", category = "in_review", color = "#3b82f6", sortOrder = 3),
+            WorkflowState(id = 4, key = "done", name = "Done", category = "done", color = "#10b981", isTerminal = true, sortOrder = 4),
+        )
+        return TaskUiState(
+            userId = 1,
+            role = "employee",
+            teamName = "Payments",
+            agileEnabled = true,
+            sprints = listOf(sprint),
+            selectedSprintId = sprint.id,
+            tab = TaskTab.Sprint,
+            sprintLoading = false,
+            tasks = tasks,
+            sprintBoard = SprintBoardResponse(
+                sprint = sprint,
+                columns = states.map { state ->
+                    SprintBoardColumn(state.id, tasksForColumn(tasks, state).size, state.wipLimit, accepting = true)
+                },
+                tickets = tasks,
             ),
-        ),
-    )
+            agile = AgileConfig(
+                workflowStates = states,
+            ),
+        )
+    }
 
     private fun show(ui: TaskUiState) {
         val vm = viewModel()
@@ -122,5 +137,72 @@ class SprintBoardWiringTest {
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Done"))
         compose.onAllNodesWithTag(EMPTY_COLUMN_TAG)[0].assertIsDisplayed()
         compose.onAllNodesWithTag(EMPTY_COLUMN_TAG).assertCountEquals(3)
+    }
+
+    @Test
+    fun theSprintBoardRendersServerColumnCountsAndExcludesCancelledFromTheSharedFixture() {
+        val board = Json { ignoreUnknownKeys = true }.decodeFromString<SprintBoardResponse>(
+            requireNotNull(javaClass.classLoader?.getResource("contracts/sprint-board.json")).readText(),
+        )
+        val ui = state(tasks = emptyList()).copy(
+            sprintBoard = board,
+            filters = TaskFilters(status = "done"),
+            agile = AgileConfig(
+                workflowStates = listOf(
+                    WorkflowState(id = 101, key = "todo", name = "To Do", wipLimit = 1),
+                    WorkflowState(id = 102, key = "in_progress", name = "In Progress"),
+                    WorkflowState(id = 103, key = "cancelled", name = "Cancelled"),
+                ),
+                features = AgileFeatures(wipLimits = true),
+            ),
+        )
+        show(ui)
+
+        compose.onNodeWithText("1/1").assertIsDisplayed()
+        compose.onNodeWithText("Cancelled").assertDoesNotExist()
+        compose.onNodeWithText("Review the release plan").assertDoesNotExist()
+    }
+
+    private fun actionSheetState(board: SprintBoardResponse): TaskUiState {
+        val states = listOf(
+            WorkflowState(id = 101, key = "todo", name = "To Do"),
+            WorkflowState(id = 102, key = "in_progress", name = "In Progress"),
+            WorkflowState(id = 103, key = "cancelled", name = "Cancelled"),
+        )
+        return state(board.tickets).copy(sprintBoard = board, agile = AgileConfig(workflowStates = states))
+    }
+
+    @Test
+    fun theTicketActionSheetRendersCapabilityTransitions() {
+        val board = Json { ignoreUnknownKeys = true }.decodeFromString<SprintBoardResponse>(
+            requireNotNull(javaClass.classLoader?.getResource("contracts/sprint-board.json")).readText(),
+        )
+        val vm = viewModel()
+
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                TaskActionsSheet(board.tickets.single(), actionSheetState(board), vm, onOpen = {}, onDismiss = {})
+            }
+        }
+
+        compose.onNodeWithText("In Progress").assertIsEnabled()
+        compose.onNodeWithText("Cancelled").assertIsNotEnabled()
+        compose.onNodeWithText("This ticket cannot move to that status.").assertIsDisplayed()
+    }
+
+    @Test
+    fun theTicketActionSheetFailsClosedWhenCapabilitiesAreMissing() {
+        val board = Json { ignoreUnknownKeys = true }.decodeFromString<SprintBoardResponse>(
+            requireNotNull(javaClass.classLoader?.getResource("contracts/sprint-board.json")).readText(),
+        )
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                TaskActionsSheet(board.tickets.single().copy(capabilities = null), actionSheetState(board), viewModel(), onOpen = {}, onDismiss = {})
+            }
+        }
+
+        compose.onNodeWithText("In Progress").assertIsNotEnabled()
+        compose.onAllNodesWithText("This action is not available.").assertCountEquals(3)
+        compose.onNodeWithText("Cancel ticket").assertIsNotEnabled()
     }
 }

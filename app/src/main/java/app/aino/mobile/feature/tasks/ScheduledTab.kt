@@ -145,12 +145,12 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
         TaskSheetScaffold(task.displayKey, { actionsFor = null }) {
             Text(task.title, color = colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp))
             ActionRow(HeroIcons.ArrowTopRightOnSquare, "Open details") { actionsFor = null; onOpen(task) }
-            ActionRow(HeroIcons.CalendarDays, "Reschedule") { actionsFor = null; rescheduling = task }
-            ActionRow(HeroIcons.ArchiveBox, "Move to backlog") { actionsFor = null; viewModel.unschedule(task.id, task.title, ask = false) }
+            val canSchedule = task.capability(TaskCapability.Schedule)
+            ActionRow(HeroIcons.CalendarDays, "Reschedule", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { actionsFor = null; rescheduling = task }
+            ActionRow(HeroIcons.ArchiveBox, "Move to backlog", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { actionsFor = null; viewModel.unschedule(task.id, task.title, ask = false) }
             ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { actionsFor = null; viewModel.openComments(task.id) }
-            if (ui.userId != null && ui.userId == task.userId) {
-                ActionRow(HeroIcons.Trash, "Delete", danger = true) { actionsFor = null; viewModel.requestDelete(task) }
-            }
+            val canCancel = task.capability(TaskCapability.Cancel)
+            ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { actionsFor = null; viewModel.requestDelete(task) }
         }
     }
 }
@@ -263,11 +263,12 @@ private fun ScheduledRow(
     onActions: () -> Unit,
 ) {
     val colors = LocalWebColors.current
+    val canSchedule = task.capability(TaskCapability.Schedule)
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> onReschedule()
-                SwipeToDismissBoxValue.EndToStart -> viewModel.unschedule(task.id, task.title, ask = false)
+                SwipeToDismissBoxValue.StartToEnd -> if (canSchedule.allowed) onReschedule()
+                SwipeToDismissBoxValue.EndToStart -> if (canSchedule.allowed) viewModel.unschedule(task.id, task.title, ask = false)
                 SwipeToDismissBoxValue.Settled -> Unit
             }
             false
@@ -280,11 +281,13 @@ private fun ScheduledRow(
             .padding(horizontal = 16.dp, vertical = 5.dp)
             .semantics {
                 customActions = listOf(
-                    CustomAccessibilityAction("Reschedule") { onReschedule(); true },
-                    CustomAccessibilityAction("Move to backlog") { viewModel.unschedule(task.id, task.title, ask = false); true },
+                    CustomAccessibilityAction(if (canSchedule.allowed) "Reschedule" else "Reschedule — ${canSchedule.reasonCopy()}") { if (canSchedule.allowed) onReschedule(); true },
+                    CustomAccessibilityAction(if (canSchedule.allowed) "Move to backlog" else "Move to backlog — ${canSchedule.reasonCopy()}") { if (canSchedule.allowed) viewModel.unschedule(task.id, task.title, ask = false); true },
                     CustomAccessibilityAction("More actions") { onActions(); true },
                 )
             },
+        enableDismissFromStartToEnd = canSchedule.allowed,
+        enableDismissFromEndToStart = canSchedule.allowed,
         backgroundContent = {
             val direction = state.dismissDirection
             if (direction == SwipeToDismissBoxValue.Settled) return@SwipeToDismissBox
@@ -316,15 +319,16 @@ private fun ScheduledRow(
                     Modifier
                         .clip(ChipShape)
                         .background((if (showDate) colors.danger else colors.primary).copy(alpha = 0.12f))
-                        .clickable(onClickLabel = "Reschedule", onClick = onReschedule)
+                        .clickable(enabled = canSchedule.allowed, onClickLabel = "Reschedule", onClick = onReschedule)
                         .padding(horizontal = 10.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val tint = if (showDate) colors.danger else colors.primaryLight
+                    val tint = if (!canSchedule.allowed) colors.textMuted else if (showDate) colors.danger else colors.primaryLight
                     Icon(HeroIcons.CalendarDays, null, Modifier.size(14.dp), tint = tint)
                     Spacer(Modifier.width(4.dp))
                     Text(if (showDate) formatDate(task.plannedDate).substringBeforeLast(",") else "Reschedule", color = tint, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
+                if (!canSchedule.allowed) Text(canSchedule.reasonCopy(), color = colors.textMuted, fontSize = 0.68.rem, maxLines = 2)
             },
             // Long-press is not discoverable on its own, so the same actions are
             // always one visible tap away.

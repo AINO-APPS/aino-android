@@ -418,21 +418,6 @@ fun dropTargetKey(headers: Map<String, Rect>, bodies: Map<String, Rect>, pos: Of
 fun canManageSprint(role: String?): Boolean =
     role in setOf("team_lead", "manager", "super_admin", "hr_admin", "platform_admin")
 
-/** Mirrors the server's `canChangeTaskStatus`.
- *
- *  Server rule (`modules/tasks/tasks.policy.ts:248-261`): the assignee, the
- *  reporter, an org admin, **or any member of the ticket's owning team**. The
- *  team clause landed with team ownership and is now live on every plan, so
- *  omitting it here would hide moves the server accepts.
- */
-fun canChangeStatus(task: Task, userId: Long?, role: String?, teamId: Long? = null): Boolean {
-    if (userId != null && (task.assignedTo == userId || task.userId == userId)) return true
-    if (role in setOf("super_admin", "hr_admin", "platform_admin")) return true
-    return teamId != null && task.teamId != null && teamId == task.teamId
-}
-
-const val STATUS_FORBIDDEN = "Only the assignee or reporter can change the status"
-
 /** KanbanBoard `getColTasks`: by workflow_state_id, else by the workflow-state key. */
 fun tasksForColumn(tasks: List<Task>, state: WorkflowState): List<Task> = tasks.filter { t ->
     (t.workflowStateId != null && state.id != 0L && t.workflowStateId == state.id) || t.workflowStateKey == state.key
