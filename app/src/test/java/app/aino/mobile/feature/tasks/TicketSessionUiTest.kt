@@ -3,6 +3,9 @@ package app.aino.mobile.feature.tasks
 import androidx.lifecycle.ViewModelStore
 import app.aino.mobile.core.network.ApiClient
 import app.aino.mobile.core.network.ApiResponse
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -17,6 +20,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.time.LocalDate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TicketSessionUiTest {
@@ -63,6 +68,127 @@ class TicketSessionUiTest {
     }
 
     @Test
+    fun aFailedBoardMoveDoesNotReplaceANewerRealtimeTicket() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.holdAndRejectNextStatusWrite()
+
+        try {
+            harness.viewModel.moveTask(
+                harness.viewModel.ui.value.tasks.single(),
+                WorkflowState(102, "in_progress", "In Progress"),
+            )
+            assertTrue("Move request should be in flight", harness.awaitStatusWrite())
+            harness.await { harness.viewModel.ui.value.tasks.single().workflowStateKey == "in_progress" }
+
+            harness.detailResponse = harness.original.replace("Ship release", "Realtime release")
+            harness.boardTicket = harness.detailResponse
+            harness.viewModel.onTaskEvent(
+                "task_updated",
+                buildJsonObject {
+                    put("taskId", 201)
+                    put("action", "status")
+                },
+            )
+            harness.await {
+                harness.detailReads > 1 &&
+                    harness.viewModel.ui.value.tasks.single().title == "Realtime release" &&
+                    harness.detailViewModel.ui.value.detail?.title == "Realtime release"
+            }
+
+            harness.finishStatusWrite()
+            harness.await { harness.viewModel.ui.value.error != null }
+
+            assertEquals("Realtime release", harness.viewModel.ui.value.tasks.single().title)
+            assertEquals("Realtime release", harness.detailViewModel.ui.value.detail?.title)
+            assertEquals("todo", harness.viewModel.ui.value.tasks.single().workflowStateKey)
+        } finally {
+            harness.finishStatusWrite()
+        }
+    }
+
+    @Test
+    fun aFailedBoardMoveDoesNotReplaceAStructurallyEqualNewerTicket() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.holdAndRejectNextStatusWrite()
+
+        try {
+            harness.viewModel.moveTask(
+                harness.viewModel.ui.value.tasks.single(),
+                WorkflowState(102, "in_progress", "In Progress"),
+            )
+            assertTrue("Move request should be in flight", harness.awaitStatusWrite())
+            harness.detailResponse = harness.original.replace("\"workflow_state_id\":101", "\"workflow_state_id\":102")
+                .replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"in_progress\"")
+            harness.detailViewModel.openDetail(harness.viewModel.ui.value.tasks.single())
+            harness.await { harness.detailReads > 1 && !harness.detailViewModel.ui.value.detailLoading }
+
+            harness.finishStatusWrite()
+            harness.await { harness.viewModel.ui.value.error != null }
+
+            assertEquals("in_progress", harness.viewModel.ui.value.tasks.single().workflowStateKey)
+            assertEquals("in_progress", harness.detailViewModel.ui.value.detail?.workflowStateKey)
+        } finally {
+            harness.finishStatusWrite()
+        }
+    }
+
+    @Test
+    fun aFailedBoardMoveRestoresThePreviousTicketInBoardAndDetail() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.holdAndRejectNextStatusWrite()
+
+        try {
+            harness.viewModel.moveTask(
+                harness.viewModel.ui.value.tasks.single(),
+                WorkflowState(102, "in_progress", "In Progress"),
+            )
+            assertTrue("Move request should be in flight", harness.awaitStatusWrite())
+            harness.await { harness.viewModel.ui.value.tasks.single().workflowStateKey == "in_progress" }
+
+            harness.finishStatusWrite()
+            harness.await { harness.viewModel.ui.value.error != null }
+
+            assertEquals("todo", harness.viewModel.ui.value.tasks.single().workflowStateKey)
+            assertEquals("todo", harness.detailViewModel.ui.value.detail?.workflowStateKey)
+        } finally {
+            harness.finishStatusWrite()
+        }
+    }
+
+    @Test
+    fun undoAfterASuccessfulBoardMoveRestoresThePreviousTicketInBoardAndDetail() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.saved = harness.original.replace("\"workflow_state_id\":101", "\"workflow_state_id\":102")
+            .replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"in_progress\"")
+
+        harness.viewModel.moveTask(
+            harness.viewModel.ui.value.tasks.single(),
+            WorkflowState(102, "in_progress", "In Progress"),
+        )
+        harness.await {
+            harness.writes == 1 &&
+                harness.viewModel.ui.value.tasks.single().workflowStateKey == "in_progress" &&
+                harness.detailViewModel.ui.value.detail?.workflowStateKey == "in_progress"
+        }
+        val notice = runBlocking { withTimeout(5_000) { harness.viewModel.notices.first() } }
+
+        assertEquals("Undo", notice.actionLabel)
+        assertEquals(102L, harness.detailViewModel.ui.value.detail?.workflowStateId)
+        harness.saved = harness.original
+        notice.action?.invoke()
+        harness.await { harness.writes == 2 && harness.viewModel.ui.value.tasks.single().workflowStateKey == "todo" }
+
+        assertEquals("todo", harness.viewModel.ui.value.tasks.single().workflowStateKey)
+        assertEquals(101L, harness.viewModel.ui.value.tasks.single().workflowStateId)
+        assertEquals("todo", harness.detailViewModel.ui.value.detail?.workflowStateKey)
+        assertEquals(101L, harness.detailViewModel.ui.value.detail?.workflowStateId)
+    }
+
+    @Test
     fun aCancelledTicketLeavesEveryLoadedViewIncludingDetailAndInlineComments() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
@@ -88,6 +214,24 @@ class TicketSessionUiTest {
         assertTrue(harness.viewModel.ui.value.sprintBoard!!.tickets.isEmpty())
         assertTrue(harness.viewModel.ui.value.backlog.none { it.id == 201L })
         assertTrue(harness.viewModel.ui.value.scheduled.none { it.id == 201L })
+    }
+
+    @Test
+    fun aCancelledFullTicketLeavesBothBoardProjectionsAndDetail() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.saved = harness.original.replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
+        harness.detailViewModel.updateFields(
+            harness.detailViewModel.ui.value.detail!!,
+            buildJsonObject { put("workflow_state_key", "cancelled") },
+        )
+        harness.await {
+            harness.detailViewModel.ui.value.detail == null &&
+                harness.viewModel.ui.value.tasks.isEmpty()
+        }
+
+        assertTrue(harness.viewModel.ui.value.sprintBoard!!.tickets.isEmpty())
+        assertTrue(harness.viewModel.ui.value.backlog.none { it.id == 201L })
     }
 
     @Test
@@ -379,7 +523,11 @@ internal class TicketSessionHarness {
     @Volatile var rejectDetailReads = false
     @Volatile var rejectBoardReads = false
     @Volatile var rejectFieldWrites = false
-    @Volatile private var boardTicket = original
+    @Volatile private var holdStatusWrite = false
+    @Volatile private var rejectStatusWrite = false
+    private val statusWriteStarted = CountDownLatch(1)
+    private val statusWriteRelease = CountDownLatch(1)
+    @Volatile var boardTicket = original
     private val repository = TaskRepository(ApiClient { request ->
         val body = when {
             request.path == "sprints/10/board" -> {
@@ -409,6 +557,13 @@ internal class TicketSessionHarness {
                 request.path == "tasks/201/schedule" || request.path == "tasks/201/unschedule" ||
                 (request.path == "tasks/backlog" && request.method == "POST") -> {
                 if (rejectFieldWrites && request.method == "PUT") throw java.io.IOException("offline")
+                if (request.path == "tasks/201/status" && holdStatusWrite) {
+                    statusWriteStarted.countDown()
+                    if (!statusWriteRelease.await(5, TimeUnit.SECONDS)) {
+                        throw java.io.IOException("Timed out waiting to finish status write")
+                    }
+                    if (rejectStatusWrite) throw java.io.IOException("offline")
+                }
                 boardTicket = saved
                 writes++
                 saved
@@ -428,6 +583,17 @@ internal class TicketSessionHarness {
     fun close() {
         viewModels.clear()
         session.close()
+    }
+
+    fun holdAndRejectNextStatusWrite() {
+        holdStatusWrite = true
+        rejectStatusWrite = true
+    }
+
+    fun awaitStatusWrite() = statusWriteStarted.await(5, TimeUnit.SECONDS)
+
+    fun finishStatusWrite() {
+        statusWriteRelease.countDown()
     }
 
     fun loadBoardPlanAndDetail() {

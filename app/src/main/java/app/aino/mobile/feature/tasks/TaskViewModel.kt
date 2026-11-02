@@ -8,11 +8,13 @@ import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.isTransientFailure
 import app.aino.mobile.core.network.userFacingMessage
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -330,10 +332,11 @@ class TaskViewModel(
 ) : ViewModel() {
     private val ownsTicketSession = ticketSession == null
     private val ticketSession = ticketSession ?: TicketSession()
-    private val _ui = MutableStateFlow(TaskUiState())
+    private val ticketScope = CoroutineScope(viewModelScope.coroutineContext + SupervisorJob(this.ticketSession.job))
+    private val _ui = this.ticketSession.state(TaskUiState())
     val ui: StateFlow<TaskUiState> = _ui.asStateFlow()
     init {
-        viewModelScope.launch {
+        ticketScope.launch {
             this@TaskViewModel.ticketSession.store.state.collect { snapshot ->
                 _ui.update { current ->
                     val changed = snapshot.tickets.values.filter { it !== current.tickets[it.id] }
@@ -376,6 +379,7 @@ class TaskViewModel(
     }
 
     override fun onCleared() {
+        ticketScope.cancel()
         if (ownsTicketSession) ticketSession.close()
     }
 
@@ -401,7 +405,18 @@ class TaskViewModel(
         /** One "no longer available" notice per refresh cycle, not one per row. */
         private var invisibleNoticed = false
 
-    private fun io(block: suspend () -> Unit) = viewModelScope.launch(Dispatchers.IO) { block() }
+    init {
+        this.ticketSession.onClose {
+            synchronized(pendingEvents) {
+                pendingEvents.clear()
+                pendingReload = false
+            }
+            _notices.close()
+            while (_notices.tryReceive().isSuccess) Unit
+        }
+    }
+
+    private fun io(block: suspend () -> Unit) = ticketScope.launch(Dispatchers.IO) { block() }
 
     private fun notify(text: String, actionLabel: String? = null, action: (() -> Unit)? = null) {
         _notices.trySend(TaskNotice(text, actionLabel, action))
@@ -411,7 +426,7 @@ class TaskViewModel(
     private fun fail(message: String) {
         _ui.update { it.copy(error = message) }
         errorJob?.cancel()
-        errorJob = viewModelScope.launch {
+        errorJob = ticketScope.launch {
             delay(5_000)
             _ui.update { if (it.error == message) it.copy(error = null) else it }
         }
@@ -624,9 +639,9 @@ class TaskViewModel(
     /** Debounce only: the debounce delay may be cancelled, but each drained batch is applied serially. */
     private fun scheduleSync() {
         syncJob?.cancel()
-        syncJob = viewModelScope.launch(Dispatchers.IO) {
+        syncJob = ticketScope.launch(Dispatchers.IO) {
             delay(SYNC_DEBOUNCE_MS)
-            viewModelScope.launch(Dispatchers.IO) {
+            ticketScope.launch(Dispatchers.IO) {
                 syncMutex.withLock {
                     val (events, reload) = synchronized(pendingEvents) {
                         val copy = pendingEvents.toList()
@@ -711,10 +726,11 @@ class TaskViewModel(
     }
 
     /** Writes the authoritative Ticket; each loaded view resolves its membership from it. */
-    private fun patchTask(task: Task, highlight: Boolean) {
+    private fun patchTask(task: Task, highlight: Boolean, writeToStore: Boolean = true): Task {
         planRevision.incrementAndGet()
-        ticketSession.store.upsert(task)
-        if (highlight) flash(task.id)
+        val current = if (writeToStore) ticketSession.store.upsert(task) else task
+        if (highlight) flash(current.id)
+        return current
     }
 
     private fun removeTask(id: Long, remote: Boolean) {
@@ -942,7 +958,7 @@ class TaskViewModel(
             return
         }
         _ui.update { it.copy(searchQuery = value, searching = true) }
-        searchJob = viewModelScope.launch(Dispatchers.IO) {
+        searchJob = ticketScope.launch(Dispatchers.IO) {
             delay(300)
             val results = runCatching { repository.search(value.trim()) }.getOrDefault(emptyList())
             ticketSession.store.upsert(results)
@@ -1012,13 +1028,14 @@ class TaskViewModel(
      * limit 409) snaps the card back.
      */
     fun moveTask(task: Task, state: WorkflowState) {
-        if (task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)) return
+        val current = ticketSession.store.state.value.tickets[task.id] ?: task.copy(comments = emptyList())
+        if (current.workflowStateKey == state.key || (state.id != 0L && current.workflowStateId == state.id)) return
         val columnAccepting = _ui.value.sprintBoard?.columns?.firstOrNull { it.stateId == state.id }?.accepting ?: false
-        val decision = task.dropTargetDecision(state.id, columnAccepting)
+        val decision = current.dropTargetDecision(state.id, columnAccepting)
         if (!decision.allowed) return notify(decision.reasonCopy())
-        val previous = task
-        val moved = task.copy(workflowStateKey = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: task.workflowStateId)
-        applyTask(moved)
+        val previous = current
+        val moved = previous.copy(workflowStateKey = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: previous.workflowStateId)
+        val optimistic = applyTask(moved)
         io {
             runCatching { repository.updateStatus(task.id, state.key) }.fold(
                 onSuccess = { saved ->
@@ -1027,7 +1044,9 @@ class TaskViewModel(
                     notify("Moved to ${state.name.ifEmpty { state.key }}", "Undo") { revertMove(previous, state) }
                 },
                 onFailure = { e ->
-                    applyTask(previous)
+                    if (ticketSession.store.restoreIfCurrent(optimistic, previous)) {
+                        patchTask(previous, highlight = false, writeToStore = false)
+                    }
                     fail(failure(e, "Failed to move item"))
                 },
             )
@@ -1548,7 +1567,7 @@ class TaskViewModel(
                 onSuccess = { comment ->
                     updateComments(taskId) { list -> if (list.any { it.id == comment.id }) list else list + comment }
                     bumpCommentCount(taskId, 1)
-                    viewModelScope.launch { onDone() }
+                    ticketScope.launch { onDone() }
                     if (_ui.value.detail?.id == taskId) refreshHistory(taskId)
                 },
                 onFailure = { fail("Failed to add comment") },
@@ -1571,7 +1590,7 @@ class TaskViewModel(
                             ) else c
                         }
                     }
-                    viewModelScope.launch { onDone() }
+                    ticketScope.launch { onDone() }
                     if (_ui.value.detail?.id == taskId) refreshHistory(taskId)
                 },
                 onFailure = { fail("Failed to update comment") },
@@ -1917,7 +1936,7 @@ class TaskViewModel(
             runCatching { repository.loadByKey(key) }.fold(
                 onSuccess = { task ->
                     ticketSession.store.upsert(task)
-                    viewModelScope.launch { openDetail(task) }
+                    ticketScope.launch { openDetail(task) }
                 },
                 onFailure = { fail(failure(it, "No task matches $key")) },
             )
@@ -1928,11 +1947,14 @@ class TaskViewModel(
         private const val SYNC_DEBOUNCE_MS = 400L
         private const val ATTRIBUTION_MS = 4_000L
 
-        fun factory(context: Context): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
+        fun factory(
+            context: Context,
+            session: TicketSession = app.aino.mobile.core.AppContainer.get(context).ticketSession.value,
+        ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 val container = app.aino.mobile.core.AppContainer.get(context)
-                return TaskViewModel(TaskRepository(container.api), ServiceDeskRepository(container.api)) as T
+                return TaskViewModel(TaskRepository(container.api), ServiceDeskRepository(container.api), session) as T
             }
         }
     }
