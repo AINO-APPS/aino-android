@@ -15,10 +15,32 @@ import kotlinx.coroutines.launch
 class TicketSession {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal val store = TicketStore(scope)
+    private val mutableCommentThreads = MutableStateFlow<Map<Long, CommentThread>>(emptyMap())
+    internal val commentThreads = mutableCommentThreads.asStateFlow()
+
+    internal fun setCommentThread(thread: CommentThread) {
+        mutableCommentThreads.update { it + (thread.taskId to thread) }
+    }
+
+    internal fun setCommentThreadIfAbsent(thread: CommentThread) {
+        mutableCommentThreads.update { if (thread.taskId in it) it else it + (thread.taskId to thread) }
+    }
+
+    internal fun updateCommentThread(taskId: Long, transform: (CommentThread) -> CommentThread) {
+        mutableCommentThreads.update { threads ->
+            val current = threads[taskId] ?: CommentThread(taskId, loading = false)
+            threads + (taskId to transform(current).copy(taskId = taskId))
+        }
+    }
+
+    internal fun clearCommentThreads() {
+        mutableCommentThreads.value = emptyMap()
+    }
 
     fun close() {
         scope.cancel()
         store.clear()
+        clearCommentThreads()
     }
 }
 

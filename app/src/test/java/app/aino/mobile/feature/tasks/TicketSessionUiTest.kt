@@ -186,6 +186,68 @@ class TicketSessionUiTest {
     }
 
     @Test
+    fun commentChangesAreSharedBetweenInlineAndDetailAcrossViewModels() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+
+        harness.viewModel.openComments(201)
+        harness.await { harness.viewModel.ui.value.inlineComments?.loading == false }
+        harness.viewModel.addComment(201, "From inline")
+        harness.await { harness.viewModel.ui.value.inlineComments?.items?.any { it.content == "From inline" } == true }
+        harness.await { harness.detailViewModel.ui.value.detailComments.any { it.content == "From inline" } }
+        harness.await { harness.viewModel.ui.value.tasks.singleOrNull()?.commentCount == 1 }
+
+        harness.detailViewModel.addComment(201, "From detail")
+        harness.await { harness.detailViewModel.ui.value.detailComments.any { it.content == "From detail" } }
+        harness.await { harness.viewModel.ui.value.inlineComments?.items?.any { it.content == "From detail" } == true }
+        harness.await {
+            harness.viewModel.ui.value.tasks.singleOrNull()?.commentCount == 2 &&
+                harness.detailViewModel.ui.value.detail?.commentCount == 2
+        }
+        assertEquals(2, harness.viewModel.ui.value.tasks.single().commentCount)
+        assertEquals(2, harness.detailViewModel.ui.value.detail?.commentCount)
+
+        harness.detailViewModel.editComment(201, 1, "Edited from detail")
+        harness.await { harness.viewModel.ui.value.inlineComments?.items?.any { it.content == "Edited from detail" } == true }
+        harness.await { harness.detailViewModel.ui.value.detailComments.any { it.content == "Edited from detail" } }
+
+        harness.viewModel.deleteComment(201, 2)
+        harness.viewModel.acceptConfirm()
+        harness.await { harness.viewModel.ui.value.inlineComments?.items?.none { it.id == 2L } == true }
+        harness.await { harness.detailViewModel.ui.value.detailComments.none { it.id == 2L } }
+        harness.await {
+            harness.viewModel.ui.value.tasks.singleOrNull()?.commentCount == 1 &&
+                harness.detailViewModel.ui.value.detail?.commentCount == 1
+        }
+        assertEquals(1, harness.viewModel.ui.value.tasks.single().commentCount)
+        assertEquals(1, harness.detailViewModel.ui.value.detail?.commentCount)
+
+        harness.commentsResponse = """
+            [{"id":99,"content":"Realtime comment","user_id":2},
+             {"id":100,"content":"Another remote comment","user_id":3}]
+        """.trimIndent()
+        harness.viewModel.onTaskEvent("task_updated", buildJsonObject {
+            put("taskId", 201)
+            put("action", "comment")
+        })
+        harness.await {
+            harness.viewModel.ui.value.inlineComments?.items?.size == 2 &&
+                harness.viewModel.ui.value.tasks.singleOrNull()?.commentCount == 2
+        }
+        harness.await { harness.detailViewModel.ui.value.detailComments.size == 2 }
+        assertEquals(listOf("Realtime comment", "Another remote comment"), harness.detailViewModel.ui.value.detailComments.map { it.content })
+
+        harness.planRows = harness.original
+            .replace("\"sprint_id\":10", "\"sprint_id\":null")
+            .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
+            .replace("\"capabilities\":", "\"comment_count\":2,\"capabilities\":")
+        harness.viewModel.loadBacklog()
+        harness.await { harness.viewModel.ui.value.backlog.any { it.id == 201L } }
+        assertEquals(2, harness.viewModel.ui.value.backlog.single().commentCount)
+        assertEquals(2, harness.detailViewModel.ui.value.detail?.commentCount)
+    }
+
+    @Test
     fun aKeyLookupWritesItsFullTicketEvenWhenTheFollowUpDetailReadFails() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
@@ -249,6 +311,8 @@ internal class TicketSessionHarness {
     @Volatile var writes = 0
     @Volatile var detailReads = 0
     @Volatile var planReads = 0
+    @Volatile var commentWrites = 0
+    @Volatile var commentsResponse = "[]"
     @Volatile var planRows = ""
     @Volatile var detailResponse = original
     @Volatile var rejectPlanLoads = false
@@ -272,7 +336,14 @@ internal class TicketSessionHarness {
                 if (rejectDetailReads) throw java.io.IOException("offline")
                 detailResponse
             }
-            request.path == "tasks/201/comments" -> "[]"
+            request.path == "tasks/201/comments" && request.method == "GET" -> commentsResponse
+            request.path == "tasks/201/comments" && request.method == "POST" -> {
+                commentWrites++
+                """{"id":$commentWrites,"content":"${if (commentWrites == 1) "From inline" else "From detail"}","user_id":1}"""
+            }
+            request.path == "tasks/201/comments/1" && request.method == "PUT" ->
+                """{"id":1,"content":"Edited from detail"}"""
+            request.path == "tasks/201/comments/2" && request.method == "DELETE" -> "{}"
             request.path == "tasks/201/timer/stop" -> """{"taskId":201,"minutes":5}"""
             request.path.startsWith("tasks/by-key/") -> saved
             request.path == "tasks/available-sprints" -> """[{"id":10,"name":"Sprint","status":"active"}]"""

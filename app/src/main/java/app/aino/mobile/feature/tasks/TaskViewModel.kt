@@ -69,7 +69,7 @@ data class TaskEditDraft(
 
 enum class DetailTab(val label: String) { Comments("Comments"), History("Activity"), Checklist("Checklist"), Links("Links"), Fields("Fields") }
 
-/** Comments shown either in the detail page or the card's inline comment sheet. */
+/** One Ticket's shared comments, projected into Detail and the inline panel. */
 data class CommentThread(val taskId: Long, val items: List<TaskComment> = emptyList(), val loading: Boolean = true)
 
 /** One-shot snackbar; [action] runs when its button is tapped (e.g. Undo). */
@@ -174,9 +174,9 @@ data class TaskUiState(
     val detailEditing: Boolean = false,
     val detailTab: DetailTab = DetailTab.Comments,
     val history: List<TaskHistoryEntry> = emptyList(),
-    val detailComments: List<TaskComment> = emptyList(),
+    val commentThreads: Map<Long, CommentThread> = emptyMap(),
     // Inline comment panel (the card's 💬).
-    val inlineComments: CommentThread? = null,
+    val inlineCommentTaskId: Long? = null,
     /** Bumped on refresh while the Service Desk tab is visible; the tab reloads on change. */
     val serviceDeskVersion: Int = 0,
     // ── Next-generation surfaces ─────────────────────────────────────────
@@ -206,6 +206,11 @@ data class TaskUiState(
     /** "Updated by <name>" flashes keyed by task id, from realtime deltas. */
     val attribution: Map<Long, String> = emptyMap(),
 ) {
+    val detailComments: List<TaskComment>
+        get() = detailId?.let { commentThreads[it]?.items }.orEmpty()
+    val inlineComments: CommentThread?
+        get() = inlineCommentTaskId?.let { commentThreads[it] ?: CommentThread(it) }
+
     private fun inScope(ticket: Task): Boolean = when {
         !showsTeamPicker(role) -> teamId == null || ticket.teamId == teamId
         selectedTeamId == -1L -> ticket.teamId == null
@@ -332,6 +337,11 @@ class TaskViewModel(
                 }
             }
         }
+        viewModelScope.launch {
+            this@TaskViewModel.ticketSession.commentThreads.collect { threads ->
+                _ui.update { it.copy(commentThreads = threads) }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -456,7 +466,10 @@ class TaskViewModel(
             current.agileEnabled == agileEnabled && current.customFieldsEnabled == customFieldsEnabled
         ) return
         val changedUser = current.userId != null && current.userId != userId
-        if (changedUser) ticketSession.store.clear()
+        if (changedUser) {
+            ticketSession.store.clear()
+            ticketSession.clearCommentThreads()
+        }
         _ui.value = (if (changedUser) TaskUiState() else current).copy(
             userId = userId, role = role, teamName = teamName, teamId = teamId,
             agileEnabled = agileEnabled, customFieldsEnabled = customFieldsEnabled,
@@ -610,6 +623,7 @@ class TaskViewModel(
         byTask.forEach { (id, actions) ->
             when {
                 TaskAction.Deleted in actions -> removeTask(id, remote = true)
+                actions == setOf(TaskAction.Comment) -> syncComments(id)
                 else -> {
                     if (!syncTask(id)) needsReload = true
                     if (TaskAction.Comment in actions) syncComments(id)
@@ -639,11 +653,10 @@ class TaskViewModel(
         if (s.detail?.id == id) {
             if (s.detailEditing) _ui.update { it.copy(detailStale = true) }
             else {
-                _ui.update { it.copy(detailComments = fresh.comments) }
+                ticketSession.setCommentThreadIfAbsent(CommentThread(id, fresh.comments, loading = false))
                 refreshHistory(id)
             }
         }
-        if (s.inlineComments?.taskId == id) syncComments(id)
         return true
     }
 
@@ -658,12 +671,7 @@ class TaskViewModel(
             return
         }
         val items = runCatching { repository.loadComments(id) }.getOrNull() ?: return
-        _ui.update { st ->
-            st.copy(
-                detailComments = if (st.detail?.id == id) items else st.detailComments,
-                inlineComments = st.inlineComments?.let { if (it.taskId == id) it.copy(items = items, loading = false) else it },
-            )
-        }
+        ticketSession.setCommentThread(CommentThread(id, items, loading = false))
         _ui.value.tickets[id]?.let { ticketSession.store.upsert(it.copy(commentCount = items.size)) }
         if (_ui.value.detail?.id == id) refreshHistory(id)
         flash(id)
@@ -694,7 +702,7 @@ class TaskViewModel(
             s.copy(
                 scheduled = s.scheduled.filterNot { it.id == id },
                 searchResults = s.searchResults.filterNot { it.id == id },
-                inlineComments = s.inlineComments?.takeIf { it.taskId != id },
+                inlineCommentTaskId = s.inlineCommentTaskId?.takeIf { it != id },
                 detailId = s.detailId?.takeIf { it != id },
             ).let { if (it.planLoaded) it.projectPlan() else it }
         }
@@ -1317,9 +1325,10 @@ class TaskViewModel(
     }
 
     private fun openTicketDetail(id: Long) {
+        val threads = ticketSession.commentThreads.value
         _ui.update {
             it.copy(
-                detailId = id, detailLoading = true, detailComments = emptyList(), detailTab = DetailTab.Comments,
+                detailId = id, detailLoading = true, commentThreads = threads, detailTab = DetailTab.Comments,
                 history = emptyList(), detailEditing = false, detailStale = false, searchOpen = false,
             )
         }
@@ -1327,11 +1336,13 @@ class TaskViewModel(
             runCatching { repository.loadDetail(id) }.fold(
                 onSuccess = { data ->
                     ticketSession.store.upsert(data)
-                    _ui.update { if (it.detailId == id) it.copy(detailComments = data.comments) else it }
+                    ticketSession.setCommentThreadIfAbsent(CommentThread(id, data.comments, loading = false))
                 },
                 onFailure = {
-                    val comments = runCatching { repository.loadComments(id) }.getOrDefault(emptyList())
-                    _ui.update { if (it.detailId == id) it.copy(detailComments = comments) else it }
+                    if (ticketSession.commentThreads.value[id] == null) {
+                        val loaded = runCatching { repository.loadComments(id) }.getOrDefault(emptyList())
+                        ticketSession.setCommentThreadIfAbsent(CommentThread(id, loaded, loading = false))
+                    }
                 },
             )
             _ui.update { it.copy(detailLoading = false) }
@@ -1364,7 +1375,7 @@ class TaskViewModel(
     }
 
     fun closeDetail() = _ui.update {
-        it.copy(detailId = null, detailComments = emptyList(), detailEditing = false, history = emptyList(), detailTab = DetailTab.Comments, detailStale = false)
+        it.copy(detailId = null, detailEditing = false, history = emptyList(), detailTab = DetailTab.Comments, detailStale = false)
     }
 
     fun setDetailTab(tab: DetailTab) = _ui.update { it.copy(detailTab = tab) }
@@ -1387,7 +1398,7 @@ class TaskViewModel(
         _ui.update { it.copy(detailStale = false) }
         io {
             runCatching { repository.loadDetail(id) }.onSuccess { data ->
-                _ui.update { if (it.detailId == id) it.copy(detailComments = data.comments) else it }
+                ticketSession.setCommentThreadIfAbsent(CommentThread(id, data.comments, loading = false))
                 patchTask(data, highlight = false)
             }
             refreshHistory(id)
@@ -1464,14 +1475,19 @@ class TaskViewModel(
     // ── Comments (detail + inline panel) ─────────────────────────────────
 
     fun openComments(taskId: Long) {
-        _ui.update { it.copy(inlineComments = CommentThread(taskId)) }
+        val threads = ticketSession.commentThreads.value
+        val cached = threads[taskId]
+        _ui.update { it.copy(inlineCommentTaskId = taskId, commentThreads = threads) }
+        ticketSession.setCommentThread((cached ?: CommentThread(taskId)).copy(loading = true))
         io {
             val items = runCatching { repository.loadComments(taskId) }.getOrDefault(emptyList())
-            _ui.update { s -> s.copy(inlineComments = s.inlineComments?.takeIf { it.taskId == taskId }?.copy(items = items, loading = false)) }
+            if (_ui.value.inlineCommentTaskId == taskId) {
+                ticketSession.setCommentThread(CommentThread(taskId, items, loading = false))
+            }
         }
     }
 
-    fun closeComments() = _ui.update { it.copy(inlineComments = null) }
+    fun closeComments() = _ui.update { it.copy(inlineCommentTaskId = null) }
 
     private fun bumpCommentCount(taskId: Long, delta: Int) {
         _ui.value.tickets[taskId]?.let {
@@ -1479,11 +1495,10 @@ class TaskViewModel(
         }
     }
 
-    private fun updateComments(taskId: Long, transform: (List<TaskComment>) -> List<TaskComment>) = _ui.update { s ->
-        s.copy(
-            detailComments = if (s.detail?.id == taskId) transform(s.detailComments) else s.detailComments,
-            inlineComments = s.inlineComments?.let { if (it.taskId == taskId) it.copy(items = transform(it.items)) else it },
-        )
+    private fun updateComments(taskId: Long, transform: (List<TaskComment>) -> List<TaskComment>) {
+        ticketSession.updateCommentThread(taskId) { thread ->
+            thread.copy(items = transform(thread.items), loading = false)
+        }
     }
 
     /** Text and/or one attachment (`CommentSection.handleAdd`). */
