@@ -2,10 +2,12 @@ package app.aino.mobile.feature.tasks
 
 import androidx.lifecycle.ViewModelStore
 import app.aino.mobile.core.network.ApiClient
+import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.ApiResponse
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -16,6 +18,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -68,6 +71,168 @@ class TicketSessionUiTest {
     }
 
     @Test
+    fun aRealtimeUpdateRefetchesIntoEveryLoadedViewInTheSession() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.searchRows = harness.original
+        harness.viewModel.setSearch("Ship")
+        harness.await { harness.viewModel.ui.value.searchResults.size == 1 }
+        harness.detailResponse = harness.original.replace("Ship release", "Realtime release")
+        harness.boardTicket = harness.detailResponse
+
+        harness.session.onRealtimeEvent(
+            "task_updated",
+            buildJsonObject {
+                put("taskId", 201)
+                put("action", "updated")
+            },
+        )
+        harness.await {
+            harness.viewModel.ui.value.tasks.singleOrNull()?.title == "Realtime release" &&
+                harness.viewModel.ui.value.searchResults.singleOrNull()?.title == "Realtime release" &&
+                harness.detailViewModel.ui.value.detail?.title == "Realtime release"
+        }
+
+        assertEquals("Realtime release", harness.session.store.state.value.tickets[201]?.title)
+    }
+
+    @Test
+    fun aGoneRealtimeTicketLeavesEveryViewAndEmitsOnlyOneNotice() {
+        for (status in listOf(403, 404)) {
+            val harness = harness()
+            harness.loadBoardPlanAndDetail()
+            harness.detailErrorStatus = status
+            harness.session.onRealtimeEvent(
+                "task_updated",
+                buildJsonObject {
+                    put("taskId", 201)
+                    put("action", "updated")
+                },
+            )
+            harness.await {
+                201L !in harness.session.store.state.value.tickets &&
+                    harness.viewModel.ui.value.tasks.none { it.id == 201L } &&
+                    harness.detailViewModel.ui.value.detail == null
+            }
+
+            val notice = runBlocking { withTimeout(1_000) { harness.session.notices.first() } }
+            assertEquals("Some tickets are no longer available to you", notice.text)
+            assertNull(runBlocking { withTimeoutOrNull(100) { harness.session.notices.first() } })
+        }
+    }
+
+    @Test
+    fun unusableRealtimePayloadRequestsOneFullReloadFromTheSession() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        val boardReads = harness.boardReads
+
+        harness.session.onRealtimeEvent("task_updated", null)
+        harness.await { harness.boardReads > boardReads }
+
+        assertEquals(boardReads + 1, harness.boardReads)
+    }
+
+    @Test
+    fun tooManyRealtimeTicketsRequestOneFullReloadInsteadOfTargetedFetches() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        val boardReads = harness.boardReads
+        val detailReads = harness.detailReads
+
+        repeat(MAX_TARGETED_SYNC + 1) { index ->
+            harness.session.onRealtimeEvent(
+                "task_updated",
+                buildJsonObject {
+                    put("taskId", 300 + index)
+                    put("action", "updated")
+                },
+            )
+        }
+        harness.await { harness.boardReads > boardReads && harness.detailReads > detailReads }
+
+        assertEquals(boardReads + 1, harness.boardReads)
+        assertEquals(detailReads + 1, harness.detailReads)
+    }
+
+    @Test
+    fun visibleTicketPollingCanBeForwardedThroughTheSession() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        val boardReads = harness.boardReads
+
+        harness.session.pollVisible()
+        harness.await { harness.boardReads > boardReads }
+
+        assertEquals(boardReads + 1, harness.boardReads)
+    }
+
+    @Test
+    fun reconnectResyncsEveryLoadedView() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.viewModel.loadScheduled()
+        harness.await { harness.viewModel.ui.value.scheduledLoaded }
+        val boardReads = harness.boardReads
+        val planReads = harness.planReads
+        val scheduledReads = harness.scheduledReads
+        val detailReads = harness.detailReads
+
+        harness.session.onReconnect()
+        harness.await {
+            harness.boardReads > boardReads &&
+                harness.planReads > planReads &&
+                harness.scheduledReads > scheduledReads &&
+                harness.detailReads > detailReads
+        }
+
+        assertEquals(boardReads + 1, harness.boardReads)
+        assertEquals(planReads + 1, harness.planReads)
+        assertEquals(scheduledReads + 1, harness.scheduledReads)
+        assertEquals(detailReads + 1, harness.detailReads)
+    }
+
+    @Test
+    fun closingTheSessionStopsQueuedRealtimeSync() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        val detailReads = harness.detailReads
+        harness.session.onRealtimeEvent(
+            "task_updated",
+            buildJsonObject {
+                put("taskId", 201)
+                put("action", "updated")
+            },
+        )
+
+        harness.session.close()
+        Thread.sleep(500)
+
+        assertEquals(detailReads, harness.detailReads)
+    }
+
+    @Test
+    fun anOpenDetailIsMarkedStaleWhenItsRealtimeTicketChanges() {
+        val harness = harness()
+        harness.loadBoardPlanAndDetail()
+        harness.detailViewModel.startEdit()
+        harness.detailResponse = harness.original.replace("Ship release", "Changed elsewhere")
+        harness.boardTicket = harness.detailResponse
+
+        harness.session.onRealtimeEvent(
+            "task_updated",
+            buildJsonObject {
+                put("taskId", 201)
+                put("action", "updated")
+            },
+        )
+        harness.await { harness.detailViewModel.ui.value.detailStale }
+
+        assertTrue(harness.detailViewModel.ui.value.detailEditing)
+        assertEquals("Changed elsewhere", harness.detailViewModel.ui.value.detail?.title)
+    }
+
+    @Test
     fun aFailedBoardMoveDoesNotReplaceANewerRealtimeTicket() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
@@ -83,7 +248,7 @@ class TicketSessionUiTest {
 
             harness.detailResponse = harness.original.replace("Ship release", "Realtime release")
             harness.boardTicket = harness.detailResponse
-            harness.viewModel.onTaskEvent(
+            harness.session.onRealtimeEvent(
                 "task_updated",
                 buildJsonObject {
                     put("taskId", 201)
@@ -311,7 +476,7 @@ class TicketSessionUiTest {
         harness.viewModel.openComments(201)
         harness.await { harness.viewModel.ui.value.inlineComments?.loading == false }
 
-        harness.viewModel.onTaskEvent("task_updated", buildJsonObject {
+        harness.session.onRealtimeEvent("task_updated", buildJsonObject {
             put("taskId", 201)
             put("action", "deleted")
         })
@@ -504,7 +669,7 @@ class TicketSessionUiTest {
             [{"id":99,"content":"Realtime comment","user_id":2},
              {"id":100,"content":"Another remote comment","user_id":3}]
         """.trimIndent()
-        harness.viewModel.onTaskEvent("task_updated", buildJsonObject {
+        harness.session.onRealtimeEvent("task_updated", buildJsonObject {
             put("taskId", 201)
             put("action", "comment")
         })
@@ -589,6 +754,8 @@ internal class TicketSessionHarness {
     @Volatile var writes = 0
     @Volatile var detailReads = 0
     @Volatile var planReads = 0
+    @Volatile var boardReads = 0
+    @Volatile var scheduledReads = 0
     @Volatile var commentReads = 0
     @Volatile var commentWrites = 0
     @Volatile var commentsResponse = "[]"
@@ -598,6 +765,7 @@ internal class TicketSessionHarness {
     @Volatile var detailResponse = original
     @Volatile var rejectPlanLoads = false
     @Volatile var rejectDetailReads = false
+    @Volatile var detailErrorStatus: Int? = null
     @Volatile var rejectBoardReads = false
     @Volatile var rejectFieldWrites = false
     @Volatile private var holdStatusWrite = false
@@ -608,6 +776,7 @@ internal class TicketSessionHarness {
     private val repository = TaskRepository(ApiClient { request ->
         val body = when {
             request.path == "sprints/10/board" -> {
+                boardReads++
                 if (rejectBoardReads) throw java.io.IOException("offline")
                 """{"sprint":{"id":10,"name":"Sprint"},"columns":[{"stateId":102,"count":0,"accepting":true}],"tickets":[$boardTicket]}"""
             }
@@ -616,10 +785,16 @@ internal class TicketSessionHarness {
                 if (rejectPlanLoads) throw java.io.IOException("offline")
                 """{"tasks":[$planRows],"pagination":{"total":0,"hasMore":false}}"""
             }
-            request.path.startsWith("tasks/scheduled") -> """{"tasks":[$scheduledRows]}"""
+            request.path.startsWith("tasks/scheduled") -> {
+                scheduledReads++
+                """{"tasks":[$scheduledRows]}"""
+            }
             request.path.startsWith("tasks/search?") -> "[$searchRows]"
             request.path == "tasks/201/detail" -> {
                 detailReads++
+                detailErrorStatus?.let { status ->
+                    throw ApiError.Http(status, """{"error":"Not visible"}""", request.method, request.path)
+                }
                 if (rejectDetailReads) throw java.io.IOException("offline")
                 detailResponse
             }
