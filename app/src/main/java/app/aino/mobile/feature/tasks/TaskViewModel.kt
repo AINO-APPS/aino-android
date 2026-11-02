@@ -1224,7 +1224,7 @@ class TaskViewModel(
                     notify("Scheduled for ${formatDate(date)}", "View") { showScheduled(date) }
                     if (closeAfter) withContext(Dispatchers.Main) { closeDetail() }
                 },
-                onFailure = { fail("Failed to schedule task") },
+                onFailure = { e -> fail(failure(e, "Failed to schedule task")) },
             )
         }
     }

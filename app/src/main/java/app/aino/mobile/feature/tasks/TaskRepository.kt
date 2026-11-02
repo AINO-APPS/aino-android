@@ -63,9 +63,9 @@ class TaskRepository(
     fun search(q: String): List<Task> = decode(api.execute(ApiRequest(path = searchQuery(q))))
 
     /**
-     * `GET /tasks/scheduled` — every unsprinted ticket with a planned or due
-     * date. The date window still goes to the overlays endpoint (leave and
-     * holidays are calendar context, not the task set).
+     * `GET /tasks/scheduled` — every unsprinted ticket with a planned day only.
+     * The date window still goes to the overlays endpoint (leave and holidays
+     * are calendar context, not the task set).
      */
     fun loadScheduled(filters: TaskFilters, teamScope: TeamScope = TeamScope()): List<Task> =
         decode<TaskListResponse>(api.execute(ApiRequest(path = scheduledQuery(filters, teamScope)))).tasks
