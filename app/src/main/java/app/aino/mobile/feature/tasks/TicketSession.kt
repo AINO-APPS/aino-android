@@ -49,17 +49,23 @@ class TicketSession {
     }
 
     internal fun onClose(action: () -> Unit) {
-        synchronized(lock) {
-            if (closed) action() else resets.add(action)
+        val runNow = synchronized(lock) {
+            if (closed) true else {
+                resets.add(action)
+                false
+            }
         }
+        if (runNow) action()
     }
 
-    fun close() = synchronized(lock) {
-        if (closed) return@synchronized
-        closed = true
+    fun close() {
+        val actions = synchronized(lock) {
+            if (closed) return
+            closed = true
+            resets.toList().also { resets.clear() }
+        }
         scope.cancel()
-        resets.forEach { it() }
-        resets.clear()
+        actions.forEach { it() }
     }
 }
 
