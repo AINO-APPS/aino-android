@@ -332,7 +332,7 @@ fun AinoApp(
                 }
                 meetingSession.onRealtimeEvent(event)
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
-                if (event.type in TASK_REFRESH_EVENTS) tasks.onTaskEvent(event.type, event.data)
+                if (event.type in TASK_REFRESH_EVENTS) tasks.ticketSession.onRealtimeEvent(event.type, event.data)
                 when (event.type) {
                     // Clock/break taken on the web, desktop or another phone, or a
                     // manual entry filed/deleted: timer, status, calendar and loaded tabs.
@@ -406,7 +406,7 @@ fun AinoApp(
         chat.refreshThread()
         dashboard.refresh()
         attendance.refresh()
-        tasks.onTaskEvent()
+        tasks.ticketSession.onReconnect()
         notifications.refresh()
         profile.refresh()
     }
@@ -750,7 +750,7 @@ private fun AuthenticatedShell(
                 )
             }
             composable(AinoDestination.Tasks.route) {
-                ForegroundPoll(TASKS_POLL_MS, tasks::pollVisible)
+                ForegroundPoll(TASKS_POLL_MS, tasks.ticketSession::pollVisible)
                 TasksScreen(
                     viewModel = tasks,
                     onOpenDetail = { nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true } },
@@ -1317,7 +1317,7 @@ private fun AuthenticatedShell(
     }
     // Tasks snackbars live at shell level so Undo / View survive the detail screen closing.
     app.aino.mobile.feature.tasks.TaskNoticeHost(
-        tasks,
+        tasks.ticketSession,
         modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = if (fullScreen) 8.dp else 72.dp),
     )
     // Direct Share: keep the latest chats published as share-sheet targets.

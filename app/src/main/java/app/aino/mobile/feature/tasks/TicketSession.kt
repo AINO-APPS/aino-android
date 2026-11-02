@@ -5,14 +5,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.serialization.json.JsonElement
 import java.util.UUID
 
-/** Shared Ticket ownership beneath the existing Tasks ViewModel. */
+/** Signed-in session owner for Ticket state, scope, sync and notices. */
 class TicketSession {
     val key: String = UUID.randomUUID().toString()
     internal val job = SupervisorJob()
@@ -20,7 +24,11 @@ class TicketSession {
     private val lock = Any()
     private var closed = false
     private val resets = mutableListOf<() -> Unit>()
+    internal val planRevision = java.util.concurrent.atomic.AtomicInteger()
     internal val store = TicketStore(scope, state(TicketSnapshot()))
+    private var ticketSync: TicketSync? = null
+    private val noticeChannel = Channel<TaskNotice>(Channel.BUFFERED)
+    val notices: Flow<TaskNotice> = noticeChannel.receiveAsFlow()
     private val mutablePlanScope = state(PlanScope())
     val planScope = mutablePlanScope.asStateFlow()
     internal val planScopeLock = Any()
@@ -49,6 +57,30 @@ class TicketSession {
 
     internal fun clearCommentThreads() {
         mutableCommentThreads.value = emptyMap()
+    }
+
+    internal fun removeCommentThread(taskId: Long) {
+        mutableCommentThreads.update { it - taskId }
+    }
+
+    internal fun sync(repository: TaskRepository): TicketSync = synchronized(lock) {
+        ticketSync ?: TicketSync(this, repository).also { ticketSync = it }
+    }
+
+    internal fun publishNotice(notice: TaskNotice) {
+        noticeChannel.trySend(notice)
+    }
+
+    fun onRealtimeEvent(type: String, data: JsonElement?) {
+        ticketSync?.onRealtimeEvent(type, data)
+    }
+
+    fun onReconnect() {
+        ticketSync?.onReconnect()
+    }
+
+    fun pollVisible() {
+        ticketSync?.pollVisible()
     }
 
     /**
@@ -95,6 +127,8 @@ class TicketSession {
         }
         scope.cancel()
         actions.forEach { it() }
+        noticeChannel.close()
+        while (noticeChannel.tryReceive().isSuccess) Unit
     }
 }
 

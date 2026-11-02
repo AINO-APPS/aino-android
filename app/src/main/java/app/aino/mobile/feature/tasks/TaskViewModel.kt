@@ -12,16 +12,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -316,7 +312,8 @@ class TaskViewModel(
     ticketSession: TicketSession? = null,
 ) : ViewModel() {
     private val ownsTicketSession = ticketSession == null
-    private val ticketSession = ticketSession ?: TicketSession()
+    val ticketSession = ticketSession ?: TicketSession()
+    private val ticketSync = this.ticketSession.sync(repository)
     private val ticketScope = CoroutineScope(viewModelScope.coroutineContext + SupervisorJob(this.ticketSession.job))
     private val _ui = this.ticketSession.state(TaskUiState(planScope = this.ticketSession.planScope.value))
     val ui: StateFlow<TaskUiState> = _ui.asStateFlow()
@@ -384,6 +381,12 @@ class TaskViewModel(
                 }
             }
         }
+        ticketScope.launch {
+            ticketSync.signals.collect(::handleTicketSyncSignal)
+        }
+        ticketScope.launch {
+            ticketSync.changes.collect(::handleTicketSyncChange)
+        }
     }
 
     private fun updatePlan(transform: (TaskUiState) -> TaskUiState) {
@@ -399,9 +402,8 @@ class TaskViewModel(
         if (ownsTicketSession) ticketSession.close()
     }
 
-    /** Snackbar messages (mutation results, undo, realtime hints). */
-    private val _notices = Channel<TaskNotice>(Channel.BUFFERED)
-    val notices: Flow<TaskNotice> = _notices.receiveAsFlow()
+    /** Snackbar messages are session-scoped so the shell host survives route changes. */
+    val notices: Flow<TaskNotice> = this.ticketSession.notices
 
     private var errorJob: Job? = null
     private var searchJob: Job? = null
@@ -426,32 +428,20 @@ class TaskViewModel(
     private var sprintJob: Job? = null
     private var backlogJob: Job? = null
     private var scheduledJob: Job? = null
-    private var syncJob: Job? = null
-    private val syncMutex = Mutex()
     /** Bumped on every list reload; a page/result from an older generation is discarded. */
     private val backlogGen = java.util.concurrent.atomic.AtomicInteger()
     private val scheduledGen = java.util.concurrent.atomic.AtomicInteger()
-    private val pendingEvents = mutableListOf<TaskEvent>()
-    private var pendingReload = false
-        /** One "no longer available" notice per refresh cycle, not one per row. */
-        private var invisibleNoticed = false
 
     init {
         this.ticketSession.onClose {
             synchronized(this.ticketSession.planScopeLock) { teamViews.clear() }
-            synchronized(pendingEvents) {
-                pendingEvents.clear()
-                pendingReload = false
-            }
-            _notices.close()
-            while (_notices.tryReceive().isSuccess) Unit
         }
     }
 
     private fun io(block: suspend () -> Unit) = ticketScope.launch(Dispatchers.IO) { block() }
 
     private fun notify(text: String, actionLabel: String? = null, action: (() -> Unit)? = null) {
-        _notices.trySend(TaskNotice(text, actionLabel, action))
+        ticketSession.publishNotice(TaskNotice(text, actionLabel, action))
     }
 
     /** `useAutoDismiss("")` — errors clear after 5s. */
@@ -489,30 +479,6 @@ class TaskViewModel(
         } else true
         return task.dropTargetDecision(stateId, accepting)
     }
-
-        /** Status code of a failed call, whichever error shape carried it. */
-        private fun statusOf(e: Throwable): Int = when (e) {
-            is TaskFailure -> e.statusCode
-            is ApiError.Http -> e.statusCode
-            else -> 0
-        }
-
-        /**
-         * Does this failure mean the ticket is no longer visible?
-         *
-         * 404 has always meant "deleted"; since team ownership landed, a ticket
-         * belonging to another team answers 403 instead. Both mean the row should
-         * leave the list, so they are treated identically and only the logging
-         * distinguishes them.
-         */
-        private fun isGone(e: Throwable): Boolean = statusOf(e) == 404 || statusOf(e) == 403
-
-        /** One non-blocking notice per refresh cycle, however many rows vanish. */
-        private fun noteInvisible() {
-            if (invisibleNoticed) return
-            invisibleNoticed = true
-            notify("Some tickets are no longer available to you")
-        }
 
     private fun confirm(title: String, message: String, confirmText: String, danger: Boolean = false, action: () -> Unit) {
         _ui.update { it.copy(confirm = ConfirmRequest(title, message, confirmText, danger, action)) }
@@ -570,7 +536,7 @@ class TaskViewModel(
     /** Pull-to-refresh, resume and reconnect: metadata plus the visible tab. */
     fun refresh(pull: Boolean = false) {
         if (_ui.value.userId == null) return
-        invisibleNoticed = false
+        ticketSync.resetRefreshCycle()
         if (pull) _ui.update { it.copy(refreshing = true) }
         io {
             val agile = _ui.value.agileEnabled
@@ -651,130 +617,90 @@ class TaskViewModel(
      * Light foreground poll while Tasks is on screen: teammates' edits never
      * reach this user's socket (the server only targets assignee/creator/actor).
      */
-    fun pollVisible() {
-        val s = _ui.value
-        if (s.userId == null || s.detailEditing || s.sheet == TaskSheet.CreateTicket) return
-        reloadTab()
-    }
+    fun pollVisible() = ticketSession.pollVisible()
 
-    // ── Realtime (targeted patch) ────────────────────────────────────────
+    /** Compatibility entrypoint; the session owns queueing and reconciliation. */
+    fun onTaskEvent(type: String, data: JsonElement?) = ticketSession.onRealtimeEvent(type, data)
 
-    /** Raw `task_*` envelope from the shell; falls back to a reload when the payload is unusable. */
-    fun onTaskEvent(type: String, data: JsonElement?) {
-        if (_ui.value.userId == null) return
-        val event = parseTaskEvent(type, data)
-        synchronized(pendingEvents) {
-            if (event == null) pendingReload = true else pendingEvents += event
+    /** Reconnect catch-up: the server keeps no replay log, so revalidate every loaded view. */
+    fun onTaskEvent() = ticketSession.onReconnect()
+
+    private fun handleTicketSyncSignal(signal: TicketSyncSignal) {
+        when (signal) {
+            TicketSyncSignal.VisiblePoll -> {
+                val state = _ui.value
+                val hasLoadedList = state.board != null || state.planLoaded || state.scheduledLoaded
+                if (state.userId != null && (state.detailId == null || hasLoadedList) &&
+                    !state.detailEditing && state.sheet != TaskSheet.CreateTicket
+                ) reloadTab()
+            }
+            TicketSyncSignal.FullReload -> {
+                val state = _ui.value
+                val hasLoadedList = state.board != null || state.planLoaded || state.scheduledLoaded
+                if (hasLoadedList || state.detailId == null || state.tab == TaskTab.ServiceDesk) reloadTab()
+                if (state.detail != null && !state.detailEditing) refreshDetail()
+            }
+            TicketSyncSignal.Reconnect -> {
+                val state = _ui.value
+                if (state.board != null || state.tab == TaskTab.Sprint) loadSprint()
+                if (state.planLoaded) loadBacklog()
+                if (state.scheduledLoaded) loadScheduled()
+                if (state.detail != null && !state.detailEditing) refreshDetail()
+                if (state.tab == TaskTab.ServiceDesk) reloadTab()
+                if (state.board == null && !state.planLoaded && !state.scheduledLoaded &&
+                    state.detailId == null && state.tab != TaskTab.ServiceDesk
+                ) {
+                    reloadTab()
+                }
+            }
         }
-        scheduleSync()
     }
 
-    private val planRevision = java.util.concurrent.atomic.AtomicInteger()
-
-    /** Reconnect catch-up: the server keeps no replay log, so revalidate everything visible. */
-    fun onTaskEvent() {
-        if (_ui.value.userId == null) return
-        reloadTab()
-        if (_ui.value.detail != null && !_ui.value.detailEditing) refreshDetail()
-    }
-
-    /** Debounce only: the debounce delay may be cancelled, but each drained batch is applied serially. */
-    private fun scheduleSync() {
-        syncJob?.cancel()
-        syncJob = ticketScope.launch(Dispatchers.IO) {
-            delay(SYNC_DEBOUNCE_MS)
-            ticketScope.launch(Dispatchers.IO) {
-                syncMutex.withLock {
-                    val (events, reload) = synchronized(pendingEvents) {
-                        val copy = pendingEvents.toList()
-                        pendingEvents.clear()
-                        val r = pendingReload
-                        pendingReload = false
-                        copy to r
+    private fun handleTicketSyncChange(change: TicketSyncChange) {
+        when (change) {
+            is TicketSyncChange.Updated -> {
+                val state = _ui.value
+                if (state.detailId == change.ticketId) {
+                    if (change.staleDetail && state.detailEditing) {
+                        _ui.update { it.copy(detailStale = true) }
+                    } else {
+                        if (change.staleDetail) {
+                            ticketSession.setCommentThreadIfAbsent(
+                                CommentThread(change.ticketId, change.comments, loading = false),
+                            )
+                        }
+                        ticketScope.launch { refreshHistory(change.ticketId) }
                     }
-                    if (events.isNotEmpty() || reload) applySync(events, reload)
                 }
+                if (change.refreshBoard && state.tab == TaskTab.Sprint) loadSprint()
             }
-        }
-    }
-
-    private suspend fun applySync(events: List<TaskEvent>, forceReload: Boolean) {
-        val byTask = coalesceTaskEvents(events)
-        if (forceReload || byTask.size > MAX_TARGETED_SYNC) {
-            onTaskEvent()
-            return
-        }
-        var needsReload = false
-        byTask.forEach { (id, actions) ->
-            when {
-                TaskAction.Deleted in actions -> removeTask(id, remote = true)
-                actions == setOf(TaskAction.Comment) -> syncComments(id)
-                else -> {
-                    if (!syncTask(id)) needsReload = true
-                    if (TaskAction.Comment in actions) syncComments(id)
+            is TicketSyncChange.Removed -> {
+                val wasOpen = _ui.value.detailId == change.ticketId
+                _ui.update { state ->
+                    if (!wasOpen) state
+                    else state.copy(
+                        detailId = null,
+                        detailLoading = false,
+                        detailEditing = false,
+                        detailStale = false,
+                        history = emptyList(),
+                    )
                 }
+                if (wasOpen && change.reason == RemovalReason.Deleted) notify("This task was deleted")
             }
         }
-        if (needsReload) reloadTab()
-        val refreshSprint = byTask.values.none { actions ->
-            TaskAction.Deleted in actions || TaskAction.Comment in actions
-        }
-        if (_ui.value.tab == TaskTab.Sprint && refreshSprint) loadSprint()
-    }
-
-    /** Fetches one task and patches every view of it. `false` = the fetch failed (caller reloads). */
-    private suspend fun syncTask(id: Long): Boolean {
-        val fresh = runCatching { repository.loadDetail(id) }.getOrElse { e ->
-                // 404 = deleted; 403 = no longer visible to this user. The team
-                // ownership boundary moved the "not yours" answer from 404 to 403,
-                // so both now mean "it is gone" — the row is removed silently and a
-                // single notice per refresh cycle explains the disappearance.
-                if (isGone(e)) {
-                    removeTask(id, remote = true)
-                    noteInvisible()
-                    return true
-                }
-                return false
-            }
-        patchTask(fresh, highlight = true)
-        val s = _ui.value
-        if (s.detail?.id == id) {
-            if (s.detailEditing) _ui.update { it.copy(detailStale = true) }
-            else {
-                ticketSession.setCommentThreadIfAbsent(CommentThread(id, fresh.comments, loading = false))
-                refreshHistory(id)
-            }
-        }
-        return true
-    }
-
-    private suspend fun syncComments(id: Long) {
-        val s = _ui.value
-        val watching = s.detail?.id == id || s.inlineComments?.taskId == id
-        if (!watching) {
-            // Only the count is visible on cards; one fetch keeps it right.
-            val count = runCatching { repository.loadComments(id).size }.getOrNull() ?: return
-            ticketSession.store.update(id) { it.copy(commentCount = count) }
-            flash(id)
-            return
-        }
-        val items = runCatching { repository.loadComments(id) }.getOrNull() ?: return
-        ticketSession.setCommentThread(CommentThread(id, items, loading = false))
-        ticketSession.store.update(id) { it.copy(commentCount = items.size) }
-        if (_ui.value.detail?.id == id) refreshHistory(id)
-        flash(id)
     }
 
     /** Writes the authoritative Ticket; each loaded view resolves its membership from it. */
     private fun patchTask(task: Task, highlight: Boolean, writeToStore: Boolean = true): Task {
-        planRevision.incrementAndGet()
+        ticketSession.planRevision.incrementAndGet()
         val current = if (writeToStore) ticketSession.store.upsert(task) else task
         if (highlight) flash(current.id)
         return current
     }
 
     private fun removeTask(id: Long, remote: Boolean) {
-        planRevision.incrementAndGet()
+        ticketSession.planRevision.incrementAndGet()
         val wasOpen = _ui.value.detail?.id == id
         ticketSession.store.remove(id, preventReinsert = remote)
         _ui.update { s ->
@@ -1244,12 +1170,12 @@ class TaskViewModel(
         val gen = backlogGen.incrementAndGet()
         backlogJob = io {
             val s = _ui.value
-            val revision = planRevision.get()
+            val revision = ticketSession.planRevision.get()
             runCatching { repository.loadPlanPage(500, 0, s.teamScope) }.fold(
                 onSuccess = { page ->
                     if (gen != backlogGen.get()) return@fold
                     if (s.userId != _ui.value.userId || s.teamScope != _ui.value.teamScope) return@fold
-                    if (revision != planRevision.get()) {
+                    if (revision != ticketSession.planRevision.get()) {
                         loadBacklog()
                         return@fold
                     }
@@ -1288,12 +1214,12 @@ class TaskViewModel(
         if (!s.planHasMore || s.backlogLoading || s.backlogLoadingMore) return
         _ui.update { it.copy(backlogLoadingMore = true) }
         val gen = backlogGen.get()
-        val revision = planRevision.get()
+        val revision = ticketSession.planRevision.get()
         backlogJob = io {
             runCatching { repository.loadPlanPage(500, s.planOffset, s.teamScope) }.fold(
                 onSuccess = { page ->
                     if (gen != backlogGen.get() || s.teamScope != _ui.value.teamScope) return@fold
-                    if (revision != planRevision.get()) {
+                    if (revision != ticketSession.planRevision.get()) {
                         loadBacklog()
                         return@fold
                     }
@@ -2058,7 +1984,6 @@ class TaskViewModel(
     }
 
     companion object {
-        private const val SYNC_DEBOUNCE_MS = 400L
         private const val ATTRIBUTION_MS = 4_000L
 
         fun factory(
