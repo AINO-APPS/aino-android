@@ -135,7 +135,7 @@ data class TaskUiState(
     val confirm: ConfirmRequest? = null,
     // Global search.
     val searchQuery: String = "",
-    val searchResults: List<Task> = emptyList(),
+    val searchResultIds: List<Long> = emptyList(),
     val searching: Boolean = false,
     val searchOpen: Boolean = false,
     // Sprint board.
@@ -164,8 +164,8 @@ data class TaskUiState(
     val backlogLoadingMore: Boolean = false,
     val draft: BacklogDraft = BacklogDraft(),
     val creating: Boolean = false,
-    // Scheduled (planner-dated tasks: overdue + the next weeks).
-    val scheduled: List<Task> = emptyList(),
+    // Scheduled membership is retained as ids; ticket state lives in the session store.
+    val scheduledTicketIds: List<Long> = emptyList(),
     val scheduledLoading: Boolean = false,
     val scheduledLoaded: Boolean = false,
     /** Day to bring into view after "View" on the schedule snackbar or a day-picker jump. */
@@ -227,8 +227,20 @@ data class TaskUiState(
         ticket.container == "sprint" && ticket.sprintId == selectedSprintId && ticket.workflowStateKey != "cancelled"
 
     internal fun containsPlanTicket(ticket: Task): Boolean =
-        ticket.container == "backlog" ||
+        ticket.workflowStateKey != "cancelled" && (ticket.container == "backlog" ||
             (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId })
+        )
+
+    internal fun containsScheduledTicket(ticket: Task): Boolean {
+        val (from, to) = scheduledWindow()
+        val plannedDay = localDateOf(ticket.plannedDate) ?: return false
+        return inScope(ticket) &&
+            ticket.container == "scheduled" &&
+            ticket.workflowStateKey != "cancelled" &&
+            !plannedDay.isBefore(from) &&
+            !plannedDay.isAfter(to) &&
+            matchesFilters(ticket, filters, userId, includeStatus = true)
+    }
 
     val tasks: List<Task> get() = resolve(boardTicketIds) {
         containsBoardTicket(it) && matchesFilters(it, filters, userId, includeStatus = true) &&
@@ -237,7 +249,7 @@ data class TaskUiState(
     val sprintBoard: SprintBoardResponse? get() = board?.takeIf { it.sprint.id == selectedSprintId }?.copy(
         tickets = resolve(boardTicketIds, ::containsBoardTicket),
     )
-    val planTasks: List<Task> get() = resolve(planTicketIds) { true }
+    val planTasks: List<Task> get() = resolve(planTicketIds, ::containsPlanTicket)
     private val filteredPlan: List<Task> get() = planTasks.filter {
         containsPlanTicket(it) && matchesPlanFilters(it, filters, quickFilters, userId) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
@@ -249,7 +261,7 @@ data class TaskUiState(
     val backlogSummary: BacklogSummary get() = backlog.let { open ->
         BacklogSummary(open.size, open.groupingBy { it.workflowStateKey.orEmpty() }.eachCount(), open.groupingBy { it.priority }.eachCount())
     }
-    val detail: Task? get() = tickets[detailId]
+    val detail: Task? get() = tickets[detailId]?.takeUnless { it.workflowStateKey == "cancelled" }
     val currentSprint: AvailableSprint? get() = teamSprints.firstOrNull { it.id == selectedSprintId }
     val sortedBacklog: List<Task> get() = sortBacklog(backlog, backlogSort)
     /** Display sections for the backlog list, or `null` for a flat list. */
@@ -279,11 +291,14 @@ data class TaskUiState(
     val filterCount: Int get() = filterCount(filters, tab) + if (tab == TaskTab.Backlog) quickFilters.count + (if (selectedEpicId != null) 1 else 0) else 0
     /** Sprint planning is not narrowed by Backlog-only quick chips. */
     val planningBacklog: List<Task> get() = (if (planLoaded) planTasks else backlog).filter {
-        it.container == "backlog" && !it.isCompleted && matchesFilters(it, filters, userId, includeStatus = false) &&
+        it.container == "backlog" && it.workflowStateKey != "cancelled" && !it.isCompleted &&
+            matchesFilters(it, filters, userId, includeStatus = false) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }
     val importable: List<Task> get() = planningBacklog
     val backlogHasMore: Boolean get() = backlog.size < backlogTotal
+    val scheduled: List<Task> get() = scheduledTicketIds.mapNotNull(tickets::get).filter(::containsScheduledTicket)
+    val searchResults: List<Task> get() = searchResultIds.mapNotNull(tickets::get)
     val scheduledGroups: List<ScheduledGroup> get() = groupScheduled(scheduled)
     val scheduledOverdue: Int get() = scheduledGroups.firstOrNull { it.date == null }?.tasks?.size ?: 0
     /** Compact cards keep key, title and points; comfortable adds the rest. */
@@ -330,11 +345,37 @@ class TaskViewModel(
             this@TaskViewModel.ticketSession.store.state.collect { snapshot ->
                 _ui.update { current ->
                     val changed = snapshot.tickets.values.filter { it !== current.tickets[it.id] }
+                    val detailUnavailable = current.detailId?.let(snapshot.tickets::get)
+                        ?.let { it.workflowStateKey == "cancelled" } ?: (current.detailId != null)
+                    val scheduledIds = current.scheduledTicketIds
+                        .filter { id -> snapshot.tickets[id]?.let(current::containsScheduledTicket) == true }
+                    val newlyScheduledIds = if (current.scheduledLoaded) {
+                        changed.filter(current::containsScheduledTicket).map { it.id }
+                    } else {
+                        emptyList()
+                    }
+                    val searchableIds = current.searchResultIds.filter { id ->
+                        snapshot.tickets[id]?.workflowStateKey?.let { it != "cancelled" } == true
+                    }
                     current.copy(
                         tickets = snapshot.tickets,
                         recentlyUpdated = snapshot.recentlyChanged,
-                        boardTicketIds = (current.boardTicketIds + changed.filter(current::containsBoardTicket).map { it.id }).distinct(),
-                        planTicketIds = (current.planTicketIds + changed.filter(current::containsPlanTicket).map { it.id }).distinct(),
+                        boardTicketIds = (
+                            current.boardTicketIds.filter(snapshot.tickets::containsKey) +
+                                changed.filter(current::containsBoardTicket).map { it.id }
+                            ).distinct(),
+                        planTicketIds = (
+                            current.planTicketIds.filter(snapshot.tickets::containsKey) +
+                                changed.filter(current::containsPlanTicket).map { it.id }
+                            ).distinct(),
+                        scheduledTicketIds = (scheduledIds + newlyScheduledIds).distinct(),
+                        searchResultIds = searchableIds,
+                        detailComments = if (detailUnavailable) emptyList() else current.detailComments,
+                        history = if (detailUnavailable) emptyList() else current.history,
+                        detailStale = current.detailStale && !detailUnavailable,
+                        inlineComments = current.inlineComments?.takeIf { thread ->
+                            snapshot.tickets[thread.taskId]?.workflowStateKey?.let { it != "cancelled" } == true
+                        },
                     ).projectPlan()
                         .let { state -> state.copy(stats = recomputeStats(state.tasks)) }
                 }
@@ -692,20 +733,10 @@ class TaskViewModel(
         flash(id)
     }
 
-    /** Upserts [task] into the sprint board and backlog according to the server's list rules. */
+    /** Writes the authoritative Ticket; each loaded view resolves its membership from it. */
     private fun patchTask(task: Task, highlight: Boolean, writeToStore: Boolean = true): Task {
         planRevision.incrementAndGet()
         val current = if (writeToStore) ticketSession.store.upsert(task) else task
-        _ui.update { s ->
-            val (from, to) = scheduledWindow()
-            val scheduledDay = if (current.container == "scheduled") localDateOf(current.plannedDate) else null
-            val inScheduled = scheduledDay != null && !scheduledDay.isBefore(from) && !scheduledDay.isAfter(to) &&
-                matchesFilters(current, s.filters, s.userId, includeStatus = true)
-            s.copy(
-                scheduled = if (s.scheduledLoaded) upsertTask(s.scheduled, current, inScheduled) else s.scheduled,
-                searchResults = s.searchResults.map { if (it.id == current.id) current else it },
-            )
-        }
         if (highlight) flash(current.id)
         return current
     }
@@ -716,8 +747,8 @@ class TaskViewModel(
         ticketSession.store.remove(id)
         _ui.update { s ->
             s.copy(
-                scheduled = s.scheduled.filterNot { it.id == id },
-                searchResults = s.searchResults.filterNot { it.id == id },
+                scheduledTicketIds = s.scheduledTicketIds.filterNot { it == id },
+                searchResultIds = s.searchResultIds.filterNot { it == id },
                 inlineCommentTaskId = s.inlineCommentTaskId?.takeIf { it != id },
                 detailId = s.detailId?.takeIf { it != id },
             ).let { if (it.planLoaded) it.projectPlan() else it }
@@ -756,7 +787,18 @@ class TaskViewModel(
             // alongside the tasks rather than on a second round trip.
             val scheduled = runCatching { repository.loadScheduled(_ui.value.filters, scope) }
             scheduled.fold(
-                onSuccess = { list -> if (gen == scheduledGen.get()) _ui.update { it.copy(scheduled = list, scheduledLoading = false, scheduledLoaded = true) } },
+                onSuccess = { list ->
+                    if (gen == scheduledGen.get()) {
+                        ticketSession.store.upsert(list)
+                        _ui.update {
+                            if (gen == scheduledGen.get()) it.copy(
+                                scheduledTicketIds = list.map { ticket -> ticket.id }.distinct(),
+                                scheduledLoading = false,
+                                scheduledLoaded = true,
+                            ) else it
+                        }
+                    }
+                },
                 onFailure = {
                     if (gen != scheduledGen.get()) return@fold
                     val hadData = _ui.value.scheduledLoaded
@@ -920,14 +962,21 @@ class TaskViewModel(
     fun setSearch(value: String) {
         searchJob?.cancel()
         if (value.trim().length < 2) {
-            _ui.update { it.copy(searchQuery = value, searchResults = emptyList(), searching = false) }
+            _ui.update { it.copy(searchQuery = value, searchResultIds = emptyList(), searching = false) }
             return
         }
         _ui.update { it.copy(searchQuery = value, searching = true) }
         searchJob = ticketScope.launch(Dispatchers.IO) {
             delay(300)
             val results = runCatching { repository.search(value.trim()) }.getOrDefault(emptyList())
-            _ui.update { it.copy(searchResults = results, searching = false) }
+            ticketSession.store.upsert(results)
+            _ui.update {
+                it.copy(
+                    searchResultIds = results.filter { ticket -> ticket.workflowStateKey != "cancelled" }
+                        .map { ticket -> ticket.id }.distinct(),
+                    searching = false,
+                )
+            }
         }
     }
 
@@ -935,7 +984,7 @@ class TaskViewModel(
 
     fun closeSearch() {
         searchJob?.cancel()
-        _ui.update { it.copy(searchOpen = false, searchQuery = "", searchResults = emptyList(), searching = false) }
+        _ui.update { it.copy(searchOpen = false, searchQuery = "", searchResultIds = emptyList(), searching = false) }
     }
 
     // ── Sprint board ─────────────────────────────────────────────────────
@@ -1626,7 +1675,7 @@ class TaskViewModel(
                 planOpen = false,
                 planLoaded = false,
                 planTicketIds = emptyList(),
-                scheduled = emptyList(),
+                scheduledTicketIds = emptyList(),
                 scheduledLoaded = false,
                 currentSprintId = currentSprintId,
                 currentSprintRow = currentSprintRow,
