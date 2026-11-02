@@ -55,12 +55,15 @@ advanced filters, sorting, Epic selection and compact/comfortable density.
 Compact cards omit descriptions, labels and extra metadata. Completed work starts
 expanded and temporarily collapses during selection; the bulk bar replaces the FAB.
 
-The current API has no planned-date-null predicate. Android therefore drains all
-backlog pages (including completed work) and fetches available sprint tasks before
-publishing a Plan snapshot. Filters, counts, grouping and realtime reconciliation
-use that same complete snapshot, never a locally filtered server page. Refresh
-keeps the prior snapshot if any page fails. This trades extra initial requests
-for correct combined-filter totals without changing server contracts.
+The current API has no planned-date-null predicate. Android therefore still drains
+all unfiltered backlog pages (including completed work) for local Plan filtering.
+Each successful page publishes its ordered Ticket ids and resets the server total,
+summary and Completed-count baseline. Reads adjust that baseline for loaded Tickets
+that join, leave, complete, reopen, or change Workflow state or priority; writes only
+change the shared Ticket store. A later-page failure retains the successfully loaded
+pages and their baseline, and scrolling can retry from the server offset. Local
+combined-filter totals use the loaded projection, becoming complete when the drain
+finishes. Team caches retain paging and aggregate baselines along with Ticket ids.
 
 Board, Plan (Backlog and Completed), and open Detail resolve ordered Ticket ids
 against one network-free `TicketSession` store. Full enriched repository responses

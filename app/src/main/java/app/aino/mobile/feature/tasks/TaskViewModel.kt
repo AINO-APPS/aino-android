@@ -116,9 +116,12 @@ data class TaskUiState(
     val rolloverOptions: List<AvailableSprint> = emptyList(),
     val rolloverTo: String = "backlog",
     // Backlog.
-    /** Complete, unfiltered Plan snapshot, including sprint and completed work. */
+    /** Loaded, unfiltered Plan ids, including completed work. */
     val planTicketIds: List<Long> = emptyList(),
     val planLoaded: Boolean = false,
+    val planBaseline: TicketPlanBaseline? = null,
+    val planOffset: Int = 0,
+    val planHasMore: Boolean = false,
     val quickFilters: BacklogQuickFilters = BacklogQuickFilters(),
     val backlogPageSize: Int = 25,
     val backlogSort: BacklogSort = BacklogSort.Priority,
@@ -238,11 +241,10 @@ data class TaskUiState(
     }
     val backlog: List<Task> get() = filteredPlan.filterNot { it.isCompleted }
     val completed: List<Task> get() = filteredPlan.filter { it.isCompleted }
-    val backlogTotal: Int get() = backlog.size
-    val completedCount: Int get() = completed.size
-    val backlogSummary: BacklogSummary get() = backlog.let { open ->
-        BacklogSummary(open.size, open.groupingBy { it.workflowStateKey.orEmpty() }.eachCount(), open.groupingBy { it.priority }.eachCount())
-    }
+    internal val planFiltersActive: Boolean get() = filters != TaskFilters() || !quickFilters.isAll || selectedEpicId != null
+    val backlogTotal: Int get() = readPlanTotals().total
+    val completedCount: Int get() = readPlanTotals().completed
+    val backlogSummary: BacklogSummary get() = readPlanTotals().summary
     val detail: Task? get() = tickets[detailId]?.takeUnless { it.workflowStateKey == "cancelled" }
     val currentSprint: AvailableSprint? get() = planScope.currentSprint
     val sortedBacklog: List<Task> get() = sortBacklog(backlog, backlogSort)
@@ -274,7 +276,7 @@ data class TaskUiState(
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }
     val importable: List<Task> get() = planningBacklog
-    val backlogHasMore: Boolean get() = backlog.size < backlogTotal
+    val backlogHasMore: Boolean get() = planHasMore
     val scheduled: List<Task> get() = scheduledTicketIds.mapNotNull(tickets::get).filter(::containsScheduledTicket)
     val searchResults: List<Task> get() = searchResultIds.mapNotNull(tickets::get)
     val scheduledGroups: List<ScheduledGroup> get() = groupScheduled(scheduled)
@@ -414,6 +416,9 @@ class TaskViewModel(
         val boardTicketIds: List<Long>,
         val planTicketIds: List<Long>,
         val planLoaded: Boolean,
+        val planBaseline: TicketPlanBaseline?,
+        val planOffset: Int,
+        val planHasMore: Boolean,
         val scheduledTicketIds: List<Long>,
         val scheduledLoaded: Boolean,
     )
@@ -774,8 +779,6 @@ class TaskViewModel(
         ticketSession.store.remove(id, preventReinsert = remote)
         _ui.update { s ->
             s.copy(
-                scheduledTicketIds = s.scheduledTicketIds.filterNot { it == id },
-                searchResultIds = s.searchResultIds.filterNot { it == id },
                 inlineCommentTaskId = s.inlineCommentTaskId?.takeIf { it != id },
                 detailId = s.detailId?.takeIf { it != id },
             ).let { if (it.planLoaded) it.projectPlan() else it }
@@ -1234,7 +1237,7 @@ class TaskViewModel(
 
     // ── Backlog (`useBacklog`, infinite scroll) ──────────────────────────
 
-    /** Publish an atomic collection, not filtered fragments of server pages. */
+    /** Keep unfiltered pages so Plan-only filters retain their existing meaning. */
     fun loadBacklog() {
         backlogJob?.cancel()
         _ui.update { it.copy(backlogLoading = it.backlog.isEmpty(), backlogLoadingMore = false) }
@@ -1242,22 +1245,29 @@ class TaskViewModel(
         backlogJob = io {
             val s = _ui.value
             val revision = planRevision.get()
-            runCatching { repository.loadPlanTasks(s.teamScope) }.fold(
-                onSuccess = { tasks ->
+            runCatching { repository.loadPlanPage(500, 0, s.teamScope) }.fold(
+                onSuccess = { page ->
                     if (gen != backlogGen.get()) return@fold
-                    if (s.userId != _ui.value.userId) return@fold
+                    if (s.userId != _ui.value.userId || s.teamScope != _ui.value.teamScope) return@fold
                     if (revision != planRevision.get()) {
                         loadBacklog()
                         return@fold
                     }
-                    ticketSession.store.upsert(tasks)
+                    ticketSession.store.upsert(page.tasks)
                     _ui.update {
-                        it.copy(
-                            planTicketIds = tasks.map { ticket -> ticket.id },
+                        val next = it.copy(
+                            tickets = ticketSession.store.state.value.tickets,
+                            planTicketIds = page.tasks.map { ticket -> ticket.id },
                             planLoaded = true,
                             backlogLoading = false,
-                        ).projectPlan()
+                            planOffset = page.tasks.size,
+                            planHasMore = page.pagination?.let { paging ->
+                                paging.hasMore || page.tasks.size < paging.total
+                            } == true && page.tasks.isNotEmpty(),
+                        )
+                        next.copy(planBaseline = next.pageBaseline(page)).projectPlan()
                     }
+                    loadMoreBacklog()
                 },
                 onFailure = {
                     if (gen != backlogGen.get()) return@fold
@@ -1269,9 +1279,46 @@ class TaskViewModel(
         }
     }
 
-    /** All server pages are drained by loadPlanTasks before publishing counts. */
     fun loadMoreBacklog() {
-        if (!_ui.value.planLoaded && !_ui.value.backlogLoading) loadBacklog()
+        val s = _ui.value
+        if (!s.planLoaded) {
+            if (!s.backlogLoading) loadBacklog()
+            return
+        }
+        if (!s.planHasMore || s.backlogLoading || s.backlogLoadingMore) return
+        _ui.update { it.copy(backlogLoadingMore = true) }
+        val gen = backlogGen.get()
+        val revision = planRevision.get()
+        backlogJob = io {
+            runCatching { repository.loadPlanPage(500, s.planOffset, s.teamScope) }.fold(
+                onSuccess = { page ->
+                    if (gen != backlogGen.get() || s.teamScope != _ui.value.teamScope) return@fold
+                    if (revision != planRevision.get()) {
+                        loadBacklog()
+                        return@fold
+                    }
+                    ticketSession.store.upsert(page.tasks)
+                    _ui.update { current ->
+                        val offset = s.planOffset + page.tasks.size
+                        val next = current.copy(
+                            tickets = ticketSession.store.state.value.tickets,
+                            planTicketIds = (current.planTicketIds + page.tasks.map { it.id }).distinct(),
+                            planOffset = offset,
+                            planHasMore = page.pagination?.let { it.hasMore || offset < it.total } == true &&
+                                page.tasks.isNotEmpty(),
+                            backlogLoadingMore = false,
+                        )
+                        next.copy(planBaseline = next.pageBaseline(page)).projectPlan()
+                    }
+                    loadMoreBacklog()
+                },
+                onFailure = {
+                    if (gen != backlogGen.get()) return@fold
+                    _ui.update { it.copy(backlogLoadingMore = false) }
+                    loadFailed(it, true, "Failed to load backlog")
+                },
+            )
+        }
     }
 
     fun setSort(sort: BacklogSort) = _ui.update { it.copy(backlogSort = sort) }
@@ -1693,6 +1740,7 @@ class TaskViewModel(
             teamViews[state.selectedTeamId] = CachedTeamViews(
                 state.currentSprintId, state.currentSprintRow, state.selectedSprintId,
                 state.board, state.boardTicketIds, state.planTicketIds, state.planLoaded,
+                state.planBaseline, state.planOffset, state.planHasMore,
                 state.scheduled.map { it.id }, state.scheduledLoaded,
             )
             val cached = teamViews[teamId]
@@ -1717,6 +1765,9 @@ class TaskViewModel(
                 planOpen = false,
                 planLoaded = cached?.planLoaded ?: false,
                 planTicketIds = cached?.planTicketIds.orEmpty(),
+                planBaseline = cached?.planBaseline,
+                planOffset = cached?.planOffset ?: 0,
+                planHasMore = cached?.planHasMore ?: false,
                 board = cached?.board,
                 boardTicketIds = cached?.boardTicketIds.orEmpty(),
                 selectedIds = emptySet(),

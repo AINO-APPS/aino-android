@@ -40,6 +40,11 @@ class TaskRepository(
         teamScope: TeamScope = TeamScope(),
     ): BacklogResponse = decode(api.execute(ApiRequest(path = backlogQuery(filters, limit, offset, teamScope))))
 
+    fun loadPlanPage(limit: Int, offset: Int, teamScope: TeamScope = TeamScope()): BacklogResponse =
+        decode(api.execute(ApiRequest(
+            path = backlogQuery(TaskFilters(), limit, offset, teamScope) + "&include_completed=1&completed_since=0001-01-01",
+        )))
+
     /**
      * Drain the server's backlog pages before applying Plan filters.
      * Never filter a single page and present its count as the collection total.
@@ -53,9 +58,7 @@ class TaskRepository(
         val tasks = linkedMapOf<Long, Task>()
         var offset = 0
         do {
-            val page = decode<BacklogResponse>(api.execute(ApiRequest(
-                path = backlogQuery(TaskFilters(), 500, offset, teamScope) + "&include_completed=1&completed_since=0001-01-01",
-            )))
+            val page = loadPlanPage(500, offset, teamScope)
             page.tasks.forEach { tasks[it.id] = it }
             offset += page.tasks.size
             val hasMore = page.pagination?.let { it.hasMore || offset < it.total } ?: false
