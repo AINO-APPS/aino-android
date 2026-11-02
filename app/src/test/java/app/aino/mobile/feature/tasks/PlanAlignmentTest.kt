@@ -78,7 +78,7 @@ class PlanAlignmentTest {
     }
 
     @Test fun projectionExcludesSprintAndScheduledWorkFromTheBacklog() {
-        val ui = TaskUiState(userId = 9, sprints = listOf(sprint), planTasks = rows, planLoaded = true).projectPlan()
+        val ui = TaskUiState(userId = 9, sprints = listOf(sprint), tickets = rows.associateBy { it.id }, planTicketIds = rows.map { it.id }, planLoaded = true).projectPlan()
         // Task 1 carries sprint_id 12, which is open: it belongs on the board only.
         // Task 2 carries a planned day: it belongs to Scheduled (ADR-015).
         assertEquals(1, ui.backlogTotal)
@@ -96,7 +96,7 @@ class PlanAlignmentTest {
         // dropped from available-sprints), so the ticket must not vanish.
         val stranded = listOf(Task(7, "Orphan", sprintId = 99, container = "sprint"))
         val ui = TaskUiState(
-            userId = 9, sprints = listOf(sprint), planTasks = stranded, planLoaded = true,
+            userId = 9, sprints = listOf(sprint), tickets = stranded.associateBy { it.id }, planTicketIds = stranded.map { it.id }, planLoaded = true,
         ).projectPlan()
         assertEquals(listOf(7L), ui.backlog.map { it.id })
         val groups = ui.backlogGroups!!
@@ -115,7 +115,7 @@ class PlanAlignmentTest {
             Task(7, "Orphan", sprintId = 99, container = "sprint"),
         )
         val ui = TaskUiState(
-            userId = 9, sprints = listOf(sprint), planTasks = mixed, planLoaded = true,
+            userId = 9, sprints = listOf(sprint), tickets = mixed.associateBy { it.id }, planTicketIds = mixed.map { it.id }, planLoaded = true,
         ).projectPlan()
         assertEquals(listOf(1L, 2L, 7L), ui.sortedBacklog.map { it.id })
         val stranded = ui.backlogGroups.orEmpty()
@@ -134,7 +134,7 @@ class PlanAlignmentTest {
         val task = rows[0].copy(labels = listOf(label), parentTaskId = 22, sprintId = null, container = "backlog")
         val advanced = TaskFilters(assignee = "9", label = "7", priority = "high", search = "Assigned")
         val before = TaskUiState(
-            userId = 9, sprints = listOf(sprint), planTasks = listOf(task), planLoaded = true,
+            userId = 9, sprints = listOf(sprint), tickets = mapOf(task.id to task), planTicketIds = listOf(task.id), planLoaded = true,
             filters = advanced, selectedEpicId = 22, quickFilters = BacklogQuickFilters(true, true, true),
         ).projectPlan()
         val reset = before.copy(quickFilters = BacklogQuickFilters()).projectPlan()
@@ -146,18 +146,18 @@ class PlanAlignmentTest {
 
     @Test fun realtimeProjectionMovesHiddenRowsBetweenGroupsAndCompletion() {
         val base = TaskUiState(
-            sprints = listOf(sprint), planTasks = rows, planLoaded = true,
+            sprints = listOf(sprint), tickets = rows.associateBy { it.id }, planTicketIds = rows.map { it.id }, planLoaded = true,
             quickFilters = BacklogQuickFilters(unscheduled = true),
         ).projectPlan()
         val delta = parseTaskDelta(Json.parseToJsonElement(
             """{"taskId":2,"fields":{"planned_date":null,"sprint_id":12}}""",
         ))!!
-        val moved = base.copy(planTasks = base.planTasks.map { if (it.id == 2L) applyTaskDelta(it, delta) else it }).projectPlan()
+        val moved = base.copy(tickets = base.tickets.mapValues { (_, ticket) -> if (ticket.id == 2L) applyTaskDelta(ticket, delta) else ticket }).projectPlan()
         // Task 2 moved into an open sprint, so it leaves the backlog entirely.
         assertEquals(listOf(3L), moved.backlog.map { it.id })
         assertNull(moved.backlogGroups)
         // Completion is canonical server data, hydrated after workflow_state_id deltas.
-        val patched = moved.copy(planTasks = moved.planTasks.map { if (it.id == 2L) it.copy(completedAt = "2026-10-26") else it }).projectPlan()
+        val patched = moved.copy(tickets = moved.tickets.mapValues { (_, ticket) -> if (ticket.id == 2L) ticket.copy(completedAt = "2026-10-26") else ticket }).projectPlan()
         // Task 2 is completed but still inside open sprint 12, so it is not backlog work either way.
         assertEquals(1, patched.completedCount)
         assertEquals(1, patched.backlogTotal)
@@ -193,7 +193,7 @@ class PlanAlignmentTest {
 
     @Test fun quickChipsDoNotNarrowSprintPlanningOrImport() {
         val ui = TaskUiState(
-            planLoaded = true, planTasks = rows, sprints = listOf(sprint),
+            planLoaded = true, tickets = rows.associateBy { it.id }, planTicketIds = rows.map { it.id }, sprints = listOf(sprint),
             quickFilters = BacklogQuickFilters(unscheduled = true),
         ).projectPlan()
         // Sprint work and planned work are never offered for import, and the
