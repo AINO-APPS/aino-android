@@ -180,9 +180,9 @@ const val SCHEDULED_AHEAD_DAYS = 30L
 /**
  * Scheduled view: `GET /tasks/scheduled?<plannerFilters>&<teamScope>`.
  *
- * The server owns the container rule — unsprinted tickets with a planned day
- * date, no window — so a ticket dated months ahead still appears (under "Later")
- * instead of vanishing from every surface.
+ * The server returns unsprinted tickets with a planned day. The Scheduled view
+ * applies its visible date window and active filters when resolving these ids
+ * against the session store.
  */
 fun scheduledQuery(filters: TaskFilters, teamScope: TeamScope = TeamScope()): String =
     withQuery("tasks/scheduled", filterParams(filters, includeStatus = true) + teamParams(teamScope))

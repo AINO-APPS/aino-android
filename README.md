@@ -66,9 +66,12 @@ Board, Plan (Backlog and Completed), and open Detail resolve ordered Ticket ids
 against one network-free `TicketSession` store. Full enriched repository responses
 replace whole Tickets, so a change is visible across these views without reopening
 Detail. Detail comment threads remain separate from stored Tickets. The existing
-Tasks ViewModel owns its default session, or accepts a shared session from its
-caller; it closes only a session it owns. App-shell lifetime wiring and the other
-Plan surfaces remain separate migration steps.
+app container owns the signed-in tenant/user's session. Sign-out, revocation,
+tenant changes and account changes cancel its work and clear its Tickets and
+screen state, including late HTTP responses. The Activity obtains a Tasks
+ViewModel keyed by session, so signing back in (even as the same user) loads
+fresh data. Cold starts can still rebuild a Plan using the per-user response
+cache. Other Plan surfaces remain separate migration steps.
 
 The session also owns a read-only `PlanScope` for user and Team context, feature
 flags, sprint selection, shared filters and metadata. Only `TaskViewModel` writes

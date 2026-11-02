@@ -63,6 +63,7 @@ object SessionRevocation {
     suspend fun signOutLocally(context: Context) {
         val appContext = context.applicationContext
         val container = app.aino.mobile.core.AppContainer.get(appContext)
+        container.setTicketSessionScope(null)
         if (container.tokens.getToken().isNullOrBlank()) return
         container.tokens.clearToken()
         container.tokens.clearFeatures()
