@@ -81,10 +81,10 @@ import kotlin.math.roundToInt
  * accessible fallback. Moves are optimistic with Undo.
  */
 @Composable
-internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
+internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, boardViewModel: SprintBoardViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
     val haptics = LocalHapticFeedback.current
-    val states = ui.sprintBoard?.columns.orEmpty().mapNotNull { column ->
+    val states = boardUi.sprintBoard?.columns.orEmpty().mapNotNull { column ->
         ui.agile.workflowStates.firstOrNull { it.id == column.stateId && it.key != "cancelled" }
             ?.let { it to column }
     }
@@ -104,7 +104,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
     val hoverKey = dragging?.let { _ -> dropTargetKey(headerBounds, bodyBounds, dragPos) }
     LaunchedEffect(hoverKey) { if (hoverKey != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
 
-    TaskPage(loading = ui.sprintLoading || ui.refreshing, onRefresh = { viewModel.refresh(pull = true) }) {
+    TaskPage(loading = boardUi.sprintLoading || ui.refreshing, onRefresh = { viewModel.refresh(pull = true) }) {
         Box(Modifier.fillMaxSize().onGloballyPositioned { boardOrigin = it.boundsInRoot().topLeft }) {
             LazyColumn(
                 Modifier.fillMaxSize(),
@@ -112,8 +112,8 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
             ) {
                 item(key = "header") {
                     Column {
-                        SprintHeaderCard(ui, viewModel, progressOpen) { progressOpen = !progressOpen }
-                        ui.error?.let { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) }
+                        SprintHeaderCard(ui, boardUi, viewModel, boardViewModel, progressOpen) { progressOpen = !progressOpen }
+                        (boardUi.error ?: ui.error)?.let { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) }
                         ActiveFilterChips(ui, viewModel, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp))
                         if (dragging != null) {
                             Text(
@@ -125,7 +125,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                     }
                 }
 
-                if (ui.sprintLoading && ui.tasks.isEmpty()) {
+                if (boardUi.sprintLoading && boardUi.tasks.isEmpty()) {
                     items(3, key = { "sk-$it" }) {
                         Box(Modifier.padding(horizontal = 16.dp, vertical = 5.dp)) { TaskCardSkeleton() }
                     }
@@ -137,9 +137,9 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                     // One board-level state when nothing is visible, instead of a
                     // full empty state per column (four of them stacked ~800dp of
                     // illustrations and repeated "Nothing in …" copy).
-                    val empty = boardEmptyState(hasTasks = ui.tasks.isNotEmpty(), filterCount = ui.filterCount)
+                    val empty = boardEmptyState(hasTasks = boardUi.tasks.isNotEmpty(), filterCount = ui.filterCount)
                     states.forEach { (state, boardColumn) ->
-                        val columnTasks = tasksForColumn(ui.tasks, state)
+                        val columnTasks = tasksForColumn(boardUi.tasks, state)
                         item(key = "col-${state.key}") {
                             ColumnHeader(
                                 state = state,
@@ -202,13 +202,13 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                                 },
                                                 onDragEnd = {
                                                     val target = dropTargetKey(headerBounds, bodyBounds, dragPos)
-                                                    val moved = dragging?.let { d -> viewModel.ui.value.tasks.firstOrNull { it.id == d.id } ?: d }
+                                                    val moved = dragging?.let { d -> boardViewModel.ui.value.tasks.firstOrNull { it.id == d.id } ?: d }
                                                     dragging = null
                                                     if (moved != null && target != null) {
                                                         states.firstOrNull { it.first.key == target }?.let { (state, column) ->
                                                             if (moved.dropTargetDecision(state.id, column.accepting).allowed) {
                                                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                                viewModel.moveTask(moved, state)
+                                                                boardViewModel.moveTask(moved, state)
                                                             }
                                                         }
                                                     }
@@ -220,7 +220,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                                             if (canMove) customActions = states.filter { (state, column) ->
                                                 state.key != task.workflowStateKey && task.dropTargetDecision(state.id, column.accepting).allowed
                                             }.map { (state, _) ->
-                                                CustomAccessibilityAction("Move to ${stateLabel(state)}") { viewModel.moveTask(task, state); true }
+                                                CustomAccessibilityAction("Move to ${stateLabel(state)}") { boardViewModel.moveTask(task, state); true }
                                             }
                                         },
                                 ) {
@@ -290,7 +290,7 @@ internal fun SprintBoard(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
     }
 
     actionsFor?.let { task ->
-        TaskActionsSheet(task, ui, viewModel, onOpen = { onOpen(task) }, onDismiss = { actionsFor = null })
+        TaskActionsSheet(task, ui, boardUi, viewModel, boardViewModel, onOpen = { onOpen(task) }, onDismiss = { actionsFor = null })
     }
 }
 
@@ -480,10 +480,10 @@ internal const val EMPTY_COLUMN_TAG = "empty-column"
 /** Sprint switcher row + collapsible progress / lifecycle details. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SprintHeaderCard(ui: TaskUiState, viewModel: TaskViewModel, expanded: Boolean, onToggle: () -> Unit) {
+private fun SprintHeaderCard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, boardViewModel: SprintBoardViewModel, expanded: Boolean, onToggle: () -> Unit) {
     val colors = LocalWebColors.current
     val sprint = ui.currentSprint ?: return
-    val stats = ui.stats
+    val stats = boardUi.stats
     SectionCard(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), padding = 0.dp) {
         Row(
             Modifier
@@ -534,7 +534,7 @@ private fun SprintHeaderCard(ui: TaskUiState, viewModel: TaskViewModel, expanded
                             Text(it, color = colors.textSecondary, fontSize = 0.82.rem)
                         }
                     }
-                    val totals = ui.sprintStats?.totals
+                    val totals = boardUi.sprintStats?.totals
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (ui.agile.features.storyPoints && totals != null && totals.points > 0) {
                             MiniStat("${formatPoints(totals.donePoints)}/${formatPoints(totals.points)}", ui.agile.unitLabel, colors.primary)
@@ -543,7 +543,7 @@ private fun SprintHeaderCard(ui: TaskUiState, viewModel: TaskViewModel, expanded
                         if (totals != null && totals.blockedTasks > 0) MiniStat("${totals.blockedTasks}", "blocked", colors.danger)
                         sprint.velocityPoints?.let { MiniStat(formatPoints(it), "velocity", colors.success) }
                     }
-                    SprintLifecycleControls(ui, sprint, viewModel)
+                    SprintLifecycleControls(boardUi, sprint, boardViewModel)
                 }
             }
         }
@@ -566,7 +566,7 @@ private fun MiniStat(value: String, label: String, tint: androidx.compose.ui.gra
 /** Start (planned) · Pause/Resume + Complete with rollover (active/paused) · Completed. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SprintLifecycleControls(ui: TaskUiState, sprint: AvailableSprint, viewModel: TaskViewModel) {
+private fun SprintLifecycleControls(ui: SprintBoardUiState, sprint: AvailableSprint, viewModel: SprintBoardViewModel) {
     val colors = LocalWebColors.current
     val canEdit = canManageSprint(ui.role)
     var rolloverPicker by remember { mutableStateOf(false) }
@@ -644,7 +644,7 @@ private fun SprintLifecycleControls(ui: TaskUiState, sprint: AvailableSprint, vi
 
 /** Long-press / overflow actions for a card: move, comments, open, delete. */
 @Composable
-internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewModel, onOpen: () -> Unit, onDismiss: () -> Unit) {
+internal fun TaskActionsSheet(task: Task, ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, boardViewModel: SprintBoardViewModel, onOpen: () -> Unit, onDismiss: () -> Unit) {
     val colors = LocalWebColors.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
@@ -654,14 +654,14 @@ internal fun TaskActionsSheet(task: Task, ui: TaskUiState, viewModel: TaskViewMo
             SectionTitle("Move to", Modifier.padding(bottom = 6.dp))
             ui.agile.workflowStates.forEach { state ->
                 val current = task.workflowStateKey == state.key || (state.id != 0L && task.workflowStateId == state.id)
-                val accepting = ui.sprintBoard?.columns?.firstOrNull { it.stateId == state.id }?.accepting ?: false
+                val accepting = boardUi.sprintBoard?.columns?.firstOrNull { it.stateId == state.id }?.accepting ?: false
                 val decision = task.dropTargetDecision(state.id, accepting)
                 Row(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (current) colors.primary.copy(alpha = 0.08f) else androidx.compose.ui.graphics.Color.Transparent)
-                        .clickable(enabled = !current && decision.allowed) { haptics.confirm(); onDismiss(); viewModel.moveTask(task, state) }
+                        .clickable(enabled = !current && decision.allowed) { haptics.confirm(); onDismiss(); boardViewModel.moveTask(task, state) }
                         .padding(horizontal = 10.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

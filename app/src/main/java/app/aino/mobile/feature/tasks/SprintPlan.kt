@@ -49,17 +49,17 @@ import app.aino.mobile.core.designsystem.tokens.rem
  * first because that is what the user came to plan.
  */
 @Composable
-internal fun SprintPlanPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
+internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
     val sprint = ui.currentSprint
     var moving by remember { mutableStateOf<Task?>(null) }
 
-    TaskPage(loading = ui.sprintLoading || ui.backlogLoading || ui.refreshing, onRefresh = { viewModel.refresh(pull = true) }) {
+    TaskPage(loading = boardUi.sprintLoading || ui.backlogLoading || ui.refreshing, onRefresh = { viewModel.refresh(pull = true) }) {
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 112.dp),
         ) {
-            item(key = "header") { PlanHeader(ui, viewModel) }
+            item(key = "header") { PlanHeader(ui, boardUi, viewModel) }
             item(key = "back-to-backlog") {
                 TextButton(
                     onClick = viewModel::closeSprintPlan,
@@ -73,12 +73,12 @@ internal fun SprintPlanPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (
                 PlanSectionTitle(
                     "Sprint",
                     sprint?.let { sp ->
-                        val points = ui.tasks.sumOf { it.storyPoints ?: 0.0 }
+                        val points = boardUi.tasks.sumOf { it.storyPoints ?: 0.0 }
                         "${formatPoints(points)} ${ui.agile.unitLabel}"
                     },
                 )
             }
-            if (ui.tasks.isEmpty()) {
+            if (boardUi.tasks.isEmpty()) {
                 item(key = "sprint-empty") {
                     Text(
                         "Nothing in this sprint yet. Pull work in from the backlog below.",
@@ -88,7 +88,7 @@ internal fun SprintPlanPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (
                     )
                 }
             } else {
-                items(ui.tasks, key = { "sp-${it.id}" }) { task ->
+                items(boardUi.tasks, key = { "sp-${it.id}" }) { task ->
                     PlanRow(task, ui, onOpen, actionLabel = "Move to backlog") {
                         viewModel.assignSprint(task, null)
                     }
@@ -142,14 +142,14 @@ internal fun SprintPlanPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (
 
 /** Goal (editable inline), committed points, velocity and the scope delta. */
 @Composable
-private fun PlanHeader(ui: TaskUiState, viewModel: TaskViewModel) {
+private fun PlanHeader(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel) {
     val colors = LocalWebColors.current
     val sprint = ui.currentSprint ?: return
     var editingGoal by remember { mutableStateOf(false) }
     var goal by remember(sprint.id) { mutableStateOf(sprint.goal ?: "") }
-    val committed = ui.baseline?.committedPoints ?: 0.0
-    val added = ui.baseline?.addedPoints ?: 0.0
-    val removed = ui.baseline?.removedPoints ?: 0.0
+    val committed = boardUi.baseline?.committedPoints ?: 0.0
+    val added = boardUi.baseline?.addedPoints ?: 0.0
+    val removed = boardUi.baseline?.removedPoints ?: 0.0
 
     Column(
         Modifier

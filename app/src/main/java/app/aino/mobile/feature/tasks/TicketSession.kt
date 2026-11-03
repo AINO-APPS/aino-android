@@ -9,6 +9,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -32,6 +34,12 @@ class TicketSession {
     private val mutablePlanScope = state(PlanScope())
     val planScope = mutablePlanScope.asStateFlow()
     internal val planScopeLock = Any()
+    private val mutableBoardRequests = MutableSharedFlow<BoardRequest>(extraBufferCapacity = 32)
+    internal val boardRequests = mutableBoardRequests.asSharedFlow()
+    internal fun requestBoard(request: BoardRequest) { mutableBoardRequests.tryEmit(request) }
+    private val mutablePlanRefreshes = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    internal val planRefreshes = mutablePlanRefreshes.asSharedFlow()
+    internal fun requestPlanRefresh() { mutablePlanRefreshes.tryEmit(Unit) }
 
     internal fun writePlanScope(value: PlanScope) {
         mutablePlanScope.value = value
@@ -132,6 +140,13 @@ class TicketSession {
         noticeChannel.close()
         while (noticeChannel.tryReceive().isSuccess) Unit
     }
+}
+
+internal sealed interface BoardRequest {
+    data object Load : BoardRequest
+    data object ReloadLoaded : BoardRequest
+    data object Start : BoardRequest
+    data class Baseline(val sprintId: Long) : BoardRequest
 }
 
 internal data class TicketSnapshot(

@@ -57,14 +57,14 @@ class SprintBoardWiringTest {
         return TaskViewModel(TaskRepository(client))
     }
 
-    private fun state(tasks: List<Task>): TaskUiState {
+    private fun state(tasks: List<Task>): SprintBoardUiState {
         val states = listOf(
             WorkflowState(id = 1, key = "pending", name = "New", category = "open", color = "#6b7280", isInitial = true, sortOrder = 1),
             WorkflowState(id = 2, key = "in_progress", name = "In Progress", category = "in_progress", color = "#f59e0b", sortOrder = 2),
             WorkflowState(id = 3, key = "in_review", name = "In Review", category = "in_review", color = "#3b82f6", sortOrder = 3),
             WorkflowState(id = 4, key = "done", name = "Done", category = "done", color = "#10b981", isTerminal = true, sortOrder = 4),
         )
-        return TaskUiState(
+        return SprintBoardUiState(
             planScope = PlanScope(
                 userId = 1,
                 role = "employee",
@@ -74,7 +74,6 @@ class SprintBoardWiringTest {
                 selectedSprintId = sprint.id,
                 agile = AgileConfig(workflowStates = states),
             ),
-            tab = TaskTab.Sprint,
             sprintLoading = false,
             tickets = tasks.associateBy { it.id },
             boardTicketIds = tasks.map { it.id },
@@ -87,11 +86,12 @@ class SprintBoardWiringTest {
         )
     }
 
-    private fun show(ui: TaskUiState) {
+    private fun show(ui: SprintBoardUiState) {
         val vm = viewModel()
+        val boardVm = SprintBoardViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                SprintBoard(ui = ui, viewModel = vm, onOpen = {})
+                SprintBoard(ui = TaskUiState(planScope = ui.planScope, tab = TaskTab.Sprint), boardUi = ui, viewModel = vm, boardViewModel = boardVm, onOpen = {})
             }
         }
     }
@@ -168,7 +168,7 @@ class SprintBoardWiringTest {
         compose.onNodeWithText("Review the release plan").assertDoesNotExist()
     }
 
-    private fun actionSheetState(board: SprintBoardResponse): TaskUiState {
+    private fun actionSheetState(board: SprintBoardResponse): SprintBoardUiState {
         val states = listOf(
             WorkflowState(id = 101, key = "todo", name = "To Do"),
             WorkflowState(id = 102, key = "in_progress", name = "In Progress"),
@@ -187,7 +187,8 @@ class SprintBoardWiringTest {
 
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                TaskActionsSheet(board.tickets.single(), actionSheetState(board), vm, onOpen = {}, onDismiss = {})
+                val boardUi = actionSheetState(board)
+                TaskActionsSheet(board.tickets.single(), TaskUiState(planScope = boardUi.planScope), boardUi, vm, SprintBoardViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession), onOpen = {}, onDismiss = {})
             }
         }
 
@@ -203,7 +204,9 @@ class SprintBoardWiringTest {
         )
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                TaskActionsSheet(board.tickets.single().copy(capabilities = null), actionSheetState(board), viewModel(), onOpen = {}, onDismiss = {})
+                val vm = viewModel()
+                val boardUi = actionSheetState(board)
+                TaskActionsSheet(board.tickets.single().copy(capabilities = null), TaskUiState(planScope = boardUi.planScope), boardUi, vm, SprintBoardViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession), onOpen = {}, onDismiss = {})
             }
         }
 

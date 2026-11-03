@@ -83,21 +83,10 @@ data class TaskUiState(
     val searchResultIds: List<Long> = emptyList(),
     val searching: Boolean = false,
     val searchOpen: Boolean = false,
-    // Sprint board.
-    val boardTicketIds: List<Long> = emptyList(),
-    val board: SprintBoardResponse? = null,
-    val stats: TaskStats = TaskStats(),
-    val sprintStats: SprintStats? = null,
-    val sprintLoading: Boolean = true,
     val carriedCount: Int = 0,
     val importTaskId: Long? = null,
     val importAssignedTo: Long? = null,
     val importDueDate: String = "",
-    val lifecycleBusy: Boolean = false,
-    val lifecycleError: String? = null,
-    val completing: Boolean = false,
-    val rolloverOptions: List<AvailableSprint> = emptyList(),
-    val rolloverTo: String = "backlog",
     // Backlog.
     /** Loaded, unfiltered Plan ids, including completed work. */
     val planTicketIds: List<Long> = emptyList(),
@@ -138,10 +127,6 @@ data class TaskUiState(
         val overlays: ScheduleOverlays = ScheduleOverlays(),
     /** Which overlay types are currently shown; each toggles independently. */
     val overlayTypes: Set<String> = setOf("leave", "holiday", "meeting"),
-    /** The carryover pre-flight shown before a sprint is completed. */
-    val completionPreview: CompletionPreview? = null,
-    /** Committed points and the scope delta for the selected sprint. */
-        val baseline: BaselineResponse? = null,
     /** "Updated by <name>" flashes keyed by task id, from realtime deltas. */
     val attribution: Map<Long, String> = emptyMap(),
 ) {
@@ -177,9 +162,6 @@ data class TaskUiState(
     private fun resolve(ids: List<Long>, belongs: (Task) -> Boolean): List<Task> =
         ids.mapNotNull(tickets::get).filter { inScope(it) && belongs(it) }
 
-    internal fun containsBoardTicket(ticket: Task): Boolean =
-        ticket.container == "sprint" && ticket.sprintId == selectedSprintId && ticket.workflowStateKey != "cancelled"
-
     internal fun containsPlanTicket(ticket: Task): Boolean =
         ticket.workflowStateKey != "cancelled" && (ticket.container == "backlog" ||
             (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId })
@@ -196,13 +178,6 @@ data class TaskUiState(
             matchesFilters(ticket, filters, userId, includeStatus = true)
     }
 
-    val tasks: List<Task> get() = resolve(boardTicketIds) {
-        containsBoardTicket(it) && matchesFilters(it, filters, userId, includeStatus = true) &&
-            (selectedEpicId == null || it.parentTaskId == selectedEpicId)
-    }
-    val sprintBoard: SprintBoardResponse? get() = board?.takeIf { it.sprint.id == selectedSprintId }?.copy(
-        tickets = resolve(boardTicketIds, ::containsBoardTicket),
-    )
     val planTasks: List<Task> get() = resolve(planTicketIds, ::containsPlanTicket)
     private val filteredPlan: List<Task> get() = planTasks.filter {
         containsPlanTicket(it) && matchesPlanFilters(it, filters, quickFilters, userId) &&
@@ -316,10 +291,6 @@ class TaskViewModel(
                     current.copy(
                         tickets = snapshot.tickets,
                         recentlyUpdated = snapshot.recentlyChanged,
-                        boardTicketIds = (
-                            current.boardTicketIds.filter(snapshot.tickets::containsKey) +
-                                changed.filter(current::containsBoardTicket).map { it.id }
-                            ).distinct(),
                         planTicketIds = (
                             current.planTicketIds.filter(snapshot.tickets::containsKey) +
                                 changed.filter(current::containsPlanTicket).map { it.id }
@@ -330,7 +301,6 @@ class TaskViewModel(
                             snapshot.tickets[id]?.let { it.workflowStateKey != "cancelled" } == true
                         },
                     ).projectPlan()
-                        .let { state -> state.copy(stats = recomputeStats(state.tasks)) }
                 }
             }
         }
@@ -339,6 +309,12 @@ class TaskViewModel(
         }
         ticketScope.launch {
             ticketSync.changes.collect(::handleTicketSyncChange)
+        }
+        ticketScope.launch {
+            this@TaskViewModel.ticketSession.planRefreshes.collect {
+                refresh()
+                if (_ui.value.planLoaded) loadBacklog()
+            }
         }
     }
 
@@ -367,8 +343,6 @@ class TaskViewModel(
         val currentSprintId: Long?,
         val currentSprintRow: AvailableSprint?,
         val selectedSprintId: Long?,
-        val board: SprintBoardResponse?,
-        val boardTicketIds: List<Long>,
         val planTicketIds: List<Long>,
         val planLoaded: Boolean,
         val planBaseline: TicketPlanBaseline?,
@@ -378,7 +352,6 @@ class TaskViewModel(
         val scheduledLoaded: Boolean,
     )
     private val teamViews = mutableMapOf<Long?, CachedTeamViews>()
-    private var sprintJob: Job? = null
     private var backlogJob: Job? = null
     private var scheduledJob: Job? = null
     /** Bumped on every list reload; a page/result from an older generation is discarded. */
@@ -426,11 +399,7 @@ class TaskViewModel(
     }
 
     private fun statusDecision(task: Task, stateId: Long): TaskCapabilityDecision {
-        val s = _ui.value
-        val accepting = if (task.sprintId != null && task.sprintId == s.selectedSprintId) {
-            s.sprintBoard?.columns?.firstOrNull { it.stateId == stateId }?.accepting ?: false
-        } else true
-        return task.dropTargetDecision(stateId, accepting)
+        return task.dropTargetDecision(stateId, accepting = true)
     }
 
     private fun confirm(title: String, message: String, confirmText: String, danger: Boolean = false, action: () -> Unit) {
@@ -590,12 +559,13 @@ class TaskViewModel(
             }
             TicketSyncSignal.Reconnect -> {
                 val state = _ui.value
-                if (state.board != null || state.tab == TaskTab.Sprint) loadSprint()
+                if (state.tab == TaskTab.Sprint || state.planOpen) loadSprint()
+                else ticketSession.requestBoard(BoardRequest.ReloadLoaded)
                 if (state.planLoaded) loadBacklog()
                 if (state.scheduledLoaded) loadScheduled()
                 if (state.tab == TaskTab.ServiceDesk) reloadTab()
-                if (state.board == null && !state.planLoaded && !state.scheduledLoaded &&
-                    state.tab != TaskTab.ServiceDesk
+                if (!state.planLoaded && !state.scheduledLoaded &&
+                    state.tab != TaskTab.ServiceDesk && state.tab != TaskTab.Sprint && !state.planOpen
                 ) {
                     reloadTab()
                 }
@@ -716,7 +686,7 @@ class TaskViewModel(
         updatePlan { it.copy(planOpen = true, planScope = it.planScope.copy(selectedSprintId = targetId)) }
         if (s.backlog.isEmpty()) loadBacklog()
         loadSprint()
-        loadBaseline(targetId)
+        ticketSession.requestBoard(BoardRequest.Baseline(targetId))
     }
 
     fun closeSprintPlan() = _ui.update { it.copy(planOpen = false) }
@@ -796,7 +766,7 @@ class TaskViewModel(
     }
 
     fun selectSprint(id: Long) {
-        updatePlan { it.copy(planScope = it.planScope.copy(selectedSprintId = id), completing = false, lifecycleError = null, sheet = null, boardTicketIds = emptyList()) }
+        updatePlan { it.copy(planScope = it.planScope.copy(selectedSprintId = id), sheet = null) }
         loadSprint()
     }
 
@@ -866,97 +836,11 @@ class TaskViewModel(
 
     // ── Sprint board ─────────────────────────────────────────────────────
 
-    fun loadSprint() {
-        val sprintId = _ui.value.selectedSprintId
-        sprintJob?.cancel()
-        if (sprintId == null) {
-            _ui.update { it.copy(boardTicketIds = emptyList(), board = null, stats = TaskStats(), sprintStats = null, sprintLoading = false) }
-            return
-        }
-        _ui.update { it.copy(sprintLoading = it.tasks.isEmpty()) }
-        sprintJob = io {
-            val filters = _ui.value.filters
-            runCatching { repository.loadSprintBoard(sprintId) }.fold(
-                onSuccess = { result ->
-                    ticketSession.store.upsert(result.tickets)
-                    val tickets = result.tickets.filter {
-                        it.workflowStateKey != "cancelled" && matchesFilters(it, filters, _ui.value.userId, includeStatus = true)
-                    }
-                    _ui.update {
-                        if (it.selectedSprintId == sprintId) it.copy(
-                            board = result.copy(tickets = emptyList()),
-                            boardTicketIds = result.tickets.map { ticket -> ticket.id },
-                            stats = recomputeStats(tickets),
-                            sprintLoading = false,
-                        ) else it
-                    }
-                },
-                onFailure = {
-                    val hadData = _ui.value.tasks.isNotEmpty()
-                    _ui.update { it.copy(sprintLoading = false) }
-                    loadFailed(it, hadData, "Failed to load tasks")
-                },
-            )
-            refreshSprintStats()
-        }
-    }
-
-    private suspend fun refreshSprintStats() {
-        val sprintId = _ui.value.selectedSprintId ?: return
-        val stats = runCatching { repository.loadSprintStats(sprintId) }.getOrNull() ?: return
-        _ui.update { if (it.selectedSprintId == sprintId) it.copy(sprintStats = stats) else it }
-    }
-
-    /**
-     * Board move (drag onto a status chip, or the "Move to" sheet). Applied
-     * optimistically with an Undo snackbar; a server rejection (e.g. a WIP
-     * limit 409) snaps the card back.
-     */
-    fun moveTask(task: Task, state: WorkflowState) {
-        val current = ticketSession.store.state.value.tickets[task.id] ?: task.copy(comments = emptyList())
-        if (current.workflowStateKey == state.key || (state.id != 0L && current.workflowStateId == state.id)) return
-        val columnAccepting = _ui.value.sprintBoard?.columns?.firstOrNull { it.stateId == state.id }?.accepting ?: false
-        val decision = current.dropTargetDecision(state.id, columnAccepting)
-        if (!decision.allowed) return notify(decision.reasonCopy())
-        val previous = current
-        val moved = previous.copy(workflowStateKey = state.key, workflowStateId = state.id.takeIf { it != 0L } ?: previous.workflowStateId)
-        val optimistic = applyTask(moved)
-        io {
-            runCatching { repository.updateStatus(task.id, state.key) }.fold(
-                onSuccess = { saved ->
-                    patchServerTask(saved)
-                    loadSprint()
-                    notify("Moved to ${state.name.ifEmpty { state.key }}", "Undo") { revertMove(previous, state) }
-                },
-                onFailure = { e ->
-                    if (ticketSession.store.restoreIfCurrent(optimistic, previous)) {
-                        patchTask(previous, highlight = false, writeToStore = false)
-                    }
-                    fail(failure(e, "Failed to move item"))
-                },
-            )
-        }
-    }
-
-    private fun revertMove(previous: Task, from: WorkflowState) {
-        val current = _ui.value.tasks.firstOrNull { it.id == previous.id } ?: previous
-        applyTask(previous)
-        io {
-            runCatching { repository.updateStatus(previous.id, previous.workflowStateKey.orEmpty()) }.fold(
-                onSuccess = { saved -> patchServerTask(saved); loadSprint() },
-                onFailure = { e ->
-                    applyTask(current.copy(workflowStateKey = from.key))
-                    fail(failure(e, "Failed to undo move"))
-                },
-            )
-        }
-    }
+    fun loadSprint() = ticketSession.requestBoard(BoardRequest.Load)
 
     private fun patchServerTask(saved: Task) {
         patchTask(saved, highlight = false)
     }
-
-    private fun applyTask(task: Task) = patchTask(task, highlight = false)
 
     fun configureImport(task: Task) = _ui.update { s ->
         s.copy(
@@ -994,90 +878,6 @@ class TaskViewModel(
                 onFailure = { fail("Failed to import task to sprint") },
             )
         }
-    }
-
-    // ── Sprint lifecycle (`SprintLifecycleControls`) ─────────────────────
-
-    private fun lifecycle(fallback: String, call: suspend (Long) -> Unit, done: String) {
-        val sprint = _ui.value.currentSprint ?: return
-        if (_ui.value.lifecycleBusy) return
-        _ui.update { it.copy(lifecycleBusy = true, lifecycleError = null) }
-        io {
-            runCatching { call(sprint.id) }.fold(
-                onSuccess = {
-                    _ui.update { it.copy(completing = false) }
-                    notify(done)
-                    lifecycleChanged()
-                },
-                onFailure = { e -> _ui.update { it.copy(lifecycleError = failure(e, fallback)) } },
-            )
-            _ui.update { it.copy(lifecycleBusy = false) }
-        }
-    }
-
-    fun startSprint() = lifecycle("Failed to start sprint", { repository.startSprint(it) }, "Sprint started")
-
-    fun pauseSprint() = lifecycle("Failed to pause sprint", { repository.pauseSprint(it) }, "Sprint paused")
-
-    fun resumeSprint() = lifecycle("Failed to resume sprint", { repository.resumeSprint(it) }, "Sprint resumed")
-
-    fun beginComplete() {
-        val sprint = _ui.value.currentSprint ?: return
-        _ui.update { it.copy(completing = true, rolloverTo = "backlog") }
-        io {
-            val options = runCatching {
-                repository.loadTeamSprints(sprint.teamId.takeIf { showsTeamPicker(_ui.value.role) }).sprints
-            }.getOrDefault(emptyList())
-                .filter { it.id != sprint.id && it.status != "completed" }
-            _ui.update { it.copy(rolloverOptions = options) }
-            // The pre-flight summary is what makes the dialog honest (D32).
-            runCatching { repository.loadCompletionPreview(sprint.id) }
-                .onSuccess { preview -> _ui.update { it.copy(completionPreview = preview) } }
-        }
-    }
-
-    fun cancelComplete() = _ui.update { it.copy(completing = false, completionPreview = null) }
-
-    fun setRollover(value: String) = _ui.update { it.copy(rolloverTo = value) }
-
-    fun completeSprint() {
-        val rollover = _ui.value.rolloverTo
-        lifecycle("Failed to complete sprint", { repository.completeSprint(it, rollover) }, "Sprint completed")
-    }
-
-    /** `onChanged`: refresh the sprint list (badge/controls), tasks and stats. */
-    private suspend fun lifecycleChanged() {
-        val sprints = runCatching(repository::loadAvailableSprints).getOrNull()
-        val sprintList = runCatching {
-            val current = _ui.value
-            repository.loadTeamSprints(current.selectedTeamId.takeIf { showsTeamPicker(current.role) })
-        }.getOrNull()
-        if (sprints != null || sprintList != null) {
-            updatePlan { s ->
-                val allSprints = sprints ?: s.sprints
-                val currentSprintId = sprintList?.currentSprintId ?: s.currentSprintId.takeIf { sprintList == null }
-                val currentSprintRow = if (sprintList != null) {
-                    sprintList.sprints.firstOrNull { it.id == currentSprintId }
-                } else {
-                    s.currentSprintRow
-                }
-                val teamSprints = sprintsForTeam(allSprints, s.selectedTeamId, showsTeamPicker(s.role))
-                    .let { rows ->
-                        currentSprintRow?.takeIf { it.id == currentSprintId && rows.none { row -> row.id == it.id } }
-                            ?.let(rows::plus) ?: rows
-                    }
-                s.copy(
-                    planScope = s.planScope.copy(
-                        sprints = allSprints,
-                        currentSprintId = currentSprintId,
-                        currentSprintRow = currentSprintRow,
-                        selectedSprintId = pickSprint(s.selectedSprintId, teamSprints, currentSprintId),
-                    ),
-                    tab = normalizeTab(s.tab, planningTabs(s.agileEnabled, teamSprints, currentSprintId)),
-                )
-            }
-        }
-        reloadTab()
     }
 
     // ── Backlog (`useBacklog`, infinite scroll) ──────────────────────────
@@ -1438,7 +1238,7 @@ class TaskViewModel(
         updatePlan { state ->
             teamViews[state.selectedTeamId] = CachedTeamViews(
                 state.currentSprintId, state.currentSprintRow, state.selectedSprintId,
-                state.board, state.boardTicketIds, state.planTicketIds, state.planLoaded,
+                state.planTicketIds, state.planLoaded,
                 state.planBaseline, state.planOffset, state.planHasMore,
                 state.scheduled.map { it.id }, state.scheduledLoaded,
             )
@@ -1467,17 +1267,11 @@ class TaskViewModel(
                 planBaseline = cached?.planBaseline,
                 planOffset = cached?.planOffset ?: 0,
                 planHasMore = cached?.planHasMore ?: false,
-                board = cached?.board,
-                boardTicketIds = cached?.boardTicketIds.orEmpty(),
                 selectedIds = emptySet(),
                 scheduledTicketIds = cached?.scheduledTicketIds.orEmpty(),
                 scheduledLoaded = cached?.scheduledLoaded ?: false,
                 tab = if (currentSprintId != null) TaskTab.Sprint else normalizeTab(state.tab, tabs),
-            ).let { next ->
-                next.copy(
-                    stats = recomputeStats(next.tasks),
-                )
-            }
+            )
         }
         io {
             val sprintList = runCatching { repository.loadTeamSprints(teamId) }.getOrNull() ?: return@io
@@ -1667,25 +1461,6 @@ class TaskViewModel(
     fun toggleOverlayType(type: String) {
         _ui.update {
             it.copy(overlayTypes = if (type in it.overlayTypes) it.overlayTypes - type else it.overlayTypes + type)
-        }
-    }
-
-    // ── Sprint pre-flight and baseline ───────────────────────────────────
-
-    /** The carryover pre-flight shown before a sprint is completed. */
-    fun loadCompletionPreview(sprintId: Long) {
-        io {
-            runCatching { repository.loadCompletionPreview(sprintId) }.onSuccess { preview ->
-                _ui.update { it.copy(completionPreview = preview) }
-            }
-        }
-    }
-
-    fun loadBaseline(sprintId: Long) {
-        io {
-            runCatching { repository.loadBaseline(sprintId) }.onSuccess { baseline ->
-                _ui.update { it.copy(baseline = baseline) }
-            }
         }
     }
 

@@ -45,6 +45,14 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
 
 ## Plan on Android
 
+The Activity-scoped `SprintBoardViewModel` owns Board membership ids, optimistic
+moves and identity-checked rollback, sprint lifecycle and rollover, completion
+preview, stats and scope baseline. It reads the session Ticket store and Plan
+scope without referencing another ViewModel. The Tasks shell remains the only
+Plan-scope writer; session requests coordinate Board reloads and metadata refresh.
+Completing a sprint refetches enriched Tickets so rollover Placement updates in
+every loaded view, including open Detail and search.
+
 Ticket Detail has an id-keyed, route-scoped `TicketDetailViewModel`. It reads the
 same session Ticket store as the lists and owns editing, Activity history, tabs,
 Placement, comments and timers. Blocker and parent writes refetch the full Ticket
@@ -80,8 +88,8 @@ replace whole Tickets, so a change is visible across these views without reopeni
 Detail. Detail comment threads remain separate from stored Tickets. The existing
 app container owns the signed-in tenant/user's session. Sign-out, revocation,
 tenant changes and account changes cancel its work and clear its Tickets and
-screen state, including late HTTP responses. The Activity obtains a Tasks
-ViewModel keyed by session, so signing back in (even as the same user) loads
+screen state, including late HTTP responses. The Activity obtains Tasks and Board
+ViewModels keyed by session, so signing back in (even as the same user) loads
 fresh data. Cold starts can still rebuild a Plan using the per-user response
 cache. Other Plan surfaces remain separate migration steps.
 
