@@ -41,10 +41,11 @@ class TaskScheduleErrorTest {
             },
         )
         val viewModel = TaskViewModel(repository)
+        val viewModelPlan = PlanViewModel(repository, viewModel.ticketSession)
         viewModel.bind(userId = 1, role = "employee", teamName = null, agileEnabled = false)
 
         val deadline = System.currentTimeMillis() + 5_000
-        while (viewModel.ui.value.backlog.none { it.id == 7L } && System.currentTimeMillis() < deadline) Thread.sleep(10)
+        while (viewModelPlan.ui.value.backlog.none { it.id == 7L } && System.currentTimeMillis() < deadline) Thread.sleep(10)
         viewModel.clearError()
         viewModel.schedule(7, "2026-11-02")
 

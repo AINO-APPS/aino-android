@@ -39,12 +39,15 @@ class PagedBacklogTotalsTest {
         ApiResponse(200, emptyMap(), body.toByteArray())
     }
     private lateinit var vm: TaskViewModel
+    private lateinit var vmPlan: PlanViewModel
 
     @Before fun setUp() {
         Dispatchers.setMain(UnconfinedTestDispatcher())
         session = TicketSession()
         vm = TaskViewModel(TaskRepository(api), ticketSession = session)
+        vmPlan = PlanViewModel(TaskRepository(api), vm.ticketSession)
         models.put("tasks", vm)
+        models.put("plan", vmPlan)
     }
 
     @After fun tearDown() {
@@ -55,16 +58,16 @@ class PagedBacklogTotalsTest {
 
     @Test fun movingALoadedTicketOutOfAPartialBacklogAdjustsServerTotalsAndSummary() {
         load()
-        assertEquals(100, vm.ui.value.backlogTotal)
-        assertEquals(1, vm.ui.value.backlog.size)
+        assertEquals(100, vmPlan.ui.value.backlogTotal)
+        assertEquals(1, vmPlan.ui.value.backlog.size)
 
         saved = original.replace("\"backlog\"", "\"scheduled\"")
-        write(vm.ui.value.backlog.single())
-        await { vm.ui.value.backlog.isEmpty() }
+        write(vmPlan.ui.value.backlog.single())
+        await { vmPlan.ui.value.backlog.isEmpty() }
 
-        assertEquals(99, vm.ui.value.backlogTotal)
-        assertEquals(BacklogSummary(99, mapOf("todo" to 59, "in_progress" to 40), mapOf("high" to 69, "medium" to 30)), vm.ui.value.backlogSummary)
-        assertEquals(8, vm.ui.value.completedCount)
+        assertEquals(99, vmPlan.ui.value.backlogTotal)
+        assertEquals(BacklogSummary(99, mapOf("todo" to 59, "in_progress" to 40), mapOf("high" to 69, "medium" to 30)), vmPlan.ui.value.backlogSummary)
+        assertEquals(8, vmPlan.ui.value.completedCount)
     }
 
     @Test fun aNewTicketUpdatesTheServerSummaryAndRepeatedRefreshesDoNotDrift() {
@@ -72,66 +75,66 @@ class PagedBacklogTotalsTest {
         repeat(2) { revision ->
             saved = original.replace("\"id\":1", "\"id\":2").replace("Ship", "Ship $revision")
             vm.onTaskEvent("task_updated", buildJsonObject { put("taskId", 2) })
-            await { vm.ui.value.backlog.any { it.id == 2L && it.title == "Ship $revision" } }
-            assertEquals(101, vm.ui.value.backlogTotal)
+            await { vmPlan.ui.value.backlog.any { it.id == 2L && it.title == "Ship $revision" } }
+            assertEquals(101, vmPlan.ui.value.backlogTotal)
         }
-        assertEquals(BacklogSummary(101, mapOf("todo" to 61, "in_progress" to 40), mapOf("high" to 71, "medium" to 30)), vm.ui.value.backlogSummary)
+        assertEquals(BacklogSummary(101, mapOf("todo" to 61, "in_progress" to 40), mapOf("high" to 71, "medium" to 30)), vmPlan.ui.value.backlogSummary)
     }
 
     @Test fun workflowAndPriorityChangesMoveSummaryBucketsWithoutChangingTheTotal() {
         load()
         saved = original.replace("\"todo\"", "\"in_progress\"").replace("\"high\"", "\"medium\"")
-        write(vm.ui.value.backlog.single())
-        await { vm.ui.value.backlog.single().priority == "medium" }
-        assertEquals(100, vm.ui.value.backlogTotal)
-        assertEquals(BacklogSummary(100, mapOf("todo" to 59, "in_progress" to 41), mapOf("high" to 69, "medium" to 31)), vm.ui.value.backlogSummary)
+        write(vmPlan.ui.value.backlog.single())
+        await { vmPlan.ui.value.backlog.single().priority == "medium" }
+        assertEquals(100, vmPlan.ui.value.backlogTotal)
+        assertEquals(BacklogSummary(100, mapOf("todo" to 59, "in_progress" to 41), mapOf("high" to 69, "medium" to 31)), vmPlan.ui.value.backlogSummary)
     }
 
     @Test fun completingAndReopeningATicketAdjustsBothSectionsWithoutDrift() {
         load()
         saved = original.replace("\"todo\"", "\"done\"").replace("\"id\":1", "\"id\":1,\"completed_at\":\"2026-11-03\"")
-        write(vm.ui.value.backlog.single())
-        await { vm.ui.value.completed.size == 1 }
-        assertEquals(99, vm.ui.value.backlogTotal)
-        assertEquals(9, vm.ui.value.completedCount)
+        write(vmPlan.ui.value.backlog.single())
+        await { vmPlan.ui.value.completed.size == 1 }
+        assertEquals(99, vmPlan.ui.value.backlogTotal)
+        assertEquals(9, vmPlan.ui.value.completedCount)
 
-        write(vm.ui.value.completed.single())
-        assertEquals(9, vm.ui.value.completedCount)
+        write(vmPlan.ui.value.completed.single())
+        assertEquals(9, vmPlan.ui.value.completedCount)
         saved = original
-        write(vm.ui.value.completed.single())
-        await { vm.ui.value.backlog.size == 1 }
-        assertEquals(100, vm.ui.value.backlogTotal)
-        assertEquals(8, vm.ui.value.completedCount)
-        assertEquals(BacklogSummary(100, mapOf("todo" to 60, "in_progress" to 40), mapOf("high" to 70, "medium" to 30)), vm.ui.value.backlogSummary)
+        write(vmPlan.ui.value.completed.single())
+        await { vmPlan.ui.value.backlog.size == 1 }
+        assertEquals(100, vmPlan.ui.value.backlogTotal)
+        assertEquals(8, vmPlan.ui.value.completedCount)
+        assertEquals(BacklogSummary(100, mapOf("todo" to 60, "in_progress" to 40), mapOf("high" to 70, "medium" to 30)), vmPlan.ui.value.backlogSummary)
     }
 
     @Test fun aFullReloadDiscardsPreviousAdjustmentsAndUsesTheNewServerBaseline() {
         load()
         saved = original.replace("\"backlog\"", "\"scheduled\"")
-        write(vm.ui.value.backlog.single())
-        await { vm.ui.value.backlogTotal == 99 }
+        write(vmPlan.ui.value.backlog.single())
+        await { vmPlan.ui.value.backlogTotal == 99 }
         firstPage = page(original, 80, 5, 40, 50, true)
-        vm.loadBacklog()
-        await { vm.ui.value.backlogTotal == 80 && vm.ui.value.backlog.size == 1 }
-        assertEquals(5, vm.ui.value.completedCount)
-        assertEquals(BacklogSummary(80, mapOf("todo" to 40, "in_progress" to 40), mapOf("high" to 50, "medium" to 30)), vm.ui.value.backlogSummary)
+        vmPlan.loadBacklog()
+        await { vmPlan.ui.value.backlogTotal == 80 && vmPlan.ui.value.backlog.size == 1 }
+        assertEquals(5, vmPlan.ui.value.completedCount)
+        assertEquals(BacklogSummary(80, mapOf("todo" to 40, "in_progress" to 40), mapOf("high" to 50, "medium" to 30)), vmPlan.ui.value.backlogSummary)
     }
 
     @Test fun theNextPageResetsTheBaselineAndFurtherChangesAdjustItOnce() {
         load()
         saved = original.replace("\"backlog\"", "\"scheduled\"")
-        write(vm.ui.value.backlog.single())
-        await { vm.ui.value.backlogTotal == 99 && !vm.ui.value.backlogLoadingMore }
+        write(vmPlan.ui.value.backlog.single())
+        await { vmPlan.ui.value.backlogTotal == 99 && !vmPlan.ui.value.backlogLoadingMore }
         val second = original.replace("\"id\":1", "\"id\":2")
         laterPage = page(second, 99, 8, 59, 69, true)
-        vm.loadMoreBacklog()
-        await { vm.ui.value.backlog.map { it.id } == listOf(2L) && !vm.ui.value.backlogLoadingMore }
-        assertEquals(99, vm.ui.value.backlogTotal)
-        assertEquals(BacklogSummary(99, mapOf("todo" to 59, "in_progress" to 40), mapOf("high" to 69, "medium" to 30)), vm.ui.value.backlogSummary)
+        vmPlan.loadMoreBacklog()
+        await { vmPlan.ui.value.backlog.map { it.id } == listOf(2L) && !vmPlan.ui.value.backlogLoadingMore }
+        assertEquals(99, vmPlan.ui.value.backlogTotal)
+        assertEquals(BacklogSummary(99, mapOf("todo" to 59, "in_progress" to 40), mapOf("high" to 69, "medium" to 30)), vmPlan.ui.value.backlogSummary)
         saved = second.replace("\"backlog\"", "\"scheduled\"")
-        write(vm.ui.value.backlog.single())
-        await { vm.ui.value.backlog.isEmpty() }
-        assertEquals(98, vm.ui.value.backlogTotal)
+        write(vmPlan.ui.value.backlog.single())
+        await { vmPlan.ui.value.backlog.isEmpty() }
+        assertEquals(98, vmPlan.ui.value.backlogTotal)
     }
 
     @Test fun deletingALoadedTicketReducesTheBaselineCounts() {
@@ -140,17 +143,17 @@ class PagedBacklogTotalsTest {
             put("taskId", 1)
             put("action", "deleted")
         })
-        await { vm.ui.value.backlog.isEmpty() }
-        assertEquals(99, vm.ui.value.backlogTotal)
-        assertEquals(BacklogSummary(99, mapOf("todo" to 59, "in_progress" to 40), mapOf("high" to 69, "medium" to 30)), vm.ui.value.backlogSummary)
+        await { vmPlan.ui.value.backlog.isEmpty() }
+        assertEquals(99, vmPlan.ui.value.backlogTotal)
+        assertEquals(BacklogSummary(99, mapOf("todo" to 59, "in_progress" to 40), mapOf("high" to 69, "medium" to 30)), vmPlan.ui.value.backlogSummary)
     }
 
     @Test fun paginationTotalsDoNotCountLoadedCompletedWorkAsOpenWhenAggregateFieldsAreMissing() {
         val done = original.replace("\"id\":1", "\"id\":2,\"completed_at\":\"2026-11-03\"")
         firstPage = """{"tasks":[$original,$done],"pagination":{"total":2,"hasMore":false}}"""
         load()
-        assertEquals(1, vm.ui.value.backlogTotal)
-        assertEquals(1, vm.ui.value.completedCount)
+        assertEquals(1, vmPlan.ui.value.backlogTotal)
+        assertEquals(1, vmPlan.ui.value.completedCount)
     }
 
     private fun write(ticket: Task) {
@@ -166,15 +169,15 @@ class PagedBacklogTotalsTest {
         load()
         saved = original.replace("\"id\":1", "\"id\":2")
         vm.onTaskEvent("task_updated", buildJsonObject { put("taskId", 2) })
-        await { vm.ui.value.backlog.size == 2 }
+        await { vmPlan.ui.value.backlog.size == 2 }
 
-        assertEquals(101, vm.ui.value.backlogTotal)
-        assertEquals(8, vm.ui.value.completedCount)
+        assertEquals(101, vmPlan.ui.value.backlogTotal)
+        assertEquals(8, vmPlan.ui.value.completedCount)
     }
 
     private fun load() {
         vm.bind(userId = 1, role = "employee", teamName = null, agileEnabled = false)
-        await { vm.ui.value.planLoaded && !vm.ui.value.backlogLoadingMore || vm.ui.value.error != null }
+        await { vmPlan.ui.value.planLoaded && !vmPlan.ui.value.backlogLoadingMore || vmPlan.ui.value.error != null }
     }
 
     private fun await(condition: () -> Boolean) {

@@ -33,9 +33,9 @@ class SprintBoardViewModelTest {
         harness.rejectBoardReads = true
         harness.saved = """{"id":202,"title":"New column ticket","container":"sprint","sprint_id":10,"workflow_state_id":102,"workflow_state_key":"in_progress"}"""
 
-        harness.viewModel.openCreateForColumn(WorkflowState(102, "in_progress", "In Progress"))
-        harness.viewModel.updateDraft { it.copy(title = "New column ticket") }
-        harness.viewModel.submitBacklog()
+        harness.viewModelPlan.openCreateForColumn(WorkflowState(102, "in_progress", "In Progress"))
+        harness.viewModelPlan.updateDraft { it.copy(title = "New column ticket") }
+        harness.viewModelPlan.submitBacklog()
         harness.await { board.ui.value.tasks.any { it.id == 202L } }
 
         assertEquals("in_progress", board.ui.value.tasks.single { it.id == 202L }.workflowStateKey)
@@ -60,7 +60,7 @@ class SprintBoardViewModelTest {
         board.completeSprint()
         harness.await {
             board.ui.value.tasks.isEmpty() &&
-                harness.viewModel.ui.value.backlog.size == 1 &&
+                harness.viewModelPlan.ui.value.backlog.size == 1 &&
                 harness.detailViewModel.ui.value.detail?.container == "backlog"
         }
 
@@ -97,7 +97,7 @@ class SprintBoardViewModelTest {
     fun reconnectRefreshesAnAlreadyLoadedBoardWhileAnotherTabIsVisible() {
         harness.loadBoardPlanAndDetail()
         harness.viewModel.selectTab(TaskTab.Backlog)
-        harness.await { harness.viewModel.ui.value.tab == TaskTab.Backlog && harness.viewModel.ui.value.planLoaded }
+        harness.await { harness.viewModel.ui.value.tab == TaskTab.Backlog && harness.viewModelPlan.ui.value.planLoaded }
         harness.boardColumnCount = 7
 
         harness.session.onReconnect()

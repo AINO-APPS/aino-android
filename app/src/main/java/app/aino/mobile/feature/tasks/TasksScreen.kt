@@ -97,12 +97,15 @@ internal fun tabLabel(tab: TaskTab): String = when (tab) {
 @Composable
 fun TasksScreen(
     viewModel: TaskViewModel,
+    planViewModel: PlanViewModel,
     boardViewModel: SprintBoardViewModel,
     onOpenDetail: (Long) -> Unit,
     onOpenInsights: () -> Unit,
     serviceDesk: @Composable () -> Unit,
 ) {
-    val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val shellUi by viewModel.ui.collectAsStateWithLifecycle()
+    val planUi by planViewModel.ui.collectAsStateWithLifecycle()
+    val ui = tasksScreenState(shellUi, planUi)
     val boardState by boardViewModel.ui.collectAsStateWithLifecycle()
     val boardUi = boardState.copy(planScope = ui.planScope)
     val colors = LocalWebColors.current
@@ -207,21 +210,21 @@ fun TasksScreen(
                         // The Sprint tab is the board; the Plan split view is a
                         // Backlog action (ADR-015), reached from "Plan sprint".
                         TaskTab.Sprint -> SprintBoard(ui, boardUi, viewModel, boardViewModel, open)
-                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, open) else BacklogPage(ui, viewModel, open)
+                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, planViewModel, open) else BacklogPage(ui, viewModel, planViewModel, open)
                         TaskTab.Scheduled -> ScheduledPage(ui, viewModel, open)
                         TaskTab.ServiceDesk -> serviceDesk()
                         null -> Unit
                     }
                 }
-                if (ui.searchOpen) SearchOverlay(ui, viewModel, open)
+                if (ui.searchOpen) SearchOverlay(ui, viewModel, planViewModel, open)
             }
         }
     }
 
     when (ui.sheet) {
-        TaskSheet.Filters -> FilterSheet(ui, viewModel)
-        TaskSheet.CreateTicket -> CreateTicketSheet(ui, viewModel)
-        TaskSheet.Import -> ImportSheet(ui, viewModel)
+        TaskSheet.Filters -> FilterSheet(ui, viewModel, planViewModel)
+        TaskSheet.CreateTicket -> CreateTicketSheet(ui, viewModel, planViewModel)
+        TaskSheet.Import -> ImportSheet(ui, viewModel, planViewModel)
         TaskSheet.SprintPicker -> SprintPickerSheet(ui, viewModel)
         null -> Unit
     }
@@ -245,7 +248,13 @@ fun TasksScreen(
             }
         }
     }
-    ui.confirm?.let { TaskConfirmDialog(it, viewModel::acceptConfirm, viewModel::dismissConfirm) }
+    ui.confirm?.let {
+        TaskConfirmDialog(
+            it,
+            { if (planUi.confirm != null) planViewModel.acceptConfirm() else viewModel.acceptConfirm() },
+            { if (planUi.confirm != null) planViewModel.dismissConfirm() else viewModel.dismissConfirm() },
+        )
+    }
 }
 
 // ── Header ───────────────────────────────────────────────────────────────
@@ -410,6 +419,7 @@ internal fun ActiveFilterChips(ui: TaskUiState, viewModel: TaskViewModel, modifi
 private fun CommandPaletteBody(
     ui: TaskUiState,
     viewModel: TaskViewModel,
+    planViewModel: PlanViewModel,
     onOpen: (Task) -> Unit,
     noResultsFor: String? = null,
 ) {
@@ -455,7 +465,7 @@ private fun CommandPaletteBody(
                 if (ui.completedOpen) HeroIcons.EyeSlash else HeroIcons.Eye,
                 if (ui.completedOpen) "Hide completed" else "Show completed",
                 "Toggle the completed section",
-            ) { viewModel.setShowCompleted(!ui.completedOpen) }
+            ) { planViewModel.setShowCompleted(!ui.completedOpen) }
         }
         if (ui.agileEnabled && ui.currentSprint != null) {
             item {
@@ -506,7 +516,7 @@ private fun PaletteRow(
 }
 
 @Composable
-private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
+private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -525,9 +535,9 @@ private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Ta
         HorizontalDivider(color = colors.border)
         val q = ui.searchQuery.trim()
         when {
-            q.length < 2 -> CommandPaletteBody(ui, viewModel, onOpen)
+            q.length < 2 -> CommandPaletteBody(ui, viewModel, planViewModel, onOpen)
             ui.searching && ui.searchResults.isEmpty() -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { WebSpinner() }
-            ui.searchResults.isEmpty() -> CommandPaletteBody(ui, viewModel, onOpen, noResultsFor = q)
+            ui.searchResults.isEmpty() -> CommandPaletteBody(ui, viewModel, planViewModel, onOpen, noResultsFor = q)
             else -> LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
@@ -562,7 +572,7 @@ private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Ta
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel) {
+private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel) {
     val colors = LocalWebColors.current
     val f = ui.filters
     var picker by remember { mutableStateOf<String?>(null) }
@@ -570,7 +580,7 @@ private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (ui.tab == TaskTab.Backlog) {
                 SectionTitle("View options")
-                BacklogViewControls(ui, viewModel)
+                BacklogViewControls(ui, viewModel, planViewModel)
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SectionTitle("Assignee")
@@ -705,7 +715,7 @@ internal fun SprintStatusPill(status: String) {
 // ── Import sheet (`SprintImportPanel`) ───────────────────────────────────
 
 @Composable
-private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel) {
+private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel) {
     val colors = LocalWebColors.current
     var picker by remember { mutableStateOf(false) }
     TaskSheetScaffold("Import from backlog", viewModel::closeSheet, HeroIcons.ArchiveBoxArrowDown) {
@@ -731,7 +741,7 @@ private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel) {
                                 Text(task.displayKey, color = colors.textMuted, fontSize = 0.72.rem)
                                 Text(task.title, color = colors.text, fontSize = 0.9.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
-                            if (!configuring) PillButton("Add", { viewModel.configureImport(task) }, tonal = true, icon = HeroIcons.Plus)
+                            if (!configuring) PillButton("Add", { planViewModel.configureImport(task) }, tonal = true, icon = HeroIcons.Plus)
                         }
                         if (configuring) {
                             PropertyRow(HeroIcons.User, "Assignee", { picker = true }) {
@@ -741,11 +751,11 @@ private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel) {
                                 Icon(HeroIcons.CalendarDays, null, Modifier.size(18.dp), tint = colors.textMuted)
                                 Spacer(Modifier.width(12.dp))
                                 Text("Due", color = colors.textSecondary, fontSize = 0.84.rem, modifier = Modifier.width(96.dp))
-                                WebDateField(ui.importDueDate, viewModel::setImportDueDate, Modifier.weight(1f))
+                                WebDateField(ui.importDueDate, planViewModel::setImportDueDate, Modifier.weight(1f))
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                PillButton("Cancel", viewModel::cancelImportConfig, Modifier.weight(1f))
-                                PillButton("Add to sprint", viewModel::confirmImport, Modifier.weight(1f), primary = true, icon = HeroIcons.Check)
+                                PillButton("Cancel", planViewModel::cancelImportConfig, Modifier.weight(1f))
+                                PillButton("Add to sprint", planViewModel::confirmImport, Modifier.weight(1f), primary = true, icon = HeroIcons.Check)
                             }
                         }
                     }
@@ -759,7 +769,7 @@ private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel) {
             listOf(SelectOption<Long?>(null, "Unassigned")) + ui.assignableUsers.map { SelectOption<Long?>(it.id, it.display(), it.username?.let { u -> "@$u" }, avatar = it.display() to avatarPath(it.avatar)) },
             setOf(ui.importAssignedTo),
             onDismiss = { picker = false },
-            onSelect = { viewModel.setImportAssignee(it.firstOrNull()) },
+            onSelect = { planViewModel.setImportAssignee(it.firstOrNull()) },
             icon = HeroIcons.User,
         )
     }

@@ -49,7 +49,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
  * first because that is what the user came to plan.
  */
 @Composable
-internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
+internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
     val sprint = ui.currentSprint
     var moving by remember { mutableStateOf<Task?>(null) }
@@ -59,10 +59,10 @@ internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewMo
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 112.dp),
         ) {
-            item(key = "header") { PlanHeader(ui, boardUi, viewModel) }
+            item(key = "header") { PlanHeader(ui, boardUi, viewModel, planViewModel) }
             item(key = "back-to-backlog") {
                 TextButton(
-                    onClick = viewModel::closeSprintPlan,
+                    onClick = planViewModel::closeSprintPlan,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 ) { Text("Back to backlog") }
             }
@@ -142,7 +142,7 @@ internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewMo
 
 /** Goal (editable inline), committed points, velocity and the scope delta. */
 @Composable
-private fun PlanHeader(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel) {
+private fun PlanHeader(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel) {
     val colors = LocalWebColors.current
     val sprint = ui.currentSprint ?: return
     var editingGoal by remember { mutableStateOf(false) }
@@ -183,7 +183,7 @@ private fun PlanHeader(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PillButton("Cancel", { editingGoal = false; goal = sprint.goal ?: "" }, Modifier.weight(1f))
                 PillButton("Save goal", {
-                    viewModel.saveSprintGoal(sprint.id, goal)
+                    planViewModel.saveSprintGoal(sprint.id, goal)
                     editingGoal = false
                 }, Modifier.weight(1f), primary = true)
             }

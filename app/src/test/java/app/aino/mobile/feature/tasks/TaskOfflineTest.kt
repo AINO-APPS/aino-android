@@ -41,16 +41,17 @@ class TaskOfflineTest {
     @Test
     fun offlineReloadKeepsTheBacklogWithoutAnError() {
         val vm = TaskViewModel(TaskRepository(api))
+        val vmPlan = PlanViewModel(TaskRepository(api), vm.ticketSession)
         vm.bind(userId = 1, role = "employee", teamName = null, agileEnabled = false)
-        waitFor { vm.ui.value.backlog.isNotEmpty() }
-        assertEquals(listOf(4L), vm.ui.value.backlog.map { it.id })
+        waitFor { vmPlan.ui.value.backlog.isNotEmpty() }
+        assertEquals(listOf(4L), vmPlan.ui.value.backlog.map { it.id })
 
         offline = true
         val before = backlogLoads.get()
         vm.pollVisible()
-        waitFor { backlogLoads.get() > before && !vm.ui.value.backlogLoading }
+        waitFor { backlogLoads.get() > before && !vmPlan.ui.value.backlogLoading }
         Thread.sleep(50)
-        assertEquals(listOf(4L), vm.ui.value.backlog.map { it.id })
-        assertNull(vm.ui.value.error)
+        assertEquals(listOf(4L), vmPlan.ui.value.backlog.map { it.id })
+        assertNull(vmPlan.ui.value.error)
     }
 }

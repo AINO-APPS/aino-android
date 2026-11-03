@@ -45,6 +45,14 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
 
 ## Plan on Android
 
+The Activity-scoped `PlanViewModel` owns Backlog paging, sort and read-adjusted
+totals, Completed, selection and bulk actions, the create draft, epics, import
+and Sprint planning. It reads Tickets and Plan scope from the session, never
+another ViewModel. Successful bulk rows are refetched as enriched Tickets and
+published together, so Plan, Board, search and Detail agree without per-view
+patches. The shell alone writes shared filters, sprint metadata and preferences;
+session requests coordinate those writes and shared sheets.
+
 The Activity-scoped `SprintBoardViewModel` owns Board membership ids, optimistic
 moves and identity-checked rollback, sprint lifecycle and rollover, completion
 preview, stats and scope baseline. It reads the session Ticket store and Plan

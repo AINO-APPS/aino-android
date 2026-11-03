@@ -101,9 +101,10 @@ class TaskCardUiTest {
             planLoaded = true,
         ))
         val vm = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }))
+        val vmPlan = PlanViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                CompletedSection(state.value, vm, {})
+                CompletedSection(state.value, vm, vmPlan, {})
             }
         }
         compose.onNodeWithText("Archived change").assertIsDisplayed()
@@ -117,9 +118,10 @@ class TaskCardUiTest {
     @Test
     fun backlogShowsOnlyTheFourPreviewQuickChipsInline() {
         val vm = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }))
+        val vmPlan = PlanViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                BacklogPage(TaskUiState(tickets = mapOf(task.id to task), planTicketIds = listOf(task.id)), vm, {})
+                BacklogPage(TaskUiState(tickets = mapOf(task.id to task), planTicketIds = listOf(task.id)), vm, vmPlan, {})
             }
         }
         listOf("All", "Mine", "High", "Unscheduled").forEach { compose.onNodeWithText(it).assertIsDisplayed() }

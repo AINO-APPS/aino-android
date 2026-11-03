@@ -43,18 +43,19 @@ class TicketSessionUiTest {
     fun onePlacementWriteMovesAnOpenBoardTicketToBacklogEverywhere() {
         val harness = harness()
         val vm = harness.viewModel
+        val vmPlan = harness.viewModelPlan
         harness.loadBoardPlanAndDetail()
-        assertTrue(vm.ui.value.backlog.isEmpty())
+        assertTrue(vmPlan.ui.value.backlog.isEmpty())
 
         harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
             .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
         val detail = harness.detailViewModel
         detail.updateFields(detail.ui.value.detail!!, buildJsonObject { put("sprint_id", null as String?) })
-        harness.await { detail.ui.value.detail?.container == "backlog" && vm.ui.value.backlog.size == 1 && harness.boardViewModel.ui.value.tasks.isEmpty() }
+        harness.await { detail.ui.value.detail?.container == "backlog" && vmPlan.ui.value.backlog.size == 1 && harness.boardViewModel.ui.value.tasks.isEmpty() }
 
         assertTrue("Board must drop a ticket moved to backlog", harness.boardViewModel.ui.value.tasks.isEmpty())
         assertTrue("Board response must resolve current membership", harness.boardViewModel.ui.value.sprintBoard!!.tickets.isEmpty())
-        assertEquals(listOf(201L), vm.ui.value.backlog.map { it.id })
+        assertEquals(listOf(201L), vmPlan.ui.value.backlog.map { it.id })
         assertEquals("backlog", detail.ui.value.detail?.container)
         assertEquals(null, detail.ui.value.detail?.sprintId)
         assertEquals(1, harness.writes)
@@ -380,7 +381,7 @@ class TicketSessionUiTest {
         }
 
         assertTrue(harness.boardViewModel.ui.value.sprintBoard!!.tickets.isEmpty())
-        assertTrue(harness.viewModel.ui.value.backlog.none { it.id == 201L })
+        assertTrue(harness.viewModelPlan.ui.value.backlog.none { it.id == 201L })
         assertTrue(harness.viewModel.ui.value.scheduled.none { it.id == 201L })
     }
 
@@ -399,7 +400,7 @@ class TicketSessionUiTest {
         }
 
         assertTrue(harness.boardViewModel.ui.value.sprintBoard!!.tickets.isEmpty())
-        assertTrue(harness.viewModel.ui.value.backlog.none { it.id == 201L })
+        assertTrue(harness.viewModelPlan.ui.value.backlog.none { it.id == 201L })
     }
 
     @Test
@@ -484,7 +485,7 @@ class TicketSessionUiTest {
         })
         harness.await {
             harness.boardViewModel.ui.value.tasks.isEmpty() &&
-                harness.viewModel.ui.value.backlog.none { it.id == 201L } &&
+                harness.viewModelPlan.ui.value.backlog.none { it.id == 201L } &&
                 harness.viewModel.ui.value.scheduled.isEmpty() &&
                 harness.viewModel.ui.value.searchResults.isEmpty() &&
                 harness.detailViewModel.ui.value.detail == null &&
@@ -512,7 +513,7 @@ class TicketSessionUiTest {
                 201L in harness.detailViewModel.ui.value.recentlyUpdated
         }
         assertEquals("backlog", harness.detailViewModel.ui.value.detail?.container)
-        assertEquals(listOf(201L), harness.viewModel.ui.value.backlog.map { it.id })
+        assertEquals(listOf(201L), harness.viewModelPlan.ui.value.backlog.map { it.id })
         assertTrue(201L in harness.viewModel.ui.value.recentlyUpdated)
         assertTrue(201L in harness.detailViewModel.ui.value.recentlyUpdated)
         assertEquals(1, harness.detailReads)
@@ -525,32 +526,32 @@ class TicketSessionUiTest {
             .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
         harness.planRows = backlog
         harness.detailResponse = backlog
-        harness.viewModel.loadBacklog()
-        harness.await { harness.viewModel.ui.value.planLoaded }
+        harness.viewModelPlan.loadBacklog()
+        harness.await { harness.viewModelPlan.ui.value.planLoaded }
         harness.await { !harness.detailViewModel.ui.value.detailLoading }
 
         harness.planRows = ""
-        harness.viewModel.loadBacklog()
-        harness.await { harness.planReads == 2 && harness.viewModel.ui.value.backlog.isEmpty() }
+        harness.viewModelPlan.loadBacklog()
+        harness.await { harness.planReads == 2 && harness.viewModelPlan.ui.value.backlog.isEmpty() }
 
-        assertTrue(harness.viewModel.ui.value.backlog.isEmpty())
-        assertEquals(0, harness.viewModel.ui.value.backlogTotal)
+        assertTrue(harness.viewModelPlan.ui.value.backlog.isEmpty())
+        assertEquals(0, harness.viewModelPlan.ui.value.backlogTotal)
         assertEquals("Ship release", harness.detailViewModel.ui.value.detail?.title)
     }
 
     @Test
     fun aCreatedFullTicketIsVisibleEvenWhenTheFollowUpPlanLoadFails() {
         val harness = harness()
-        harness.viewModel.loadBacklog()
-        harness.await { harness.viewModel.ui.value.planLoaded }
+        harness.viewModelPlan.loadBacklog()
+        harness.await { harness.viewModelPlan.ui.value.planLoaded }
         harness.rejectPlanLoads = true
         harness.saved = """{"id":202,"title":"New ticket","container":"backlog"}"""
-        harness.viewModel.updateDraft { it.copy(title = "New ticket") }
-        harness.viewModel.submitBacklog()
-        harness.await { harness.writes == 1 && !harness.viewModel.ui.value.creating }
+        harness.viewModelPlan.updateDraft { it.copy(title = "New ticket") }
+        harness.viewModelPlan.submitBacklog()
+        harness.await { harness.writes == 1 && !harness.viewModelPlan.ui.value.creating }
 
-        assertEquals(listOf("New ticket"), harness.viewModel.ui.value.backlog.map { it.title })
-        assertEquals(1, harness.viewModel.ui.value.backlogTotal)
+        assertEquals(listOf("New ticket"), harness.viewModelPlan.ui.value.backlog.map { it.title })
+        assertEquals(1, harness.viewModelPlan.ui.value.backlogTotal)
     }
 
     @Test
@@ -563,14 +564,14 @@ class TicketSessionUiTest {
         harness.viewModel.schedule(201, "2026-11-03")
         harness.await { harness.writes == 1 && harness.detailViewModel.ui.value.detail?.container == "scheduled" }
         assertTrue(harness.boardViewModel.ui.value.tasks.isEmpty())
-        assertTrue(harness.viewModel.ui.value.backlog.isEmpty())
+        assertTrue(harness.viewModelPlan.ui.value.backlog.isEmpty())
         assertEquals(1, harness.detailReads)
 
         harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
             .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
         harness.viewModel.unschedule(201, "Ship release", ask = false)
         harness.await { harness.writes == 2 && harness.detailViewModel.ui.value.detail?.container == "backlog" }
-        assertEquals(listOf(201L), harness.viewModel.ui.value.backlog.map { it.id })
+        assertEquals(listOf(201L), harness.viewModelPlan.ui.value.backlog.map { it.id })
         assertEquals(1, harness.detailReads)
     }
 
@@ -617,12 +618,12 @@ class TicketSessionUiTest {
         harness.detailResponse = harness.original.dropLast(1) + ""","comments":[{"id":7,"content":"Keep this thread"}]}"""
         harness.loadBoardPlanAndDetail()
         harness.planRows = """{"id":201,"title":"Finished from Plan","container":"backlog","completed_at":"2026-11-02"}"""
-        harness.viewModel.loadBacklog()
-        harness.await { harness.detailViewModel.ui.value.detail?.title == "Finished from Plan" && harness.viewModel.ui.value.completedCount == 1 }
+        harness.viewModelPlan.loadBacklog()
+        harness.await { harness.detailViewModel.ui.value.detail?.title == "Finished from Plan" && harness.viewModelPlan.ui.value.completedCount == 1 }
 
         assertTrue(harness.boardViewModel.ui.value.tasks.isEmpty())
-        assertTrue(harness.viewModel.ui.value.backlog.isEmpty())
-        assertEquals(listOf("Finished from Plan"), harness.viewModel.ui.value.completed.map { it.title })
+        assertTrue(harness.viewModelPlan.ui.value.backlog.isEmpty())
+        assertEquals(listOf("Finished from Plan"), harness.viewModelPlan.ui.value.completed.map { it.title })
         assertEquals("medium", harness.detailViewModel.ui.value.detail?.priority)
         assertEquals(null, harness.detailViewModel.ui.value.detail?.capabilities)
         assertTrue(harness.detailViewModel.ui.value.detail!!.comments.isEmpty())
@@ -685,9 +686,9 @@ class TicketSessionUiTest {
             .replace("\"sprint_id\":10", "\"sprint_id\":null")
             .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
             .replace("\"capabilities\":", "\"comment_count\":2,\"capabilities\":")
-        harness.viewModel.loadBacklog()
-        harness.await { harness.viewModel.ui.value.backlog.any { it.id == 201L } }
-        assertEquals(2, harness.viewModel.ui.value.backlog.single().commentCount)
+        harness.viewModelPlan.loadBacklog()
+        harness.await { harness.viewModelPlan.ui.value.backlog.any { it.id == 201L } }
+        assertEquals(2, harness.viewModelPlan.ui.value.backlog.single().commentCount)
         assertEquals(2, harness.detailViewModel.ui.value.detail?.commentCount)
     }
 
@@ -723,24 +724,24 @@ class TicketSessionUiTest {
             .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
         harness.planRows = backlog
         harness.detailResponse = backlog
-        harness.viewModel.loadBacklog()
-        harness.await { harness.viewModel.ui.value.planLoaded }
-        val ticket = harness.viewModel.ui.value.backlog.single()
+        harness.viewModelPlan.loadBacklog()
+        harness.await { harness.viewModelPlan.ui.value.planLoaded }
+        val ticket = harness.viewModelPlan.ui.value.backlog.single()
         harness.await { !harness.detailViewModel.ui.value.detailLoading }
         harness.rejectBoardReads = true
         harness.viewModel.bind(userId = 1, role = "employee", teamName = null, agileEnabled = true)
         harness.await { harness.viewModel.ui.value.sprints.isNotEmpty() && !harness.boardViewModel.ui.value.sprintLoading }
         harness.saved = harness.original.replace("Ship release", "Assigned copy")
         harness.rejectFieldWrites = true
-        harness.viewModel.configureImport(ticket)
-        harness.viewModel.setImportAssignee(9)
+        harness.viewModelPlan.configureImport(ticket)
+        harness.viewModelPlan.setImportAssignee(9)
 
-        harness.viewModel.confirmImport()
-        harness.await { harness.viewModel.ui.value.error == "Failed to import task to sprint" }
+        harness.viewModelPlan.confirmImport()
+        harness.await { harness.viewModelPlan.ui.value.error == "Failed to import task to sprint" }
 
         assertEquals("Assigned copy", harness.detailViewModel.ui.value.detail?.title)
         assertEquals(10L, harness.detailViewModel.ui.value.detail?.sprintId)
-        assertTrue(harness.viewModel.ui.value.backlog.isEmpty())
+        assertTrue(harness.viewModelPlan.ui.value.backlog.isEmpty())
     }
 }
 
@@ -851,6 +852,7 @@ internal class TicketSessionHarness {
     })
     val session = TicketSession()
     val viewModel = TaskViewModel(repository, ticketSession = session)
+    val viewModelPlan = PlanViewModel(repository, viewModel.ticketSession)
     val boardViewModel = SprintBoardViewModel(repository, session)
     private val detailModel = lazy {
         TicketDetailViewModel(201, repository, session).also { viewModels.put("detail", it) }
@@ -858,7 +860,8 @@ internal class TicketSessionHarness {
     val detailViewModel get() = detailModel.value
     val inlineComments get() = viewModel.ui.value.inlineCommentTaskId?.let { session.commentThreads.value[it] }
     private val viewModels = ViewModelStore().apply {
-        put("board-and-plan", viewModel)
+        put("tasks", viewModel)
+        put("plan", viewModelPlan)
         put("board", boardViewModel)
     }
 
@@ -881,8 +884,8 @@ internal class TicketSessionHarness {
     fun loadBoardPlanAndDetail() {
         viewModel.bind(userId = 1, role = "employee", teamName = null, agileEnabled = true)
         await { !boardViewModel.ui.value.sprintLoading && boardViewModel.ui.value.tasks.size == 1 }
-        viewModel.loadBacklog()
-        await { viewModel.ui.value.planLoaded }
+        viewModelPlan.loadBacklog()
+        await { viewModelPlan.ui.value.planLoaded }
         await { !detailViewModel.ui.value.detailLoading }
     }
 
@@ -892,7 +895,7 @@ internal class TicketSessionHarness {
         val state = viewModel.ui.value
         assertTrue(
             "Timed out waiting for UI state: user=${state.userId}, tickets=${state.tickets.mapValues { it.value.workflowStateKey to it.value.plannedDate }}, " +
-                "board=${boardViewModel.ui.value.boardTicketIds}, plan=${state.planTicketIds}, scheduled=${state.scheduledTicketIds}, " +
+                "board=${boardViewModel.ui.value.boardTicketIds}, plan=${viewModelPlan.ui.value.planTicketIds}, scheduled=${state.scheduledTicketIds}, " +
                 "search=${state.searchResultIds}, inline=${state.inlineCommentTaskId}, threads=${session.commentThreads.value.mapValues { it.value.items.size }}, " +
                 "counts=${state.tickets.mapValues { it.value.commentCount }}, store=${session.store.state.value.tickets.mapValues { it.value.commentCount }}, " +
                 "detail=${if (detailModel.isInitialized()) detailViewModel.ui.value.detail?.id else null}, commentReads=$commentReads, writes=$writes",

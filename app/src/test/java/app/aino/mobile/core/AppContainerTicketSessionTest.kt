@@ -10,6 +10,7 @@ import app.aino.mobile.core.network.CacheOnlyApiClient
 import app.aino.mobile.core.network.CachingApiClient
 import app.aino.mobile.core.network.ResponseCache
 import app.aino.mobile.feature.tasks.TaskRepository
+import app.aino.mobile.feature.tasks.PlanViewModel
 import app.aino.mobile.feature.tasks.TaskViewModel
 import app.aino.mobile.feature.tasks.TicketDetailViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +41,8 @@ class AppContainerTicketSessionTest {
     private lateinit var container: AppContainer
     private val models = ViewModelStore()
     private var nextKey = 0
+    private val plans = java.util.IdentityHashMap<TaskViewModel, PlanViewModel>()
+    private val TaskViewModel.plan get() = plans.getValue(this)
     @Volatile private var title = "Previous session"
     private val repository = TaskRepository(ApiClient { request ->
         val body = if (request.path in setOf("tasks/by-key/OLD-201", "tasks/201/detail")) {
@@ -63,7 +66,12 @@ class AppContainerTicketSessionTest {
     private fun viewModel(repository: TaskRepository = this.repository) = TaskViewModel(
         repository, ticketSession = container.ticketSession.value,
     )
-        .also { models.put("tasks-${nextKey++}", it) }
+        .also {
+            models.put("tasks-${nextKey++}", it)
+            val plan = PlanViewModel(repository, it.ticketSession)
+            plans[it] = plan
+            models.put("plan-${nextKey++}", plan)
+        }
 
     private fun TaskViewModel.openByKey(key: String) {
         CoroutineScope(ticketSession.job + Dispatchers.Main).launch {
@@ -82,9 +90,9 @@ class AppContainerTicketSessionTest {
         val next = viewModel()
 
         assertNull(old.ui.value.tickets[201])
-        assertTrue(old.ui.value.backlog.isEmpty())
+        assertTrue(old.plan.ui.value.backlog.isEmpty())
         assertNull(next.ui.value.tickets[201])
-        assertTrue(next.ui.value.backlog.isEmpty())
+        assertTrue(next.plan.ui.value.backlog.isEmpty())
     }
 
     @Test fun signingBackInAsTheSameUserLoadsFreshTickets() {
@@ -98,7 +106,7 @@ class AppContainerTicketSessionTest {
         title = "Fresh from server"
         container.setTicketSessionScope(identity)
         val next = viewModel()
-        assertTrue(next.ui.value.backlog.isEmpty())
+        assertTrue(next.plan.ui.value.backlog.isEmpty())
         next.openByKey("OLD-201")
 
         await { next.ui.value.tickets[201]?.title == "Fresh from server" }
@@ -114,12 +122,12 @@ class AppContainerTicketSessionTest {
         title = "Other tenant"
         container.setTicketSessionScope(CacheScope(20, 1))
         val next = viewModel()
-        assertTrue(next.ui.value.backlog.isEmpty())
+        assertTrue(next.plan.ui.value.backlog.isEmpty())
         assertNull(old.ui.value.tickets[201])
         next.openByKey("OLD-201")
 
         await { next.ui.value.tickets[201]?.title == "Other tenant" }
-        assertTrue(old.ui.value.backlog.isEmpty())
+        assertTrue(old.plan.ui.value.backlog.isEmpty())
     }
 
     @Test fun refreshingTheSameSignedInIdentityKeepsItsTickets() {
@@ -144,8 +152,8 @@ class AppContainerTicketSessionTest {
         val next = viewModel()
 
         assertNull(old.ui.value.tickets[201])
-        assertTrue(old.ui.value.backlog.isEmpty())
-        assertTrue(next.ui.value.backlog.isEmpty())
+        assertTrue(old.plan.ui.value.backlog.isEmpty())
+        assertTrue(next.plan.ui.value.backlog.isEmpty())
     }
 
     @Test fun anInFlightResponseCannotRepopulateAnEndedSession() {
@@ -174,7 +182,7 @@ class AppContainerTicketSessionTest {
         await { next.ui.value.tickets[201]?.id == 201L }
 
         assertNull(old.ui.value.tickets[201])
-        assertTrue(old.ui.value.backlog.isEmpty())
+        assertTrue(old.plan.ui.value.backlog.isEmpty())
         assertEquals("Previous session", next.ui.value.tickets[201]?.title)
     }
 
@@ -213,8 +221,8 @@ class AppContainerTicketSessionTest {
 
             vm.loadBacklog()
 
-            await { vm.ui.value.planLoaded }
-            assertEquals(listOf("Cached Plan"), vm.ui.value.backlog.map { it.title })
+            await { vm.plan.ui.value.planLoaded }
+            assertEquals(listOf("Cached Plan"), vm.plan.ui.value.backlog.map { it.title })
         } finally {
             root.deleteRecursively()
         }

@@ -18,240 +18,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.LocalDate
-
-/** The web `showConfirm(title, message, onConfirm, { confirmText, isDanger })`. */
-data class ConfirmRequest(
-    val title: String,
-    val message: String,
-    val confirmText: String,
-    val danger: Boolean = false,
-    val action: () -> Unit,
-)
-
-/** New Backlog Ticket form (`useBacklog` fields). */
-data class BacklogDraft(
-    val title: String = "",
-    val description: String = "",
-    val priority: String = "medium",
-    val assignedTo: Long? = null,
-    val dueDate: String = "",
-    val labels: List<Long> = emptyList(),
-    val sprintId: Long? = null,
-    val storyPoints: String? = null,
-    val workItemTypeId: Long? = null,
-    val projectId: Long? = null,
-    /** Set by a board column's "+": the ticket starts in that workflow state. */
-    val workflowStateId: Long? = null,
-)
-
-/** One-shot snackbar; [action] runs when its button is tapped (e.g. Undo). */
-data class TaskNotice(
-    val text: String,
-    val actionLabel: String? = null,
-    val action: (() -> Unit)? = null,
-    val openTicketId: Long? = null,
-    val scheduledDate: String? = null,
-)
-
-/** Shared bottom sheets on the Tasks page. */
-enum class TaskSheet { Filters, CreateTicket, Import, SprintPicker }
-
-data class TaskUiState(
-    val planScope: PlanScope = PlanScope(),
-    // Page.
-    val tab: TaskTab = TaskTab.Backlog,
-    /** The Backlog is showing the Plan split view (backlog beside a sprint). */
-    val planOpen: Boolean = false,
-    val sheet: TaskSheet? = null,
-    val refreshing: Boolean = false,
-    /** Ids patched by a realtime event a moment ago (cards flash briefly). */
-    val recentlyUpdated: Set<Long> = emptySet(),
-    val tickets: Map<Long, Task> = emptyMap(),
-    val error: String? = null,
-    val confirm: ConfirmRequest? = null,
-    // Global search.
-    val searchQuery: String = "",
-    val searchResultIds: List<Long> = emptyList(),
-    val searching: Boolean = false,
-    val searchOpen: Boolean = false,
-    val carriedCount: Int = 0,
-    val importTaskId: Long? = null,
-    val importAssignedTo: Long? = null,
-    val importDueDate: String = "",
-    // Backlog.
-    /** Loaded, unfiltered Plan ids, including completed work. */
-    val planTicketIds: List<Long> = emptyList(),
-    val planLoaded: Boolean = false,
-    val planBaseline: TicketPlanBaseline? = null,
-    val planOffset: Int = 0,
-    val planHasMore: Boolean = false,
-    val quickFilters: BacklogQuickFilters = BacklogQuickFilters(),
-    val backlogPageSize: Int = 25,
-    val backlogSort: BacklogSort = BacklogSort.Priority,
-    val backlogLoading: Boolean = false,
-    val backlogLoadingMore: Boolean = false,
-    val draft: BacklogDraft = BacklogDraft(),
-    val creating: Boolean = false,
-    // Scheduled membership is retained as ids; ticket state lives in the session store.
-    val scheduledTicketIds: List<Long> = emptyList(),
-    val scheduledLoading: Boolean = false,
-    val scheduledLoaded: Boolean = false,
-    /** Day to bring into view after "View" on the schedule snackbar or a day-picker jump. */
-    val scheduledFocus: String? = null,
-    // Inline comment panel (the card's 💬).
-    val inlineCommentTaskId: Long? = null,
-    /** Bumped on refresh while the Service Desk tab is visible; the tab reloads on change. */
-    val serviceDeskVersion: Int = 0,
-    // ── Next-generation surfaces ─────────────────────────────────────────
-    /** Per-user Tasks preferences, shared with web so both clients agree. */
-    val preferences: TaskPreferences = TaskPreferences(),
-    /** User expansion choice is preserved while selection temporarily collapses it. */
-    val completedOpen: Boolean = true,
-    val completedLoading: Boolean = false,
-    /** True once "View all completed" has dropped the recent-window filter. */
-    val completedShowingAll: Boolean = false,
-    /** Multi-select for bulk actions. */
-    val selectedIds: Set<Long> = emptySet(),
-    /** Epics with their rollups, for the epic filter. */
-    val epics: List<EpicSummary> = emptyList(),
-    /** Read-only background context on the schedule. */
-        val overlays: ScheduleOverlays = ScheduleOverlays(),
-    /** Which overlay types are currently shown; each toggles independently. */
-    val overlayTypes: Set<String> = setOf("leave", "holiday", "meeting"),
-    /** "Updated by <name>" flashes keyed by task id, from realtime deltas. */
-    val attribution: Map<Long, String> = emptyMap(),
-) {
-    val userId get() = planScope.userId
-    val role get() = planScope.role
-    val teamName get() = planScope.teamName
-    val teamId get() = planScope.teamId
-    val agileEnabled get() = planScope.agileEnabled
-    val sprintEnabled get() = planScope.sprintEnabled
-    val customFieldsEnabled get() = planScope.customFieldsEnabled
-    val selectedTeamId get() = planScope.selectedTeamId
-    val teams get() = planScope.teams
-    val teamResolved get() = planScope.teamResolved
-    val labels get() = planScope.labels
-    val assignableUsers get() = planScope.assignableUsers
-    val projects get() = planScope.projects
-    val sprints get() = planScope.sprints
-    val currentSprintId get() = planScope.currentSprintId
-    val currentSprintRow get() = planScope.currentSprintRow
-    val agile get() = planScope.agile
-    val selectedSprintId get() = planScope.selectedSprintId
-    val filters get() = planScope.filters
-    val selectedEpicId get() = planScope.selectedEpicId
-
-
-    internal fun inScope(ticket: Task): Boolean = when {
-        !showsTeamPicker(role) -> teamId == null || ticket.teamId == teamId
-        selectedTeamId == -1L -> ticket.teamId == null
-        selectedTeamId != null -> ticket.teamId == selectedTeamId
-        else -> true
-    }
-
-    private fun resolve(ids: List<Long>, belongs: (Task) -> Boolean): List<Task> =
-        ids.mapNotNull(tickets::get).filter { inScope(it) && belongs(it) }
-
-    internal fun containsPlanTicket(ticket: Task): Boolean =
-        ticket.workflowStateKey != "cancelled" && (ticket.container == "backlog" ||
-            (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId })
-        )
-
-    internal fun containsScheduledTicket(ticket: Task): Boolean {
-        val (from, to) = scheduledWindow()
-        val plannedDay = localDateOf(ticket.plannedDate) ?: return false
-        return inScope(ticket) &&
-            ticket.container == "scheduled" &&
-            ticket.workflowStateKey != "cancelled" &&
-            !plannedDay.isBefore(from) &&
-            !plannedDay.isAfter(to) &&
-            matchesFilters(ticket, filters, userId, includeStatus = true)
-    }
-
-    val planTasks: List<Task> get() = resolve(planTicketIds, ::containsPlanTicket)
-    private val filteredPlan: List<Task> get() = planTasks.filter {
-        containsPlanTicket(it) && matchesPlanFilters(it, filters, quickFilters, userId) &&
-            (selectedEpicId == null || it.parentTaskId == selectedEpicId)
-    }
-    val backlog: List<Task> get() = filteredPlan.filterNot { it.isCompleted }
-    val completed: List<Task> get() = filteredPlan.filter { it.isCompleted }
-    internal val planFiltersActive: Boolean get() = filters != TaskFilters() || !quickFilters.isAll || selectedEpicId != null
-    val backlogTotal: Int get() = readPlanTotals().total
-    val completedCount: Int get() = readPlanTotals().completed
-    val backlogSummary: BacklogSummary get() = readPlanTotals().summary
-    val currentSprint: AvailableSprint? get() = planScope.currentSprint
-    val sortedBacklog: List<Task> get() = sortBacklog(backlog, backlogSort)
-    /** Display sections for the backlog list, or `null` for a flat list. */
-    val backlogGroups: List<BacklogGroup>? get() = strandedSprintGroups(sortedBacklog, sprints)
-    /** The resolved answer: the server's flag, or the sprint list when it is unknown. */
-    val sprintsEnabled: Boolean get() = planScope.sprintsEnabled
-    /** The sprint rows on screen belong to the selected team only. */
-    val teamSprints: List<AvailableSprint> get() = planScope.teamSprints
-    val sprintTabVisible: Boolean get() = agileEnabled && currentSprintId != null && teamSprints.any { it.id == currentSprintId }
-    val visibleTabs: List<TaskTab> get() = planningTabs(agileEnabled, teamSprints, currentSprintId)
-    /** The query scope for backlog, scheduled and sprint loads. */
-    val teamScope: TeamScope get() = planScope.teamScope
-    /**
-     * The heading's team. The admin's pick wins; otherwise the user's own team,
-     * then the sprint's team for an admin browsing one.
-     */
-    val teamTitle: String
-        get() = teams.firstOrNull { it.id == selectedTeamId }?.name
-            ?: if (selectedTeamId == -1L) "Unassigned" else null
-            ?: teamName
-            ?: currentSprint?.teamName
-            ?: "Plan"
-    val filterCount: Int get() = filterCount(filters, tab) + if (tab == TaskTab.Backlog) quickFilters.count + (if (selectedEpicId != null) 1 else 0) else 0
-    /** Sprint planning is not narrowed by Backlog-only quick chips. */
-    val planningBacklog: List<Task> get() = (if (planLoaded) planTasks else backlog).filter {
-        it.container == "backlog" && it.workflowStateKey != "cancelled" && !it.isCompleted &&
-            matchesFilters(it, filters, userId, includeStatus = false) &&
-            (selectedEpicId == null || it.parentTaskId == selectedEpicId)
-    }
-    val importable: List<Task> get() = planningBacklog
-    val backlogHasMore: Boolean get() = planHasMore
-    val scheduled: List<Task> get() = scheduledTicketIds.mapNotNull(tickets::get).filter(::containsScheduledTicket)
-    val searchResults: List<Task> get() = searchResultIds.mapNotNull(tickets::get)
-    val scheduledGroups: List<ScheduledGroup> get() = groupScheduled(scheduled)
-    val scheduledOverdue: Int get() = scheduledGroups.firstOrNull { it.date == null }?.tasks?.size ?: 0
-    /** Compact cards keep key, title and points; comfortable adds the rest. */
-    val compact: Boolean get() = preferences.isCompact
-    val hasSelection: Boolean get() = selectedIds.isNotEmpty()
-    val completedExpanded: Boolean get() = completedOpen && !hasSelection
-    /** Selection mode swaps the "New ticket" FAB for the bulk action bar so the two never overlap. */
-    val showNewTicketFab: Boolean get() = tab == TaskTab.Backlog && !searchOpen && !hasSelection
-    /** The epic filter narrows the backlog and board to one epic's children. */
-    val epicFiltered: List<Task> get() = selectedEpicId?.let { epic ->
-        backlog.filter { it.parentTaskId == epic }
-    } ?: backlog
-}
-
-/**
- * One projection for loading, quick/advanced filters, mutations and realtime.
- *
- * Only sprint-less tickets are backlog. A sprint row that reaches us anyway — a
- * stale page, or a task whose sprint was deleted server-side — is kept so it
- * cannot vanish, but it is rendered in a separate "in a sprint" group rather
- * than mixed into the backlog. A task whose sprint is still open is excluded:
- * it belongs on that sprint's board and nowhere else.
- */
-internal fun TaskUiState.projectPlan(): TaskUiState {
-    return copy(selectedIds = selectedIds.intersect(backlog.map { it.id }.toSet()))
-}
-
-/** The Scheduled view's fetch window, relative to today. */
-internal fun scheduledWindow(today: LocalDate = LocalDate.now()): Pair<LocalDate, LocalDate> =
-    today.minusDays(SCHEDULED_PAST_DAYS) to today.plusDays(SCHEDULED_AHEAD_DAYS)
 
 class TaskViewModel(
     private val repository: TaskRepository,
@@ -262,14 +34,14 @@ class TaskViewModel(
     val ticketSession = ticketSession ?: TicketSession()
     private val ticketSync = this.ticketSession.sync(repository)
     private val ticketScope = CoroutineScope(viewModelScope.coroutineContext + SupervisorJob(this.ticketSession.job))
-    private val _ui = this.ticketSession.state(TaskUiState(planScope = this.ticketSession.planScope.value))
-    val ui: StateFlow<TaskUiState> = _ui.asStateFlow()
+    private val _ui = this.ticketSession.state(TaskShellUiState(planScope = this.ticketSession.planScope.value))
+    val ui: StateFlow<TaskShellUiState> = _ui.asStateFlow()
     init {
         ticketScope.launch {
             this@TaskViewModel.ticketSession.planScope.collect { scope ->
                 synchronized(this@TaskViewModel.ticketSession.planScopeLock) {
                     if (scope == this@TaskViewModel.ticketSession.planScope.value) {
-                        _ui.update { it.copy(planScope = scope).projectPlan() }
+                        _ui.update { it.copy(planScope = scope) }
                     }
                 }
             }
@@ -291,16 +63,12 @@ class TaskViewModel(
                     current.copy(
                         tickets = snapshot.tickets,
                         recentlyUpdated = snapshot.recentlyChanged,
-                        planTicketIds = (
-                            current.planTicketIds.filter(snapshot.tickets::containsKey) +
-                                changed.filter(current::containsPlanTicket).map { it.id }
-                            ).distinct(),
                         scheduledTicketIds = (scheduledIds + newlyScheduledIds).distinct(),
                         searchResultIds = searchableIds,
                         inlineCommentTaskId = current.inlineCommentTaskId?.takeIf { id ->
                             snapshot.tickets[id]?.let { it.workflowStateKey != "cancelled" } == true
                         },
-                    ).projectPlan()
+                    )
                 }
             }
         }
@@ -313,12 +81,26 @@ class TaskViewModel(
         ticketScope.launch {
             this@TaskViewModel.ticketSession.planRefreshes.collect {
                 refresh()
-                if (_ui.value.planLoaded) loadBacklog()
+            }
+        }
+        ticketScope.launch {
+            this@TaskViewModel.ticketSession.shellRequests.collect { request ->
+                when (request) {
+                    ShellRequest.CloseSheet -> closeSheet()
+                    is ShellRequest.OpenSheet -> openSheet(request.sheet)
+                    is ShellRequest.SelectSprint -> selectSprint(request.id)
+                    is ShellRequest.SprintGoal -> updatePlan { state ->
+                        state.copy(planScope = state.planScope.copy(sprints = state.sprints.map {
+                            if (it.id == request.id) it.copy(goal = request.goal) else it
+                        }))
+                    }
+                    is ShellRequest.ShowCompleted -> setShowCompleted(request.show)
+                }
             }
         }
     }
 
-    private fun updatePlan(transform: (TaskUiState) -> TaskUiState) {
+    private fun updatePlan(transform: (TaskShellUiState) -> TaskShellUiState) {
         synchronized(ticketSession.planScopeLock) {
             if (!ticketSession.job.isActive) return
             _ui.update { transform(it.copy(planScope = ticketSession.planScope.value)) }
@@ -343,19 +125,12 @@ class TaskViewModel(
         val currentSprintId: Long?,
         val currentSprintRow: AvailableSprint?,
         val selectedSprintId: Long?,
-        val planTicketIds: List<Long>,
-        val planLoaded: Boolean,
-        val planBaseline: TicketPlanBaseline?,
-        val planOffset: Int,
-        val planHasMore: Boolean,
         val scheduledTicketIds: List<Long>,
         val scheduledLoaded: Boolean,
     )
     private val teamViews = mutableMapOf<Long?, CachedTeamViews>()
-    private var backlogJob: Job? = null
     private var scheduledJob: Job? = null
     /** Bumped on every list reload; a page/result from an older generation is discarded. */
-    private val backlogGen = java.util.concurrent.atomic.AtomicInteger()
     private val scheduledGen = java.util.concurrent.atomic.AtomicInteger()
 
     init {
@@ -398,10 +173,6 @@ class TaskViewModel(
             .firstOrNull { it.id == id }
     }
 
-    private fun statusDecision(task: Task, stateId: Long): TaskCapabilityDecision {
-        return task.dropTargetDecision(stateId, accepting = true)
-    }
-
     private fun confirm(title: String, message: String, confirmText: String, danger: Boolean = false, action: () -> Unit) {
         _ui.update { it.copy(confirm = ConfirmRequest(title, message, confirmText, danger, action)) }
     }
@@ -438,7 +209,7 @@ class TaskViewModel(
         }
         if (changedUser) teamViews.clear()
         updatePlan { state ->
-            (if (changedUser) TaskUiState() else state).copy(
+            (if (changedUser) TaskShellUiState() else state).copy(
                 planScope = (if (changedUser) PlanScope() else state.planScope).copy(
                     userId = userId, role = role, teamName = teamName, teamId = teamId,
                     agileEnabled = agileEnabled, customFieldsEnabled = customFieldsEnabled,
@@ -451,7 +222,7 @@ class TaskViewModel(
             )
         }
         loadPreferences()
-        if (agileEnabled) loadEpics()
+        if (agileEnabled) ticketSession.requestPlan(PlanRequest.Epics)
         refresh()
     }
 
@@ -559,13 +330,13 @@ class TaskViewModel(
             }
             TicketSyncSignal.Reconnect -> {
                 val state = _ui.value
-                if (state.tab == TaskTab.Sprint || state.planOpen) loadSprint()
+                if (state.tab == TaskTab.Sprint) loadSprint()
                 else ticketSession.requestBoard(BoardRequest.ReloadLoaded)
-                if (state.planLoaded) loadBacklog()
+                ticketSession.requestPlan(PlanRequest.ReloadLoaded)
                 if (state.scheduledLoaded) loadScheduled()
                 if (state.tab == TaskTab.ServiceDesk) reloadTab()
-                if (!state.planLoaded && !state.scheduledLoaded &&
-                    state.tab != TaskTab.ServiceDesk && state.tab != TaskTab.Sprint && !state.planOpen
+                if (!state.scheduledLoaded &&
+                    state.tab != TaskTab.ServiceDesk && state.tab != TaskTab.Sprint
                 ) {
                     reloadTab()
                 }
@@ -597,7 +368,7 @@ class TaskViewModel(
         _ui.update { s ->
             s.copy(
                 inlineCommentTaskId = s.inlineCommentTaskId?.takeIf { it != id },
-            ).let { if (it.planLoaded) it.projectPlan() else it }
+            )
         }
     }
 
@@ -673,59 +444,7 @@ class TaskViewModel(
      * so the user is told where sprints come from instead of seeing an empty
      * planner.
      */
-    fun openSprintPlan() {
-        val s = _ui.value
-        val targetId = planTargetId(s.teamSprints, s.currentSprintId)
-        if (targetId == null) {
-            notify(
-                if (canManageSprint(s.role)) "No sprint yet — create one in Admin → Teams"
-                else "No sprint yet — an admin can create one in Admin → Teams",
-            )
-            return
-        }
-        updatePlan { it.copy(planOpen = true, planScope = it.planScope.copy(selectedSprintId = targetId)) }
-        if (s.backlog.isEmpty()) loadBacklog()
-        loadSprint()
-        ticketSession.requestBoard(BoardRequest.Baseline(targetId))
-    }
-
-    fun closeSprintPlan() = _ui.update { it.copy(planOpen = false) }
-
-    /**
-     * A board column's "+": the create sheet opens pre-filled with the sprint on
-     * screen and that column's workflow state, so the ticket lands on the board
-     * rather than in the backlog (Jira board behaviour).
-     */
-    fun openCreateForColumn(state: WorkflowState) {
-        val s = _ui.value
-        val sprintId = s.selectedSprintId ?: return
-        _ui.update {
-            it.copy(
-                sheet = TaskSheet.CreateTicket,
-                draft = BacklogDraft(
-                    sprintId = sprintId,
-                    workflowStateId = state.id.takeIf { id -> id != 0L },
-                    dueDate = s.sprints.firstOrNull { sp -> sp.id == sprintId }?.endDate?.take(10).orEmpty(),
-                ),
-            )
-        }
-    }
-
-    /** The sprint goal is editable inline from the planner. */
-    fun saveSprintGoal(sprintId: Long, goal: String) {
-        val trimmed = goal.trim()
-        io {
-            runCatching { repository.updateSprintGoal(sprintId, trimmed) }.fold(
-                onSuccess = { updated ->
-                    val saved = updated.sprint?.goal ?: trimmed
-                    updatePlan { s ->
-                        s.copy(planScope = s.planScope.copy(sprints = s.sprints.map { if (it.id == sprintId) it.copy(goal = saved) else it }))
-                    }
-                },
-                onFailure = { fail(failure(it, "Could not save the sprint goal")) },
-            )
-        }
-    }
+    fun openCreateForColumn(state: WorkflowState) = ticketSession.requestPlan(PlanRequest.CreateForColumn(state))
 
     fun consumeScheduledFocus() = _ui.update { it.copy(scheduledFocus = null) }
 
@@ -754,14 +473,13 @@ class TaskViewModel(
         updatePlan { s ->
             s.copy(
                 tab = tab,
-                // The planner belongs to the Backlog; any tab change leaves it.
-                planOpen = false,
                 planScope = s.planScope.copy(
                     selectedSprintId = if (tab == TaskTab.Sprint) pickSprint(s.selectedSprintId, s.teamSprints, s.currentSprintId) else s.selectedSprintId,
                 ),
                 searchOpen = false,
             )
         }
+        ticketSession.requestPlan(PlanRequest.Close)
         reloadTab()
     }
 
@@ -772,27 +490,26 @@ class TaskViewModel(
 
     fun openSheet(sheet: TaskSheet) {
         _ui.update { it.copy(sheet = sheet) }
-        if (sheet == TaskSheet.Import && _ui.value.backlog.isEmpty()) loadBacklog()
+        if (sheet == TaskSheet.Import) ticketSession.requestPlan(PlanRequest.PrepareImport)
     }
 
-    fun closeSheet() = _ui.update { it.copy(sheet = null, importTaskId = null) }
+    fun closeSheet() {
+        _ui.update { it.copy(sheet = null) }
+        ticketSession.requestPlan(PlanRequest.CancelImport)
+    }
 
     fun setFilters(filters: TaskFilters) {
-        updatePlan { it.copy(planScope = it.planScope.copy(filters = filters)).let { state -> if (state.planLoaded) state.projectPlan() else state } }
-        if (_ui.value.tab != TaskTab.Backlog || !_ui.value.planLoaded) reloadTab()
+        updatePlan { it.copy(planScope = it.planScope.copy(filters = filters)) }
+        if (_ui.value.tab != TaskTab.Backlog) reloadTab()
+        else ticketSession.requestPlan(PlanRequest.EnsureLoaded)
     }
 
     fun clearFilters() {
-        updatePlan { it.copy(quickFilters = BacklogQuickFilters(), planScope = it.planScope.copy(selectedEpicId = null)) }
+        ticketSession.requestPlan(PlanRequest.ClearFilters)
+        updatePlan { it.copy(planScope = it.planScope.copy(selectedEpicId = null)) }
         setFilters(TaskFilters())
     }
 
-    fun setQuickFilters(filters: BacklogQuickFilters) {
-        _ui.update { it.copy(quickFilters = filters).let { state -> if (state.planLoaded) state.projectPlan() else state } }
-        if (!_ui.value.planLoaded && !_ui.value.backlogLoading) loadBacklog()
-    }
-
-    /** Summary priority chip toggles that priority filter ("" = all). */
     fun togglePriority(value: String) {
         val current = _ui.value.filters
         setFilters(current.copy(priority = if (value.isEmpty() || current.priority == value) "" else value))
@@ -842,185 +559,8 @@ class TaskViewModel(
         patchTask(saved, highlight = false)
     }
 
-    fun configureImport(task: Task) = _ui.update { s ->
-        s.copy(
-            importTaskId = task.id,
-            importAssignedTo = task.assignedTo,
-            importDueDate = s.currentSprint?.endDate?.take(10) ?: task.dueDate?.take(10).orEmpty(),
-        )
-    }
+    fun loadBacklog() = ticketSession.requestPlan(PlanRequest.Load)
 
-    fun cancelImportConfig() = _ui.update { it.copy(importTaskId = null, importAssignedTo = null, importDueDate = "") }
-
-    fun setImportAssignee(id: Long?) = _ui.update { it.copy(importAssignedTo = id) }
-
-    fun setImportDueDate(date: String) = _ui.update { it.copy(importDueDate = date) }
-
-    /** `handleImportToSprint`: assign, then patch assignee/due date when set. */
-    fun confirmImport() {
-        val s = _ui.value
-        val taskId = s.importTaskId ?: return
-        val sprintId = s.selectedSprintId ?: return
-        io {
-            runCatching {
-                patchTask(repository.assignSprint(taskId, sprintId), highlight = true)
-                if (s.importAssignedTo != null || s.importDueDate.isNotEmpty()) {
-                    patchServerTask(repository.updateImportFields(taskId, ImportUpdatePayload(s.importAssignedTo, s.importDueDate.ifEmpty { null })))
-                }
-            }.fold(
-                onSuccess = {
-                    _ui.update { st ->
-                        st.copy(importTaskId = null, importAssignedTo = null, importDueDate = "")
-                    }
-                    notify("Added to ${s.currentSprint?.name ?: "sprint"}")
-                    loadSprint()
-                },
-                onFailure = { fail("Failed to import task to sprint") },
-            )
-        }
-    }
-
-    // ── Backlog (`useBacklog`, infinite scroll) ──────────────────────────
-
-    /** Keep unfiltered pages so Plan-only filters retain their existing meaning. */
-    fun loadBacklog() {
-        backlogJob?.cancel()
-        _ui.update { it.copy(backlogLoading = it.backlog.isEmpty(), backlogLoadingMore = false) }
-        val gen = backlogGen.incrementAndGet()
-        backlogJob = io {
-            val s = _ui.value
-            val revision = ticketSession.planRevision.get()
-            runCatching { repository.loadPlanPage(500, 0, s.teamScope) }.fold(
-                onSuccess = { page ->
-                    if (gen != backlogGen.get()) return@fold
-                    if (s.userId != _ui.value.userId || s.teamScope != _ui.value.teamScope) return@fold
-                    if (revision != ticketSession.planRevision.get()) {
-                        loadBacklog()
-                        return@fold
-                    }
-                    ticketSession.store.upsert(page.tasks)
-                    _ui.update {
-                        val next = it.copy(
-                            tickets = ticketSession.store.state.value.tickets,
-                            planTicketIds = page.tasks.map { ticket -> ticket.id },
-                            planLoaded = true,
-                            backlogLoading = false,
-                            planOffset = page.tasks.size,
-                            planHasMore = page.pagination?.let { paging ->
-                                paging.hasMore || page.tasks.size < paging.total
-                            } == true && page.tasks.isNotEmpty(),
-                        )
-                        next.copy(planBaseline = next.pageBaseline(page)).projectPlan()
-                    }
-                    loadMoreBacklog()
-                },
-                onFailure = {
-                    if (gen != backlogGen.get()) return@fold
-                    val hadData = _ui.value.backlog.isNotEmpty()
-                    _ui.update { it.copy(backlogLoading = false) }
-                    loadFailed(it, hadData, "Failed to load backlog")
-                },
-            )
-        }
-    }
-
-    fun loadMoreBacklog() {
-        val s = _ui.value
-        if (!s.planLoaded) {
-            if (!s.backlogLoading) loadBacklog()
-            return
-        }
-        if (!s.planHasMore || s.backlogLoading || s.backlogLoadingMore) return
-        _ui.update { it.copy(backlogLoadingMore = true) }
-        val gen = backlogGen.get()
-        val revision = ticketSession.planRevision.get()
-        backlogJob = io {
-            runCatching { repository.loadPlanPage(500, s.planOffset, s.teamScope) }.fold(
-                onSuccess = { page ->
-                    if (gen != backlogGen.get() || s.teamScope != _ui.value.teamScope) return@fold
-                    if (revision != ticketSession.planRevision.get()) {
-                        loadBacklog()
-                        return@fold
-                    }
-                    ticketSession.store.upsert(page.tasks)
-                    _ui.update { current ->
-                        val offset = s.planOffset + page.tasks.size
-                        val next = current.copy(
-                            tickets = ticketSession.store.state.value.tickets,
-                            planTicketIds = (current.planTicketIds + page.tasks.map { it.id }).distinct(),
-                            planOffset = offset,
-                            planHasMore = page.pagination?.let { it.hasMore || offset < it.total } == true &&
-                                page.tasks.isNotEmpty(),
-                            backlogLoadingMore = false,
-                        )
-                        next.copy(planBaseline = next.pageBaseline(page)).projectPlan()
-                    }
-                    loadMoreBacklog()
-                },
-                onFailure = {
-                    if (gen != backlogGen.get()) return@fold
-                    _ui.update { it.copy(backlogLoadingMore = false) }
-                    loadFailed(it, true, "Failed to load backlog")
-                },
-            )
-        }
-    }
-
-    fun setSort(sort: BacklogSort) = _ui.update { it.copy(backlogSort = sort) }
-
-    fun updateDraft(transform: (BacklogDraft) -> BacklogDraft) = _ui.update { it.copy(draft = transform(it.draft)) }
-
-    /** Sprint pick fills the due date with the sprint end (SprintSelector `onChange`). */
-    fun setDraftSprint(id: Long?) = _ui.update { s ->
-        val end = id?.let { wanted -> s.sprints.firstOrNull { it.id == wanted }?.endDate?.take(10) }
-        s.copy(draft = s.draft.copy(sprintId = id, dueDate = if (id == null) "" else end ?: s.draft.dueDate))
-    }
-
-    fun submitBacklog() {
-        val s = _ui.value
-        val draft = s.draft
-        if (draft.title.isBlank() || s.creating) return
-        _ui.update { it.copy(creating = true) }
-        io {
-            val payload = CreateBacklogPayload(
-                title = draft.title.trim(),
-                description = plainTextToHtml(draft.description),
-                priority = draft.priority,
-                // The team the page is showing, so an admin browsing another
-                // team creates the ticket there (web `scopeParams.team_id`).
-                // Without it the server falls back to the creator's own team,
-                // and the ticket is invisible in the filtered list.
-                teamId = s.selectedTeamId?.takeIf { it > 0 },
-                assignedTo = draft.assignedTo,
-                dueDate = draft.dueDate.ifEmpty { null },
-                labelIds = draft.labels.ifEmpty { null },
-                sprintId = draft.sprintId,
-                storyPoints = draft.storyPoints,
-                workItemTypeId = draft.workItemTypeId,
-                projectId = draft.projectId,
-                workflowStateId = draft.workflowStateId,
-            )
-            runCatching { repository.createBacklogTask(payload) }.fold(
-                onSuccess = { created ->
-                    patchServerTask(created)
-                    _ui.update { it.copy(draft = BacklogDraft(), sheet = null, creating = false) }
-                    ticketSession.publishNotice(TaskNotice("Created ${created.displayKey}", "Open", openTicketId = created.id))
-                    loadBacklog()
-                    if (draft.sprintId != null && _ui.value.tab == TaskTab.Sprint) loadSprint()
-                },
-                onFailure = { e ->
-                    _ui.update { it.copy(creating = false) }
-                    fail(failure(e, "Failed to create backlog item"))
-                },
-            )
-        }
-    }
-
-    /**
-     * `handleScheduleTask` (`PATCH /tasks/:id/schedule`); the picker is the
-     * confirmation. Also reschedules an already-dated task. The snackbar's
-     * "View" jumps to that day in the Scheduled tab.
-     */
     fun schedule(taskId: Long, date: String) {
         if (date.isEmpty()) return
         val task = visibleTask(taskId)
@@ -1238,8 +778,6 @@ class TaskViewModel(
         updatePlan { state ->
             teamViews[state.selectedTeamId] = CachedTeamViews(
                 state.currentSprintId, state.currentSprintRow, state.selectedSprintId,
-                state.planTicketIds, state.planLoaded,
-                state.planBaseline, state.planOffset, state.planHasMore,
                 state.scheduled.map { it.id }, state.scheduledLoaded,
             )
             val cached = teamViews[teamId]
@@ -1261,13 +799,6 @@ class TaskViewModel(
                     selectedSprintId = pickSprint(selectedSprintId, teamSprints, currentSprintId),
                 ),
                 preferences = state.preferences.copy(defaultTeamId = teamId?.takeIf { id -> id > 0 }),
-                planOpen = false,
-                planLoaded = cached?.planLoaded ?: false,
-                planTicketIds = cached?.planTicketIds.orEmpty(),
-                planBaseline = cached?.planBaseline,
-                planOffset = cached?.planOffset ?: 0,
-                planHasMore = cached?.planHasMore ?: false,
-                selectedIds = emptySet(),
                 scheduledTicketIds = cached?.scheduledTicketIds.orEmpty(),
                 scheduledLoaded = cached?.scheduledLoaded ?: false,
                 tab = if (currentSprintId != null) TaskTab.Sprint else normalizeTab(state.tab, tabs),
@@ -1313,7 +844,7 @@ class TaskViewModel(
 
     /** Toggle the completed section; the choice persists per user. */
     fun setShowCompleted(show: Boolean) {
-        _ui.update { it.copy(preferences = it.preferences.copy(showCompleted = show), completedOpen = show) }
+        _ui.update { it.copy(preferences = it.preferences.copy(showCompleted = show)) }
         io {
             runCatching {
                 repository.savePreferences(
@@ -1323,7 +854,6 @@ class TaskViewModel(
                 )
             }.onSuccess { prefs -> _ui.update { it.copy(preferences = prefs) } }
         }
-        if (show) loadCompleted()
     }
 
     /** Switch between comfortable and compact cards; the choice persists per user. */
@@ -1341,111 +871,7 @@ class TaskViewModel(
         }
     }
 
-    fun toggleCompletedSection() {
-        if (_ui.value.hasSelection) return
-        val open = !_ui.value.completedOpen
-        _ui.update { it.copy(completedOpen = open) }
-        if (open && _ui.value.completed.isEmpty()) loadCompleted()
-    }
-
-    /** Plan already holds completed work from every drained page and available sprint. */
-    fun loadCompleted(all: Boolean = false) {
-        _ui.update { it.copy(completedShowingAll = all).let { state -> if (state.planLoaded) state.projectPlan() else state } }
-        if (!_ui.value.planLoaded && !_ui.value.backlogLoading) loadBacklog()
-    }
-
-    // ── Bulk actions ─────────────────────────────────────────────────────
-
-    fun toggleSelection(id: Long) {
-        _ui.update { s ->
-            s.copy(selectedIds = if (id in s.selectedIds) s.selectedIds - id else s.selectedIds + id)
-        }
-    }
-
-    fun clearSelection() = _ui.update { it.copy(selectedIds = emptySet()) }
-
-    /** One request for a multi-select action, with an Undo affordance. */
-    fun bulkAction(action: String, value: String? = null) {
-        val ids = _ui.value.selectedIds.toList()
-        if (ids.isEmpty()) return
-        val denied = ids.asSequence().map { id ->
-            val task = visibleTask(id) ?: return@map TaskCapabilityDecision()
-            when (action) {
-                "delete" -> task.capability(TaskCapability.Cancel)
-                "move_to_sprint" -> task.capability(TaskCapability.PlaceInSprint)
-                "assign" -> task.capability(TaskCapability.Edit)
-                "status" -> {
-                    val target = _ui.value.agile.workflowStates.firstOrNull { it.key == value }
-                    target?.let { statusDecision(task, it.id) } ?: TaskCapabilityDecision()
-                }
-                else -> TaskCapabilityDecision()
-            }
-        }.firstOrNull { !it.allowed }
-        if (denied != null) return notify(denied.reasonCopy())
-        io {
-            runCatching { repository.bulkAction(BulkPayload(ids, action, value)) }.fold(
-                onSuccess = { result ->
-                    clearSelection()
-                        notify(bulkSummary(result))
-                    reloadTab()
-                },
-                onFailure = { fail(failure(it, "Bulk action failed")) },
-            )
-        }
-    }
-
-        /** The result line: what changed, plus the first blocked ticket's reason.
-         *
-         *  The server names the remedy in `error` (`INVALID_TRANSITION`,
-         *  `WIP_EXCEEDED`, `SPRINT_TEAM_MISMATCH`), so it is shown verbatim rather
-         *  than reduced to a count. */
-        private fun bulkSummary(result: BulkResult): String {
-            if (result.failed == 0) return "${result.changed} updated"
-            val first = result.failures.firstOrNull()?.error?.let { capabilityFailureCopy(it) ?: it }
-            return if (first.isNullOrBlank()) {
-                "${result.changed} updated, ${result.failed} skipped"
-            } else {
-                "${result.changed} updated, ${result.failed} skipped — $first"
-            }
-        }
-
-    /** Cancelling a batch is destructive, so it asks first. */
-    fun confirmBulkDelete() {
-        val count = _ui.value.selectedIds.size
-        if (count == 0) return
-        confirm(
-            "Cancel $count ${if (count == 1) "ticket" else "tickets"}?",
-            "They keep their history and leave the open work.",
-            "Cancel tickets",
-            danger = true,
-        ) { bulkAction("delete") }
-    }
-
-    // ── Ranked reorder ───────────────────────────────────────────────────
-
-        /** Move a backlog row between two neighbours; the server computes the rank. */
-        fun reorder(taskId: Long, beforeId: Long?, afterId: Long?) {
-            val decision = visibleTask(taskId)?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
-            if (!decision.allowed) return notify(decision.reasonCopy())
-            io {
-                runCatching { repository.rankTask(taskId, beforeId, afterId) }.fold(
-                    onSuccess = { ranked -> patchTask(ranked, highlight = false) },
-                    onFailure = { fail(failure(it, "Failed to reorder")) },
-                )
-            }
-        }
-
-    // ── Epics ────────────────────────────────────────────────────────────
-
-    fun loadEpics() {
-        io {
-            runCatching { repository.loadEpics() }.onSuccess { list ->
-                _ui.update { it.copy(epics = list) }
-            }
-        }
-    }
-
-    fun selectEpic(id: Long?) = updatePlan { it.copy(planScope = it.planScope.copy(selectedEpicId = id)).let { state -> if (state.planLoaded) state.projectPlan() else state } }
+    fun selectEpic(id: Long?) = updatePlan { it.copy(planScope = it.planScope.copy(selectedEpicId = id)) }
 
     // ── Schedule overlays ────────────────────────────────────────────────
 
@@ -1465,8 +891,6 @@ class TaskViewModel(
     }
 
     companion object {
-        private const val ATTRIBUTION_MS = 4_000L
-
         fun factory(
             context: Context,
             session: TicketSession = app.aino.mobile.core.AppContainer.get(context).ticketSession.value,

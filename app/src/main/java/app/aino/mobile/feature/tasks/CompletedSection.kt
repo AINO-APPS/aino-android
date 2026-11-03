@@ -43,6 +43,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 internal fun CompletedSection(
     ui: TaskUiState,
     viewModel: TaskViewModel,
+    planViewModel: PlanViewModel,
     onOpen: (Task) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -56,12 +57,12 @@ internal fun CompletedSection(
                 .clickable(
                     enabled = !ui.hasSelection,
                     onClickLabel = if (ui.completedExpanded) "Collapse completed" else "Expand completed",
-                    onClick = viewModel::toggleCompletedSection,
+                    onClick = planViewModel::toggleCompletedSection,
                 )
                 .semantics {
                     customActions = listOf(
                         CustomAccessibilityAction(if (ui.completedExpanded) "Collapse completed" else "Expand completed") {
-                            viewModel.toggleCompletedSection()
+                            planViewModel.toggleCompletedSection()
                             true
                         },
                     )
@@ -116,7 +117,7 @@ internal fun CompletedSection(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(onClickLabel = "View all completed", onClick = { viewModel.loadCompleted(all = true) })
+                        .clickable(onClickLabel = "View all completed", onClick = { planViewModel.loadCompleted(all = true) })
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,

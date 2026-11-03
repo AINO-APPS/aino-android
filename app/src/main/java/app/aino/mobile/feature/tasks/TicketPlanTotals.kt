@@ -14,12 +14,12 @@ data class TicketPlanContribution(
     val priority: String,
 )
 
-internal fun TaskUiState.planContribution(ticket: Task): TicketPlanContribution? =
+internal fun PlanUiState.planContribution(ticket: Task): TicketPlanContribution? =
     ticket.takeIf { inScope(it) && containsPlanTicket(it) }?.let {
         TicketPlanContribution(it.isCompleted, it.workflowStateKey.orEmpty(), it.priority)
     }
 
-internal fun TaskUiState.pageBaseline(page: BacklogResponse): TicketPlanBaseline =
+internal fun PlanUiState.pageBaseline(page: BacklogResponse): TicketPlanBaseline =
     TicketPlanBaseline(
         total = page.incompleteTotal ?: page.summary?.total ?: page.pagination?.let {
             (it.total - (page.completedCount ?: completed.size)).coerceAtLeast(0)
@@ -31,7 +31,14 @@ internal fun TaskUiState.pageBaseline(page: BacklogResponse): TicketPlanBaseline
 
 internal data class TicketPlanTotals(val total: Int, val summary: BacklogSummary, val completed: Int)
 
-internal fun TaskUiState.readPlanTotals(): TicketPlanTotals {
+internal fun TaskUiState.asPlanState() = PlanUiState(
+    planScope = planScope, tickets = tickets, planTicketIds = planTicketIds,
+    planLoaded = planLoaded, planBaseline = planBaseline, quickFilters = quickFilters,
+)
+internal fun TaskUiState.pageBaseline(page: BacklogResponse) = asPlanState().pageBaseline(page)
+internal fun TaskUiState.readPlanTotals() = asPlanState().readPlanTotals()
+
+internal fun PlanUiState.readPlanTotals(): TicketPlanTotals {
     val open = backlog
     val localSummary = BacklogSummary(
         open.size,

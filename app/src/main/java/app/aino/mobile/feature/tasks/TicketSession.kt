@@ -40,6 +40,12 @@ class TicketSession {
     private val mutablePlanRefreshes = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     internal val planRefreshes = mutablePlanRefreshes.asSharedFlow()
     internal fun requestPlanRefresh() { mutablePlanRefreshes.tryEmit(Unit) }
+    private val mutablePlanRequests = MutableSharedFlow<PlanRequest>(extraBufferCapacity = 32)
+    internal val planRequests = mutablePlanRequests.asSharedFlow()
+    internal fun requestPlan(request: PlanRequest) { mutablePlanRequests.tryEmit(request) }
+    private val mutableShellRequests = MutableSharedFlow<ShellRequest>(extraBufferCapacity = 32)
+    internal val shellRequests = mutableShellRequests.asSharedFlow()
+    internal fun requestShell(request: ShellRequest) { mutableShellRequests.tryEmit(request) }
 
     internal fun writePlanScope(value: PlanScope) {
         mutablePlanScope.value = value
@@ -147,6 +153,26 @@ internal sealed interface BoardRequest {
     data object ReloadLoaded : BoardRequest
     data object Start : BoardRequest
     data class Baseline(val sprintId: Long) : BoardRequest
+}
+
+internal sealed interface PlanRequest {
+    data object Load : PlanRequest
+    data object PrepareImport : PlanRequest
+    data object EnsureLoaded : PlanRequest
+    data object ReloadLoaded : PlanRequest
+    data object Close : PlanRequest
+    data object ClearFilters : PlanRequest
+    data object Epics : PlanRequest
+    data object CancelImport : PlanRequest
+    data class CreateForColumn(val state: WorkflowState) : PlanRequest
+}
+
+internal sealed interface ShellRequest {
+    data object CloseSheet : ShellRequest
+    data class OpenSheet(val sheet: TaskSheet) : ShellRequest
+    data class SelectSprint(val id: Long) : ShellRequest
+    data class SprintGoal(val id: Long, val goal: String) : ShellRequest
+    data class ShowCompleted(val show: Boolean) : ShellRequest
 }
 
 internal data class TicketSnapshot(

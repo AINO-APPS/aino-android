@@ -66,7 +66,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
+internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
     var collapsed by rememberSaveable { mutableStateOf(listOf<String>()) }
     var scheduling by remember { mutableStateOf<Task?>(null) }
@@ -81,13 +81,13 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
             state = list,
             contentPadding = PaddingValues(bottom = 112.dp),
         ) {
-            item(key = "controls") { BacklogControls(ui, viewModel) }
+            item(key = "controls") { BacklogControls(ui, viewModel, planViewModel) }
             // "Plan sprint" is the only way into the split planner: the Sprint
             // tab is the board (ADR-015).
             if (ui.agileEnabled) {
                 item(key = "plan-sprint") {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        PillButton("Plan sprint", viewModel::openSprintPlan, tonal = true)
+                        PillButton("Plan sprint", planViewModel::openSprintPlan, tonal = true)
                     }
                 }
             }
@@ -107,7 +107,7 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                 else -> {
                     val row: @Composable (Task) -> Unit = { task ->
                         BacklogRow(
-                            task, ui, viewModel, onOpen,
+                            task, ui, viewModel, planViewModel, onOpen,
                             onSchedule = { scheduling = task },
                             onSprint = { sprintFor = task },
                             onActions = { actionsFor = task },
@@ -131,7 +131,7 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                         Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
                             when {
                                 ui.backlogLoadingMore -> CircularProgressIndicator(Modifier.size(22.dp), color = colors.primary, strokeWidth = 2.dp)
-                                ui.backlogHasMore -> PillButton("Load more", viewModel::loadMoreBacklog, tonal = true)
+                                ui.backlogHasMore -> PillButton("Load more", planViewModel::loadMoreBacklog, tonal = true)
                                 else -> Text("That's everything", color = colors.textMuted, fontSize = 0.74.rem)
                             }
                         }
@@ -139,11 +139,11 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
                 }
             }
 
-            item(key = "completed") { CompletedSection(ui, viewModel, onOpen) }
+            item(key = "completed") { CompletedSection(ui, viewModel, planViewModel, onOpen) }
         }
 
         // Bulk actions are backlog-only (D23); the bar floats above the list.
-        BulkActionBar(ui, viewModel, Modifier.align(Alignment.BottomCenter))
+        BulkActionBar(ui, viewModel, planViewModel, Modifier.align(Alignment.BottomCenter))
         }
     }
 
@@ -159,29 +159,29 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Tas
         )
     }
     actionsFor?.let { task ->
-        BacklogActionsSheet(task, ui, viewModel, onOpen = { onOpen(task) }, onSchedule = { scheduling = task }, onSprint = { sprintFor = task }, onDismiss = { actionsFor = null })
+        BacklogActionsSheet(task, ui, viewModel, planViewModel, onOpen = { onOpen(task) }, onSchedule = { scheduling = task }, onSprint = { sprintFor = task }, onDismiss = { actionsFor = null })
     }
 }
 
 /** Priority chips + sort, then active filter chips. */
 @Composable
-private fun BacklogControls(ui: TaskUiState, viewModel: TaskViewModel) {
+private fun BacklogControls(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel) {
     val quick = ui.quickFilters
     Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 6.dp)) {
         ChipStrip {
-            CountChip("All", quick.isAll, { viewModel.setQuickFilters(BacklogQuickFilters()) })
-            CountChip("Mine", quick.mine, { viewModel.setQuickFilters(quick.copy(mine = !quick.mine)) })
-            CountChip("High", quick.high, { viewModel.setQuickFilters(quick.copy(high = !quick.high)) })
-            CountChip("Unscheduled", quick.unscheduled, { viewModel.setQuickFilters(quick.copy(unscheduled = !quick.unscheduled)) })
+            CountChip("All", quick.isAll, { planViewModel.setQuickFilters(BacklogQuickFilters()) })
+            CountChip("Mine", quick.mine, { planViewModel.setQuickFilters(quick.copy(mine = !quick.mine)) })
+            CountChip("High", quick.high, { planViewModel.setQuickFilters(quick.copy(high = !quick.high)) })
+            CountChip("Unscheduled", quick.unscheduled, { planViewModel.setQuickFilters(quick.copy(unscheduled = !quick.unscheduled)) })
         }
     }
 }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun BacklogViewControls(ui: TaskUiState, viewModel: TaskViewModel) {
+internal fun BacklogViewControls(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SortMenu(ui.backlogSort, viewModel::setSort)
+        SortMenu(ui.backlogSort, planViewModel::setSort)
         DensityToggle(ui, viewModel)
         if (ui.epics.isNotEmpty()) EpicFilterChip(ui, viewModel)
     }
@@ -357,6 +357,7 @@ private fun BacklogRow(
     task: Task,
     ui: TaskUiState,
     viewModel: TaskViewModel,
+    planViewModel: PlanViewModel,
     onOpen: (Task) -> Unit,
     onSchedule: () -> Unit,
     onSprint: () -> Unit,
@@ -383,7 +384,7 @@ private fun BacklogRow(
             .padding(horizontal = 16.dp, vertical = 5.dp)
             .semantics {
                 customActions = buildList {
-                    add(CustomAccessibilityAction("Select") { viewModel.toggleSelection(task.id); true })
+                    add(CustomAccessibilityAction("Select") { planViewModel.toggleSelection(task.id); true })
                     add(CustomAccessibilityAction(if (canSchedule.allowed) "Schedule" else "Schedule — ${canSchedule.reasonCopy()}") { if (canSchedule.allowed) onSchedule(); true })
                     if (canSprint) add(CustomAccessibilityAction("Add to sprint") { onSprint(); true })
                     add(CustomAccessibilityAction("More actions") { onActions(); true })
@@ -409,18 +410,18 @@ private fun BacklogRow(
     ) {
         TaskCardM3(
             task, ui.agile,
-            onOpen = { if (ui.hasSelection) viewModel.toggleSelection(task.id) else onOpen(task) },
+            onOpen = { if (ui.hasSelection) planViewModel.toggleSelection(task.id) else onOpen(task) },
             highlighted = task.id in ui.recentlyUpdated,
             showStatus = true,
             // Long-press starts selection; the checkbox only appears once selecting.
-            onLongPress = { viewModel.toggleSelection(task.id) },
+            onLongPress = { planViewModel.toggleSelection(task.id) },
             longPressLabel = "Select",
             onComments = { viewModel.openComments(task.id) },
             compact = ui.compact,
             selected = task.id in ui.selectedIds,
             attribution = ui.attribution[task.id],
             leading = if (ui.hasSelection) {
-                { SelectionToggle(task.id in ui.selectedIds) { viewModel.toggleSelection(task.id) } }
+                { SelectionToggle(task.id in ui.selectedIds) { planViewModel.toggleSelection(task.id) } }
             } else null,
             trailing = if (!ui.compact) ({
                 Column {
@@ -455,6 +456,7 @@ private fun BacklogActionsSheet(
     task: Task,
     ui: TaskUiState,
     viewModel: TaskViewModel,
+    planViewModel: PlanViewModel,
     onOpen: () -> Unit,
     onSchedule: () -> Unit,
     onSprint: () -> Unit,
@@ -483,13 +485,13 @@ private fun BacklogActionsSheet(
                     rankNeighbours(ids, task.id, up = true)?.let { (before, after) ->
                         ActionRow(HeroIcons.ChevronUp, "Move up", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) {
                             onDismiss()
-                            viewModel.reorder(task.id, before, after)
+                            planViewModel.reorder(task.id, before, after)
                         }
                     }
                     rankNeighbours(ids, task.id, up = false)?.let { (before, after) ->
                         ActionRow(HeroIcons.ChevronDown, "Move down", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) {
                             onDismiss()
-                            viewModel.reorder(task.id, before, after)
+                            planViewModel.reorder(task.id, before, after)
                         }
                     }
                 }
@@ -530,7 +532,7 @@ internal fun ScheduleDialog(task: Task, title: String = "Schedule \"${task.title
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel) {
+internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel) {
     val colors = LocalWebColors.current
     val d = ui.draft
     var picker by remember { mutableStateOf<String?>(null) }
@@ -539,13 +541,13 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel) {
             Modifier.weight(1f, fill = false).heightIn(max = 600.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            WebTextField(d.title, { v -> viewModel.updateDraft { it.copy(title = v) } }, "What needs to be done?", maxLength = 200, fontSize = 1.rem)
-            WebTextField(d.description, { v -> viewModel.updateDraft { it.copy(description = v) } }, "Add a description (optional)", singleLine = false, minLines = 3)
+            WebTextField(d.title, { v -> planViewModel.updateDraft { it.copy(title = v) } }, "What needs to be done?", maxLength = 200, fontSize = 1.rem)
+            WebTextField(d.description, { v -> planViewModel.updateDraft { it.copy(description = v) } }, "Add a description (optional)", singleLine = false, minLines = 3)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SectionTitle("Priority")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PRIORITIES.forEach { p ->
-                        CountChip(p.label, d.priority == p.value, { viewModel.updateDraft { it.copy(priority = p.value) } }, accent = colors.tone(p.tone), dot = true)
+                        CountChip(p.label, d.priority == p.value, { planViewModel.updateDraft { it.copy(priority = p.value) } }, accent = colors.tone(p.tone), dot = true)
                     }
                 }
             }
@@ -557,7 +559,7 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel) {
                     Icon(HeroIcons.CalendarDays, null, Modifier.size(18.dp), tint = colors.textMuted)
                     Spacer(Modifier.width(12.dp))
                     Text("Due date", color = colors.textSecondary, fontSize = 0.84.rem, modifier = Modifier.width(96.dp))
-                    WebDateField(d.dueDate, { v -> viewModel.updateDraft { it.copy(dueDate = v) } }, Modifier.weight(1f))
+                    WebDateField(d.dueDate, { v -> planViewModel.updateDraft { it.copy(dueDate = v) } }, Modifier.weight(1f))
                 }
                 val types = ui.agile.workItemTypes.filter { it.id != 0L }
                 if (types.isNotEmpty()) {
@@ -589,14 +591,14 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel) {
             if (ui.agile.features.storyPoints) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SectionTitle("Estimate (${ui.agile.unitLabel})")
-                    StoryPointPicker(d.storyPoints, { v -> viewModel.updateDraft { it.copy(storyPoints = v) } }, ui.agile)
+                    StoryPointPicker(d.storyPoints, { v -> planViewModel.updateDraft { it.copy(storyPoints = v) } }, ui.agile)
                 }
             }
         }
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             PillButton("Cancel", viewModel::closeSheet, Modifier.weight(1f))
-            PillButton(if (ui.creating) "Creating…" else "Create ticket", viewModel::submitBacklog, Modifier.weight(1f), primary = true, enabled = d.title.isNotBlank() && !ui.creating)
+            PillButton(if (ui.creating) "Creating…" else "Create ticket", planViewModel::submitBacklog, Modifier.weight(1f), primary = true, enabled = d.title.isNotBlank() && !ui.creating)
         }
     }
     TaskPickers(
@@ -608,11 +610,11 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel) {
         projectId = d.projectId,
         labels = d.labels,
         onDismiss = { picker = null },
-        onAssignee = { v -> viewModel.updateDraft { it.copy(assignedTo = v) } },
-        onType = { v -> viewModel.updateDraft { it.copy(workItemTypeId = v) } },
-        onSprint = viewModel::setDraftSprint,
-        onProject = { v -> viewModel.updateDraft { it.copy(projectId = v) } },
-        onLabels = { v -> viewModel.updateDraft { it.copy(labels = v) } },
+        onAssignee = { v -> planViewModel.updateDraft { it.copy(assignedTo = v) } },
+        onType = { v -> planViewModel.updateDraft { it.copy(workItemTypeId = v) } },
+        onSprint = planViewModel::setDraftSprint,
+        onProject = { v -> planViewModel.updateDraft { it.copy(projectId = v) } },
+        onLabels = { v -> planViewModel.updateDraft { it.copy(labels = v) } },
     )
 }
 
