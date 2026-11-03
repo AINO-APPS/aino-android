@@ -138,9 +138,9 @@ class TicketDetailViewModel(
             _ui.update { it.copy(error = null) }
         }
     }
-    private fun save(ticket: Task) {
+    private fun save(ticket: Task, removalToken: Any? = null) {
         ticketSession.planRevision.incrementAndGet()
-        ticketSession.store.upsert(ticket)
+        ticketSession.store.upsert(ticket, removalToken)
     }
     private fun allowed(task: Task, capability: TaskCapability): Boolean {
         if (task.id != ticketId || _ui.value.closed) return false
@@ -170,12 +170,30 @@ class TicketDetailViewModel(
     }
     fun refreshDetail() {
         if (_ui.value.closed) return
+        val removalToken = ticketSession.store.removalToken(ticketId)
+        val commentsBefore = ticketSession.commentThreads.value[ticketId]?.items.orEmpty().associateBy { it.id }
         _ui.update { it.copy(detailLoading = true, detailStale = false) }
         io {
             runCatching { repository.loadDetail(ticketId) }.fold(
                 onSuccess = { ticket ->
-                    save(ticket)
-                    ticketSession.setCommentThreadIfAbsent(CommentThread(ticketId, ticket.comments, loading = false))
+                    save(ticket, removalToken)
+                    ticketSession.updateCommentThread(ticketId) { thread ->
+                        val current = thread.items.associateBy { it.id }
+                        val changed = (commentsBefore.keys + current.keys).filterTo(mutableSetOf()) {
+                            commentsBefore[it] != current[it]
+                        }
+                        val fetchedIds = ticket.comments.mapTo(mutableSetOf()) { it.id }
+                        // Keep local additions, edits and deletions completed while this read was in flight.
+                        thread.copy(
+                            items = ticket.comments.mapNotNull { if (it.id in changed) current[it.id] else it } +
+                                thread.items.filter { it.id in changed && it.id !in fetchedIds },
+                            loading = false,
+                        )
+                    }
+                    ticketSession.store.update(ticketId) {
+                        val items = ticketSession.commentThreads.value[ticketId]?.items.orEmpty()
+                        if (items == ticket.comments) it else it.copy(commentCount = items.size)
+                    }
                 },
                 onFailure = { error ->
                     if (ticketSession.commentThreads.value[ticketId] == null) {
@@ -355,7 +373,7 @@ class TicketDetailViewModel(
                 runCatching { repository.deleteTask(ticketId) }.fold(
                     onSuccess = {
                         ticketSession.planRevision.incrementAndGet()
-                        ticketSession.store.remove(ticketId)
+                        ticketSession.store.remove(ticketId, preventReinsert = true, allowReopen = true)
                         closeDetail()
                         notify("Cancelled ${task.displayKey}")
                     },
@@ -387,7 +405,9 @@ class TicketDetailViewModel(
                     ticketSession.updateCommentThread(ticketId) { thread ->
                         thread.copy(items = if (thread.items.any { it.id == comment.id }) thread.items else thread.items + comment, loading = false)
                     }
-                    ticketSession.store.update(ticketId) { it.copy(commentCount = it.commentCount + 1) }
+                    ticketSession.store.update(ticketId) {
+                        it.copy(commentCount = ticketSession.commentThreads.value[ticketId]?.items?.size ?: it.commentCount)
+                    }
                     withContext(Dispatchers.Main) { onDone() }
                     refreshHistory()
                 },
@@ -420,7 +440,9 @@ class TicketDetailViewModel(
                 runCatching { repository.deleteComment(ticketId, commentId) }.fold(
                     onSuccess = {
                         ticketSession.updateCommentThread(ticketId) { thread -> thread.copy(items = thread.items.filterNot { it.id == commentId }, loading = false) }
-                        ticketSession.store.update(ticketId) { it.copy(commentCount = maxOf(0, it.commentCount - 1)) }
+                        ticketSession.store.update(ticketId) {
+                            it.copy(commentCount = ticketSession.commentThreads.value[ticketId]?.items?.size ?: it.commentCount)
+                        }
                         refreshHistory()
                     },
                     onFailure = { fail(it, "Failed to delete comment") },

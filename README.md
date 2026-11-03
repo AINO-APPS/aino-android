@@ -108,7 +108,7 @@ pages and their baseline, and scrolling can retry from the server offset. Local
 combined-filter totals use the loaded projection, becoming complete when the drain
 finishes. Team caches retain paging and aggregate baselines along with Ticket ids.
 
-Board, Plan (Backlog and Completed), and open Detail resolve ordered Ticket ids
+Board, Plan (Backlog and Completed), Scheduled, search, and open Detail resolve ordered Ticket ids
 against one network-free `TicketSession` store. Full enriched repository responses
 replace whole Tickets, so a change is visible across these views without reopening
 Detail. Detail comment threads remain separate from stored Tickets. The existing
@@ -117,7 +117,7 @@ tenant changes and account changes cancel its work and clear its Tickets and
 screen state, including late HTTP responses. The Activity obtains Tasks and Board
 ViewModels keyed by session, so signing back in (even as the same user) loads
 fresh data. Cold starts can still rebuild a Plan using the per-user response
-cache. Other Plan surfaces remain separate migration steps.
+cache. All Plan surfaces now share this session store.
 
 The session also owns a read-only `PlanScope` for user and Team context, feature
 flags, sprint selection, shared filters and metadata. Only `TaskViewModel` writes

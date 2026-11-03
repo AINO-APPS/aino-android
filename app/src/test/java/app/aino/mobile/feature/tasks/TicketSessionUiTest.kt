@@ -755,6 +755,7 @@ internal class TicketSessionHarness {
     @Volatile var saved = original
     @Volatile var writes = 0
     @Volatile var detailReads = 0
+    @Volatile var historyReads = 0
     @Volatile var planReads = 0
     @Volatile var boardReads = 0
     @Volatile var scheduledReads = 0
@@ -765,6 +766,9 @@ internal class TicketSessionHarness {
     @Volatile var scheduledRows = ""
     @Volatile var searchRows = ""
     @Volatile var detailResponse = original
+    @Volatile var detailResponseGate: HeldTicketResponse? = null
+    @Volatile var boardResponseGate: HeldTicketResponse? = null
+    @Volatile var commentResponseGate: HeldTicketResponse? = null
     @Volatile var rejectPlanLoads = false
     @Volatile var rejectDetailReads = false
     @Volatile var detailErrorStatus: Int? = null
@@ -790,7 +794,8 @@ internal class TicketSessionHarness {
             request.path == "sprints/10/board" -> {
                 boardReads++
                 if (rejectBoardReads) throw java.io.IOException("offline")
-                """{"sprint":{"id":10,"name":"Sprint"},"columns":[{"stateId":102,"count":$boardColumnCount,"accepting":true}],"tickets":[$boardTicket]}"""
+                val response = """{"sprint":{"id":10,"name":"Sprint"},"columns":[{"stateId":102,"count":$boardColumnCount,"accepting":true}],"tickets":[$boardTicket]}"""
+                boardResponseGate?.hold(response) ?: response
             }
             request.path.startsWith("tasks/backlog?") -> {
                 planReads++
@@ -808,7 +813,8 @@ internal class TicketSessionHarness {
                     throw ApiError.Http(status, """{"error":"Not visible"}""", request.method, request.path)
                 }
                 if (rejectDetailReads) throw java.io.IOException("offline")
-                detailResponse
+                val response = detailResponse
+                detailResponseGate?.hold(response) ?: response
             }
             request.path == "tasks/201/comments" && request.method == "GET" -> {
                 commentReads++
@@ -816,7 +822,8 @@ internal class TicketSessionHarness {
             }
             request.path == "tasks/201/comments" && request.method == "POST" -> {
                 commentWrites++
-                """{"id":$commentWrites,"content":"${if (commentWrites == 1) "From inline" else "From detail"}","user_id":1}"""
+                val response = """{"id":$commentWrites,"content":"${if (commentWrites == 1) "From inline" else "From detail"}","user_id":1}"""
+                commentResponseGate?.hold(response) ?: response
             }
             request.path == "tasks/201/comments/1" && request.method == "PUT" ->
                 """{"id":1,"content":"Edited from detail"}"""
@@ -829,7 +836,8 @@ internal class TicketSessionHarness {
             request.path.startsWith("tasks/by-key/") -> saved
             request.path == "tasks/available-sprints" -> """[{"id":10,"name":"Sprint","status":"active"},{"id":11,"name":"Next sprint","status":"planned"}]"""
             request.path == "sprints" -> """{"sprints":[{"id":10,"name":"Sprint","status":"active"}],"currentSprintId":10}"""
-            request.path in setOf("tasks/labels", "tasks/assignable-users", "projects", "tasks/201/history") -> "[]"
+            request.path == "tasks/201/history" -> { historyReads++; "[]" }
+            request.path in setOf("tasks/labels", "tasks/assignable-users", "projects") -> "[]"
             (request.path == "tasks/201" && request.method == "PUT") ||
                 request.path == "tasks/201/status" || request.path == "tasks/201/assign-sprint" ||
                 request.path == "tasks/201/schedule" || request.path == "tasks/201/unschedule" ||
@@ -874,8 +882,29 @@ internal class TicketSessionHarness {
     }
 
     fun close() {
+        detailResponseGate?.release()
+        boardResponseGate?.release()
+        commentResponseGate?.release()
         viewModels.clear()
         session.close()
+    }
+
+    /** Holds one HTTP response after its payload has been captured. */
+    internal class HeldTicketResponse {
+        private val first = java.util.concurrent.atomic.AtomicBoolean(true)
+        private val started = CountDownLatch(1)
+        private val released = CountDownLatch(1)
+
+        fun hold(response: String): String {
+            if (first.getAndSet(false)) {
+                started.countDown()
+                check(released.await(10, TimeUnit.SECONDS)) { "HTTP response was not released" }
+            }
+            return response
+        }
+
+        fun awaitStarted() = assertTrue("HTTP request did not start", started.await(5, TimeUnit.SECONDS))
+        fun release() = released.countDown()
     }
 
     fun holdAndRejectNextStatusWrite() {

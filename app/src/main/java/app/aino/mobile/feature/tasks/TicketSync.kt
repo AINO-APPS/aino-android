@@ -124,6 +124,7 @@ internal class TicketSync(
     }
 
     private suspend fun syncTicket(id: Long, refreshBoard: Boolean): Boolean {
+        val removalToken = session.store.removalToken(id)
         val fresh = runCatching { repository.loadDetail(id) }.getOrElse { error ->
             if (error.isNoLongerVisible()) {
                 remove(id, RemovalReason.NoLongerVisible)
@@ -136,7 +137,7 @@ internal class TicketSync(
             return false
         }
         session.planRevision.incrementAndGet()
-        session.store.upsert(fresh)
+        session.store.upsert(fresh, removalToken)
         session.store.highlight(id)
         mutableChanges.emit(TicketSyncChange.Updated(id, refreshBoard, staleDetail = true, comments = fresh.comments))
         return true

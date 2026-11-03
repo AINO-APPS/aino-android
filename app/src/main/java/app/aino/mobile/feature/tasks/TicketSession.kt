@@ -203,12 +203,20 @@ internal class TicketStore(
     private val highlights = mutableMapOf<Long, Job>()
     // Serialize snapshot writes so identity-checked restores cannot race with upserts.
     private val ticketLock = Any()
-    private val removedIds = mutableSetOf<Long>()
+    private class Removal(val allowReopen: Boolean)
+    private val removedIds = mutableMapOf<Long, Removal>()
 
-    fun upsert(ticket: Task): Task {
+    // Only a detail read started after a local cancellation may observe a legitimate reopening.
+    fun removalToken(id: Long): Any? = synchronized(ticketLock) { removedIds[id] }
+
+    fun upsert(ticket: Task, removalToken: Any? = null): Task {
         val stored = withoutComments(ticket)
         synchronized(ticketLock) {
-            if (stored.id in removedIds) return stored
+            val removal = removedIds[stored.id]
+            if (removal != null) {
+                if (!removal.allowReopen || removal !== removalToken || stored.workflowStateKey == "cancelled") return stored
+                removedIds.remove(stored.id)
+            }
             mutable.update { snapshot ->
                 snapshot.copy(tickets = snapshot.tickets + (stored.id to stored), ticketRevision = snapshot.ticketRevision + 1)
             }
@@ -239,9 +247,9 @@ internal class TicketStore(
         }
     }
 
-    fun remove(id: Long, preventReinsert: Boolean = false) {
+    fun remove(id: Long, preventReinsert: Boolean = false, allowReopen: Boolean = false) {
         synchronized(ticketLock) {
-            if (preventReinsert) removedIds += id
+            if (preventReinsert) removedIds[id] = Removal(allowReopen)
             mutable.update { it.copy(tickets = it.tickets - id, recentlyChanged = it.recentlyChanged - id) }
         }
     }

@@ -1,5 +1,8 @@
 package app.aino.mobile.feature.tasks
 
+import app.aino.mobile.feature.tasks.TicketSessionHarness.HeldTicketResponse
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -28,6 +31,145 @@ class TicketDetailViewModelTest {
     @After fun tearDown() {
         harness.close()
         Dispatchers.resetMain()
+    }
+
+    @Test fun refreshingDetailReplacesTheCachedCommentThread() {
+        harness.detailResponse = withComments("""{"id":1,"content":"Old"}""")
+        harness.loadBoardPlanAndDetail()
+        harness.detailResponse = withComments("""{"id":2,"content":"Fresh"}""")
+
+        harness.detailViewModel.refreshDetail()
+
+        harness.await { harness.detailReads == 2 && !harness.detailViewModel.ui.value.detailLoading }
+        assertEquals(listOf("Fresh"), harness.detailViewModel.ui.value.detailComments.map { it.content })
+    }
+
+    private fun withComments(items: String) = harness.original.dropLast(1) + ""","comments":[$items]}"""
+
+    @Test fun refreshingCommentsReconcilesServerChangesWithoutLosingConcurrentMutations() {
+        harness.detailResponse = withComments(
+            """{"id":1,"content":"Old edit"},{"id":2,"content":"Delete me"},{"id":3,"content":"Old remote"}""",
+        )
+        harness.loadBoardPlanAndDetail()
+        harness.detailResponse = withComments(
+            """{"id":1,"content":"Old edit"},{"id":2,"content":"Delete me"},{"id":3,"content":"Fresh remote"},{"id":4,"content":"Remote addition"}""",
+        )
+        val gate = HeldTicketResponse().also { harness.detailResponseGate = it }
+        harness.detailViewModel.refreshDetail()
+        gate.awaitStarted()
+
+        harness.commentWrites = 4
+        harness.detailViewModel.addComment(201, "New local", null, emptyMap()) {}
+        harness.detailViewModel.editComment(201, 1, "Edited from detail") {}
+        harness.detailViewModel.deleteComment(201, 2)
+        harness.detailViewModel.acceptConfirm()
+        harness.await {
+            val comments = harness.detailViewModel.ui.value.detailComments
+            comments.any { it.id == 5L } && comments.none { it.id == 2L } &&
+                comments.firstOrNull { it.id == 1L }?.content == "Edited from detail"
+        }
+        gate.release()
+
+        harness.await { !harness.detailViewModel.ui.value.detailLoading }
+        assertEquals(
+            listOf("Edited from detail", "Fresh remote", "Remote addition", "From detail"),
+            harness.detailViewModel.ui.value.detailComments.map { it.content },
+        )
+        assertEquals(4, harness.detailViewModel.ui.value.detail?.commentCount)
+    }
+
+    @Test fun addingACommentAlreadyReceivedByRealtimeDoesNotCountItTwice() {
+        harness.loadBoardPlanAndDetail()
+        val gate = HeldTicketResponse().also { harness.commentResponseGate = it }
+        val done = java.util.concurrent.atomic.AtomicBoolean()
+        harness.detailViewModel.addComment(201, "From inline", null, emptyMap()) { done.set(true) }
+        gate.awaitStarted()
+        harness.commentsResponse = """[{"id":1,"content":"From inline","user_id":1}]"""
+        harness.session.onRealtimeEvent("task_updated", buildJsonObject {
+            put("taskId", 201)
+            put("action", "comment")
+        })
+        harness.await {
+            harness.detailViewModel.ui.value.detailComments.size == 1 &&
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.commentCount == 1
+        }
+        gate.release()
+        harness.await { done.get() }
+
+        assertEquals(listOf(1L), harness.detailViewModel.ui.value.detailComments.map { it.id })
+        assertEquals(1, harness.detailViewModel.ui.value.detail?.commentCount)
+        assertEquals(1, harness.boardViewModel.ui.value.tasks.single().commentCount)
+    }
+
+    @Test fun refreshingDetailKeepsTheCountOfACommentAddedDuringTheRead() {
+        harness.loadBoardPlanAndDetail()
+        val gate = HeldTicketResponse().also { harness.detailResponseGate = it }
+        harness.detailViewModel.refreshDetail()
+        gate.awaitStarted()
+        val done = java.util.concurrent.atomic.AtomicBoolean()
+        harness.detailViewModel.addComment(201, "New comment", null, emptyMap()) { done.set(true) }
+        harness.await { done.get() }
+        gate.release()
+        harness.await { !harness.detailViewModel.ui.value.detailLoading }
+
+        assertEquals(1, harness.detailViewModel.ui.value.detailComments.size)
+        assertEquals(1, harness.detailViewModel.ui.value.detail?.commentCount)
+        assertEquals(1, harness.boardViewModel.ui.value.tasks.single().commentCount)
+    }
+
+    @Test fun cancellingFromDetailCannotBeUndoneByInFlightLoads() = cancellationRejectsStaleLoads(fromDetail = true)
+
+    @Test fun cancellingFromAListCannotBeUndoneByInFlightLoads() = cancellationRejectsStaleLoads(fromDetail = false)
+
+    @Test fun aCancelledTicketCanLegitimatelyReopenLaterInTheSameSession() {
+        cancellationRejectsStaleLoads(fromDetail = true)
+        harness.detailResponse = harness.original.replace("Ship release", "Reopened release")
+        harness.boardTicket = harness.detailResponse
+
+        harness.session.onRealtimeEvent("task_updated", buildJsonObject {
+            put("taskId", 201)
+            put("action", "updated")
+        })
+
+        harness.await { harness.boardViewModel.ui.value.tasks.singleOrNull()?.title == "Reopened release" }
+        assertEquals("Reopened release", harness.boardViewModel.ui.value.tasks.single().title)
+    }
+
+    private fun cancellationRejectsStaleLoads(fromDetail: Boolean) {
+        harness.detailResponse = harness.original.replace("\"can\":{", "\"can\":{\"cancel\":{\"allowed\":true},")
+        harness.boardTicket = harness.detailResponse
+        harness.loadBoardPlanAndDetail()
+        harness.searchRows = harness.detailResponse
+        harness.viewModel.setSearch("Ship")
+        harness.await { harness.viewModel.searchResults.value.size == 1 }
+        val historyReads = harness.historyReads
+        val detailGate = HeldTicketResponse().also { harness.detailResponseGate = it }
+        val boardGate = HeldTicketResponse().also { harness.boardResponseGate = it }
+        harness.detailViewModel.refreshDetail()
+        harness.boardViewModel.loadSprint()
+        detailGate.awaitStarted()
+        boardGate.awaitStarted()
+        val ticket = harness.detailViewModel.ui.value.detail!!
+        harness.boardTicket = ""
+
+        if (fromDetail) {
+            harness.detailViewModel.requestDelete(ticket)
+            harness.detailViewModel.acceptConfirm()
+        } else {
+            harness.boardViewModel.requestDelete(ticket)
+            harness.boardViewModel.acceptConfirm()
+        }
+        harness.await { harness.detailViewModel.ui.value.closed }
+        detailGate.release()
+        boardGate.release()
+        harness.await {
+            harness.historyReads > historyReads &&
+                !harness.detailViewModel.ui.value.detailLoading && !harness.boardViewModel.ui.value.sprintLoading
+        }
+
+        assertNull(harness.detailViewModel.ui.value.detail)
+        assertTrue(harness.boardViewModel.ui.value.tasks.isEmpty())
+        assertTrue(harness.viewModel.searchResults.value.isEmpty())
     }
 
     @Test fun blockerWriteUpdatesDetailBoardAndSearchFromTheAuthoritativeTicket() {

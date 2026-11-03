@@ -47,7 +47,7 @@ internal class TicketListActions(
                 runCatching { repository.deleteTask(ticket.id) }.fold(
                     onSuccess = {
                         session.planRevision.incrementAndGet()
-                        session.store.remove(ticket.id)
+                        session.store.remove(ticket.id, preventReinsert = true, allowReopen = true)
                         session.requestBoard(BoardRequest.ReloadLoaded)
                         session.publishNotice(TaskNotice("Cancelled ${ticket.displayKey}"))
                     },
