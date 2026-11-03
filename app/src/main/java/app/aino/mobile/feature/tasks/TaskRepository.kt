@@ -123,8 +123,12 @@ class TaskRepository(
 
     // ── Time tracking ────────────────────────────────────────────────────
     // @api GET tasks/:id/worklogs
-    fun loadWorklogs(id: Long): TaskWorklogList =
-        decode(api.execute(ApiRequest(path = "tasks/$id/worklogs")))
+    fun loadWorklogs(id: Long): TaskWorklogList {
+        val response = decode<JsonObject>(api.execute(ApiRequest(path = "tasks/$id/worklogs")))
+        return json.decodeFromJsonElement<TaskWorklogList>(response).copy(
+            hasEstimates = "original_estimate_minutes" in response && "remaining_estimate_minutes" in response,
+        )
+    }
 
     // @api POST tasks/:id/worklogs
     fun logWork(id: Long, payload: LogWorkPayload): WorklogMutationResponse =

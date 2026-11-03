@@ -83,6 +83,28 @@ class TicketDetailViewModel(
     private val worklogLock = Any()
     private var worklogRevision = 0L
     private var worklogRead = 0L
+    private var effortWriting = false
+
+    private fun beginEffortWrite(): Boolean = synchronized(worklogLock) {
+        if (effortWriting) false else {
+            effortWriting = true
+            worklogRevision++
+            true
+        }
+    }
+
+    private fun endEffortWrite() = synchronized(worklogLock) {
+        effortWriting = false
+        _ui.update { it.copy(estimateBusy = false, worklogBusy = false) }
+    }
+
+    private fun publishEffort(summary: WorklogTicketSummary) {
+        ticketSession.store.update(ticketId) {
+            it.copy(timeSpentMinutes = summary.timeSpentMinutes, loggedMinutes = summary.timeSpentMinutes,
+                estimatedMinutes = summary.originalEstimateMinutes, originalEstimateMinutes = summary.originalEstimateMinutes,
+                remainingEstimateMinutes = summary.remainingEstimateMinutes)
+        }
+    }
 
     init {
         ticketScope.launch {
@@ -200,7 +222,7 @@ class TicketDetailViewModel(
                 onSuccess = { ticket ->
                     synchronized(worklogLock) {
                         val current = ticketSession.store.state.value.tickets[ticketId]
-                        val fresh = if (worklogRevisionBefore != worklogRevision && current != null) ticket.copy(
+                        val fresh = if ((effortWriting || worklogRevisionBefore != worklogRevision) && current != null) ticket.copy(
                             timeSpentMinutes = current.timeSpentMinutes, loggedMinutes = current.loggedMinutes,
                             estimatedMinutes = current.estimatedMinutes, originalEstimateMinutes = current.originalEstimateMinutes,
                             remainingEstimateMinutes = current.remainingEstimateMinutes,
@@ -497,7 +519,7 @@ class TicketDetailViewModel(
     fun saveEstimate(value: String) {
         val task = _ui.value.detail ?: return
         val draft = _ui.value.estimateDraft ?: return
-        if (_ui.value.estimateBusy || _ui.value.worklogBusy || !allowed(task, TaskCapability.EditEstimate)) return
+        if (_ui.value.estimateBusy || _ui.value.worklogBusy || !allowed(task, TaskCapability.EditEstimate) || !beginEffortWrite()) return
         _ui.update { it.copy(estimateBusy = true, estimateDraft = draft.copy(value = value), estimateError = null) }
         io {
             runCatching { repository.setEstimates(ticketId, buildJsonObject { put(draft.kind.field, value) }) }.fold(
@@ -505,9 +527,7 @@ class TicketDetailViewModel(
                     synchronized(worklogLock) {
                         worklogRevision++
                         if (!_ui.value.closed) {
-                            ticketSession.store.update(ticketId) { it.copy(timeSpentMinutes = result.ticket.timeSpentMinutes,
-                                loggedMinutes = result.ticket.timeSpentMinutes, estimatedMinutes = result.ticket.originalEstimateMinutes,
-                                originalEstimateMinutes = result.ticket.originalEstimateMinutes, remainingEstimateMinutes = result.ticket.remainingEstimateMinutes) }
+                            publishEffort(result.ticket)
                             _ui.update { it.copy(estimateDraft = null) }
                         }
                     }
@@ -515,19 +535,19 @@ class TicketDetailViewModel(
                 },
                 onFailure = { error -> _ui.update { it.copy(estimateError = error.message ?: "Failed to save estimate") } },
             )
-            _ui.update { it.copy(estimateBusy = false) }
+            endEffortWrite()
         }
     }
 
     fun startLogWork() {
         val task = _ui.value.detail ?: return
-        if (!_ui.value.worklogBusy && allowed(task, TaskCapability.LogWork)) {
+        if (!_ui.value.worklogBusy && !_ui.value.estimateBusy && allowed(task, TaskCapability.LogWork)) {
             _ui.update { it.copy(worklogDraft = WorklogDraft(), editingWorklogId = null, worklogDurationError = null, worklogError = null) }
         }
     }
 
     fun startEditWorklog(worklogId: Long) {
-        if (_ui.value.closed || _ui.value.worklogBusy) return
+        if (_ui.value.closed || _ui.value.worklogBusy || _ui.value.estimateBusy) return
         val row = _ui.value.worklogs.firstOrNull { it.id == worklogId && it.canEdit } ?: return
         _ui.update { it.copy(editingWorklogId = row.id, worklogDurationError = null, worklogError = null, worklogDraft = WorklogDraft(
             row.dayWorked, "${row.minutes}m", row.startTime.orEmpty(), row.comment.orEmpty(), authorId = row.authorId,
@@ -537,10 +557,11 @@ class TicketDetailViewModel(
     fun saveWorklog(draft: WorklogDraft) {
         val task = _ui.value.detail ?: return
         val editingId = _ui.value.editingWorklogId
-        if (_ui.value.worklogBusy) return
+        if (_ui.value.worklogBusy || _ui.value.estimateBusy) return
         if (editingId == null) {
             if (!allowed(task, TaskCapability.LogWork)) return
         } else if (_ui.value.closed || _ui.value.worklogs.none { it.id == editingId && it.canEdit }) return
+        if (!beginEffortWrite()) return
         _ui.update { it.copy(worklogBusy = true, worklogDraft = draft, worklogDurationError = null, worklogError = null) }
         io {
             val payload = LogWorkPayload(draft.dayWorked, draft.timeSpent, draft.startTime.takeIf { it.isNotBlank() }, draft.comment.takeIf { it.isNotBlank() },
@@ -555,11 +576,7 @@ class TicketDetailViewModel(
                     synchronized(worklogLock) {
                         worklogRevision++
                         if (!_ui.value.closed) {
-                            ticketSession.store.update(ticketId) {
-                                it.copy(timeSpentMinutes = result.ticket.timeSpentMinutes, loggedMinutes = result.ticket.timeSpentMinutes,
-                                    estimatedMinutes = result.ticket.originalEstimateMinutes, originalEstimateMinutes = result.ticket.originalEstimateMinutes,
-                                    remainingEstimateMinutes = result.ticket.remainingEstimateMinutes)
-                            }
+                            publishEffort(result.ticket)
                             _ui.update { it.copy(worklogs = (it.worklogs.filterNot { row -> row.id == result.worklog.id } + result.worklog).newestFirst(),
                                 worklogDraft = null, editingWorklogId = null, worklogWarnings = result.warnings) }
                         }
@@ -573,12 +590,12 @@ class TicketDetailViewModel(
                     ) }
                 },
             )
-            _ui.update { it.copy(worklogBusy = false) }
+            endEffortWrite()
         }
     }
 
     fun deleteWorklog(worklogId: Long, remainingMode: String = "auto", remainingEstimate: String = "") {
-        if (_ui.value.closed || _ui.value.worklogBusy || _ui.value.worklogs.none { it.id == worklogId && it.canDelete }) return
+        if (_ui.value.closed || _ui.value.worklogBusy || _ui.value.estimateBusy || _ui.value.worklogs.none { it.id == worklogId && it.canDelete } || !beginEffortWrite()) return
         _ui.update { it.copy(worklogBusy = true, worklogError = null) }
         io {
             runCatching { repository.deleteWorklog(ticketId, worklogId,
@@ -587,11 +604,7 @@ class TicketDetailViewModel(
                     synchronized(worklogLock) {
                         worklogRevision++
                         if (!_ui.value.closed) {
-                            ticketSession.store.update(ticketId) {
-                                it.copy(timeSpentMinutes = result.ticket.timeSpentMinutes, loggedMinutes = result.ticket.timeSpentMinutes,
-                                    estimatedMinutes = result.ticket.originalEstimateMinutes, originalEstimateMinutes = result.ticket.originalEstimateMinutes,
-                                    remainingEstimateMinutes = result.ticket.remainingEstimateMinutes)
-                            }
+                            publishEffort(result.ticket)
                             _ui.update { it.copy(worklogs = it.worklogs.filterNot { row -> row.id == worklogId }) }
                         }
                     }
@@ -599,7 +612,7 @@ class TicketDetailViewModel(
                 },
                 onFailure = { error -> _ui.update { it.copy(worklogError = error.message ?: "Failed to delete worklog") } },
             )
-            _ui.update { it.copy(worklogBusy = false) }
+            endEffortWrite()
         }
     }
 
@@ -611,8 +624,10 @@ class TicketDetailViewModel(
             runCatching { repository.loadWorklogs(ticketId) }.fold(
                 onSuccess = { result ->
                     synchronized(worklogLock) {
-                        if (!_ui.value.closed && revision == worklogRevision && read == worklogRead) {
-                            ticketSession.store.update(ticketId) {
+                        if (!_ui.value.closed && !effortWriting && revision == worklogRevision && read == worklogRead) {
+                            if (result.hasEstimates) publishEffort(WorklogTicketSummary(ticketId, result.timeSpentMinutes,
+                                originalEstimateMinutes = result.originalEstimateMinutes, remainingEstimateMinutes = result.remainingEstimateMinutes))
+                            else ticketSession.store.update(ticketId) {
                                 it.copy(timeSpentMinutes = result.timeSpentMinutes, loggedMinutes = result.timeSpentMinutes)
                             }
                             _ui.update { it.copy(worklogs = result.worklogs.newestFirst()) }

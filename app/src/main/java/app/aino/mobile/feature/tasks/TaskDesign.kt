@@ -474,6 +474,16 @@ internal fun TaskCardM3(
                 )
             }
         }
+        val spent = formatMinutes(task.timeSpentMinutes)
+        val original = task.originalEstimateMinutes?.let(::formatMinutes) ?: "—"
+        val remaining = task.remainingEstimateMinutes?.let(::formatMinutes) ?: "—"
+        Text(
+            "Spent $spent · Original $original · Remaining $remaining",
+            color = colors.textSecondary,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+            modifier = Modifier.semantics { contentDescription = "Time spent $spent; original estimate $original; remaining estimate $remaining" },
+        )
         Row(
             Modifier.padding(end = if (topTrailing != null) 10.dp else 0.dp),
             verticalAlignment = Alignment.CenterVertically,

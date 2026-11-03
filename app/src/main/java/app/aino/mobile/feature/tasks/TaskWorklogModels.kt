@@ -27,6 +27,9 @@ data class TaskWorklog(
 data class TaskWorklogList(
     val worklogs: List<TaskWorklog> = emptyList(),
     @SerialName("time_spent_minutes") val timeSpentMinutes: Int = 0,
+    @SerialName("original_estimate_minutes") val originalEstimateMinutes: Int? = null,
+    @SerialName("remaining_estimate_minutes") val remainingEstimateMinutes: Int? = null,
+    @kotlinx.serialization.Transient val hasEstimates: Boolean = false,
 )
 
 data class WorklogDraft(
