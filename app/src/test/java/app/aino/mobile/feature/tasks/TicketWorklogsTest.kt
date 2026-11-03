@@ -27,6 +27,37 @@ class TicketWorklogsTest {
         Dispatchers.resetMain()
     }
 
+    @Test fun loggingWorkDefaultsToAutomaticRemainingAdjustment() {
+        harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"logWork\":{\"allowed\":true}")
+        harness.worklogMutationResponse = """{"worklog":{"id":3,"day_worked":"2026-11-03","minutes":60},"ticket":{"id":201,"time_spent_minutes":60}}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        harness.detailViewModel.saveWorklog(WorklogDraft(timeSpent = "1h"))
+        harness.await { !harness.detailViewModel.ui.value.worklogBusy }
+        assertEquals("\"auto\"", harness.worklogPayload?.get("remaining_mode")?.toString())
+        assertFalse(harness.worklogPayload?.containsKey("remaining_estimate") == true)
+    }
+
+    @Test fun loggingWorkSendsEachRemainingChoiceAndUsesServerEstimates() {
+        harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"logWork\":{\"allowed\":true}")
+        harness.worklogMutationResponse = """{"worklog":{"id":3,"day_worked":"2026-11-03","minutes":60},"ticket":{"id":201,"time_spent_minutes":60,"original_estimate_minutes":120,"remaining_estimate_minutes":30}}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        for (mode in listOf("auto", "set", "leave")) {
+            harness.detailViewModel.saveWorklog(WorklogDraft(timeSpent = "1h", remainingMode = mode, remainingEstimate = "30m"))
+            harness.await { !harness.detailViewModel.ui.value.worklogBusy }
+            assertRemainingPayload(mode)
+            assertEquals(30, harness.detailViewModel.ui.value.detail?.remainingEstimateMinutes)
+            assertEquals(120, harness.boardViewModel.ui.value.tasks.single().originalEstimateMinutes)
+        }
+    }
+
+    private fun assertRemainingPayload(mode: String) {
+        assertEquals("\"$mode\"", harness.worklogPayload?.get("remaining_mode")?.toString())
+        if (mode == "set") assertEquals("\"30m\"", harness.worklogPayload?.get("remaining_estimate")?.toString())
+        else assertFalse(harness.worklogPayload?.containsKey("remaining_estimate") == true)
+    }
+
     @Test fun loggingWorkUpdatesListAndSharedTimeSpentWithTheEnteredFields() {
         harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"edit\":{\"allowed\":true},\"logWork\":{\"allowed\":true}")
         harness.worklogMutationResponse = """{"worklog":{"id":3,"day_worked":"2026-11-02","minutes":150,"comment":"Review","start_time":"09:30:00","canEdit":true,"canDelete":true},"ticket":{"id":201,"time_spent_minutes":150,"logged_minutes":150,"estimated_minutes":null},"warnings":[]}"""
@@ -65,6 +96,39 @@ class TicketWorklogsTest {
         assertEquals(kotlinx.serialization.json.JsonNull, harness.worklogPayload?.get("start_time"))
     }
 
+    @Test fun editingWorkSendsEachRemainingChoiceAndRefreshesBothEstimates() {
+        harness.worklogsResponse = """{"worklogs":[{"id":7,"day_worked":"2026-11-01","minutes":30,"canEdit":true}],"time_spent_minutes":30}"""
+        harness.worklogMutationResponse = """{"worklog":{"id":7,"day_worked":"2026-11-01","minutes":60,"canEdit":true},"ticket":{"id":201,"time_spent_minutes":60,"original_estimate_minutes":120,"remaining_estimate_minutes":30}}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        for (mode in listOf("auto", "set", "leave")) {
+            harness.detailViewModel.startEditWorklog(7)
+            assertEquals("auto", harness.detailViewModel.ui.value.worklogDraft?.remainingMode)
+            harness.detailViewModel.saveWorklog(WorklogDraft(timeSpent = "1h", remainingMode = mode, remainingEstimate = "30m"))
+            harness.await { !harness.detailViewModel.ui.value.worklogBusy }
+            assertRemainingPayload(mode)
+            assertEquals(listOf(7L), harness.detailViewModel.ui.value.worklogs.map { it.id })
+            assertEquals(30, harness.detailViewModel.ui.value.detail?.remainingEstimateMinutes)
+        }
+    }
+
+    @Test fun deletingWorkSendsEachRemainingChoiceAndRefreshesBothEstimates() {
+        harness.worklogMutationResponse = """{"ticket":{"id":201,"time_spent_minutes":0,"original_estimate_minutes":120,"remaining_estimate_minutes":30}}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        for (mode in listOf("auto", "set", "leave")) {
+            harness.worklogsResponse = """{"worklogs":[{"id":7,"day_worked":"2026-11-01","minutes":30,"canDelete":true}],"time_spent_minutes":30}"""
+            harness.detailViewModel.loadWorklogs()
+            harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+            harness.detailViewModel.deleteWorklog(7, mode, "30m")
+            harness.await { !harness.detailViewModel.ui.value.worklogBusy }
+            assertRemainingPayload(mode)
+            assertTrue(harness.detailViewModel.ui.value.worklogs.isEmpty())
+            assertEquals(0, harness.detailViewModel.ui.value.detail?.timeSpentMinutes)
+            assertEquals(30, harness.detailViewModel.ui.value.detail?.remainingEstimateMinutes)
+        }
+    }
+
     @Test fun deletingWorklogRemovesItAndUsesServerTotal() {
         harness.worklogsResponse = """{"worklogs":[{"id":7,"day_worked":"2026-11-01","minutes":30,"canDelete":true}],"time_spent_minutes":30}"""
         harness.worklogMutationResponse = """{"ticket":{"id":201,"time_spent_minutes":0}}"""
@@ -76,6 +140,31 @@ class TicketWorklogsTest {
         assertTrue(harness.detailViewModel.ui.value.worklogs.isEmpty())
         assertEquals(0, harness.detailViewModel.ui.value.detail?.timeSpentMinutes)
         assertEquals(0, harness.boardViewModel.ui.value.tasks.single().loggedMinutes)
+    }
+
+    @Test fun attendanceWarningsPersistAfterCreateAndEditUntilACleanSave() {
+        harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"logWork\":{\"allowed\":true}")
+        harness.worklogMutationResponse = """{"worklog":{"id":3,"day_worked":"2026-11-03","minutes":60,"canEdit":true},"ticket":{"id":201,"time_spent_minutes":60},"warnings":["ON_LEAVE","EXCEEDS_ATTENDANCE"]}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        val model = harness.detailViewModel
+        model.saveWorklog(WorklogDraft(timeSpent = "1h"))
+        harness.await { !model.ui.value.worklogBusy }
+        assertNull(model.ui.value.worklogDraft)
+        assertEquals(listOf("ON_LEAVE", "EXCEEDS_ATTENDANCE"), model.ui.value.worklogWarnings)
+        model.startEditWorklog(3)
+        model.dismissWorklog()
+        assertEquals(2, model.ui.value.worklogWarnings.size)
+        model.startEditWorklog(3)
+        harness.worklogMutationResponse = harness.worklogMutationResponse.replace("[\"ON_LEAVE\",\"EXCEEDS_ATTENDANCE\"]", "[\"ON_LEAVE\"]")
+        model.saveWorklog(WorklogDraft(timeSpent = "1h", dayWorked = "2026-11-02"))
+        harness.await { !model.ui.value.worklogBusy }
+        assertEquals(listOf("ON_LEAVE"), model.ui.value.worklogWarnings)
+        harness.worklogMutationResponse = harness.worklogMutationResponse.replace("[\"ON_LEAVE\"]", "[]")
+        model.startEditWorklog(3)
+        model.saveWorklog(WorklogDraft(timeSpent = "1h"))
+        harness.await { !model.ui.value.worklogBusy }
+        assertTrue(model.ui.value.worklogWarnings.isEmpty())
     }
 
     @Test fun invalidDurationStaysInlineAndKeepsDraftAndExistingWork() {
@@ -96,6 +185,50 @@ class TicketWorklogsTest {
         assertNull(ui.error)
     }
 
+    @Test fun inlineEstimatesUseServerCapabilityAndPublishForecastAndOverrun() {
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        val model = harness.detailViewModel
+        assertFalse(model.ui.value.canEditEstimate)
+        model.startEstimateEdit(EstimateKind.Original)
+        model.saveEstimate("2h")
+        assertNull(model.ui.value.estimateDraft)
+        assertNull(harness.estimatePayload)
+        harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"edit\":{\"allowed\":false},\"canEditEstimate\":{\"allowed\":true}")
+        harness.estimateResponse = """{"ticket":{"id":201,"time_spent_minutes":150,"original_estimate_minutes":120,"remaining_estimate_minutes":120}}"""
+        model.refreshDetail()
+        harness.await { !model.ui.value.detailLoading && !model.ui.value.worklogsLoading }
+        assertTrue(model.ui.value.canEditEstimate)
+        model.startEstimateEdit(EstimateKind.Original)
+        model.saveEstimate("2h")
+        harness.await { !model.ui.value.estimateBusy }
+        assertEquals("{\"original_estimate\":\"2h\"}", harness.estimatePayload.toString())
+        assertNull(model.ui.value.estimateDraft)
+        assertEquals(120, model.ui.value.detail?.originalEstimateMinutes)
+        assertEquals(120, model.ui.value.detail?.remainingEstimateMinutes)
+        assertTrue(model.ui.value.overEstimate)
+        assertEquals(120, harness.boardViewModel.ui.value.tasks.single().originalEstimateMinutes)
+        harness.estimateResponse = harness.estimateResponse.replace("\"remaining_estimate_minutes\":120", "\"remaining_estimate_minutes\":30")
+        model.startEstimateEdit(EstimateKind.Remaining)
+        assertEquals("2h", model.ui.value.estimateDraft?.value)
+        model.saveEstimate("30m")
+        harness.await { !model.ui.value.estimateBusy }
+        assertEquals("{\"remaining_estimate\":\"30m\"}", harness.estimatePayload.toString())
+        assertEquals(30, model.ui.value.detail?.remainingEstimateMinutes)
+        harness.estimateResponse = """{"ticket":{"id":201,"time_spent_minutes":150,"original_estimate_minutes":0,"remaining_estimate_minutes":0}}"""
+        model.startEstimateEdit(EstimateKind.Original)
+        model.saveEstimate("0m")
+        harness.await { !model.ui.value.estimateBusy }
+        assertTrue(model.ui.value.overEstimate)
+        harness.estimateResponse = """{"ticket":{"id":201,"time_spent_minutes":150,"original_estimate_minutes":null,"remaining_estimate_minutes":0}}"""
+        model.startEstimateEdit(EstimateKind.Original)
+        model.saveEstimate("")
+        harness.await { !model.ui.value.estimateBusy }
+        assertEquals("{\"original_estimate\":\"\"}", harness.estimatePayload.toString())
+        assertNull(model.ui.value.detail?.originalEstimateMinutes)
+        assertFalse(model.ui.value.overEstimate)
+    }
+
     @Test fun realtimeWorklogChangeRefreshesListAndTimeSpent() {
         harness.loadBoardPlanAndDetail()
         harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
@@ -111,6 +244,46 @@ class TicketWorklogsTest {
             ui.worklogs.any { it.id == 8L } && !ui.worklogsLoading && ui.detail?.timeSpentMinutes == 45
         }
         assertEquals(45, harness.detailViewModel.ui.value.detail?.timeSpentMinutes)
+    }
+
+    @Test fun personPickerAndAuthorPayloadUseOnlyServerCapability() {
+        harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"edit\":{\"allowed\":true},\"logWork\":{\"allowed\":true}")
+        harness.worklogMutationResponse = """{"worklog":{"id":3,"author_id":2,"logged_by_id":1,"day_worked":"2026-11-03","minutes":60,"canEdit":true},"ticket":{"id":201,"time_spent_minutes":60}}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        val model = harness.detailViewModel
+        assertFalse(model.ui.value.canLogWorkForOthers)
+        model.saveWorklog(WorklogDraft(timeSpent = "1h", authorId = 2))
+        harness.await { !model.ui.value.worklogBusy }
+        assertFalse(harness.worklogPayload?.containsKey("author_id") == true)
+        harness.detailResponse = harness.detailResponse.replace("\"edit\":{\"allowed\":true}", "\"edit\":{\"allowed\":false},\"logWorkForOthers\":{\"allowed\":true}")
+        model.refreshDetail()
+        harness.await { !model.ui.value.detailLoading && !model.ui.value.worklogsLoading }
+        assertTrue(model.ui.value.canLogWorkForOthers)
+        model.saveWorklog(WorklogDraft(timeSpent = "1h", authorId = 2))
+        harness.await { !model.ui.value.worklogBusy }
+        assertEquals("2", harness.worklogPayload?.get("author_id")?.toString())
+        model.startEditWorklog(3)
+        assertEquals(2L, model.ui.value.worklogDraft?.authorId)
+        model.saveWorklog(model.ui.value.worklogDraft!!.copy(timeSpent = "2h"))
+        harness.await { !model.ui.value.worklogBusy }
+        assertFalse(harness.worklogPayload?.containsKey("author_id") == true)
+        model.startEditWorklog(3)
+        model.saveWorklog(model.ui.value.worklogDraft!!.copy(authorId = 4))
+        harness.await { !model.ui.value.worklogBusy }
+        assertEquals("4", harness.worklogPayload?.get("author_id")?.toString())
+    }
+
+    @Test fun worklogsShowLoggedByOnlyWhenDifferentFromTheAuthor() {
+        harness.worklogsResponse = """{"worklogs":[
+            {"id":7,"author_id":2,"logged_by_id":1,"author":{"full_name":"Author"},"logged_by":{"full_name":"Admin"},"day_worked":"2026-11-03","minutes":60},
+            {"id":8,"author_id":2,"logged_by_id":2,"author":{"full_name":"Author"},"logged_by":{"full_name":"Author"},"day_worked":"2026-11-03","minutes":30}
+        ],"time_spent_minutes":90}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        val rows = harness.detailViewModel.ui.value.worklogs.associateBy { it.id }
+        assertEquals("Logged by Admin", rows[7L]?.loggedByAttribution)
+        assertNull(rows[8L]?.loggedByAttribution)
     }
 
     @Test fun serverCapabilitiesHideLogEditAndDeleteWithoutInferringFromRoles() {
@@ -167,6 +340,79 @@ class TicketWorklogsTest {
         harness.await { !harness.detailViewModel.ui.value.detailLoading && !harness.detailViewModel.ui.value.worklogsLoading }
         assertEquals(60, harness.detailViewModel.ui.value.detail?.timeSpentMinutes)
         assertEquals(listOf(3L), harness.detailViewModel.ui.value.worklogs.map { it.id })
+    }
+
+    @Test fun failedEstimateKeepsInlineDraftAndServerForecastUntilRetry() {
+        harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"canEditEstimate\":{\"allowed\":true}")
+            .dropLast(1) + ""","original_estimate_minutes":60,"remaining_estimate_minutes":30}"""
+        harness.estimateError = """{"code":"INVALID_ESTIMATE","error":"Enter an estimate using w, d, h or m, or 0m."}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        val model = harness.detailViewModel
+        model.startEstimateEdit(EstimateKind.Remaining)
+        model.saveEstimate("abc")
+        harness.await { !model.ui.value.estimateBusy }
+        assertEquals("abc", model.ui.value.estimateDraft?.value)
+        assertEquals("Enter an estimate using w, d, h or m, or 0m.", model.ui.value.estimateError)
+        assertEquals(30, model.ui.value.detail?.remainingEstimateMinutes)
+        model.updateEstimateDraft("0m")
+        assertNull(model.ui.value.estimateError)
+        harness.estimateError = null
+        harness.estimateResponse = """{"ticket":{"id":201,"time_spent_minutes":0,"original_estimate_minutes":60,"remaining_estimate_minutes":0}}"""
+        model.saveEstimate("0m")
+        harness.await { !model.ui.value.estimateBusy }
+        assertNull(model.ui.value.estimateDraft)
+        assertEquals(0, model.ui.value.detail?.remainingEstimateMinutes)
+    }
+
+    @Test fun staleTicketRefreshCannotUndoSavedOriginalAndRemainingEstimates() {
+        harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"canEditEstimate\":{\"allowed\":true}")
+        harness.estimateResponse = """{"ticket":{"id":201,"time_spent_minutes":45,"original_estimate_minutes":120,"remaining_estimate_minutes":75}}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        val model = harness.detailViewModel
+        val gate = TicketSessionHarness.HeldTicketResponse().also { harness.detailResponseGate = it }
+        model.refreshDetail()
+        gate.awaitStarted()
+        model.startEstimateEdit(EstimateKind.Original)
+        model.saveEstimate("2h")
+        harness.await { !model.ui.value.estimateBusy }
+        gate.release()
+        harness.await { !model.ui.value.detailLoading && !model.ui.value.worklogsLoading }
+        assertEquals(120, model.ui.value.detail?.originalEstimateMinutes)
+        assertEquals(75, model.ui.value.detail?.remainingEstimateMinutes)
+        assertEquals(45, model.ui.value.detail?.timeSpentMinutes)
+    }
+
+    @Test fun staleWorklogReadCannotUndoAnInlineEstimateSave() {
+        harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"canEditEstimate\":{\"allowed\":true}")
+        harness.estimateResponse = """{"ticket":{"id":201,"time_spent_minutes":45,"original_estimate_minutes":120,"remaining_estimate_minutes":75}}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        val model = harness.detailViewModel
+        val gate = TicketSessionHarness.HeldTicketResponse().also { harness.worklogsReadGate = it }
+        model.loadWorklogs()
+        gate.awaitStarted()
+        model.startEstimateEdit(EstimateKind.Original)
+        model.saveEstimate("2h")
+        harness.await { !model.ui.value.estimateBusy }
+        gate.release()
+        harness.await { !model.ui.value.worklogsLoading }
+        assertEquals(45, model.ui.value.detail?.timeSpentMinutes)
+        assertEquals(120, model.ui.value.detail?.originalEstimateMinutes)
+        assertEquals(75, harness.boardViewModel.ui.value.tasks.single().remainingEstimateMinutes)
+    }
+
+    @Test fun failedDeleteKeepsWorklogAndShowsInlineErrorForRetry() {
+        harness.worklogsResponse = """{"worklogs":[{"id":7,"day_worked":"2026-11-01","minutes":30,"canDelete":true}],"time_spent_minutes":30}"""
+        harness.worklogError = """{"code":"INVALID_ESTIMATE","error":"Choose auto, set or leave for the remaining estimate."}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        harness.detailViewModel.deleteWorklog(7, "set", "abc")
+        harness.await { !harness.detailViewModel.ui.value.worklogBusy }
+        assertEquals(7L, harness.detailViewModel.ui.value.worklogs.single().id)
+        assertEquals("Choose auto, set or leave for the remaining estimate.", harness.detailViewModel.ui.value.worklogError)
+        assertNull(harness.detailViewModel.ui.value.error)
     }
 
     @Test fun openingTicketLoadsNewestWorklogsAndAuthoritativeTimeSpent() {

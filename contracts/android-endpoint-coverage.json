@@ -5,8 +5,8 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 512,
-    "covered": 271,
+    "platform": 513,
+    "covered": 272,
     "waived": 234,
     "clientRetired": 3,
     "missing": 6,
@@ -1136,6 +1136,11 @@
     {
       "method": "GET",
       "path": "/api/tasks/:param/detail",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/estimates",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {

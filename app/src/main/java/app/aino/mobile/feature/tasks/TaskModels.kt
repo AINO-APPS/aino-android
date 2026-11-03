@@ -68,6 +68,8 @@ data class TaskCapabilityActions(
     val placeInSprint: TaskCapabilityDecision = TaskCapabilityDecision(),
     val schedule: TaskCapabilityDecision = TaskCapabilityDecision(),
     val logWork: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val logWorkForOthers: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val canEditEstimate: TaskCapabilityDecision = TaskCapabilityDecision(),
 )
 
 @Serializable
@@ -111,6 +113,8 @@ data class Task(
     /** Compatibility alias of the computed worklog total. */
     @SerialName("logged_minutes") val loggedMinutes: Int = 0,
     @SerialName("time_spent_minutes") val timeSpentMinutes: Int = loggedMinutes,
+    @SerialName("original_estimate_minutes") val originalEstimateMinutes: Int? = estimatedMinutes,
+    @SerialName("remaining_estimate_minutes") val remainingEstimateMinutes: Int? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("completed_at") val completedAt: String? = null,
     @SerialName("acceptance_criteria") val acceptanceCriteriaRaw: JsonElement? = null,

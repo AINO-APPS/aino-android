@@ -94,19 +94,24 @@ time and comment. Server `INVALID_DURATION` errors stay inline without losing
 the draft. The newest-first list shows the author, day, duration and comment;
 `capabilities.can.logWork.allowed` and each row's `canEdit` / `canDelete` decide
 which actions appear. Writes publish server-computed time spent into the shared
-Ticket store, and realtime/reconnect/polling refresh worklogs. Estimates, admin
-behalf logging and attendance warnings remain ticket 08 work. The Attendance
-clock-in timer is unchanged.
+Ticket store, and realtime/reconnect/polling refresh worklogs. Original and
+remaining estimates are editable inline only when `canEditEstimate` is allowed;
+zero estimates still show overruns. Create, edit and delete offer automatic
+remaining adjustment, set-to and leave-unchanged choices. The optional person
+picker follows `logWorkForOthers`, and entries show logged-by attribution when
+it differs from the author. Attendance warnings remain visible after a save,
+until the next successful worklog save replaces them. The Attendance clock-in
+timer is unchanged.
 
-Endpoint snapshots are regenerated against the explicit platform integration
-checkout using `node scripts/check-endpoint-parity.mjs <platform-path> --update`.
-Add `--platform-ref=<commit>` to pin the inventory when that checkout is shared
-with concurrent integration work (ticket 07 uses `cca6d60c`). Android-only
-retirement entries in `docs/parity-waivers.json` mark the three legacy ticket
-timer routes as client-retired, not implemented or pending. There were no
-Android-owned temporary worklog waivers to remove; platform-owned waivers are
-left untouched. `TicketWorklogsTest` exercises the real repository and view
-model through the existing fake HTTP harness.
+Endpoint snapshots are regenerated against the paired platform checkout using
+`node scripts/check-endpoint-parity.mjs <platform-path> --update`. Add
+`--platform-ref=<commit>` to pin an inventory when the checkout is shared.
+Retirement entries in `docs/parity-waivers.json` mark the three legacy ticket
+timer routes as client-retired, not implemented or pending. All five manual
+worklog/estimate operations are proven without temporary waivers on either
+platform. `TicketWorklogsTest` exercises remaining choices for create/edit/delete,
+inline estimates, capability-driven visibility, attribution and warning persistence
+through the real repository and view model with the fake HTTP harness.
 
 Plan opens on Backlog, followed by Scheduled and Sprint (when enabled); Sprint
 retains its board and planning views. Backlog groups live work by sprint and
