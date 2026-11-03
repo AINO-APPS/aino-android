@@ -119,6 +119,21 @@ ViewModels keyed by session, so signing back in (even as the same user) loads
 fresh data. Cold starts can still rebuild a Plan using the per-user response
 cache. All Plan surfaces now share this session store.
 
+Cancelled Tickets leave active columns, Scheduled and search immediately. They
+remain discoverable in a collapsed Cancelled history section under their sprint
+and in Backlog's Completed section when they belong there. History refresh
+failures are reported without discarding known rows. Detail continues to honour
+server-supplied capabilities; cancellation does not invent extra edit permissions.
+Failed moves and Undo restore only their own optimistic copy, never a newer
+Ticket. Comment reads reconcile additions, edits and deletions made while the
+request was in flight. A successful bulk write remains successful even if a
+follow-up read fails: available rows reconcile, loaded views refresh, and the
+partial refresh failure is reported.
+
+Home uses one My Work card with grouped work, status totals and progress. In week
+mode the totals cover this week; the separate Overdue group is additional context.
+Plan tabs share the available width, and Board dragging previews the full card.
+
 The session also owns a read-only `PlanScope` for user and Team context, feature
 flags, sprint selection, shared filters and metadata. Only `TaskViewModel` writes
 it; other Plan ViewModels observe the session instead of each other. Team changes

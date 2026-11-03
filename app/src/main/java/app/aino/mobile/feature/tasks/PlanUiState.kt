@@ -41,12 +41,7 @@ data class PlanUiState(
     val filters get() = planScope.filters
     val selectedEpicId get() = planScope.selectedEpicId
     val agile get() = planScope.agile
-    internal fun inScope(ticket: Task): Boolean = when {
-        !showsTeamPicker(role) -> teamId == null || ticket.teamId == teamId
-        selectedTeamId == -1L -> ticket.teamId == null
-        selectedTeamId != null -> ticket.teamId == selectedTeamId
-        else -> true
-    }
+    internal fun inScope(ticket: Task): Boolean = planScope.contains(ticket)
     // Cancelled Tickets stay members so the Completed section can list them;
     // `backlog` (open work) excludes them through `isClosed`.
     internal fun containsPlanTicket(ticket: Task): Boolean =

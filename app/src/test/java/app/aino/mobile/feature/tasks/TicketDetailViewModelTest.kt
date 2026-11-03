@@ -46,6 +46,54 @@ class TicketDetailViewModelTest {
 
     private fun withComments(items: String) = harness.original.dropLast(1) + ""","comments":[$items]}"""
 
+    @Test fun loadingCommentsKeepsConcurrentAddEditAndDelete() = lateCommentsKeepMutations(realtime = false)
+
+    @Test fun realtimeCommentsKeepConcurrentAddEditAndDelete() = lateCommentsKeepMutations(realtime = true)
+
+    private fun lateCommentsKeepMutations(realtime: Boolean) {
+        val baseline = """{"id":1,"content":"Old edit"},{"id":2,"content":"Delete me"},{"id":3,"content":"Old remote"}"""
+        harness.detailResponse = withComments(baseline)
+        harness.loadBoardPlanAndDetail()
+        harness.commentsResponse = """[$baseline,{"id":4,"content":"Remote addition"}]"""
+        val gate = HeldTicketResponse().also { harness.commentsReadGate = it }
+        if (realtime) {
+            harness.session.onRealtimeEvent("task_updated", buildJsonObject {
+                put("taskId", 201)
+                put("action", "comment")
+            })
+        } else harness.detailViewModel.loadComments()
+        gate.awaitStarted()
+
+        harness.commentWrites = 4
+        harness.detailViewModel.addComment(201, "New local", null, emptyMap()) {}
+        harness.detailViewModel.editComment(201, 1, "Edited from detail") {}
+        harness.detailViewModel.deleteComment(201, 2)
+        harness.detailViewModel.acceptConfirm()
+        harness.await {
+            val comments = harness.detailViewModel.ui.value.detailComments
+            comments.any { it.id == 5L } && comments.none { it.id == 2L } &&
+                comments.firstOrNull { it.id == 1L }?.content == "Edited from detail"
+        }
+        gate.release()
+        harness.await { harness.detailViewModel.ui.value.detailComments.any { it.id == 4L } }
+        assertEquals(
+            listOf("Edited from detail", "Old remote", "Remote addition", "From detail"),
+            harness.detailViewModel.ui.value.detailComments.map { it.content },
+        )
+        harness.await { harness.boardViewModel.ui.value.tasks.single().commentCount == 4 }
+    }
+
+    @Test fun failedCommentLoadKeepsTheSharedThreadAndReportsTheFailure() {
+        harness.detailResponse = withComments("""{"id":1,"content":"Keep me"}""")
+        harness.loadBoardPlanAndDetail()
+        val countBefore = harness.detailViewModel.ui.value.detail?.commentCount
+        harness.rejectCommentReads = true
+        harness.detailViewModel.loadComments()
+        harness.await { harness.detailViewModel.ui.value.error != null && !harness.detailViewModel.ui.value.commentsLoading }
+        assertEquals(listOf("Keep me"), harness.detailViewModel.ui.value.detailComments.map { it.content })
+        assertEquals(countBefore, harness.detailViewModel.ui.value.detail?.commentCount)
+    }
+
     @Test fun refreshingCommentsReconcilesServerChangesWithoutLosingConcurrentMutations() {
         harness.detailResponse = withComments(
             """{"id":1,"content":"Old edit"},{"id":2,"content":"Delete me"},{"id":3,"content":"Old remote"}""",

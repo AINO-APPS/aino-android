@@ -174,25 +174,13 @@ class TicketDetailViewModel(
     fun refreshDetail() {
         if (_ui.value.closed) return
         val removalToken = ticketSession.store.removalToken(ticketId)
-        val commentsBefore = ticketSession.commentThreads.value[ticketId]?.items.orEmpty().associateBy { it.id }
+        val commentsBefore = ticketSession.commentThreads.value[ticketId]?.items.orEmpty()
         _ui.update { it.copy(detailLoading = true, detailStale = false) }
         io {
             runCatching { repository.loadDetail(ticketId) }.fold(
                 onSuccess = { ticket ->
                     save(ticket, removalToken)
-                    ticketSession.updateCommentThread(ticketId) { thread ->
-                        val current = thread.items.associateBy { it.id }
-                        val changed = (commentsBefore.keys + current.keys).filterTo(mutableSetOf()) {
-                            commentsBefore[it] != current[it]
-                        }
-                        val fetchedIds = ticket.comments.mapTo(mutableSetOf()) { it.id }
-                        // Keep local additions, edits and deletions completed while this read was in flight.
-                        thread.copy(
-                            items = ticket.comments.mapNotNull { if (it.id in changed) current[it.id] else it } +
-                                thread.items.filter { it.id in changed && it.id !in fetchedIds },
-                            loading = false,
-                        )
-                    }
+                    ticketSession.reconcileCommentThread(ticketId, commentsBefore, ticket.comments)
                     ticketSession.store.update(ticketId) {
                         val items = ticketSession.commentThreads.value[ticketId]?.items.orEmpty()
                         if (items == ticket.comments) it else it.copy(commentCount = items.size)
@@ -221,8 +209,16 @@ class TicketDetailViewModel(
         val cached = ticketSession.commentThreads.value[ticketId] ?: CommentThread(ticketId)
         ticketSession.setCommentThread(cached.copy(loading = true))
         io {
-            val items = runCatching { repository.loadComments(ticketId) }.getOrDefault(emptyList())
-            ticketSession.setCommentThread(CommentThread(ticketId, items, loading = false))
+            runCatching { repository.loadComments(ticketId) }.fold(
+                onSuccess = { fetched ->
+                    val items = ticketSession.reconcileCommentThread(ticketId, cached.items, fetched)
+                    ticketSession.store.update(ticketId) { it.copy(commentCount = items.size) }
+                },
+                onFailure = { error ->
+                    ticketSession.updateCommentThread(ticketId) { it.copy(loading = false) }
+                    fail(error, "Failed to load comments")
+                },
+            )
         }
     }
 

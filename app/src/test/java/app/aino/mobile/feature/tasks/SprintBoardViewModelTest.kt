@@ -7,6 +7,10 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.first
 import org.junit.Before
 import org.junit.Test
 
@@ -22,6 +26,94 @@ class SprintBoardViewModelTest {
     @After fun tearDown() {
         harness.close()
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun failedUndoKeepsANewerTicketAndOnlyOptimisticallyChangesStatus() {
+        harness.loadBoardPlanAndDetail()
+        harness.saved = harness.original.replace("\"workflow_state_id\":101", "\"workflow_state_id\":102")
+            .replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"in_progress\"")
+        harness.boardViewModel.moveTask(harness.boardViewModel.ui.value.tasks.single(), WorkflowState(102, "in_progress", "In Progress"))
+        val notice = runBlocking { withTimeout(5_000) { harness.session.notices.first() } }
+        assertEquals("Undo", notice.actionLabel)
+        harness.detailResponse = harness.saved.replace("Ship release", "Edited after move")
+        harness.detailViewModel.refreshDetail()
+        harness.await { harness.detailViewModel.ui.value.detail?.title == "Edited after move" }
+        harness.holdAndRejectNextStatusWrite()
+
+        notice.action?.invoke()
+        assertTrue(harness.awaitStatusWrite())
+        assertEquals("Edited after move", harness.boardViewModel.ui.value.tasks.single().title)
+        assertEquals("todo", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
+        harness.detailResponse = harness.saved.replace("Ship release", "Newer during Undo")
+        harness.detailViewModel.refreshDetail()
+        harness.await { harness.detailViewModel.ui.value.detail?.title == "Newer during Undo" }
+        harness.finishStatusWrite()
+        harness.await { harness.boardViewModel.ui.value.error != null }
+        assertEquals("Newer during Undo", harness.boardViewModel.ui.value.tasks.single().title)
+        assertEquals("in_progress", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
+    }
+
+    @Test
+    fun failedUndoWithoutANewerTicketRestoresTheWholeCurrentCopy() {
+        harness.loadBoardPlanAndDetail()
+        harness.saved = harness.original.replace("\"workflow_state_id\":101", "\"workflow_state_id\":102")
+            .replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"in_progress\"")
+        harness.boardViewModel.moveTask(harness.boardViewModel.ui.value.tasks.single(), WorkflowState(102, "in_progress", "In Progress"))
+        val notice = runBlocking { withTimeout(5_000) { harness.session.notices.first() } }
+        harness.holdAndRejectNextStatusWrite()
+        notice.action?.invoke()
+        assertTrue(harness.awaitStatusWrite())
+        harness.finishStatusWrite()
+        harness.await { harness.boardViewModel.ui.value.error != null }
+        assertEquals("in_progress", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
+        assertEquals(102L, harness.boardViewModel.ui.value.tasks.single().workflowStateId)
+    }
+
+    @Test
+    fun bareCancellationResponseCanBeEnrichedByLaterHistoryLoads() {
+        harness.boardTicket = harness.original.replace("\"can\":{", "\"can\":{\"cancel\":{\"allowed\":true},")
+        harness.detailResponse = harness.boardTicket
+        harness.loadBoardPlanAndDetail()
+        harness.boardViewModel.requestDelete(harness.boardViewModel.ui.value.tasks.single())
+        harness.boardViewModel.acceptConfirm()
+        harness.await { harness.boardViewModel.ui.value.tasks.isEmpty() }
+        harness.boardTicket = ""
+        harness.cancelledRows = harness.original.replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
+        harness.boardViewModel.loadSprint()
+        harness.await { harness.boardViewModel.ui.value.cancelled.size == 1 }
+        assertEquals("cancelled", harness.boardViewModel.ui.value.cancelled.single().workflowStateKey)
+        assertTrue(harness.boardViewModel.ui.value.tasks.isEmpty())
+    }
+
+    @Test
+    fun lateHistoryReadKeepsATicketCancelledWhileItWasLoading() {
+        harness.boardTicket = harness.original.replace("\"can\":{", "\"can\":{\"cancel\":{\"allowed\":true},")
+        harness.detailResponse = harness.boardTicket
+        harness.loadBoardPlanAndDetail()
+        val gate = TicketSessionHarness.HeldTicketResponse().also { harness.cancelledReadGate = it }
+        harness.boardViewModel.loadSprint()
+        gate.awaitStarted()
+        harness.cancelResponse = harness.boardTicket.replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
+        harness.boardViewModel.requestDelete(harness.boardViewModel.ui.value.tasks.single())
+        harness.boardViewModel.acceptConfirm()
+        harness.await { harness.boardViewModel.ui.value.cancelled.size == 1 }
+        val statsBefore = harness.sprintStatsReads
+        gate.release()
+        // The statistics read follows history, so it confirms the held response was applied.
+        harness.await { harness.sprintStatsReads > statsBefore }
+        assertEquals(listOf(201L), harness.boardViewModel.ui.value.cancelled.map { it.id })
+        assertTrue(harness.boardViewModel.ui.value.tasks.isEmpty())
+    }
+
+    @Test
+    fun cancelledHistoryLoadFailureIsVisible() {
+        harness.loadBoardPlanAndDetail()
+        harness.rejectCancelledReads = true
+        harness.boardViewModel.loadSprint()
+        harness.await { harness.boardViewModel.ui.value.error != null }
+        assertEquals("History offline", harness.boardViewModel.ui.value.error)
+        assertEquals(1, harness.boardViewModel.ui.value.tasks.size)
     }
 
     @Test

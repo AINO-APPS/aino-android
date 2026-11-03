@@ -171,4 +171,44 @@ class PlanViewModelTest {
             harness.close()
         }
     }
+
+    @Test fun bulkWriteReconcilesSuccessfulReadsAndReloadsEvenWhenAnotherReadFails() {
+        val placed = java.util.concurrent.atomic.AtomicBoolean()
+        val planReads = java.util.concurrent.atomic.AtomicInteger()
+        val bulkRequests = java.util.concurrent.atomic.AtomicInteger()
+        fun ticket(id: Int) = """{"id":$id,"title":"Ticket $id","container":"${if (placed.get()) "sprint" else "backlog"}","sprint_id":${if (placed.get()) "10" else "null"},"capabilities":{"can":{"placeInSprint":{"allowed":true}}}}"""
+        val repository = TaskRepository(ApiClient { request ->
+            val body = when {
+                request.path == "tasks/bulk" -> {
+                    bulkRequests.incrementAndGet()
+                    placed.set(true)
+                    """{"changed":2,"results":[{"id":201,"ok":true},{"id":202,"ok":true}]}"""
+                }
+                request.path.startsWith("tasks/backlog") -> {
+                    planReads.incrementAndGet()
+                    """{"tasks":[${if (placed.get()) "" else "${ticket(201)},${ticket(202)}"}]}"""
+                }
+                request.path == "tasks/201/detail" -> ticket(201)
+                request.path == "tasks/202/detail" -> throw java.io.IOException("offline")
+                else -> "[]"
+            }
+            ApiResponse(200, emptyMap(), body.toByteArray())
+        })
+        val plan = PlanViewModel(repository, session)
+        val detail = TicketDetailViewModel(201, repository, session)
+        plan.loadBacklog()
+        await { plan.ui.value.backlog.size == 2 && detail.ui.value.detail != null }
+        val readsBefore = planReads.get()
+        plan.toggleSelection(201)
+        plan.toggleSelection(202)
+        plan.bulkAction("move_to_sprint", "10")
+
+        await {
+            detail.ui.value.detail?.container == "sprint" &&
+                plan.ui.value.error?.contains("2 updated; could not refresh") == true && planReads.get() > readsBefore
+        }
+        assertEquals(1, bulkRequests.get())
+        assertTrue(plan.ui.value.selectedIds.isEmpty())
+        assertEquals(10L, detail.ui.value.detail?.sprintId)
+    }
 }

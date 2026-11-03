@@ -124,12 +124,7 @@ data class TaskUiState(
     val selectedEpicId get() = planScope.selectedEpicId
 
 
-    internal fun inScope(ticket: Task): Boolean = when {
-        !showsTeamPicker(role) -> teamId == null || ticket.teamId == teamId
-        selectedTeamId == -1L -> ticket.teamId == null
-        selectedTeamId != null -> ticket.teamId == selectedTeamId
-        else -> true
-    }
+    internal fun inScope(ticket: Task): Boolean = planScope.contains(ticket)
 
     private fun resolve(ids: List<Long>, belongs: (Task) -> Boolean): List<Task> =
         ids.mapNotNull(tickets::get).filter { inScope(it) && belongs(it) }

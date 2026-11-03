@@ -26,6 +26,13 @@ data class PlanScope(
     val filters: TaskFilters = TaskFilters(),
     val selectedEpicId: Long? = null,
 ) {
+    internal fun contains(ticket: Task): Boolean = when {
+        !showsTeamPicker(role) -> teamId == null || ticket.teamId == teamId
+        selectedTeamId == -1L -> ticket.teamId == null
+        selectedTeamId != null -> ticket.teamId == selectedTeamId
+        else -> true
+    }
+
     val teamScope: TeamScope get() = scopeForTeam(selectedTeamId)
     val teamSprints: List<AvailableSprint> get() {
         val scoped = sprintsForTeam(sprints, selectedTeamId, showsTeamPicker(role))

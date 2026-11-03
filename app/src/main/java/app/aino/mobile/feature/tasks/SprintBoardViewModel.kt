@@ -48,12 +48,7 @@ data class SprintBoardUiState(
     internal fun containsCancelledTicket(ticket: Task): Boolean =
         ticket.container == "sprint" && ticket.sprintId == selectedSprintId && ticket.isCancelled
 
-    private fun inScope(ticket: Task): Boolean = when {
-        !showsTeamPicker(role) -> planScope.teamId == null || ticket.teamId == planScope.teamId
-        selectedTeamId == -1L -> ticket.teamId == null
-        selectedTeamId != null -> ticket.teamId == selectedTeamId
-        else -> true
-    }
+    private fun inScope(ticket: Task): Boolean = planScope.contains(ticket)
 
     private val boardTickets get() = boardTicketIds.mapNotNull(tickets::get)
         .filter { inScope(it) && containsBoardTicket(it) }
@@ -182,6 +177,7 @@ class SprintBoardViewModel(
     fun loadSprint() {
         val sprintId = _ui.value.selectedSprintId
         val teamId = _ui.value.selectedTeamId
+        val teamScope = _ui.value.planScope.teamScope
         val generation = sprintGeneration.incrementAndGet()
         sprintJob?.cancel()
         if (sprintId == null) {
@@ -213,11 +209,17 @@ class SprintBoardViewModel(
             )
             // The board endpoint drops cancelled Tickets; fetch them as history. A failure
             // keeps whatever cancelled rows are already known rather than blanking them.
-            runCatching { repository.loadCancelledSprintTasks(sprintId, _ui.value.planScope.teamScope) }.onSuccess { cancelled ->
+            runCatching { repository.loadCancelledSprintTasks(sprintId, teamScope) }.onSuccess { cancelled ->
                 if (sprintGeneration.get() != generation || _ui.value.selectedSprintId != sprintId || _ui.value.selectedTeamId != teamId) return@onSuccess
                 val rows = cancelled.filter { it.isCancelled }
                 ticketSession.store.upsert(rows)
-                _ui.update { if (it.selectedSprintId == sprintId) it.copy(cancelledTicketIds = rows.map { row -> row.id }) else it }
+                _ui.update {
+                    if (it.selectedSprintId == sprintId) it.copy(
+                        cancelledTicketIds = (rows.map { row -> row.id } + it.cancelledTicketIds).distinct(),
+                    ) else it
+                }
+            }.onFailure {
+                if (sprintGeneration.get() == generation) fail(failure(it, "Failed to load cancelled tickets"))
             }
             val stats = runCatching { repository.loadSprintStats(sprintId) }.getOrNull() ?: return@io
             _ui.update {
@@ -243,7 +245,7 @@ class SprintBoardViewModel(
                 onSuccess = { saved ->
                     applyTask(saved)
                     loadSprint()
-                    notify("Moved to ${state.name.ifEmpty { state.key }}", "Undo") { revertMove(previous, state) }
+                    notify("Moved to ${state.name.ifEmpty { state.key }}", "Undo") { revertMove(previous) }
                 },
                 onFailure = {
                     if (ticketSession.store.restoreIfCurrent(optimistic, previous)) ticketSession.planRevision.incrementAndGet()
@@ -253,13 +255,19 @@ class SprintBoardViewModel(
         }
     }
 
-    private fun revertMove(previous: Task, from: WorkflowState) {
-        val current = _ui.value.tasks.firstOrNull { it.id == previous.id } ?: previous
-        applyTask(previous)
+    private fun revertMove(previous: Task) {
+        val current = ticketSession.store.state.value.tickets[previous.id] ?: return
+        val optimistic = applyTask(current.copy(
+            workflowStateKey = previous.workflowStateKey,
+            workflowStateId = previous.workflowStateId,
+        ))
         io {
             runCatching { repository.updateStatus(previous.id, previous.workflowStateKey.orEmpty()) }.fold(
                 onSuccess = { applyTask(it); loadSprint() },
-                onFailure = { applyTask(current.copy(workflowStateKey = from.key)); fail(failure(it, "Failed to undo move")) },
+                onFailure = {
+                    if (ticketSession.store.restoreIfCurrent(optimistic, current)) ticketSession.planRevision.incrementAndGet()
+                    fail(failure(it, "Failed to undo move"))
+                },
             )
         }
     }

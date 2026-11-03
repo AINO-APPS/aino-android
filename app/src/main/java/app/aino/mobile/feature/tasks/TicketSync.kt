@@ -145,10 +145,12 @@ internal class TicketSync(
 
     private suspend fun syncComments(id: Long) {
         val watchingThread = id in session.commentThreads.value
-        val items = runCatching { repository.loadComments(id) }.getOrNull() ?: return
-        if (watchingThread) {
-            session.setCommentThread(CommentThread(id, items, loading = false))
+        val before = session.commentThreads.value[id]?.items.orEmpty()
+        val fetched = runCatching { repository.loadComments(id) }.getOrElse {
+            session.publishNotice(TaskNotice("Failed to refresh ticket comments"))
+            return
         }
+        val items = if (watchingThread) session.reconcileCommentThread(id, before, fetched) else fetched
         session.planRevision.incrementAndGet()
         session.store.update(id) { it.copy(commentCount = items.size) }
         session.store.highlight(id)

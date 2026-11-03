@@ -181,17 +181,26 @@ class TicketSessionUiTest {
         val planReads = harness.planReads
         val scheduledReads = harness.scheduledReads
         val detailReads = harness.detailReads
+        harness.boardTicket = harness.original.replace("Ship release", "Refreshed release")
+        harness.detailResponse = harness.boardTicket
+        harness.planRows = """{"id":203,"title":"Refreshed backlog","container":"backlog"}"""
+        harness.scheduledRows = """{"id":202,"title":"Refreshed schedule","container":"scheduled","planned_date":"${harness.scheduledViewModel.ui.value.window.first}"}"""
 
         harness.session.onReconnect()
         harness.await {
             harness.boardReads > boardReads &&
                 harness.planReads > planReads &&
                 harness.scheduledReads > scheduledReads &&
-                harness.detailReads > detailReads
+                harness.detailReads > detailReads &&
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.title == "Refreshed release" &&
+                harness.detailViewModel.ui.value.detail?.title == "Refreshed release" &&
+                harness.viewModelPlan.ui.value.backlog.any { it.id == 203L } &&
+                harness.scheduledViewModel.ui.value.scheduled.any { it.id == 202L }
         }
 
         assertEquals(boardReads + 1, harness.boardReads)
-        assertEquals(planReads + 1, harness.planReads)
+        // A concurrent Detail refresh invalidates Plan's aggregate baseline and retries its read.
+        assertTrue(harness.planReads >= planReads + 1)
         assertEquals(scheduledReads + 1, harness.scheduledReads)
         assertEquals(detailReads + 1, harness.detailReads)
     }
@@ -815,6 +824,7 @@ internal class TicketSessionHarness {
     @Volatile var historyReads = 0
     @Volatile var planReads = 0
     @Volatile var boardReads = 0
+    @Volatile var sprintStatsReads = 0
     @Volatile var scheduledReads = 0
     @Volatile var commentReads = 0
     @Volatile var commentWrites = 0
@@ -830,6 +840,10 @@ internal class TicketSessionHarness {
     @Volatile var detailResponseGate: HeldTicketResponse? = null
     @Volatile var boardResponseGate: HeldTicketResponse? = null
     @Volatile var commentResponseGate: HeldTicketResponse? = null
+    @Volatile var commentsReadGate: HeldTicketResponse? = null
+    @Volatile var cancelledReadGate: HeldTicketResponse? = null
+    @Volatile var rejectCommentReads = false
+    @Volatile var rejectCancelledReads = false
     @Volatile var rejectPlanLoads = false
     @Volatile var rejectDetailReads = false
     @Volatile var detailErrorStatus: Int? = null
@@ -858,6 +872,7 @@ internal class TicketSessionHarness {
                 val response = """{"sprint":{"id":10,"name":"Sprint"},"columns":[{"stateId":102,"count":$boardColumnCount,"accepting":true}],"tickets":[$boardTicket]}"""
                 boardResponseGate?.hold(response) ?: response
             }
+            request.path == "sprints/10/stats" -> { sprintStatsReads++; "{}" }
             request.path.startsWith("tasks/backlog?") -> {
                 planReads++
                 if (rejectPlanLoads) throw java.io.IOException("offline")
@@ -868,7 +883,11 @@ internal class TicketSessionHarness {
                 """{"tasks":[$scheduledRows]}"""
             }
             request.path.startsWith("tasks/search?") -> "[$searchRows]"
-            request.path.startsWith("tasks?") && "status=cancelled" in request.path -> """{"tasks":[$cancelledRows]}"""
+            request.path.startsWith("tasks?") && "status=cancelled" in request.path -> {
+                if (rejectCancelledReads) throw java.io.IOException("History offline")
+                val response = """{"tasks":[$cancelledRows]}"""
+                cancelledReadGate?.hold(response) ?: response
+            }
             request.path == "tasks/201" && request.method == "DELETE" ->
                 if (cancelResponse.isBlank()) "{}" else """{"cancelled":true,"id":201,"task":$cancelResponse}"""
             request.path == "tasks/201/detail" -> {
@@ -882,7 +901,8 @@ internal class TicketSessionHarness {
             }
             request.path == "tasks/201/comments" && request.method == "GET" -> {
                 commentReads++
-                commentsResponse
+                if (rejectCommentReads) throw java.io.IOException("Comments offline")
+                commentsReadGate?.hold(commentsResponse) ?: commentsResponse
             }
             request.path == "tasks/201/comments" && request.method == "POST" -> {
                 commentWrites++
@@ -949,6 +969,8 @@ internal class TicketSessionHarness {
         detailResponseGate?.release()
         boardResponseGate?.release()
         commentResponseGate?.release()
+        commentsReadGate?.release()
+        cancelledReadGate?.release()
         viewModels.clear()
         session.close()
     }

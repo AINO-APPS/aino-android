@@ -365,20 +365,29 @@ class PlanViewModel(
         }.firstOrNull { !it.allowed }
         if (denied != null) return notify(denied.reasonCopy())
         io {
-            runCatching {
-                val result = repository.bulkAction(BulkPayload(ids, action, value))
-                val changedIds = if (result.results.isNotEmpty()) {
-                    result.results.filter { it.ok }.map { it.id }.distinct()
-                } else if (result.changed > 0) ids else emptyList()
-                val saved = changedIds.map { repository.loadDetail(it) }
-                ticketSession.planRevision.incrementAndGet()
-                ticketSession.store.upsert(saved)
-                result
-            }.fold(
+            runCatching { repository.bulkAction(BulkPayload(ids, action, value)) }.fold(
                 onSuccess = { result ->
+                    ticketSession.planRevision.incrementAndGet()
+                    val changedIds = if (result.results.isNotEmpty()) {
+                        result.results.filter { it.ok }.map { it.id }.distinct()
+                    } else if (result.changed > 0) ids else emptyList()
+                    var refreshFailed = false
+                    val saved = changedIds.mapNotNull { id ->
+                        runCatching { repository.loadDetail(id) }.getOrElse {
+                            refreshFailed = true
+                            if (action == "delete") ticketSession.store.markCancelled(id, null)
+                            null
+                        }
+                    }
+                    if (action == "delete") saved.forEach { ticketSession.store.markCancelled(it.id, it) }
+                    else ticketSession.store.upsert(saved)
                     clearSelection()
                     notify(bulkSummary(result))
                     loadBacklog()
+                    if (refreshFailed) {
+                        fail("${bulkSummary(result)}; could not refresh all updated tickets. Refresh to retry.")
+                        ticketSession.onReconnect()
+                    }
                 },
                 onFailure = { fail(failure(it, "Bulk action failed")) },
             )

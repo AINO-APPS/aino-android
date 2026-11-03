@@ -72,6 +72,21 @@ class TicketSession {
         }
     }
 
+    internal fun reconcileCommentThread(taskId: Long, before: List<TaskComment>, fetched: List<TaskComment>): List<TaskComment> {
+        val baseline = before.associateBy { it.id }
+        updateCommentThread(taskId) { thread ->
+            val current = thread.items.associateBy { it.id }
+            val changed = (baseline.keys + current.keys).filterTo(mutableSetOf()) { baseline[it] != current[it] }
+            val fetchedIds = fetched.mapTo(mutableSetOf()) { it.id }
+            thread.copy(
+                items = fetched.mapNotNull { if (it.id in changed) current[it.id] else it } +
+                    thread.items.filter { it.id in changed && it.id !in fetchedIds },
+                loading = false,
+            )
+        }
+        return commentThreads.value[taskId]?.items.orEmpty()
+    }
+
     internal fun clearCommentThreads() {
         mutableCommentThreads.value = emptyMap()
     }
@@ -258,7 +273,11 @@ internal class TicketStore(
      */
     fun markCancelled(id: Long, cancelled: Task?) {
         if (cancelled == null || cancelled.id != id || !cancelled.isCancelled) {
-            return remove(id, preventReinsert = true, allowReopen = true)
+            synchronized(ticketLock) {
+                removedIds[id] = Removal(allowReopen = true, cancelled = true)
+                mutable.update { it.copy(tickets = it.tickets - id, recentlyChanged = it.recentlyChanged - id) }
+            }
+            return
         }
         val stored = withoutComments(cancelled)
         synchronized(ticketLock) {

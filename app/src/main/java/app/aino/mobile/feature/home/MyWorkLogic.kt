@@ -100,7 +100,7 @@ data class MyWorkStats(val done: Int = 0, val inProgress: Int = 0, val inReview:
     val total: Int get() = done + inProgress + inReview + pending
 }
 
-/** Buckets exactly the tickets [myWorkCount] counts, so the stats and list agree. */
+/** Buckets the period counted by [myWorkCount]; separately listed overdue work is excluded. */
 fun myWorkStats(tasks: List<DashboardTask>, userId: Long): MyWorkStats {
     val mine = tasks.filter { it.assignedTo == userId && it.workflowStateKey != CANCELLED_STATE_KEY }
     val open = mine.filter { it.completedAt == null }

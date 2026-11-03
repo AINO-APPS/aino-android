@@ -22,13 +22,7 @@ data class ScheduledUiState(
 
     internal fun containsScheduledTicket(ticket: Task): Boolean {
         val day = localDateOf(ticket.plannedDate) ?: return false
-        val inScope = when {
-            !showsTeamPicker(planScope.role) -> planScope.teamId == null || ticket.teamId == planScope.teamId
-            planScope.selectedTeamId == -1L -> ticket.teamId == null
-            planScope.selectedTeamId != null -> ticket.teamId == planScope.selectedTeamId
-            else -> true
-        }
-        return inScope && ticket.container == "scheduled" && ticket.workflowStateKey != "cancelled" &&
+        return planScope.contains(ticket) && ticket.container == "scheduled" && ticket.workflowStateKey != "cancelled" &&
             !day.isBefore(window.first) && !day.isAfter(window.second) &&
             matchesFilters(ticket, filters, userId, includeStatus = true)
     }
