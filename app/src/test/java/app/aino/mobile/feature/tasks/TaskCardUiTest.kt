@@ -32,6 +32,7 @@ class TaskCardUiTest {
 
     private val task = Task(
         id = 7,
+        container = "backlog",
         title = "Refund webhook retries",
         issueKey = "PAY-142",
         priority = "high",
@@ -95,14 +96,15 @@ class TaskCardUiTest {
     @Test
     fun completedRowsTemporarilyCollapseDuringSelectionAndRestoreAfterward() {
         val state = mutableStateOf(TaskUiState(
-            completed = listOf(task.copy(title = "Archived change", completedAt = "2026-10-25")),
-            completedCount = 1,
+            tickets = mapOf(task.id to task.copy(title = "Archived change", completedAt = "2026-10-25")),
+            planTicketIds = listOf(task.id),
             planLoaded = true,
         ))
         val vm = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }))
+        val vmPlan = PlanViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                CompletedSection(state.value, vm, {})
+                CompletedSection(state.value, vm, vmPlan, {})
             }
         }
         compose.onNodeWithText("Archived change").assertIsDisplayed()
@@ -116,9 +118,11 @@ class TaskCardUiTest {
     @Test
     fun backlogShowsOnlyTheFourPreviewQuickChipsInline() {
         val vm = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }))
+        val vmPlan = PlanViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
+        val vmScheduled = ScheduledViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                BacklogPage(TaskUiState(backlog = listOf(task), backlogTotal = 1), vm, {})
+                BacklogPage(TaskUiState(tickets = mapOf(task.id to task), planTicketIds = listOf(task.id)), vm, vmPlan, vmScheduled, {})
             }
         }
         listOf("All", "Mine", "High", "Unscheduled").forEach { compose.onNodeWithText(it).assertIsDisplayed() }

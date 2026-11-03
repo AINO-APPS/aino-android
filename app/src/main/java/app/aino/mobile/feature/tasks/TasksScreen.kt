@@ -36,7 +36,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Tab
-import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -97,15 +97,26 @@ internal fun tabLabel(tab: TaskTab): String = when (tab) {
 @Composable
 fun TasksScreen(
     viewModel: TaskViewModel,
-    onOpenDetail: () -> Unit,
+    planViewModel: PlanViewModel,
+    scheduledViewModel: ScheduledViewModel,
+    boardViewModel: SprintBoardViewModel,
+    onOpenDetail: (Long) -> Unit,
     onOpenInsights: () -> Unit,
     serviceDesk: @Composable () -> Unit,
 ) {
-    val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val shellUi by viewModel.ui.collectAsStateWithLifecycle()
+    val planUi by planViewModel.ui.collectAsStateWithLifecycle()
+    val scheduledUi by scheduledViewModel.ui.collectAsStateWithLifecycle()
+    val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
+    val ui = tasksScreenState(shellUi, planUi, scheduledUi)
+    val scheduledScreenUi = ui.copy(tickets = scheduledUi.tickets, recentlyUpdated = scheduledUi.recentlyUpdated)
+    val boardUi by boardViewModel.ui.collectAsStateWithLifecycle()
+    var inlineCommentTicketId by rememberSaveable(viewModel.ticketSession.key) { mutableStateOf<Long?>(null) }
+    val openComments: (Long) -> Unit = { inlineCommentTicketId = it }
     val colors = LocalWebColors.current
     val open: (Task) -> Unit = { task ->
-        viewModel.openDetail(task)
-        onOpenDetail()
+        viewModel.closeSearch()
+        onOpenDetail(task.id)
     }
 
     // ---- Pager <-> tab ----------------------------------------------------
@@ -159,21 +170,22 @@ fun TasksScreen(
         Column(Modifier.padding(padding).fillMaxSize()) {
             TasksHeader(ui, viewModel, onOpenInsights)
             if (tabs.size > 1) {
-                PrimaryScrollableTabRow(
+                // Fixed, equal-width tabs: the planning surfaces are at most three,
+                // so a scrollable row only left-packed them and orphaned the divider.
+                PrimaryTabRow(
                     selectedTabIndex = pagerState.currentPage.coerceIn(0, tabs.lastIndex),
                     containerColor = colors.bg,
-                    edgePadding = 8.dp,
                     contentColor = colors.primary,
                     divider = { HorizontalDivider(color = colors.border) },
                 ) {
                     tabs.forEachIndexed { index, tab ->
-                        val badge = when (tab) { TaskTab.Backlog -> ui.backlogTotal.takeIf { it > 0 }; TaskTab.Scheduled -> ui.scheduledOverdue.takeIf { it > 0 }; else -> null }
+                        val badge = when (tab) { TaskTab.Backlog -> planUi.backlogTotal.takeIf { it > 0 }; TaskTab.Scheduled -> scheduledScreenUi.scheduledOverdue.takeIf { it > 0 }; else -> null }
                         Tab(
                             selected = pagerState.currentPage == index,
                             onClick = { viewModel.selectTab(tab) },
                             text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(tabLabel(tab), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                                    Text(tabLabel(tab), fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                                     if (badge != null) {
                                         Spacer(Modifier.width(6.dp))
                                         Text(
@@ -203,45 +215,45 @@ fun TasksScreen(
                     when (tabs.getOrNull(page)) {
                         // The Sprint tab is the board; the Plan split view is a
                         // Backlog action (ADR-015), reached from "Plan sprint".
-                        TaskTab.Sprint -> SprintBoard(ui, viewModel, open)
-                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, viewModel, open) else BacklogPage(ui, viewModel, open)
-                        TaskTab.Scheduled -> ScheduledPage(ui, viewModel, open)
+                        TaskTab.Sprint -> SprintBoard(ui, boardUi, viewModel, boardViewModel, open, openComments)
+                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, planViewModel, open) else BacklogPage(ui, viewModel, planViewModel, scheduledViewModel, open, openComments)
+                        TaskTab.Scheduled -> ScheduledPage(scheduledScreenUi, viewModel, scheduledViewModel, open, openComments)
                         TaskTab.ServiceDesk -> serviceDesk()
                         null -> Unit
                     }
                 }
-                if (ui.searchOpen) SearchOverlay(ui, viewModel, open)
+                if (ui.searchOpen) SearchOverlay(ui, viewModel, planViewModel, open, searchResults)
             }
         }
     }
 
     when (ui.sheet) {
-        TaskSheet.Filters -> FilterSheet(ui, viewModel)
-        TaskSheet.CreateTicket -> CreateTicketSheet(ui, viewModel)
-        TaskSheet.Import -> ImportSheet(ui, viewModel)
+        TaskSheet.Filters -> FilterSheet(ui, viewModel, planViewModel)
+        TaskSheet.CreateTicket -> CreateTicketSheet(ui, viewModel, planViewModel)
+        TaskSheet.Import -> ImportSheet(ui, viewModel, planViewModel)
         TaskSheet.SprintPicker -> SprintPickerSheet(ui, viewModel)
         null -> Unit
     }
-    ui.inlineComments?.let { thread ->
-        val task = (ui.tasks + ui.backlog).firstOrNull { it.id == thread.taskId }
-        TaskSheetScaffold("Comments", viewModel::closeComments, HeroIcons.ChatBubbleOvalLeft) {
-            task?.let {
-                Text(it.title, color = colors.textSecondary, fontSize = 0.84.rem, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 10.dp))
-            }
-            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
-                CommentSection(
-                    taskId = thread.taskId,
-                    comments = thread.items,
-                    loading = thread.loading,
-                    currentUserId = ui.userId,
-                    users = ui.assignableUsers,
-                    viewModel = viewModel,
-                    placeholder = "Write a comment…",
-                )
-            }
-        }
+    inlineCommentTicketId?.let { ticketId ->
+        InlineTicketComments(ticketId, viewModel.ticketSession) { inlineCommentTicketId = null }
     }
-    ui.confirm?.let { TaskConfirmDialog(it, viewModel::acceptConfirm, viewModel::dismissConfirm) }
+    (boardUi.confirm ?: ui.confirm)?.let {
+        TaskConfirmDialog(
+            it,
+            { when {
+                boardUi.confirm != null -> boardViewModel.acceptConfirm()
+                scheduledUi.confirm != null -> scheduledViewModel.acceptConfirm()
+                planUi.confirm != null -> planViewModel.acceptConfirm()
+                else -> Unit
+            } },
+            { when {
+                boardUi.confirm != null -> boardViewModel.dismissConfirm()
+                scheduledUi.confirm != null -> scheduledViewModel.dismissConfirm()
+                planUi.confirm != null -> planViewModel.dismissConfirm()
+                else -> Unit
+            } },
+        )
+    }
 }
 
 // ── Header ───────────────────────────────────────────────────────────────
@@ -406,6 +418,7 @@ internal fun ActiveFilterChips(ui: TaskUiState, viewModel: TaskViewModel, modifi
 private fun CommandPaletteBody(
     ui: TaskUiState,
     viewModel: TaskViewModel,
+    planViewModel: PlanViewModel,
     onOpen: (Task) -> Unit,
     noResultsFor: String? = null,
 ) {
@@ -451,13 +464,13 @@ private fun CommandPaletteBody(
                 if (ui.completedOpen) HeroIcons.EyeSlash else HeroIcons.Eye,
                 if (ui.completedOpen) "Hide completed" else "Show completed",
                 "Toggle the completed section",
-            ) { viewModel.setShowCompleted(!ui.completedOpen) }
+            ) { planViewModel.setShowCompleted(!ui.completedOpen) }
         }
         if (ui.agileEnabled && ui.currentSprint != null) {
             item {
                 PaletteRow(HeroIcons.PlayCircle, "Start sprint", "Begin the selected sprint") {
                     viewModel.closeSearch()
-                    viewModel.startSprint()
+                    viewModel.ticketSession.requestBoard(BoardRequest.Start)
                 }
             }
         }
@@ -502,7 +515,7 @@ private fun PaletteRow(
 }
 
 @Composable
-private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
+private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, onOpen: (Task) -> Unit, results: List<Task>) {
     val colors = LocalWebColors.current
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -521,18 +534,18 @@ private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Ta
         HorizontalDivider(color = colors.border)
         val q = ui.searchQuery.trim()
         when {
-            q.length < 2 -> CommandPaletteBody(ui, viewModel, onOpen)
-            ui.searching && ui.searchResults.isEmpty() -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { WebSpinner() }
-            ui.searchResults.isEmpty() -> CommandPaletteBody(ui, viewModel, onOpen, noResultsFor = q)
+            q.length < 2 -> CommandPaletteBody(ui, viewModel, planViewModel, onOpen)
+            ui.searching && results.isEmpty() -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { WebSpinner() }
+            results.isEmpty() -> CommandPaletteBody(ui, viewModel, planViewModel, onOpen, noResultsFor = q)
             else -> LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    Text("${ui.searchResults.size} result${if (ui.searchResults.size == 1) "" else "s"}", color = colors.textMuted, fontSize = 0.76.rem)
+                    Text("${results.size} result${if (results.size == 1) "" else "s"}", color = colors.textMuted, fontSize = 0.76.rem)
                 }
-                items(ui.searchResults, key = { "s-${it.id}" }) { task ->
+                items(results, key = { "s-${it.id}" }) { task ->
                     TaskCardM3(
                         task, ui.agile,
                         onOpen = { onOpen(task) },
@@ -558,7 +571,7 @@ private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Ta
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel) {
+private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel) {
     val colors = LocalWebColors.current
     val f = ui.filters
     var picker by remember { mutableStateOf<String?>(null) }
@@ -566,7 +579,7 @@ private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (ui.tab == TaskTab.Backlog) {
                 SectionTitle("View options")
-                BacklogViewControls(ui, viewModel)
+                BacklogViewControls(ui, viewModel, planViewModel)
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SectionTitle("Assignee")
@@ -701,7 +714,7 @@ internal fun SprintStatusPill(status: String) {
 // ── Import sheet (`SprintImportPanel`) ───────────────────────────────────
 
 @Composable
-private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel) {
+private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel) {
     val colors = LocalWebColors.current
     var picker by remember { mutableStateOf(false) }
     TaskSheetScaffold("Import from backlog", viewModel::closeSheet, HeroIcons.ArchiveBoxArrowDown) {
@@ -727,7 +740,7 @@ private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel) {
                                 Text(task.displayKey, color = colors.textMuted, fontSize = 0.72.rem)
                                 Text(task.title, color = colors.text, fontSize = 0.9.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
-                            if (!configuring) PillButton("Add", { viewModel.configureImport(task) }, tonal = true, icon = HeroIcons.Plus)
+                            if (!configuring) PillButton("Add", { planViewModel.configureImport(task) }, tonal = true, icon = HeroIcons.Plus)
                         }
                         if (configuring) {
                             PropertyRow(HeroIcons.User, "Assignee", { picker = true }) {
@@ -737,11 +750,11 @@ private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel) {
                                 Icon(HeroIcons.CalendarDays, null, Modifier.size(18.dp), tint = colors.textMuted)
                                 Spacer(Modifier.width(12.dp))
                                 Text("Due", color = colors.textSecondary, fontSize = 0.84.rem, modifier = Modifier.width(96.dp))
-                                WebDateField(ui.importDueDate, viewModel::setImportDueDate, Modifier.weight(1f))
+                                WebDateField(ui.importDueDate, planViewModel::setImportDueDate, Modifier.weight(1f))
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                PillButton("Cancel", viewModel::cancelImportConfig, Modifier.weight(1f))
-                                PillButton("Add to sprint", viewModel::confirmImport, Modifier.weight(1f), primary = true, icon = HeroIcons.Check)
+                                PillButton("Cancel", planViewModel::cancelImportConfig, Modifier.weight(1f))
+                                PillButton("Add to sprint", planViewModel::confirmImport, Modifier.weight(1f), primary = true, icon = HeroIcons.Check)
                             }
                         }
                     }
@@ -755,7 +768,7 @@ private fun ImportSheet(ui: TaskUiState, viewModel: TaskViewModel) {
             listOf(SelectOption<Long?>(null, "Unassigned")) + ui.assignableUsers.map { SelectOption<Long?>(it.id, it.display(), it.username?.let { u -> "@$u" }, avatar = it.display() to avatarPath(it.avatar)) },
             setOf(ui.importAssignedTo),
             onDismiss = { picker = false },
-            onSelect = { viewModel.setImportAssignee(it.firstOrNull()) },
+            onSelect = { planViewModel.setImportAssignee(it.firstOrNull()) },
             icon = HeroIcons.User,
         )
     }

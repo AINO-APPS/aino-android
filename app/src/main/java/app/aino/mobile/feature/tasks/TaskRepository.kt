@@ -29,6 +29,10 @@ class TaskRepository(
         teamScope: TeamScope = TeamScope(),
     ): TaskListResponse = decode(api.execute(ApiRequest(path = sprintTasksQuery(sprintId, filters, teamScope))))
 
+    /** The sprint's cancelled Tickets, which the board response leaves out. */
+    fun loadCancelledSprintTasks(sprintId: Long, teamScope: TeamScope = TeamScope()): List<Task> =
+        loadSprintTasks(sprintId, TaskFilters(status = CANCELLED_STATE), teamScope).tasks
+
     // @api GET sprints/:id/board
     fun loadSprintBoard(sprintId: Long): SprintBoardResponse =
         decode(api.execute(ApiRequest(path = "sprints/$sprintId/board")))
@@ -39,6 +43,11 @@ class TaskRepository(
         offset: Int,
         teamScope: TeamScope = TeamScope(),
     ): BacklogResponse = decode(api.execute(ApiRequest(path = backlogQuery(filters, limit, offset, teamScope))))
+
+    fun loadPlanPage(limit: Int, offset: Int, teamScope: TeamScope = TeamScope()): BacklogResponse =
+        decode(api.execute(ApiRequest(
+            path = backlogQuery(TaskFilters(), limit, offset, teamScope) + "&include_completed=1&completed_since=0001-01-01",
+        )))
 
     /**
      * Drain the server's backlog pages before applying Plan filters.
@@ -53,9 +62,7 @@ class TaskRepository(
         val tasks = linkedMapOf<Long, Task>()
         var offset = 0
         do {
-            val page = decode<BacklogResponse>(api.execute(ApiRequest(
-                path = backlogQuery(TaskFilters(), 500, offset, teamScope) + "&include_completed=1&completed_since=0001-01-01",
-            )))
+            val page = loadPlanPage(500, offset, teamScope)
             page.tasks.forEach { tasks[it.id] = it }
             offset += page.tasks.size
             val hasMore = page.pagination?.let { it.hasMore || offset < it.total } ?: false
@@ -213,7 +220,7 @@ class TaskRepository(
     fun assignSprint(id: Long, sprintId: Long?): Task =
         mutate("tasks/$id/assign-sprint", AssignSprintPayload(sprintId), "PATCH")
 
-    fun deleteTask(id: Long): TaskMessageResponse = mutate("tasks/$id", Unit, "DELETE")
+    fun deleteTask(id: Long): CancelTaskResponse = mutate("tasks/$id", Unit, "DELETE")
 
     fun carryForward(): CarryForwardResponse = mutate("tasks/carry-forward", Unit)
 

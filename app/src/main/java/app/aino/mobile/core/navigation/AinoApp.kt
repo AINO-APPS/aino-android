@@ -73,7 +73,11 @@ import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.attendance.verify.ClockInVerifySheet
 import app.aino.mobile.feature.attendance.verify.VerifyActions
 import app.aino.mobile.feature.tasks.TasksScreen
-import app.aino.mobile.feature.tasks.TaskViewModel
+import app.aino.mobile.feature.tasks.TasksShellViewModel
+import app.aino.mobile.feature.tasks.TicketSession
+import app.aino.mobile.feature.tasks.SprintBoardViewModel
+import app.aino.mobile.feature.tasks.PlanViewModel
+import app.aino.mobile.feature.tasks.ScheduledViewModel
 import app.aino.mobile.feature.profile.ProfileScreen
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.feature.chat.ChatScreen
@@ -121,7 +125,11 @@ fun AinoApp(
     realtime: RealtimeViewModel,
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
-    tasks: TaskViewModel,
+    tasks: TasksShellViewModel,
+    ticketSession: TicketSession,
+    sprintBoard: SprintBoardViewModel,
+    plan: PlanViewModel,
+    scheduled: ScheduledViewModel,
     profile: ProfileViewModel,
     chat: ChatViewModel,
     incomingCall: IncomingCallViewModel,
@@ -311,7 +319,7 @@ fun AinoApp(
             OutboxWorker.enqueue(appContext, reconnectScope!!)
         }
     }
-    LaunchedEffect(tenantAuthenticated) {
+    LaunchedEffect(tenantAuthenticated, ticketSession) {
         if (tenantAuthenticated) {
             realtime.events.collect { event ->
                 when (val callEvent = CallRealtimeRouter.decode(event)) {
@@ -332,7 +340,7 @@ fun AinoApp(
                 }
                 meetingSession.onRealtimeEvent(event)
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
-                if (event.type in TASK_REFRESH_EVENTS) tasks.onTaskEvent(event.type, event.data)
+                if (event.type in TASK_REFRESH_EVENTS) ticketSession.onRealtimeEvent(event.type, event.data)
                 when (event.type) {
                     // Clock/break taken on the web, desktop or another phone, or a
                     // manual entry filed/deleted: timer, status, calendar and loaded tabs.
@@ -400,13 +408,13 @@ fun AinoApp(
         }
     }
     val resync by realtime.resync.collectAsStateWithLifecycle()
-    LaunchedEffect(resync) {
+    LaunchedEffect(resync, ticketSession) {
         if (resync == 0L || !tenantAuthenticated) return@LaunchedEffect
         chat.refresh()
         chat.refreshThread()
         dashboard.refresh()
         attendance.refresh()
-        tasks.onTaskEvent()
+        ticketSession.onReconnect()
         notifications.refresh()
         profile.refresh()
     }
@@ -456,6 +464,10 @@ fun AinoApp(
             dashboard,
             attendance,
             tasks,
+            ticketSession,
+            sprintBoard,
+            plan,
+            scheduled,
             profile,
             chat,
             biometricAvailable,
@@ -524,7 +536,11 @@ private fun AuthenticatedShell(
     realtimeState: RealtimeState,
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
-    tasks: TaskViewModel,
+    tasks: TasksShellViewModel,
+    ticketSession: TicketSession,
+    sprintBoard: SprintBoardViewModel,
+    plan: PlanViewModel,
+    scheduled: ScheduledViewModel,
     profile: ProfileViewModel,
     chat: ChatViewModel,
     biometricAvailable: Boolean,
@@ -547,7 +563,7 @@ private fun AuthenticatedShell(
 ) {
     val nav = rememberNavController()
     // Tasks read the signed-in context the web takes from AuthContext / FeaturesContext.
-    LaunchedEffect(user.id, user.role, user.teamName, user.teamId, user.tenantFeatures, user.teamSprintEnabled) {
+    LaunchedEffect(tasks, user.tenantId, user.id, user.role, user.teamName, user.teamId, user.tenantFeatures, user.teamSprintEnabled) {
         val ungated = user.role == "platform_admin" && user.tenantId == null
         tasks.bind(
             user.id, user.role, user.teamName,
@@ -636,14 +652,13 @@ private fun AuthenticatedShell(
     // Web refetches on window focus/visibility; mirror that on app resume for
     // the visible route (the first resume is the initial load, already done).
     var resumedOnce by androidx.compose.runtime.remember { mutableStateOf(false) }
-    androidx.lifecycle.compose.LifecycleResumeEffect(Unit) {
+    androidx.lifecycle.compose.LifecycleResumeEffect(tasks) {
         if (resumedOnce) {
             chat.refresh()
             when (nav.currentDestination?.route) {
                 AinoDestination.Dashboard.route -> dashboard.refresh()
                 AinoDestination.ChatThread.route -> chat.refreshThread()
                 AinoDestination.Tasks.route -> tasks.refresh()
-                TASK_DETAIL_ROUTE -> tasks.refreshDetail()
                 AinoDestination.Profile.route -> profile.refresh()
                 else -> if (nav.currentDestination?.route?.startsWith(AinoDestination.Attendance.route) == true) attendance.refresh()
             }
@@ -735,7 +750,6 @@ private fun AuthenticatedShell(
                     user,
                     dashboard,
                     onCalendar = { navigate(AinoDestination.Calendar) },
-                    onTasks = { navigate(AinoDestination.Tasks) },
                     // The card's header goes to the surface it is summarising:
                     // Scheduled for a week, that sprint's board for a sprint.
                     onOpenTasksTab = { target, sprintId ->
@@ -743,45 +757,67 @@ private fun AuthenticatedShell(
                         navigate(AinoDestination.Tasks)
                     },
                     onOpenTask = { id ->
-                        tasks.openDetailById(id)
-                        nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true }
+                        nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true }
                     },
                     onOpenLink = { link -> openWebLink(link) },
                 )
             }
             composable(AinoDestination.Tasks.route) {
-                ForegroundPoll(TASKS_POLL_MS, tasks::pollVisible)
+                ForegroundPoll(TASKS_POLL_MS, ticketSession::pollVisible)
                 TasksScreen(
                     viewModel = tasks,
-                    onOpenDetail = { nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true } },
+                    boardViewModel = sprintBoard,
+                    planViewModel = plan,
+                    scheduledViewModel = scheduled,
+                    onOpenDetail = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
                     onOpenInsights = { nav.navigate(SPRINT_INSIGHTS_ROUTE) { launchSingleTop = true } },
                     serviceDesk = { app.aino.mobile.feature.tasks.ServiceDeskTab(tasks, user.role) },
                 )
             }
-            composable(TASK_DETAIL_ROUTE) {
+            composable(TASK_DETAIL_ROUTE, arguments = listOf(navArgument("ticketId") { type = NavType.LongType })) { entry ->
+                val ticketId = entry.arguments!!.getLong("ticketId")
+                val detail = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.tasks.TicketDetailViewModel>(
+                    viewModelStoreOwner = entry,
+                    key = "ticket-detail-${ticketSession.key}-$ticketId",
+                    factory = app.aino.mobile.feature.tasks.TicketDetailViewModel.factory(shellContext, ticketId, ticketSession),
+                )
                 val closeDetail = {
-                    tasks.closeDetail()
+                    detail.closeDetail()
                     Unit
                 }
                 BackHandler(onBack = closeDetail)
-                app.aino.mobile.feature.tasks.TaskDetailScreen(tasks, onClose = { nav.popBackStack() })
+                app.aino.mobile.feature.tasks.TaskDetailScreen(
+                    detail,
+                    onClose = { nav.popBackStack() },
+                    onOpenTicket = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
+                )
             }
             composable(
                 TASK_LINK_ROUTE,
                 arguments = listOf("task", "tab", "sprint_id").map { name -> navArgument(name) { defaultValue = "" } },
             ) { entry ->
-                val taskId = entry.arguments?.getString("task")?.toLongOrNull()
+                val ticketReference = entry.arguments?.getString("task")?.ifEmpty { null }
                 val tab = entry.arguments?.getString("tab")?.ifEmpty { null }
                 val sprintId = entry.arguments?.getString("sprint_id")?.toLongOrNull()
                 LaunchedEffect(Unit) {
+                    val taskId = ticketReference?.toLongOrNull() ?: ticketReference?.let { key ->
+                        runCatching {
+                            val container = app.aino.mobile.core.AppContainer.get(shellContext)
+                            app.aino.mobile.feature.tasks.TicketDetailViewModel.resolveKey(
+                                app.aino.mobile.feature.tasks.TaskRepository(container.api), ticketSession, key,
+                            )
+                        }.getOrElse {
+                            ticketSession.publishNotice(app.aino.mobile.feature.tasks.TaskNotice("No task matches $key"))
+                            null
+                        }
+                    }
                     tasks.applyLink(tab, sprintId)
                     nav.navigate(AinoDestination.Tasks.route) {
                         launchSingleTop = true
                         popUpTo(TASK_LINK_ROUTE) { inclusive = true }
                     }
                     if (taskId != null) {
-                        tasks.openDetailById(taskId)
-                        nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true }
+                        nav.navigate(ticketDetailRoute(taskId)) { launchSingleTop = true }
                     }
                 }
             }
@@ -790,8 +826,7 @@ private fun AuthenticatedShell(
                     tasks,
                     onBack = { nav.popBackStack() },
                     onOpenTask = { id ->
-                        tasks.openDetailById(id)
-                        nav.navigate(TASK_DETAIL_ROUTE) { launchSingleTop = true }
+                        nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true }
                     },
                 )
             }
@@ -1317,8 +1352,13 @@ private fun AuthenticatedShell(
     }
     // Tasks snackbars live at shell level so Undo / View survive the detail screen closing.
     app.aino.mobile.feature.tasks.TaskNoticeHost(
-        tasks,
+        ticketSession,
         modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = if (fullScreen) 8.dp else 72.dp),
+        onOpenTicket = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
+        onShowScheduled = { date ->
+            scheduled.showScheduled(date)
+            nav.navigate(AinoDestination.Tasks.route) { launchSingleTop = true }
+        },
     )
     // Direct Share: keep the latest chats published as share-sheet targets.
     val shareTargets = androidx.compose.runtime.remember(chatUi.conversations) {

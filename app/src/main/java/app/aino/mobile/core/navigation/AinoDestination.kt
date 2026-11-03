@@ -76,8 +76,10 @@ fun groupCallRoomRoute(code: String): String = "group-call-room/" + java.net.URL
 /** The calendar's New / Edit Event form (shares the Calendar route's ViewModel). */
 const val CALENDAR_EVENT_ROUTE = "calendar/event"
 
-/** P6.2: `TaskDetailModal` is full screen on phones (shares the Tasks ViewModel). */
-const val TASK_DETAIL_ROUTE = "tasks/detail"
+/** Full-screen Detail owns a route-scoped ViewModel keyed by Ticket id. */
+const val TASK_DETAIL_ROUTE = "tasks/detail/{ticketId}"
+
+fun ticketDetailRoute(ticketId: Long): String = "tasks/detail/$ticketId"
 
 /** P6.8: web `/sprint-insights` (inside the shell, Tasks tab stays selected). */
 const val SPRINT_INSIGHTS_ROUTE = "sprint-insights"
@@ -177,7 +179,7 @@ fun chatThreadRoute(conversationId: Long): String {
 fun bottomBarRoute(route: String?): String? = when (route) {
     AinoDestination.ChatThread.route, CHAT_NEW_GROUP_ROUTE -> AinoDestination.Chat.route
     ATTENDANCE_ROUTE_PATTERN -> AinoDestination.Attendance.route
-    TASK_LINK_ROUTE -> AinoDestination.Tasks.route
+    TASK_LINK_ROUTE, TASK_DETAIL_ROUTE -> AinoDestination.Tasks.route
     SPRINT_INSIGHTS_ROUTE -> AinoDestination.Tasks.route
     MANAGER_ROUTE_PATTERN -> AinoDestination.Manager.route
     else -> route

@@ -44,6 +44,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 internal fun BulkActionBar(
     ui: TaskUiState,
     viewModel: TaskViewModel,
+    planViewModel: PlanViewModel,
     modifier: Modifier = Modifier,
 ) {
     val colors = LocalWebColors.current
@@ -81,7 +82,7 @@ internal fun BulkActionBar(
             Row(
                 Modifier
                     .clip(ChipShape)
-                    .clickable(onClickLabel = "Clear selection", onClick = viewModel::clearSelection)
+                    .clickable(onClickLabel = "Clear selection", onClick = planViewModel::clearSelection)
                     .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -97,7 +98,7 @@ internal fun BulkActionBar(
             BulkAction(HeroIcons.ArrowPath, "Status", enabled = canChangeStatus.allowed, reason = canChangeStatus.reasonCopy()) { picker = "status" }
             BulkAction(HeroIcons.User, "Assign", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) { picker = "assignee" }
             BulkAction(HeroIcons.Trash, "Cancel", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) {
-                viewModel.confirmBulkDelete()
+                planViewModel.confirmBulkDelete()
             }
         }
     }
@@ -109,7 +110,7 @@ internal fun BulkActionBar(
                 SelectOption<Long?>(it.id, it.name, subtitle = if (canSprint.allowed) it.status else canSprint.reasonCopy(), color = if (it.status == "active") colors.success else colors.primaryLight, enabled = canSprint.allowed)
             },
             emptySet(), { picker = null },
-            { ids -> viewModel.bulkAction("move_to_sprint", ids.firstOrNull()?.toString() ?: "") },
+            { ids -> planViewModel.bulkAction("move_to_sprint", ids.firstOrNull()?.toString() ?: "") },
             icon = HeroIcons.RocketLaunch,
         )
         "status" -> SelectSheet(
@@ -127,7 +128,7 @@ internal fun BulkActionBar(
                 )
             },
             emptySet(), { picker = null },
-            { ids -> ids.firstOrNull()?.let { viewModel.bulkAction("status", it) } },
+            { ids -> ids.firstOrNull()?.let { planViewModel.bulkAction("status", it) } },
             icon = HeroIcons.ArrowPath,
         )
         "assignee" -> SelectSheet(
@@ -136,7 +137,7 @@ internal fun BulkActionBar(
                 SelectOption<Long?>(it.id, it.display(), it.username?.let { u -> "@$u" }, avatar = it.display() to avatarPath(it.avatar))
             },
             emptySet(), { picker = null },
-            { ids -> viewModel.bulkAction("assign", ids.firstOrNull()?.toString() ?: "") },
+            { ids -> planViewModel.bulkAction("assign", ids.firstOrNull()?.toString() ?: "") },
             icon = HeroIcons.User,
         )
     }

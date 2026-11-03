@@ -16,6 +16,7 @@ import coil3.request.crossfade
 import coil3.video.VideoFrameDecoder
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 
 /**
@@ -25,6 +26,21 @@ import okhttp3.OkHttpClient
  * loser would clear the rotated token (forced sign-out).
  */
 class AppContainer private constructor(private val context: Context) {
+    private val inactiveTicketSession = app.aino.mobile.feature.tasks.TicketSession().apply { close() }
+    private val mutableTicketSession = kotlinx.coroutines.flow.MutableStateFlow(inactiveTicketSession)
+    val ticketSession = mutableTicketSession.asStateFlow()
+    private var ticketSessionScope: app.aino.mobile.core.db.CacheScope? = null
+
+    /** One Ticket session per authenticated tenant/user, never per screen. */
+    @Synchronized
+    fun setTicketSessionScope(scope: app.aino.mobile.core.db.CacheScope?) {
+        if (scope == ticketSessionScope) return
+        mutableTicketSession.value.close()
+        ticketSessionScope = scope
+        mutableTicketSession.value = if (scope == null) inactiveTicketSession
+        else app.aino.mobile.feature.tasks.TicketSession()
+    }
+
     init {
         app.aino.mobile.core.network.DeviceId.value = app.aino.mobile.core.network.DeviceId.load(context)
         app.aino.mobile.feature.chat.ChatMediaMemory.attach(context)
@@ -71,7 +87,10 @@ class AppContainer private constructor(private val context: Context) {
 
     /** Last successful GET bodies of the signed-in user (scope set by AuthViewModel). */
     val responses = app.aino.mobile.core.network.ResponseCache(context.cacheDir.resolve("api-cache"))
-    private val refreshing = RefreshingApiClient(rawApi, tokens, onSessionEnded = app.aino.mobile.core.auth.SessionRevocation::onRefreshRefused)
+    private val refreshing = RefreshingApiClient(rawApi, tokens, onSessionEnded = {
+        setTicketSessionScope(null)
+        app.aino.mobile.core.auth.SessionRevocation.onRefreshRefused()
+    })
     val api: ApiClient = app.aino.mobile.core.network.CachingApiClient(refreshing, responses)
 
     /** For clients outside [api] (media, realtime): a valid token, refreshed when the 15-minute one was refused. */

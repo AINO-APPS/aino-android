@@ -40,7 +40,10 @@ import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.attendance.DeviceCredentialProof
 import app.aino.mobile.feature.attendance.VerifyFix
 import app.aino.mobile.core.navigation.AttendanceSystemActions
-import app.aino.mobile.feature.tasks.TaskViewModel
+import app.aino.mobile.feature.tasks.TasksShellViewModel
+import app.aino.mobile.feature.tasks.SprintBoardViewModel
+import app.aino.mobile.feature.tasks.PlanViewModel
+import app.aino.mobile.feature.tasks.ScheduledViewModel
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.core.push.PushNotifications
 import app.aino.mobile.core.push.PushTokenRegistrar
@@ -77,7 +80,6 @@ class MainActivity : FragmentActivity() {
     private val realtimeViewModel by viewModels<RealtimeViewModel> { RealtimeViewModel.factory(applicationContext) }
     private val dashboardViewModel by viewModels<DashboardViewModel> { DashboardViewModel.factory(applicationContext) }
     private val attendanceViewModel by viewModels<AttendanceViewModel> { AttendanceViewModel.factory(applicationContext) }
-    private val taskViewModel by viewModels<TaskViewModel> { TaskViewModel.factory(applicationContext) }
     private val profileViewModel by viewModels<ProfileViewModel> { ProfileViewModel.factory(applicationContext) }
     private val chatViewModel by viewModels<ChatViewModel> { ChatViewModel.factory(applicationContext) }
     private val incomingCallViewModel by viewModels<IncomingCallViewModel> { IncomingCallViewModel.factory(applicationContext) }
@@ -117,6 +119,23 @@ class MainActivity : FragmentActivity() {
         // A ring left behind by a process that died is cleared once it expired.
         app.aino.mobile.core.call.CallReconciler.clearStaleRing(applicationContext)
         setContent {
+            val ticketSession by app.aino.mobile.core.AppContainer.get(applicationContext).ticketSession.collectAsState()
+            val taskViewModel = androidx.lifecycle.viewmodel.compose.viewModel<TasksShellViewModel>(
+                key = "tasks-${ticketSession.key}",
+                factory = TasksShellViewModel.factory(applicationContext, ticketSession),
+            )
+            val sprintBoardViewModel = androidx.lifecycle.viewmodel.compose.viewModel<SprintBoardViewModel>(
+                key = "sprint-board-${ticketSession.key}",
+                factory = SprintBoardViewModel.factory(applicationContext, ticketSession),
+            )
+            val planViewModel = androidx.lifecycle.viewmodel.compose.viewModel<PlanViewModel>(
+                key = "plan-${ticketSession.key}",
+                factory = PlanViewModel.factory(applicationContext, ticketSession),
+            )
+            val scheduledViewModel = androidx.lifecycle.viewmodel.compose.viewModel<ScheduledViewModel>(
+                key = "scheduled-${ticketSession.key}",
+                factory = ScheduledViewModel.factory(applicationContext, ticketSession),
+            )
             val themeStore = ThemePreferenceStore(applicationContext)
             val isDark by themeStore.isDark.collectAsState(initial = true)
             val themeScope = rememberCoroutineScope()
@@ -146,6 +165,10 @@ class MainActivity : FragmentActivity() {
                     dashboardViewModel,
                     attendanceViewModel,
                     taskViewModel,
+                    ticketSession,
+                    sprintBoardViewModel,
+                    planViewModel,
+                    scheduledViewModel,
                     profileViewModel,
                     chatViewModel,
                     incomingCallViewModel,

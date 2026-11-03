@@ -781,15 +781,20 @@ internal fun PropertyText(text: String, muted: Boolean = false, color: Color? = 
 }
 
 /**
- * The single collector of [TaskViewModel.notices], hosted by the app shell so a
+ * The single collector of [TicketSession.notices], hosted by the app shell so a
  * notice raised while the detail screen closes (schedule, delete…) still shows.
  */
 @Composable
-fun TaskNoticeHost(viewModel: TaskViewModel, modifier: Modifier = Modifier) {
+fun TaskNoticeHost(
+    session: TicketSession,
+    modifier: Modifier = Modifier,
+    onOpenTicket: (Long) -> Unit = {},
+    onShowScheduled: (String) -> Unit = {},
+) {
     val host = remember { androidx.compose.material3.SnackbarHostState() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    androidx.compose.runtime.LaunchedEffect(viewModel) {
-        viewModel.notices.collect { notice ->
+    androidx.compose.runtime.LaunchedEffect(session) {
+        session.notices.collect { notice ->
             host.currentSnackbarData?.dismiss()
             scope.launch {
                 val result = host.showSnackbar(
@@ -798,7 +803,13 @@ fun TaskNoticeHost(viewModel: TaskViewModel, modifier: Modifier = Modifier) {
                     withDismissAction = notice.actionLabel == null,
                     duration = if (notice.actionLabel != null) androidx.compose.material3.SnackbarDuration.Long else androidx.compose.material3.SnackbarDuration.Short,
                 )
-                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) notice.action?.invoke()
+                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                    when {
+                        notice.openTicketId != null -> onOpenTicket(notice.openTicketId)
+                        notice.scheduledDate != null -> onShowScheduled(notice.scheduledDate)
+                        else -> notice.action?.invoke()
+                    }
+                }
             }
         }
     }

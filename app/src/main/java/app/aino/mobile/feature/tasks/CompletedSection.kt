@@ -43,6 +43,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
 internal fun CompletedSection(
     ui: TaskUiState,
     viewModel: TaskViewModel,
+    planViewModel: PlanViewModel,
     onOpen: (Task) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -56,12 +57,12 @@ internal fun CompletedSection(
                 .clickable(
                     enabled = !ui.hasSelection,
                     onClickLabel = if (ui.completedExpanded) "Collapse completed" else "Expand completed",
-                    onClick = viewModel::toggleCompletedSection,
+                    onClick = planViewModel::toggleCompletedSection,
                 )
                 .semantics {
                     customActions = listOf(
                         CustomAccessibilityAction(if (ui.completedExpanded) "Collapse completed" else "Expand completed") {
-                            viewModel.toggleCompletedSection()
+                            planViewModel.toggleCompletedSection()
                             true
                         },
                     )
@@ -110,13 +111,13 @@ internal fun CompletedSection(
                 )
             }
             ui.completed.forEach { task ->
-                CompletedRow(task, ui, onOpen)
+                CompletedRow(task, ui.agile, onOpen)
             }
             if (ui.completed.isNotEmpty() && !ui.planLoaded && !ui.completedShowingAll) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(onClickLabel = "View all completed", onClick = { viewModel.loadCompleted(all = true) })
+                        .clickable(onClickLabel = "View all completed", onClick = { planViewModel.loadCompleted(all = true) })
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center,
@@ -133,11 +134,11 @@ internal fun CompletedSection(
     }
 }
 
-/** A finished task: muted, struck through, no actions. */
+/** A finished task: muted, struck through, no actions. Cancelled rows say so. */
 @Composable
-private fun CompletedRow(task: Task, ui: TaskUiState, onOpen: (Task) -> Unit) {
+internal fun CompletedRow(task: Task, agile: AgileConfig, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
-    val points = if (ui.agile.features.storyPoints) formatPoints(task.storyPoints) else ""
+    val points = if (agile.features.storyPoints) formatPoints(task.storyPoints) else ""
     Row(
         Modifier
             .fillMaxWidth()
@@ -145,7 +146,8 @@ private fun CompletedRow(task: Task, ui: TaskUiState, onOpen: (Task) -> Unit) {
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(HeroIcons.CheckCircle, "Completed", Modifier.size(15.dp), tint = colors.success)
+        if (task.isCancelled) Icon(HeroIcons.XCircle, "Cancelled", Modifier.size(15.dp), tint = colors.textMuted)
+        else Icon(HeroIcons.CheckCircle, "Completed", Modifier.size(15.dp), tint = colors.success)
         Spacer(Modifier.width(10.dp))
         Text(
             task.displayKey,
@@ -164,6 +166,19 @@ private fun CompletedRow(task: Task, ui: TaskUiState, onOpen: (Task) -> Unit) {
             textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
             modifier = Modifier.weight(1f),
         )
+        if (task.isCancelled) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Cancelled",
+                color = colors.textMuted,
+                fontSize = 0.66.rem,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                modifier = Modifier
+                    .background(colors.textMuted.copy(alpha = 0.14f), CircleShape)
+                    .padding(horizontal = 8.dp, vertical = 1.dp),
+            )
+        }
         if (points.isNotEmpty()) {
             Spacer(Modifier.width(8.dp))
             Text(points, color = colors.textMuted, fontSize = 0.7.rem, maxLines = 1)

@@ -45,6 +45,49 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
 
 ## Plan on Android
 
+The Activity-scoped `TasksShellViewModel` owns team scope, tabs, shared sheets,
+search membership, preferences and metadata. It is the only Plan-scope writer.
+Its `TaskShellUiState` contains no Tickets or Board, Plan, Scheduled or Detail
+state; search rows are a session-reset projection, not another Ticket owner.
+`TaskViewModel` remains a source-compatible alias for the shell. `TasksScreen`
+composes the owners' states only at the UI boundary. List actions belong to their
+surface's ViewModel, and the inline comments sheet has its own id-keyed Detail
+ViewModel, disposed when the sheet closes. No ViewModel references another.
+The app shell forwards realtime, reconnect and visible polling directly to the
+signed-in `TicketSession`, and schedule notice links go to `ScheduledViewModel`.
+Service desk and Sprint insights retain their independent reads and selection.
+
+The Activity-scoped `ScheduledViewModel` owns Scheduled membership ids and the
+visible date window, scheduling and unscheduling (including Undo), overlays and
+one-shot date focus, including daily carry-forward. It reads the session Ticket store and Plan scope without
+referencing another ViewModel. Team switches restore cached ids before refreshing;
+the shell only coordinates tab navigation through session requests.
+
+The Activity-scoped `PlanViewModel` owns Backlog paging, sort and read-adjusted
+totals, Completed, selection and bulk actions, the create draft, epics, import
+and Sprint planning. It reads Tickets and Plan scope from the session, never
+another ViewModel. Successful bulk rows are refetched as enriched Tickets and
+published together, so Plan, Board, search and Detail agree without per-view
+patches. The shell alone writes shared filters, sprint metadata and preferences;
+session requests coordinate those writes and shared sheets.
+
+The Activity-scoped `SprintBoardViewModel` owns Board membership ids, optimistic
+moves and identity-checked rollback, sprint lifecycle and rollover, completion
+preview, stats and scope baseline. It reads the session Ticket store and Plan
+scope without referencing another ViewModel. The Tasks shell remains the only
+Plan-scope writer; session requests coordinate Board reloads and metadata refresh.
+Completing a sprint refetches enriched Tickets so rollover Placement updates in
+every loaded view, including open Detail and search.
+
+Ticket Detail has an id-keyed, route-scoped `TicketDetailViewModel`. It reads the
+same session Ticket store as the lists and owns editing, Activity history, tabs,
+Placement, comments and timers. Blocker and parent writes refetch the full Ticket
+before publishing it because those endpoints return relationship metadata.
+Notifications and links enter the same Detail route; key lookups publish their
+full Ticket before opening the id-keyed route. Comment threads remain shared with
+the inline panel, and session notices keep Open, View and Undo available after a
+Detail route closes.
+
 Plan opens on Backlog, followed by Scheduled and Sprint (when enabled); Sprint
 retains its board and planning views. Backlog groups live work by sprint and
 backlog with matching ticket/point totals. All resets only the independent Mine,
@@ -55,12 +98,48 @@ advanced filters, sorting, Epic selection and compact/comfortable density.
 Compact cards omit descriptions, labels and extra metadata. Completed work starts
 expanded and temporarily collapses during selection; the bulk bar replaces the FAB.
 
-The current API has no planned-date-null predicate. Android therefore drains all
-backlog pages (including completed work) and fetches available sprint tasks before
-publishing a Plan snapshot. Filters, counts, grouping and realtime reconciliation
-use that same complete snapshot, never a locally filtered server page. Refresh
-keeps the prior snapshot if any page fails. This trades extra initial requests
-for correct combined-filter totals without changing server contracts.
+The current API has no planned-date-null predicate. Android therefore still drains
+all unfiltered backlog pages (including completed work) for local Plan filtering.
+Each successful page publishes its ordered Ticket ids and resets the server total,
+summary and Completed-count baseline. Reads adjust that baseline for loaded Tickets
+that join, leave, complete, reopen, or change Workflow state or priority; writes only
+change the shared Ticket store. A later-page failure retains the successfully loaded
+pages and their baseline, and scrolling can retry from the server offset. Local
+combined-filter totals use the loaded projection, becoming complete when the drain
+finishes. Team caches retain paging and aggregate baselines along with Ticket ids.
+
+Board, Plan (Backlog and Completed), Scheduled, search, and open Detail resolve ordered Ticket ids
+against one network-free `TicketSession` store. Full enriched repository responses
+replace whole Tickets, so a change is visible across these views without reopening
+Detail. Detail comment threads remain separate from stored Tickets. The existing
+app container owns the signed-in tenant/user's session. Sign-out, revocation,
+tenant changes and account changes cancel its work and clear its Tickets and
+screen state, including late HTTP responses. The Activity obtains Tasks and Board
+ViewModels keyed by session, so signing back in (even as the same user) loads
+fresh data. Cold starts can still rebuild a Plan using the per-user response
+cache. All Plan surfaces now share this session store.
+
+Cancelled Tickets leave active columns, Scheduled and search immediately. They
+remain discoverable in a collapsed Cancelled history section under their sprint
+and in Backlog's Completed section when they belong there. History refresh
+failures are reported without discarding known rows. Detail continues to honour
+server-supplied capabilities; cancellation does not invent extra edit permissions.
+Failed moves and Undo restore only their own optimistic copy, never a newer
+Ticket. Comment reads reconcile additions, edits and deletions made while the
+request was in flight. A successful bulk write remains successful even if a
+follow-up read fails: available rows reconcile, loaded views refresh, and the
+partial refresh failure is reported.
+
+Home uses one My Work card with grouped work, status totals and progress. In week
+mode the totals cover this week; the separate Overdue group is additional context.
+Plan tabs share the available width, and Board dragging previews the full card.
+
+The session also owns a read-only `PlanScope` for user and Team context, feature
+flags, sprint selection, shared filters and metadata. Only `TaskViewModel` writes
+it; other Plan ViewModels observe the session instead of each other. Team changes
+retain cached Ticket ids and restore a viewed Team's Board, Backlog and Scheduled
+immediately while fresh requests run. UI state exposes projections of the shared
+scope.
 
 ## Push registration (Signal `FcmRefreshJob` parity)
 

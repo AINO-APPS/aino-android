@@ -5,17 +5,17 @@ import app.aino.mobile.core.network.ApiError
 import app.aino.mobile.core.network.ApiRequest
 import app.aino.mobile.core.network.ApiResponse
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 
 class DashboardRepositoryTest {
     @Test
-    fun loadsStatusAndTaskSummary() {
+    fun loadsStatusAndAnnouncementsWithoutTheRetiredTaskSummary() {
         val api = ApiClient { request ->
             when (request.path) {
                 "tracker/status" -> response("""{"state":"on_floor","floorMinutes":60,"breakMinutes":10,"workMode":"remote","targetMinutes":480,"entries":[]}""")
-                "tracker/task-summary" -> response("""{"total":4,"done":1,"inProgress":2,"activeTasks":[{"title":"Ship Android","priority":"high"}]}""")
+                "tracker/task-summary" -> error("the home card no longer reads the task summary")
                 "notifications/announcements" -> response("""{"data":[{"id":"tenant:1","message":"Welcome","type":"announcement"}]}""")
                 else -> if (request.path.startsWith("calendar?")) response("[]") else error("unexpected ${request.path}")
             }
@@ -25,14 +25,12 @@ class DashboardRepositoryTest {
 
         assertEquals("on_floor", result.status.state)
         assertEquals("remote", result.status.workMode)
-        assertEquals(4, result.tasks?.total)
-        assertEquals("Ship Android", result.tasks?.activeTasks?.single()?.title)
         assertEquals("Welcome", result.announcements.single().message)
         assertEquals(123L, result.status.receivedAtEpochMs)
     }
 
     @Test
-    fun taskSummaryFailureDoesNotHideAttendanceStatus() {
+    fun dashboardFailuresDoNotHideAttendanceStatus() {
         val api = ApiClient { request ->
             if (request.path == "tracker/status") response("""{"state":"logged_out"}""")
             else throw ApiError.Network("GET", request.path, java.io.IOException("offline"))
@@ -41,7 +39,7 @@ class DashboardRepositoryTest {
         val result = DashboardRepository(api).load(userId = 7, isManager = false)
 
         assertEquals("logged_out", result.status.state)
-        assertNull(result.tasks)
+        assertTrue(result.myWork.failed)
     }
 
     private fun response(json: String) = ApiResponse(200, emptyMap(), json.toByteArray())

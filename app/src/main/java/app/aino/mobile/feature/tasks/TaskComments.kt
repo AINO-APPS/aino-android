@@ -75,7 +75,7 @@ internal fun CommentSection(
     loading: Boolean,
     currentUserId: Long?,
     users: List<AssignableUser>,
-    viewModel: TaskViewModel,
+    viewModel: TicketCommentActions,
     placeholder: String = "Write a comment… (type @ to mention someone)",
 ) {
     val colors = LocalWebColors.current
@@ -184,7 +184,7 @@ private fun CommentAttachment(c: TaskComment) {
 /** MentionInput + paperclip + send. `@` opens a people list; a pick inserts `@Name `. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CommentComposer(taskId: Long, users: List<AssignableUser>, viewModel: TaskViewModel, placeholder: String) {
+private fun CommentComposer(taskId: Long, users: List<AssignableUser>, viewModel: TicketCommentActions, placeholder: String) {
     val colors = LocalWebColors.current
     val context = LocalContext.current
     var text by remember(taskId) { mutableStateOf("") }

@@ -1093,6 +1093,11 @@
       "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."
     },
     {
+      "key": "GET /api/tracker/task-summary",
+      "owner": "home (My Work card)",
+      "reason": "The home \"Today's Planner\" card duplicated My Work and was removed on web and Android (2026-11-03). My Work's stat row is computed from the same sprint/week tickets it lists, so the separate summary is no longer read."
+    },
+    {
       "key": "GET /api/tracker/weekly",
       "owner": "parity (no web UI)",
       "reason": "No web UI calls this operation (the client wrapper is unused or absent), so Android does not ship it either (\"no invented UI\", WEB_PARITY_PLAN.md section 5 rule 8)."

@@ -4,7 +4,6 @@ import app.aino.mobile.core.auth.AinoUser
 import app.aino.mobile.core.common.TimeEntryDto
 import app.aino.mobile.core.common.TrackerStatus
 import app.aino.mobile.feature.home.AnnouncementEnvelope
-import app.aino.mobile.feature.home.TaskSummary
 import app.aino.mobile.feature.attendance.LeaveBalance
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
@@ -53,15 +52,6 @@ class ResponseDecodeTest {
         assertFalse(status.entries.isEmpty())
         assertEquals("clock_in", status.entries.first().entryType)
         assertEquals(480, status.targetMinutes)
-    }
-
-    @Test
-    fun taskSummaryDecodesWithActiveTasks() {
-        val summary = json.decodeFromString(TaskSummary.serializer(), payload("tracker-task-summary.json"))
-
-        assertEquals(12, summary.total)
-        assertFalse(summary.activeTasks.isEmpty())
-        assertEquals("Ship parity plan", summary.activeTasks.first().title)
     }
 
     @Test

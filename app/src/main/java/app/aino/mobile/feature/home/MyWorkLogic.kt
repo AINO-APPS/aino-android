@@ -48,6 +48,8 @@ data class MyWork(
     /** Completed tickets this week — counted, never listed (spec D6). */
     val done: Int = 0,
     val total: Int = 0,
+    /** State breakdown of the same tickets, for the card's stat row. */
+    val stats: MyWorkStats = MyWorkStats(),
     /** Rows that fit nowhere because of [MY_WORK_ROW_LIMIT]. */
     val hidden: Int = 0,
     /** The lookup failed; the card must not claim the week is empty. */
@@ -92,6 +94,23 @@ fun myDoneCount(tasks: List<DashboardTask>, userId: Long): Int =
 /** Everything of the viewer's in [tasks], done and open, cancelled excluded. */
 fun myWorkCount(tasks: List<DashboardTask>, userId: Long): Int =
     tasks.count { it.assignedTo == userId && it.workflowStateKey != CANCELLED_STATE_KEY }
+
+/** The card's state breakdown; open work outside progress or review is pending. */
+data class MyWorkStats(val done: Int = 0, val inProgress: Int = 0, val inReview: Int = 0, val pending: Int = 0) {
+    val total: Int get() = done + inProgress + inReview + pending
+}
+
+/** Buckets the period counted by [myWorkCount]; separately listed overdue work is excluded. */
+fun myWorkStats(tasks: List<DashboardTask>, userId: Long): MyWorkStats {
+    val mine = tasks.filter { it.assignedTo == userId && it.workflowStateKey != CANCELLED_STATE_KEY }
+    val open = mine.filter { it.completedAt == null }
+    return MyWorkStats(
+        done = mine.size - open.size,
+        inProgress = open.count { it.workflowStateCategory == "in_progress" },
+        inReview = open.count { it.workflowStateCategory == "in_review" },
+        pending = open.count { it.workflowStateCategory != "in_progress" && it.workflowStateCategory != "in_review" },
+    )
+}
 
 private val DAY_HEADER = DateTimeFormatter.ofPattern("EEEE", Locale.US)
 

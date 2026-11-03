@@ -144,19 +144,24 @@ class BacklogCreateVisibilityTest {
     }
 
     private val platform = FakePlatform()
+    private lateinit var shell: TaskViewModel
 
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())
-    @After fun tearDown() = Dispatchers.resetMain()
+    @After fun tearDown() {
+        if (::shell.isInitialized) shell.ticketSession.close()
+        Dispatchers.resetMain()
+    }
 
     private fun waitFor(condition: () -> Boolean) {
         val deadline = System.currentTimeMillis() + 5_000
         while (!condition() && System.currentTimeMillis() < deadline) Thread.sleep(10)
     }
 
-    private fun viewModel(): TaskViewModel {
+    private fun viewModel(): PlanViewModel {
         val api = ApiClient { request -> platform.handle(request) }
-        val vm = TaskViewModel(TaskRepository(api))
-        vm.bind(
+        shell = TaskViewModel(TaskRepository(api))
+        val vm = PlanViewModel(TaskRepository(api), shell.ticketSession)
+        shell.bind(
             userId = platform.userId,
             role = platform.role,
             teamName = null,
@@ -167,8 +172,8 @@ class BacklogCreateVisibilityTest {
         return vm
     }
 
-    private fun createTicket(vm: TaskViewModel, title: String, dueDate: String = "") {
-        vm.openSheet(TaskSheet.CreateTicket)
+    private fun createTicket(vm: PlanViewModel, title: String, dueDate: String = "") {
+        shell.openSheet(TaskSheet.CreateTicket)
         vm.updateDraft { it.copy(title = title, dueDate = dueDate) }
         vm.submitBacklog()
         waitFor { vm.ui.value.creating.not() && platform.tasks.isNotEmpty() }
@@ -197,8 +202,8 @@ class BacklogCreateVisibilityTest {
         platform.role = "super_admin"
         platform.ownTeamId = null
         val vm = viewModel()
-        waitFor { vm.ui.value.teams.isNotEmpty() }
-        vm.selectTeam(20L)
+        waitFor { shell.ui.value.teams.isNotEmpty() }
+        shell.selectTeam(20L)
         waitFor { vm.ui.value.selectedTeamId == 20L }
 
         createTicket(vm, "Support escalation")

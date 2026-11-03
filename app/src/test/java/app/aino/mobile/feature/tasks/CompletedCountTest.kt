@@ -49,20 +49,21 @@ class CompletedCountTest {
     @Test
     fun backlogLoadSurfacesTheCompletedCount() {
         val vm = TaskViewModel(TaskRepository(api))
+        val vmPlan = PlanViewModel(TaskRepository(api), vm.ticketSession)
         vm.bind(userId = 1, role = "employee", teamName = null, agileEnabled = false)
-        waitFor { vm.ui.value.backlog.isNotEmpty() }
-        waitFor { vm.ui.value.completedCount == 3 }
-        assertEquals(3, vm.ui.value.completedCount)
-        assertEquals(true, vm.ui.value.completedExpanded)
-        vm.toggleSelection(4)
-        assertEquals(false, vm.ui.value.completedExpanded)
-        assertEquals(3, vm.ui.value.completed.size)
-        vm.clearSelection()
-        assertEquals(true, vm.ui.value.completedExpanded)
-        vm.toggleCompletedSection()
-        vm.toggleSelection(4)
-        vm.clearSelection()
-        assertEquals(false, vm.ui.value.completedExpanded)
+        waitFor { vmPlan.ui.value.backlog.isNotEmpty() }
+        waitFor { vmPlan.ui.value.completedCount == 3 }
+        assertEquals(3, vmPlan.ui.value.completedCount)
+        assertEquals(true, vmPlan.ui.value.completedExpanded)
+        vmPlan.toggleSelection(4)
+        assertEquals(false, vmPlan.ui.value.completedExpanded)
+        assertEquals(3, vmPlan.ui.value.completed.size)
+        vmPlan.clearSelection()
+        assertEquals(true, vmPlan.ui.value.completedExpanded)
+        vmPlan.toggleCompletedSection()
+        vmPlan.toggleSelection(4)
+        vmPlan.clearSelection()
+        assertEquals(false, vmPlan.ui.value.completedExpanded)
     }
 
     @Test
@@ -77,30 +78,31 @@ class CompletedCountTest {
     @Test
     fun quickFilterResetPreservesAdvancedStateAndRealtimeReconcilesHiddenRows() {
         val vm = TaskViewModel(TaskRepository(api))
+        val vmPlan = PlanViewModel(TaskRepository(api), vm.ticketSession)
         vm.bind(userId = 1, role = "employee", teamName = null, agileEnabled = false)
-        waitFor { vm.ui.value.planLoaded }
+        waitFor { vmPlan.ui.value.planLoaded }
         vm.setFilters(TaskFilters(search = "Ship"))
-        vm.setQuickFilters(BacklogQuickFilters(high = true, unscheduled = true))
-        assertEquals(0, vm.ui.value.backlogTotal)
-        assertEquals(4, vm.ui.value.planTasks.size)
-        vm.onTaskEvent("task_updated", Json.parseToJsonElement(
+        vmPlan.setQuickFilters(BacklogQuickFilters(high = true, unscheduled = true))
+        assertEquals(0, vmPlan.ui.value.backlogTotal)
+        assertEquals(4, vmPlan.ui.value.planTasks.size)
+        vm.ticketSession.onRealtimeEvent("task_updated", Json.parseToJsonElement(
             """{"taskId":4,"fields":{"priority":"high"}}""",
         ))
-        waitFor { vm.ui.value.backlogTotal == 1 }
-        assertEquals(1, vm.ui.value.backlogTotal)
-        vm.setQuickFilters(BacklogQuickFilters())
+        waitFor { vmPlan.ui.value.backlogTotal == 1 }
+        assertEquals(1, vmPlan.ui.value.backlogTotal)
+        vmPlan.setQuickFilters(BacklogQuickFilters())
         assertEquals("Ship", vm.ui.value.filters.search)
-        assertEquals(1, vm.ui.value.backlogTotal)
-        vm.toggleSelection(4)
+        assertEquals(1, vmPlan.ui.value.backlogTotal)
+        vmPlan.toggleSelection(4)
         detailBody =
             """{"id":4,"title":"Ship","priority":"high","workflow_state_id":5,"completed_at":"2026-10-26","container":"backlog"}"""
-        vm.onTaskEvent("task_updated", Json.parseToJsonElement(
+        vm.ticketSession.onRealtimeEvent("task_updated", Json.parseToJsonElement(
             """{"taskId":4,"fields":{"workflow_state_id":5}}""",
         ))
-        waitFor { vm.ui.value.completedCount == 1 }
-        assertEquals(0, vm.ui.value.backlogTotal)
-        assertEquals(1, vm.ui.value.completedCount)
-        assertEquals(true, vm.ui.value.completedExpanded)
-        assertEquals(true, vm.ui.value.selectedIds.isEmpty())
+        waitFor { vmPlan.ui.value.completedCount == 1 }
+        assertEquals(0, vmPlan.ui.value.backlogTotal)
+        assertEquals(1, vmPlan.ui.value.completedCount)
+        assertEquals(true, vmPlan.ui.value.completedExpanded)
+        assertEquals(true, vmPlan.ui.value.selectedIds.isEmpty())
     }
 }

@@ -25,9 +25,6 @@ class DashboardRepository(
             .copy(receivedAtEpochMs = response.receivedAtEpochMs(nowEpochMs ?: System.currentTimeMillis()))
     }
 
-    // @api GET tracker/task-summary
-    fun loadTaskSummary(): TaskSummary = get("tracker/task-summary")
-
     // @api GET calendar
     fun loadEvents(from: LocalDate, to: LocalDate): List<DashboardEvent> {
         fun start(day: LocalDate): String = day.atStartOfDay(ZoneId.systemDefault()).toInstant().toString()
@@ -98,14 +95,12 @@ class DashboardRepository(
         today: LocalDate = LocalDate.now(),
     ): DashboardSnapshot {
         val status = loadStatus(nowEpochMs)
-        val tasks = runCatching { loadTaskSummary() }.getOrNull()
         val todayEvents = runCatching { loadEvents(today, today.plusDays(1)) }.getOrDefault(emptyList())
         val tomorrowEvents = runCatching { loadEvents(today.plusDays(1), today.plusDays(2)) }.getOrDefault(emptyList())
         val announcements = runCatching { loadAnnouncements() }.getOrDefault(emptyList())
         val approvals = if (isManager) loadApprovals() else emptyList()
         return DashboardSnapshot(
             status = status,
-            tasks = tasks,
             todayEvents = todayEvents,
             tomorrowEvents = tomorrowEvents,
             announcements = announcements,
@@ -140,6 +135,7 @@ class DashboardRepository(
                 groups = groups,
                 done = myDoneCount(inSprint, userId),
                 total = myWorkCount(inSprint, userId),
+                stats = myWorkStats(inSprint, userId),
                 hidden = hidden,
             )
         }
@@ -158,6 +154,7 @@ class DashboardRepository(
             groups = groups,
             done = myDoneCount(thisWeek, userId),
             total = myWorkCount(thisWeek, userId),
+            stats = myWorkStats(thisWeek, userId),
             hidden = hidden,
         )
     }

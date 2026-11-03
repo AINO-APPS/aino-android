@@ -7,12 +7,11 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 
 /**
- * Targeted realtime sync for Tasks. The server pushes
+ * Helpers for Ticket-session realtime sync. The server pushes
  * `task_assigned { taskId, title }` and `task_updated { taskId, action }`
  * (`action` = updated | status | deleted | comment) to the assignee, creator
- * and actor. Instead of refetching the whole tab, the ViewModel coalesces a
- * burst of events per task, fetches only the affected task and patches it
- * into whichever list it belongs to.
+ * and actor. [TicketSync] coalesces a burst per Ticket and refetches only the
+ * affected Ticket unless the burst is too large or its payload is unusable.
  */
 enum class TaskAction { Assigned, Updated, Status, Deleted, Comment }
 
