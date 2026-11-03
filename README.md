@@ -81,12 +81,32 @@ every loaded view, including open Detail and search.
 
 Ticket Detail has an id-keyed, route-scoped `TicketDetailViewModel`. It reads the
 same session Ticket store as the lists and owns editing, Activity history, tabs,
-Placement, comments and timers. Blocker and parent writes refetch the full Ticket
+Placement, comments and worklogs. Blocker and parent writes refetch the full Ticket
 before publishing it because those endpoints return relationship metadata.
 Notifications and links enter the same Detail route; key lookups publish their
 full Ticket before opening the id-keyed route. Comment threads remain shared with
 the inline panel, and session notices keep Open, View and Undo available after a
 Detail route closes.
+
+Ticket time tracking uses manual worklogs, not Start/Stop. Log work defaults to
+today and accepts a worked day, a duration such as `2h 30m`, optional local start
+time and comment. Server `INVALID_DURATION` errors stay inline without losing
+the draft. The newest-first list shows the author, day, duration and comment;
+`capabilities.can.logWork.allowed` and each row's `canEdit` / `canDelete` decide
+which actions appear. Writes publish server-computed time spent into the shared
+Ticket store, and realtime/reconnect/polling refresh worklogs. Estimates, admin
+behalf logging and attendance warnings remain ticket 08 work. The Attendance
+clock-in timer is unchanged.
+
+Endpoint snapshots are regenerated against the explicit platform integration
+checkout using `node scripts/check-endpoint-parity.mjs <platform-path> --update`.
+Add `--platform-ref=<commit>` to pin the inventory when that checkout is shared
+with concurrent integration work (ticket 07 uses `cca6d60c`). Android-only
+retirement entries in `docs/parity-waivers.json` mark the three legacy ticket
+timer routes as client-retired, not implemented or pending. There were no
+Android-owned temporary worklog waivers to remove; platform-owned waivers are
+left untouched. `TicketWorklogsTest` exercises the real repository and view
+model through the existing fake HTTP harness.
 
 Plan opens on Backlog, followed by Scheduled and Sprint (when enabled); Sprint
 retains its board and planning views. Backlog groups live work by sprint and

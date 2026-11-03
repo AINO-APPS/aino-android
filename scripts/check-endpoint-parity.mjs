@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** A-099: operation-level Android/platform HTTP parity ratchet. */
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const platform = path.resolve(args.find(value => !value.startsWith("--")) || process.env.AINO_PLATFORM_REPO || "../aino-platform");
 const update = args.includes("--update");
+const platformRef = args.find(value => value.startsWith("--platform-ref="))?.split("=")[1];
 const inventoryPath = path.join(root, "contracts/http-route-inventory.json");
 const coveragePath = path.join(root, "contracts/android-endpoint-coverage.json");
 const matrixPath = path.join(root, "docs/PARITY_MATRIX.md");
@@ -114,16 +116,23 @@ if (update) {
   const platformInventory = path.join(platform, "contracts/http-route-inventory.json");
   if (!fs.existsSync(platformInventory)) throw new Error(`Platform inventory not found: ${platformInventory}`);
   fs.mkdirSync(path.dirname(inventoryPath), { recursive: true });
-  fs.copyFileSync(platformInventory, inventoryPath);
+  if (platformRef) {
+    const inventory = execFileSync("git", ["-C", platform, "show", `${platformRef}:contracts/http-route-inventory.json`], { encoding: "utf8" });
+    fs.writeFileSync(inventoryPath, inventory);
+  } else fs.copyFileSync(platformInventory, inventoryPath);
 }
 if (!fs.existsSync(inventoryPath)) throw new Error(`Missing ${inventoryPath}; run with --update and a platform checkout.`);
 
 const inventory = JSON.parse(fs.readFileSync(inventoryPath, "utf8"));
-const waivers = fs.existsSync(waiversPath)
-  ? JSON.parse(fs.readFileSync(waiversPath, "utf8")).waivers
-  : [];
-if (!Array.isArray(waivers) || waivers.some(item => !item.key || !item.owner || !item.reason)) {
-  throw new Error("Every parity waiver must have non-empty key, owner and reason fields.");
+const policy = fs.existsSync(waiversPath)
+  ? JSON.parse(fs.readFileSync(waiversPath, "utf8"))
+  : { waivers: [] };
+const waivers = policy.waivers;
+const clientRetired = policy.clientRetired || [];
+for (const entries of [waivers, clientRetired]) {
+  if (!Array.isArray(entries) || entries.some(item => !item.key || !item.owner || !item.reason)) {
+    throw new Error("Every parity waiver or retirement must have non-empty key, owner and reason fields.");
+  }
 }
 const android = scanAndroid();
 const platformKeys = new Map(inventory.endpoints.map(item => [`${item.method} ${structural(item.path)}`, item]));
@@ -131,16 +140,23 @@ const covered = android.filter(item => platformKeys.has(`${item.method} ${struct
 const unmatched = android.filter(item => !platformKeys.has(`${item.method} ${structural(item.path)}`));
 const coveredKeys = new Set(covered.map(item => `${item.method} ${structural(item.path)}`));
 const waiverKeys = new Set(waivers.map(item => item.key));
+const retiredKeys = new Set(clientRetired.map(item => item.key));
+for (const item of clientRetired) {
+  if (platformKeys.get(item.key)?.deprecated !== true || coveredKeys.has(item.key) || waiverKeys.has(item.key)) {
+    throw new Error(`Invalid client retirement: ${item.key}; requires a deprecated platform route, no Android calls and no waiver.`);
+  }
+}
 const missing = inventory.endpoints.filter(item => {
   const key = `${item.method} ${structural(item.path)}`;
-  return !coveredKeys.has(key) && !waiverKeys.has(key);
+  return !coveredKeys.has(key) && !waiverKeys.has(key) && !retiredKeys.has(key);
 });
 
 const snapshot = {
   schemaVersion: 1,
   generatedFrom: { platform: "contracts/http-route-inventory.json", android: "app/src/main/java/**/*.kt" },
-  totals: { platform: inventory.endpoints.length, covered: covered.length, waived: waivers.length, missing: missing.length, unmatched: unmatched.length },
+  totals: { platform: inventory.endpoints.length, covered: covered.length, waived: waivers.length, clientRetired: clientRetired.length, missing: missing.length, unmatched: unmatched.length },
   covered,
+  clientRetired,
   unmatched,
 };
 
@@ -157,7 +173,7 @@ const lines = [
   "| Method | Path | Status | Owner |", "|---|---|---|---|",
   ...inventory.endpoints.map(endpoint => {
     const key = `${endpoint.method} ${structural(endpoint.path)}`;
-    const status = coveredKeys.has(key) ? "implemented" : waiverKeys.has(key) ? "waived" : "pending";
+    const status = coveredKeys.has(key) ? "implemented" : retiredKeys.has(key) ? "client-retired" : waiverKeys.has(key) ? "waived" : "pending";
     return `| ${endpoint.method} | \`${endpoint.path}\` | ${status} | ${owner(endpoint)} |`;
   }), "",
 ];
@@ -177,5 +193,5 @@ if (update) {
     console.error("endpoint-parity: FAIL — PARITY_MATRIX.md is stale; run with --update.");
     process.exit(1);
   }
-  console.log(`endpoint-parity: OK — ${covered.length}/${inventory.endpoints.length} proven operations, ${waivers.length} waived, ${missing.length} pending, ${unmatched.length} unmatched.`);
+  console.log(`endpoint-parity: OK — ${covered.length}/${inventory.endpoints.length} proven operations, ${waivers.length} waived, ${clientRetired.length} client-retired, ${missing.length} pending, ${unmatched.length} unmatched.`);
 }

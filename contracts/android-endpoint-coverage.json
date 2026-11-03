@@ -5,9 +5,10 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 508,
-    "covered": 270,
+    "platform": 512,
+    "covered": 271,
     "waived": 234,
+    "clientRetired": 3,
     "missing": 6,
     "unmatched": 1
   },
@@ -1168,23 +1169,28 @@
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/unschedule",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
       "method": "GET",
-      "path": "/api/tasks/:param/timer",
+      "path": "/api/tasks/:param/worklogs",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
       "method": "POST",
-      "path": "/api/tasks/:param/timer/start",
+      "path": "/api/tasks/:param/worklogs",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
-      "method": "POST",
-      "path": "/api/tasks/:param/timer/stop",
+      "method": "DELETE",
+      "path": "/api/tasks/:param/worklogs/:param",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
       "method": "PATCH",
-      "path": "/api/tasks/:param/unschedule",
+      "path": "/api/tasks/:param/worklogs/:param",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -1361,6 +1367,23 @@
       "method": "PUT",
       "path": "/api/user/preferences",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    }
+  ],
+  "clientRetired": [
+    {
+      "key": "GET /api/tasks/:param/timer",
+      "owner": "Android manual-worklogs/ticket-07",
+      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
+    },
+    {
+      "key": "POST /api/tasks/:param/timer/start",
+      "owner": "Android manual-worklogs/ticket-07",
+      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
+    },
+    {
+      "key": "POST /api/tasks/:param/timer/stop",
+      "owner": "Android manual-worklogs/ticket-07",
+      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
     }
   ],
   "unmatched": [
