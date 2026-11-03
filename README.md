@@ -45,9 +45,21 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
 
 ## Plan on Android
 
+The Activity-scoped `TasksShellViewModel` owns team scope, tabs, shared sheets,
+search membership, preferences and metadata. It is the only Plan-scope writer.
+Its `TaskShellUiState` contains no Tickets or Board, Plan, Scheduled or Detail
+state; search rows are a session-reset projection, not another Ticket owner.
+`TaskViewModel` remains a source-compatible alias for the shell. `TasksScreen`
+composes the owners' states only at the UI boundary. List actions belong to their
+surface's ViewModel, and the inline comments sheet has its own id-keyed Detail
+ViewModel, disposed when the sheet closes. No ViewModel references another.
+The app shell forwards realtime, reconnect and visible polling directly to the
+signed-in `TicketSession`, and schedule notice links go to `ScheduledViewModel`.
+Service desk and Sprint insights retain their independent reads and selection.
+
 The Activity-scoped `ScheduledViewModel` owns Scheduled membership ids and the
 visible date window, scheduling and unscheduling (including Undo), overlays and
-one-shot date focus. It reads the session Ticket store and Plan scope without
+one-shot date focus, including daily carry-forward. It reads the session Ticket store and Plan scope without
 referencing another ViewModel. Team switches restore cached ids before refreshing;
 the shell only coordinates tab navigation through session requests.
 

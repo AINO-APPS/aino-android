@@ -40,7 +40,7 @@ import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.attendance.DeviceCredentialProof
 import app.aino.mobile.feature.attendance.VerifyFix
 import app.aino.mobile.core.navigation.AttendanceSystemActions
-import app.aino.mobile.feature.tasks.TaskViewModel
+import app.aino.mobile.feature.tasks.TasksShellViewModel
 import app.aino.mobile.feature.tasks.SprintBoardViewModel
 import app.aino.mobile.feature.tasks.PlanViewModel
 import app.aino.mobile.feature.tasks.ScheduledViewModel
@@ -120,9 +120,9 @@ class MainActivity : FragmentActivity() {
         app.aino.mobile.core.call.CallReconciler.clearStaleRing(applicationContext)
         setContent {
             val ticketSession by app.aino.mobile.core.AppContainer.get(applicationContext).ticketSession.collectAsState()
-            val taskViewModel = androidx.lifecycle.viewmodel.compose.viewModel<TaskViewModel>(
+            val taskViewModel = androidx.lifecycle.viewmodel.compose.viewModel<TasksShellViewModel>(
                 key = "tasks-${ticketSession.key}",
-                factory = TaskViewModel.factory(applicationContext, ticketSession),
+                factory = TasksShellViewModel.factory(applicationContext, ticketSession),
             )
             val sprintBoardViewModel = androidx.lifecycle.viewmodel.compose.viewModel<SprintBoardViewModel>(
                 key = "sprint-board-${ticketSession.key}",
@@ -165,6 +165,7 @@ class MainActivity : FragmentActivity() {
                     dashboardViewModel,
                     attendanceViewModel,
                     taskViewModel,
+                    ticketSession,
                     sprintBoardViewModel,
                     planViewModel,
                     scheduledViewModel,

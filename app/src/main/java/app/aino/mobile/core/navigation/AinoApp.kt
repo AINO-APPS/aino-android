@@ -73,7 +73,8 @@ import app.aino.mobile.feature.attendance.AttendanceViewModel
 import app.aino.mobile.feature.attendance.verify.ClockInVerifySheet
 import app.aino.mobile.feature.attendance.verify.VerifyActions
 import app.aino.mobile.feature.tasks.TasksScreen
-import app.aino.mobile.feature.tasks.TaskViewModel
+import app.aino.mobile.feature.tasks.TasksShellViewModel
+import app.aino.mobile.feature.tasks.TicketSession
 import app.aino.mobile.feature.tasks.SprintBoardViewModel
 import app.aino.mobile.feature.tasks.PlanViewModel
 import app.aino.mobile.feature.tasks.ScheduledViewModel
@@ -124,7 +125,8 @@ fun AinoApp(
     realtime: RealtimeViewModel,
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
-    tasks: TaskViewModel,
+    tasks: TasksShellViewModel,
+    ticketSession: TicketSession,
     sprintBoard: SprintBoardViewModel,
     plan: PlanViewModel,
     scheduled: ScheduledViewModel,
@@ -317,7 +319,7 @@ fun AinoApp(
             OutboxWorker.enqueue(appContext, reconnectScope!!)
         }
     }
-    LaunchedEffect(tenantAuthenticated, tasks) {
+    LaunchedEffect(tenantAuthenticated, ticketSession) {
         if (tenantAuthenticated) {
             realtime.events.collect { event ->
                 when (val callEvent = CallRealtimeRouter.decode(event)) {
@@ -338,7 +340,7 @@ fun AinoApp(
                 }
                 meetingSession.onRealtimeEvent(event)
                 if (event.type in DASHBOARD_REFRESH_EVENTS) dashboard.refresh()
-                if (event.type in TASK_REFRESH_EVENTS) tasks.ticketSession.onRealtimeEvent(event.type, event.data)
+                if (event.type in TASK_REFRESH_EVENTS) ticketSession.onRealtimeEvent(event.type, event.data)
                 when (event.type) {
                     // Clock/break taken on the web, desktop or another phone, or a
                     // manual entry filed/deleted: timer, status, calendar and loaded tabs.
@@ -406,13 +408,13 @@ fun AinoApp(
         }
     }
     val resync by realtime.resync.collectAsStateWithLifecycle()
-    LaunchedEffect(resync, tasks) {
+    LaunchedEffect(resync, ticketSession) {
         if (resync == 0L || !tenantAuthenticated) return@LaunchedEffect
         chat.refresh()
         chat.refreshThread()
         dashboard.refresh()
         attendance.refresh()
-        tasks.ticketSession.onReconnect()
+        ticketSession.onReconnect()
         notifications.refresh()
         profile.refresh()
     }
@@ -462,6 +464,7 @@ fun AinoApp(
             dashboard,
             attendance,
             tasks,
+            ticketSession,
             sprintBoard,
             plan,
             scheduled,
@@ -533,7 +536,8 @@ private fun AuthenticatedShell(
     realtimeState: RealtimeState,
     dashboard: DashboardViewModel,
     attendance: AttendanceViewModel,
-    tasks: TaskViewModel,
+    tasks: TasksShellViewModel,
+    ticketSession: TicketSession,
     sprintBoard: SprintBoardViewModel,
     plan: PlanViewModel,
     scheduled: ScheduledViewModel,
@@ -760,7 +764,7 @@ private fun AuthenticatedShell(
                 )
             }
             composable(AinoDestination.Tasks.route) {
-                ForegroundPoll(TASKS_POLL_MS, tasks.ticketSession::pollVisible)
+                ForegroundPoll(TASKS_POLL_MS, ticketSession::pollVisible)
                 TasksScreen(
                     viewModel = tasks,
                     boardViewModel = sprintBoard,
@@ -775,8 +779,8 @@ private fun AuthenticatedShell(
                 val ticketId = entry.arguments!!.getLong("ticketId")
                 val detail = androidx.lifecycle.viewmodel.compose.viewModel<app.aino.mobile.feature.tasks.TicketDetailViewModel>(
                     viewModelStoreOwner = entry,
-                    key = "ticket-detail-${tasks.ticketSession.key}-$ticketId",
-                    factory = app.aino.mobile.feature.tasks.TicketDetailViewModel.factory(shellContext, ticketId, tasks.ticketSession),
+                    key = "ticket-detail-${ticketSession.key}-$ticketId",
+                    factory = app.aino.mobile.feature.tasks.TicketDetailViewModel.factory(shellContext, ticketId, ticketSession),
                 )
                 val closeDetail = {
                     detail.closeDetail()
@@ -801,10 +805,10 @@ private fun AuthenticatedShell(
                         runCatching {
                             val container = app.aino.mobile.core.AppContainer.get(shellContext)
                             app.aino.mobile.feature.tasks.TicketDetailViewModel.resolveKey(
-                                app.aino.mobile.feature.tasks.TaskRepository(container.api), tasks.ticketSession, key,
+                                app.aino.mobile.feature.tasks.TaskRepository(container.api), ticketSession, key,
                             )
                         }.getOrElse {
-                            tasks.ticketSession.publishNotice(app.aino.mobile.feature.tasks.TaskNotice("No task matches $key"))
+                            ticketSession.publishNotice(app.aino.mobile.feature.tasks.TaskNotice("No task matches $key"))
                             null
                         }
                     }
@@ -1349,11 +1353,11 @@ private fun AuthenticatedShell(
     }
     // Tasks snackbars live at shell level so Undo / View survive the detail screen closing.
     app.aino.mobile.feature.tasks.TaskNoticeHost(
-        tasks.ticketSession,
+        ticketSession,
         modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = if (fullScreen) 8.dp else 72.dp),
         onOpenTicket = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
         onShowScheduled = { date ->
-            tasks.showScheduled(date)
+            scheduled.showScheduled(date)
             nav.navigate(AinoDestination.Tasks.route) { launchSingleTop = true }
         },
     )

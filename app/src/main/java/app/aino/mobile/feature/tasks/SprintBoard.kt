@@ -81,7 +81,7 @@ import kotlin.math.roundToInt
  * accessible fallback. Moves are optimistic with Undo.
  */
 @Composable
-internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, boardViewModel: SprintBoardViewModel, onOpen: (Task) -> Unit) {
+internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, boardViewModel: SprintBoardViewModel, onOpen: (Task) -> Unit, onComments: (Long) -> Unit = {}) {
     val colors = LocalWebColors.current
     val haptics = LocalHapticFeedback.current
     val states = boardUi.sprintBoard?.columns.orEmpty().mapNotNull { column ->
@@ -151,7 +151,7 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                                 dropAllowed = dragging?.dropTargetDecision(state.id, boardColumn.accepting)?.allowed,
                                 dropReason = dragging?.dropTargetDecision(state.id, boardColumn.accepting)?.reasonCopy(),
                                 modifier = Modifier.onGloballyPositioned { headerBounds[state.key] = it.boundsInRoot() },
-                                onAdd = { viewModel.openCreateForColumn(state) },
+                                onAdd = { boardViewModel.openCreateForColumn(state) },
                             )
                         }
                         if (columnTasks.isEmpty()) {
@@ -228,7 +228,7 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                                         task, ui.agile,
                                         onOpen = { onOpen(task) },
                                         highlighted = task.id in ui.recentlyUpdated,
-                                        onComments = { viewModel.openComments(task.id) },
+                                        onComments = { onComments(task.id) },
                                         compact = ui.compact,
                                         attribution = ui.attribution[task.id],
                                         topTrailing = {
@@ -290,7 +290,7 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
     }
 
     actionsFor?.let { task ->
-        TaskActionsSheet(task, ui, boardUi, viewModel, boardViewModel, onOpen = { onOpen(task) }, onDismiss = { actionsFor = null })
+        TaskActionsSheet(task, ui, boardUi, boardViewModel, onOpen = { onOpen(task) }, onDismiss = { actionsFor = null }, onComments = onComments)
     }
 }
 
@@ -644,7 +644,7 @@ private fun SprintLifecycleControls(ui: SprintBoardUiState, sprint: AvailableSpr
 
 /** Long-press / overflow actions for a card: move, comments, open, delete. */
 @Composable
-internal fun TaskActionsSheet(task: Task, ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, boardViewModel: SprintBoardViewModel, onOpen: () -> Unit, onDismiss: () -> Unit) {
+internal fun TaskActionsSheet(task: Task, ui: TaskUiState, boardUi: SprintBoardUiState, boardViewModel: SprintBoardViewModel, onOpen: () -> Unit, onDismiss: () -> Unit, onComments: (Long) -> Unit = {}) {
     val colors = LocalWebColors.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val haptics = app.aino.mobile.core.designsystem.rememberAinoHaptics()
@@ -679,13 +679,13 @@ internal fun TaskActionsSheet(task: Task, ui: TaskUiState, boardUi: SprintBoardU
             Spacer(Modifier.height(8.dp))
         }
         ActionRow(HeroIcons.ArrowTopRightOnSquare, "Open details") { onDismiss(); onOpen() }
-        ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { onDismiss(); viewModel.openComments(task.id) }
+        ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { onDismiss(); onComments(task.id) }
         ActionRow(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") {
             clipboard.setText(androidx.compose.ui.text.AnnotatedString(task.displayKey))
             onDismiss()
         }
         val canCancel = task.capability(TaskCapability.Cancel)
-        ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { onDismiss(); viewModel.requestDelete(task) }
+        ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { onDismiss(); boardViewModel.requestDelete(task) }
     }
 }
 

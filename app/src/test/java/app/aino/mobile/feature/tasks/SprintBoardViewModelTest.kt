@@ -25,6 +25,26 @@ class SprintBoardViewModelTest {
     }
 
     @Test
+    fun realtimeRefreshesALoadedBoardOnceAfterRepeatedRequests() {
+        harness.loadBoardPlanAndDetail()
+        repeat(3) {
+            val before = harness.boardReads
+            harness.viewModel.loadSprint()
+            harness.await { harness.boardReads > before }
+        }
+        val before = harness.boardReads
+
+        harness.session.onRealtimeEvent("task_updated", kotlinx.serialization.json.buildJsonObject {
+            put("taskId", kotlinx.serialization.json.JsonPrimitive(201))
+            put("action", kotlinx.serialization.json.JsonPrimitive("updated"))
+        })
+
+        harness.await { harness.boardReads > before }
+        Thread.sleep(500)
+        assertEquals(before + 1, harness.boardReads)
+    }
+
+    @Test
     fun creatingFromAColumnAppearsOnTheBoardEvenWhenRefreshFails() {
         val board = harness.boardViewModel
         harness.loadBoardPlanAndDetail()
@@ -50,7 +70,7 @@ class SprintBoardViewModelTest {
         harness.await { board.ui.value.tasks.size == 1 }
         harness.searchRows = harness.original
         harness.viewModel.setSearch("Ship")
-        harness.await { harness.viewModel.ui.value.searchResults.size == 1 }
+        harness.await { harness.viewModel.searchResults.value.size == 1 }
         harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
             .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
         harness.detailResponse = harness.saved
@@ -64,7 +84,7 @@ class SprintBoardViewModelTest {
                 harness.detailViewModel.ui.value.detail?.container == "backlog"
         }
 
-        assertEquals("backlog", harness.viewModel.ui.value.searchResults.single().container)
+        assertEquals("backlog", harness.viewModel.searchResults.value.single().container)
         assertEquals(null, harness.detailViewModel.ui.value.detail?.sprintId)
         assertEquals("backlog", harness.completedRollover)
     }
@@ -75,15 +95,15 @@ class SprintBoardViewModelTest {
         harness.loadBoardPlanAndDetail()
         harness.searchRows = harness.original
         harness.viewModel.setSearch("Ship")
-        harness.await { harness.viewModel.ui.value.searchResults.size == 1 }
+        harness.await { harness.viewModel.searchResults.value.size == 1 }
         harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":11")
         harness.detailResponse = harness.saved
 
         board.setRollover("11")
         board.completeSprint()
         harness.await { harness.detailViewModel.ui.value.detail?.sprintId == 11L && !board.ui.value.lifecycleBusy }
-        assertEquals(11L, harness.viewModel.ui.value.searchResults.single().sprintId)
-        assertEquals("sprint", harness.viewModel.ui.value.searchResults.single().container)
+        assertEquals(11L, harness.viewModel.searchResults.value.single().sprintId)
+        assertEquals("sprint", harness.viewModel.searchResults.value.single().container)
         assertEquals("11", harness.completedRollover)
         assertEquals(emptyList<Long>(), board.ui.value.tasks.map { it.id })
 

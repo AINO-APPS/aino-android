@@ -171,6 +171,7 @@ internal sealed interface PlanRequest {
 }
 
 internal sealed interface ScheduledRequest {
+    data object CarryForward : ScheduledRequest
     data object Load : ScheduledRequest
     data object ReloadLoaded : ScheduledRequest
     data class Show(val date: String?) : ScheduledRequest

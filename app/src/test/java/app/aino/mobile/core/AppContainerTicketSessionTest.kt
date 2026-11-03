@@ -83,15 +83,15 @@ class AppContainerTicketSessionTest {
         container.setTicketSessionScope(CacheScope(10, 1))
         val old = viewModel()
         old.openByKey("OLD-201")
-        await { old.ui.value.tickets[201]?.id == 201L }
+        await { old.plan.ui.value.backlog.singleOrNull()?.id == 201L }
 
         container.setTicketSessionScope(null)
         container.setTicketSessionScope(CacheScope(10, 2))
         val next = viewModel()
 
-        assertNull(old.ui.value.tickets[201])
         assertTrue(old.plan.ui.value.backlog.isEmpty())
-        assertNull(next.ui.value.tickets[201])
+        assertTrue(old.plan.ui.value.backlog.isEmpty())
+        assertTrue(next.plan.ui.value.backlog.isEmpty())
         assertTrue(next.plan.ui.value.backlog.isEmpty())
     }
 
@@ -100,7 +100,7 @@ class AppContainerTicketSessionTest {
         container.setTicketSessionScope(identity)
         val old = viewModel()
         old.openByKey("OLD-201")
-        await { old.ui.value.tickets[201]?.title == "Previous session" }
+        await { old.plan.ui.value.backlog.singleOrNull()?.title == "Previous session" }
 
         container.setTicketSessionScope(null)
         title = "Fresh from server"
@@ -109,24 +109,24 @@ class AppContainerTicketSessionTest {
         assertTrue(next.plan.ui.value.backlog.isEmpty())
         next.openByKey("OLD-201")
 
-        await { next.ui.value.tickets[201]?.title == "Fresh from server" }
-        assertNull(old.ui.value.tickets[201])
+        await { next.plan.ui.value.backlog.singleOrNull()?.title == "Fresh from server" }
+        assertTrue(old.plan.ui.value.backlog.isEmpty())
     }
 
     @Test fun switchingTenantDoesNotExposeThePreviousTenantsTickets() {
         container.setTicketSessionScope(CacheScope(10, 1))
         val old = viewModel()
         old.openByKey("OLD-201")
-        await { old.ui.value.tickets[201]?.title == "Previous session" }
+        await { old.plan.ui.value.backlog.singleOrNull()?.title == "Previous session" }
 
         title = "Other tenant"
         container.setTicketSessionScope(CacheScope(20, 1))
         val next = viewModel()
         assertTrue(next.plan.ui.value.backlog.isEmpty())
-        assertNull(old.ui.value.tickets[201])
+        assertTrue(old.plan.ui.value.backlog.isEmpty())
         next.openByKey("OLD-201")
 
-        await { next.ui.value.tickets[201]?.title == "Other tenant" }
+        await { next.plan.ui.value.backlog.singleOrNull()?.title == "Other tenant" }
         assertTrue(old.plan.ui.value.backlog.isEmpty())
     }
 
@@ -135,23 +135,23 @@ class AppContainerTicketSessionTest {
         container.setTicketSessionScope(identity)
         val vm = viewModel()
         vm.openByKey("OLD-201")
-        await { vm.ui.value.tickets[201]?.id == 201L }
+        await { vm.plan.ui.value.backlog.singleOrNull()?.id == 201L }
 
         container.setTicketSessionScope(identity)
 
-        assertEquals("Previous session", vm.ui.value.tickets[201]?.title)
+        assertEquals("Previous session", vm.plan.ui.value.backlog.singleOrNull()?.title)
     }
 
     @Test fun aDifferentUserStartsANewSessionWithoutAnExplicitSignOut() {
         container.setTicketSessionScope(CacheScope(10, 1))
         val old = viewModel()
         old.openByKey("OLD-201")
-        await { old.ui.value.tickets[201]?.id == 201L }
+        await { old.plan.ui.value.backlog.singleOrNull()?.id == 201L }
 
         container.setTicketSessionScope(CacheScope(10, 2))
         val next = viewModel()
 
-        assertNull(old.ui.value.tickets[201])
+        assertTrue(old.plan.ui.value.backlog.isEmpty())
         assertTrue(old.plan.ui.value.backlog.isEmpty())
         assertTrue(next.plan.ui.value.backlog.isEmpty())
     }
@@ -179,11 +179,11 @@ class AppContainerTicketSessionTest {
         assertTrue(returned.await(5, TimeUnit.SECONDS))
         val next = viewModel()
         next.openByKey("OLD-201")
-        await { next.ui.value.tickets[201]?.id == 201L }
+        await { next.plan.ui.value.backlog.singleOrNull()?.id == 201L }
 
-        assertNull(old.ui.value.tickets[201])
         assertTrue(old.plan.ui.value.backlog.isEmpty())
-        assertEquals("Previous session", next.ui.value.tickets[201]?.title)
+        assertTrue(old.plan.ui.value.backlog.isEmpty())
+        assertEquals("Previous session", next.plan.ui.value.backlog.singleOrNull()?.title)
     }
 
     @Test fun signingOutCancelsPendingSearchRequests() {
@@ -199,7 +199,7 @@ class AppContainerTicketSessionTest {
         Thread.sleep(600)
 
         assertEquals(0, searchRequests.get())
-        assertTrue(vm.ui.value.searchResults.isEmpty())
+        assertTrue(vm.searchResults.value.isEmpty())
     }
 
     @Test fun aColdSessionRebuildsItsLastPlanFromThePerUserResponseCache() {

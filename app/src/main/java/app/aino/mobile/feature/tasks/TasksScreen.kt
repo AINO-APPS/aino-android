@@ -107,9 +107,12 @@ fun TasksScreen(
     val shellUi by viewModel.ui.collectAsStateWithLifecycle()
     val planUi by planViewModel.ui.collectAsStateWithLifecycle()
     val scheduledUi by scheduledViewModel.ui.collectAsStateWithLifecycle()
+    val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
     val ui = tasksScreenState(shellUi, planUi, scheduledUi)
-    val boardState by boardViewModel.ui.collectAsStateWithLifecycle()
-    val boardUi = boardState.copy(planScope = ui.planScope)
+    val scheduledScreenUi = ui.copy(tickets = scheduledUi.tickets, recentlyUpdated = scheduledUi.recentlyUpdated)
+    val boardUi by boardViewModel.ui.collectAsStateWithLifecycle()
+    var inlineCommentTicketId by rememberSaveable(viewModel.ticketSession.key) { mutableStateOf<Long?>(null) }
+    val openComments: (Long) -> Unit = { inlineCommentTicketId = it }
     val colors = LocalWebColors.current
     val open: (Task) -> Unit = { task ->
         viewModel.closeSearch()
@@ -175,7 +178,7 @@ fun TasksScreen(
                     divider = { HorizontalDivider(color = colors.border) },
                 ) {
                     tabs.forEachIndexed { index, tab ->
-                        val badge = when (tab) { TaskTab.Backlog -> ui.backlogTotal.takeIf { it > 0 }; TaskTab.Scheduled -> ui.scheduledOverdue.takeIf { it > 0 }; else -> null }
+                        val badge = when (tab) { TaskTab.Backlog -> planUi.backlogTotal.takeIf { it > 0 }; TaskTab.Scheduled -> scheduledScreenUi.scheduledOverdue.takeIf { it > 0 }; else -> null }
                         Tab(
                             selected = pagerState.currentPage == index,
                             onClick = { viewModel.selectTab(tab) },
@@ -211,14 +214,14 @@ fun TasksScreen(
                     when (tabs.getOrNull(page)) {
                         // The Sprint tab is the board; the Plan split view is a
                         // Backlog action (ADR-015), reached from "Plan sprint".
-                        TaskTab.Sprint -> SprintBoard(ui, boardUi, viewModel, boardViewModel, open)
-                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, planViewModel, open) else BacklogPage(ui, viewModel, planViewModel, scheduledViewModel, open)
-                        TaskTab.Scheduled -> ScheduledPage(ui, viewModel, scheduledViewModel, open)
+                        TaskTab.Sprint -> SprintBoard(ui, boardUi, viewModel, boardViewModel, open, openComments)
+                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, planViewModel, open) else BacklogPage(ui, viewModel, planViewModel, scheduledViewModel, open, openComments)
+                        TaskTab.Scheduled -> ScheduledPage(scheduledScreenUi, viewModel, scheduledViewModel, open, openComments)
                         TaskTab.ServiceDesk -> serviceDesk()
                         null -> Unit
                     }
                 }
-                if (ui.searchOpen) SearchOverlay(ui, viewModel, planViewModel, open)
+                if (ui.searchOpen) SearchOverlay(ui, viewModel, planViewModel, open, searchResults)
             }
         }
     }
@@ -230,38 +233,23 @@ fun TasksScreen(
         TaskSheet.SprintPicker -> SprintPickerSheet(ui, viewModel)
         null -> Unit
     }
-    val commentThreads by viewModel.ticketSession.commentThreads.collectAsStateWithLifecycle()
-    ui.inlineCommentTaskId?.let { commentThreads[it] ?: CommentThread(it) }?.let { thread ->
-        val task = (boardUi.tasks + ui.backlog).firstOrNull { it.id == thread.taskId }
-        TaskSheetScaffold("Comments", viewModel::closeComments, HeroIcons.ChatBubbleOvalLeft) {
-            task?.let {
-                Text(it.title, color = colors.textSecondary, fontSize = 0.84.rem, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 10.dp))
-            }
-            Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState())) {
-                CommentSection(
-                    taskId = thread.taskId,
-                    comments = thread.items,
-                    loading = thread.loading,
-                    currentUserId = ui.userId,
-                    users = ui.assignableUsers,
-                    viewModel = viewModel,
-                    placeholder = "Write a comment…",
-                )
-            }
-        }
+    inlineCommentTicketId?.let { ticketId ->
+        InlineTicketComments(ticketId, viewModel.ticketSession) { inlineCommentTicketId = null }
     }
-    ui.confirm?.let {
+    (boardUi.confirm ?: ui.confirm)?.let {
         TaskConfirmDialog(
             it,
             { when {
+                boardUi.confirm != null -> boardViewModel.acceptConfirm()
                 scheduledUi.confirm != null -> scheduledViewModel.acceptConfirm()
                 planUi.confirm != null -> planViewModel.acceptConfirm()
-                else -> viewModel.acceptConfirm()
+                else -> Unit
             } },
             { when {
+                boardUi.confirm != null -> boardViewModel.dismissConfirm()
                 scheduledUi.confirm != null -> scheduledViewModel.dismissConfirm()
                 planUi.confirm != null -> planViewModel.dismissConfirm()
-                else -> viewModel.dismissConfirm()
+                else -> Unit
             } },
         )
     }
@@ -526,7 +514,7 @@ private fun PaletteRow(
 }
 
 @Composable
-private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, onOpen: (Task) -> Unit) {
+private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, onOpen: (Task) -> Unit, results: List<Task>) {
     val colors = LocalWebColors.current
     val focus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -546,17 +534,17 @@ private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, planViewMod
         val q = ui.searchQuery.trim()
         when {
             q.length < 2 -> CommandPaletteBody(ui, viewModel, planViewModel, onOpen)
-            ui.searching && ui.searchResults.isEmpty() -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { WebSpinner() }
-            ui.searchResults.isEmpty() -> CommandPaletteBody(ui, viewModel, planViewModel, onOpen, noResultsFor = q)
+            ui.searching && results.isEmpty() -> Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { WebSpinner() }
+            results.isEmpty() -> CommandPaletteBody(ui, viewModel, planViewModel, onOpen, noResultsFor = q)
             else -> LazyColumn(
                 Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    Text("${ui.searchResults.size} result${if (ui.searchResults.size == 1) "" else "s"}", color = colors.textMuted, fontSize = 0.76.rem)
+                    Text("${results.size} result${if (results.size == 1) "" else "s"}", color = colors.textMuted, fontSize = 0.76.rem)
                 }
-                items(ui.searchResults, key = { "s-${it.id}" }) { task ->
+                items(results, key = { "s-${it.id}" }) { task ->
                     TaskCardM3(
                         task, ui.agile,
                         onOpen = { onOpen(task) },

@@ -25,6 +25,7 @@ data class SprintBoardUiState(
     val board: SprintBoardResponse? = null,
     val sprintLoading: Boolean = true,
     val error: String? = null,
+    val confirm: ConfirmRequest? = null,
     val recentlyUpdated: Set<Long> = emptySet(),
     val sprintStats: SprintStats? = null,
     val lifecycleBusy: Boolean = false,
@@ -68,6 +69,18 @@ class SprintBoardViewModel(
     private val ticketScope = CoroutineScope(viewModelScope.coroutineContext + SupervisorJob(ticketSession.job))
     private val _ui = ticketSession.state(SprintBoardUiState(planScope = ticketSession.planScope.value))
     val ui: StateFlow<SprintBoardUiState> = _ui.asStateFlow()
+    private val listActions = TicketListActions(repository, ticketSession, ticketScope,
+        confirm = { request -> _ui.update { it.copy(confirm = request) } },
+        fail = { error, message -> fail(failure(error, message)) },
+    )
+    fun requestDelete(task: Task) = listActions.requestDelete(task)
+    fun openCreateForColumn(state: WorkflowState) = ticketSession.requestPlan(PlanRequest.CreateForColumn(state))
+    fun acceptConfirm() {
+        val request = _ui.value.confirm ?: return
+        dismissConfirm()
+        request.action()
+    }
+    fun dismissConfirm() = _ui.update { it.copy(confirm = null) }
     private var sprintJob: Job? = null
     private var errorJob: Job? = null
     private val sprintGeneration = java.util.concurrent.atomic.AtomicInteger()
@@ -91,7 +104,7 @@ class SprintBoardViewModel(
                             it.copy(
                                 planScope = scope, board = cached?.board, boardTicketIds = cached?.ids.orEmpty(),
                                 sprintStats = cached?.stats, baseline = cached?.baseline, completionPreview = null,
-                                completing = false, lifecycleBusy = false, lifecycleError = null, error = null,
+                                completing = false, lifecycleBusy = false, lifecycleError = null, error = null, confirm = null,
                                 sprintLoading = scope.selectedSprintId != null && cached == null,
                             )
                         }
@@ -120,6 +133,11 @@ class SprintBoardViewModel(
                     BoardRequest.Start -> startSprint()
                     is BoardRequest.Baseline -> loadBaseline(request.sprintId)
                 }
+            }
+        }
+        ticketScope.launch {
+            ticketSession.sync(repository).changes.collect { change ->
+                if (change is TicketSyncChange.Updated && change.refreshBoard && _ui.value.board != null) loadSprint()
             }
         }
         ticketSession.onClose { synchronized(ticketSession.planScopeLock) { boards.clear() } }

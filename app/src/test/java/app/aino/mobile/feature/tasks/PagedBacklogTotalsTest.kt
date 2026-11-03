@@ -74,7 +74,7 @@ class PagedBacklogTotalsTest {
         load()
         repeat(2) { revision ->
             saved = original.replace("\"id\":1", "\"id\":2").replace("Ship", "Ship $revision")
-            vm.onTaskEvent("task_updated", buildJsonObject { put("taskId", 2) })
+            vm.ticketSession.onRealtimeEvent("task_updated", buildJsonObject { put("taskId", 2) })
             await { vmPlan.ui.value.backlog.any { it.id == 2L && it.title == "Ship $revision" } }
             assertEquals(101, vmPlan.ui.value.backlogTotal)
         }
@@ -139,7 +139,7 @@ class PagedBacklogTotalsTest {
 
     @Test fun deletingALoadedTicketReducesTheBaselineCounts() {
         load()
-        vm.onTaskEvent("task_updated", buildJsonObject {
+        vm.ticketSession.onRealtimeEvent("task_updated", buildJsonObject {
             put("taskId", 1)
             put("action", "deleted")
         })
@@ -168,7 +168,7 @@ class PagedBacklogTotalsTest {
         firstPage = """{"tasks":[$original],"completed_count":8,"pagination":{"total":108,"hasMore":true}}"""
         load()
         saved = original.replace("\"id\":1", "\"id\":2")
-        vm.onTaskEvent("task_updated", buildJsonObject { put("taskId", 2) })
+        vm.ticketSession.onRealtimeEvent("task_updated", buildJsonObject { put("taskId", 2) })
         await { vmPlan.ui.value.backlog.size == 2 }
 
         assertEquals(101, vmPlan.ui.value.backlogTotal)

@@ -48,7 +48,7 @@ class TaskOfflineTest {
 
         offline = true
         val before = backlogLoads.get()
-        vm.pollVisible()
+        vm.ticketSession.pollVisible()
         waitFor { backlogLoads.get() > before && !vmPlan.ui.value.backlogLoading }
         Thread.sleep(50)
         assertEquals(listOf(4L), vmPlan.ui.value.backlog.map { it.id })

@@ -90,7 +90,7 @@ internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewMo
             } else {
                 items(boardUi.tasks, key = { "sp-${it.id}" }) { task ->
                     PlanRow(task, ui, onOpen, actionLabel = "Move to backlog") {
-                        viewModel.assignSprint(task, null)
+                        planViewModel.assignSprint(task, null)
                     }
                 }
             }
@@ -134,7 +134,7 @@ internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewMo
             },
             setOf(task.sprintId),
             onDismiss = { moving = null },
-            onSelect = { ids -> ids.firstOrNull()?.let { viewModel.assignSprint(task, it) } },
+            onSelect = { ids -> ids.firstOrNull()?.let { planViewModel.assignSprint(task, it) } },
             icon = HeroIcons.RocketLaunch,
         )
     }

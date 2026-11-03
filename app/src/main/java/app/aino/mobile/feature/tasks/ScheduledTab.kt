@@ -62,7 +62,7 @@ private val WEEKDAY = DateTimeFormatter.ofPattern("EEE", Locale.US)
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, scheduledViewModel: ScheduledViewModel, onOpen: (Task) -> Unit) {
+internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, scheduledViewModel: ScheduledViewModel, onOpen: (Task) -> Unit, onComments: (Long) -> Unit = {}) {
     val colors = LocalWebColors.current
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
@@ -121,7 +121,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, scheduledV
                             showDate = group.date == null,
                             onReschedule = { rescheduling = task },
                             onActions = { actionsFor = task },
-                            onComments = { viewModel.openComments(task.id) },
+                            onComments = { onComments(task.id) },
                         )
                     }
                 }
@@ -149,9 +149,9 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, scheduledV
             val canSchedule = task.capability(TaskCapability.Schedule)
             ActionRow(HeroIcons.CalendarDays, "Reschedule", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { actionsFor = null; rescheduling = task }
             ActionRow(HeroIcons.ArchiveBox, "Move to backlog", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { actionsFor = null; scheduledViewModel.unschedule(task.id, task.title, ask = false) }
-            ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { actionsFor = null; viewModel.openComments(task.id) }
+            ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { actionsFor = null; onComments(task.id) }
             val canCancel = task.capability(TaskCapability.Cancel)
-            ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { actionsFor = null; viewModel.requestDelete(task) }
+            ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { actionsFor = null; scheduledViewModel.requestDelete(task) }
         }
     }
 }

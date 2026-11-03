@@ -34,7 +34,7 @@ class TicketDetailViewModelTest {
         harness.loadBoardPlanAndDetail()
         harness.searchRows = harness.original
         harness.viewModel.setSearch("Ship")
-        harness.await { harness.viewModel.ui.value.searchResults.size == 1 }
+        harness.await { harness.viewModel.searchResults.value.size == 1 }
         harness.saved = harness.original.dropLast(1) + ""","is_blocked":true,"blocked_reason":"Waiting"}"""
         harness.detailResponse = harness.saved
 
@@ -43,7 +43,7 @@ class TicketDetailViewModelTest {
         harness.await {
             harness.detailViewModel.ui.value.detail?.isBlocked == true &&
                 harness.boardViewModel.ui.value.tasks.singleOrNull()?.isBlocked == true &&
-                harness.viewModel.ui.value.searchResults.singleOrNull()?.isBlocked == true
+                harness.viewModel.searchResults.value.singleOrNull()?.isBlocked == true
         }
         assertEquals(2, harness.detailReads)
         assertEquals("Waiting", harness.detailViewModel.ui.value.detail?.blockedReason)
@@ -53,7 +53,7 @@ class TicketDetailViewModelTest {
         harness.loadBoardPlanAndDetail()
         harness.searchRows = harness.original
         harness.viewModel.setSearch("Ship")
-        harness.await { harness.viewModel.ui.value.searchResults.size == 1 }
+        harness.await { harness.viewModel.searchResults.value.size == 1 }
         harness.saved = harness.original.dropLast(1) + ""","parent_task_id":77}"""
         harness.detailResponse = harness.saved
 
@@ -62,7 +62,7 @@ class TicketDetailViewModelTest {
         harness.await {
             harness.detailViewModel.ui.value.detail?.parentTaskId == 77L &&
                 harness.boardViewModel.ui.value.tasks.singleOrNull()?.parentTaskId == 77L &&
-                harness.viewModel.ui.value.searchResults.singleOrNull()?.parentTaskId == 77L
+                harness.viewModel.searchResults.value.singleOrNull()?.parentTaskId == 77L
         }
         assertEquals(2, harness.detailReads)
     }

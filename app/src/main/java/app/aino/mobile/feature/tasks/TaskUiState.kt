@@ -57,7 +57,6 @@ data class TaskUiState(
     val searchResultIds: List<Long> = emptyList(),
     val searching: Boolean = false,
     val searchOpen: Boolean = false,
-    val carriedCount: Int = 0,
     val importTaskId: Long? = null,
     val importAssignedTo: Long? = null,
     val importDueDate: String = "",
@@ -82,8 +81,6 @@ data class TaskUiState(
     val scheduledWindow: Pair<LocalDate, LocalDate> = scheduledWindow(),
     /** Day to bring into view after "View" on the schedule snackbar or a day-picker jump. */
     val scheduledFocus: String? = null,
-    // Inline comment panel (the card's 💬).
-    val inlineCommentTaskId: Long? = null,
     /** Bumped on refresh while the Service Desk tab is visible; the tab reloads on change. */
     val serviceDeskVersion: Int = 0,
     // ── Next-generation surfaces ─────────────────────────────────────────

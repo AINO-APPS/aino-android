@@ -33,6 +33,7 @@ data class TicketDetailUiState(
     val detailTab: DetailTab = DetailTab.Comments,
     val history: List<TaskHistoryEntry> = emptyList(),
     val detailComments: List<TaskComment> = emptyList(),
+    val commentsLoading: Boolean = false,
     val recentlyUpdated: Set<Long> = emptySet(),
     val timerRunning: Boolean = false,
     val timerBusy: Boolean = false,
@@ -88,7 +89,10 @@ class TicketDetailViewModel(
         }
         ticketScope.launch {
             ticketSession.commentThreads.collect { threads ->
-                _ui.update { it.copy(detailComments = threads[ticketId]?.items.orEmpty()) }
+                _ui.update { it.copy(
+                    detailComments = threads[ticketId]?.items.orEmpty(),
+                    commentsLoading = threads[ticketId]?.loading ?: false,
+                ) }
             }
         }
         ticketScope.launch {
@@ -189,6 +193,15 @@ class TicketDetailViewModel(
                 }
             }
             _ui.update { it.copy(detailLoading = false) }
+        }
+    }
+
+    fun loadComments() {
+        val cached = ticketSession.commentThreads.value[ticketId] ?: CommentThread(ticketId)
+        ticketSession.setCommentThread(cached.copy(loading = true))
+        io {
+            val items = runCatching { repository.loadComments(ticketId) }.getOrDefault(emptyList())
+            ticketSession.setCommentThread(CommentThread(ticketId, items, loading = false))
         }
     }
 

@@ -188,7 +188,7 @@ class SprintBoardWiringTest {
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
                 val boardUi = actionSheetState(board)
-                TaskActionsSheet(board.tickets.single(), TaskUiState(planScope = boardUi.planScope), boardUi, vm, SprintBoardViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession), onOpen = {}, onDismiss = {})
+                TaskActionsSheet(board.tickets.single(), TaskUiState(planScope = boardUi.planScope), boardUi, SprintBoardViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession), onOpen = {}, onDismiss = {})
             }
         }
 
@@ -206,7 +206,7 @@ class SprintBoardWiringTest {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
                 val vm = viewModel()
                 val boardUi = actionSheetState(board)
-                TaskActionsSheet(board.tickets.single().copy(capabilities = null), TaskUiState(planScope = boardUi.planScope), boardUi, vm, SprintBoardViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession), onOpen = {}, onDismiss = {})
+                TaskActionsSheet(board.tickets.single().copy(capabilities = null), TaskUiState(planScope = boardUi.planScope), boardUi, SprintBoardViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession), onOpen = {}, onDismiss = {})
             }
         }
 

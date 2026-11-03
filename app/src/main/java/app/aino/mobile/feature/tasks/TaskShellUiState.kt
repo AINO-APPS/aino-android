@@ -5,19 +5,12 @@ data class TaskShellUiState(
     val tab: TaskTab = TaskTab.Backlog,
     val sheet: TaskSheet? = null,
     val refreshing: Boolean = false,
-    val recentlyUpdated: Set<Long> = emptySet(),
-    val tickets: Map<Long, Task> = emptyMap(),
-    val error: String? = null,
-    val confirm: ConfirmRequest? = null,
     val searchQuery: String = "",
     val searchResultIds: List<Long> = emptyList(),
     val searching: Boolean = false,
     val searchOpen: Boolean = false,
-    val carriedCount: Int = 0,
-    val inlineCommentTaskId: Long? = null,
     val serviceDeskVersion: Int = 0,
     val preferences: TaskPreferences = TaskPreferences(),
-    val attribution: Map<Long, String> = emptyMap(),
 ) {
     val userId get() = planScope.userId
     val role get() = planScope.role
@@ -44,28 +37,4 @@ data class TaskShellUiState(
     val sprintsEnabled get() = planScope.sprintsEnabled
     val visibleTabs get() = planningTabs(agileEnabled, teamSprints, currentSprintId)
     val teamScope get() = planScope.teamScope
-    val searchResults get() = searchResultIds.mapNotNull(tickets::get)
 }
-
-/** Composed screen values, not another Ticket owner or a ViewModel dependency. */
-internal fun tasksScreenState(shell: TaskShellUiState, plan: PlanUiState, scheduled: ScheduledUiState): TaskUiState = TaskUiState(
-    planScope = shell.planScope, tab = shell.tab, sheet = shell.sheet, refreshing = shell.refreshing,
-    recentlyUpdated = shell.recentlyUpdated, tickets = shell.tickets,
-    error = scheduled.error ?: plan.error ?: shell.error, confirm = scheduled.confirm ?: plan.confirm ?: shell.confirm,
-    searchQuery = shell.searchQuery, searchResultIds = shell.searchResultIds,
-    searching = shell.searching, searchOpen = shell.searchOpen, carriedCount = shell.carriedCount,
-    scheduledTicketIds = scheduled.scheduledTicketIds, scheduledLoading = scheduled.scheduledLoading,
-    scheduledLoaded = scheduled.scheduledLoaded, scheduledFocus = scheduled.scheduledFocus,
-    scheduledWindow = scheduled.window,
-    inlineCommentTaskId = shell.inlineCommentTaskId, serviceDeskVersion = shell.serviceDeskVersion,
-    preferences = shell.preferences, overlays = scheduled.overlays, overlayTypes = scheduled.overlayTypes,
-    attribution = shell.attribution,
-    planOpen = plan.planOpen, planTicketIds = plan.planTicketIds, planLoaded = plan.planLoaded,
-    planBaseline = plan.planBaseline, planOffset = plan.planOffset, planHasMore = plan.planHasMore,
-    quickFilters = plan.quickFilters, backlogPageSize = plan.backlogPageSize, backlogSort = plan.backlogSort,
-    backlogLoading = plan.backlogLoading, backlogLoadingMore = plan.backlogLoadingMore,
-    draft = plan.draft, creating = plan.creating, completedOpen = plan.completedOpen,
-    completedLoading = plan.completedLoading, completedShowingAll = plan.completedShowingAll,
-    selectedIds = plan.selectedIds, epics = plan.epics, importTaskId = plan.importTaskId,
-    importAssignedTo = plan.importAssignedTo, importDueDate = plan.importDueDate,
-)

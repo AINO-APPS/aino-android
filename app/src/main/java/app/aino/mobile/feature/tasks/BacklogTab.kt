@@ -66,7 +66,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, scheduledViewModel: ScheduledViewModel, onOpen: (Task) -> Unit) {
+internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, scheduledViewModel: ScheduledViewModel, onOpen: (Task) -> Unit, onComments: (Long) -> Unit = {}) {
     val colors = LocalWebColors.current
     var collapsed by rememberSaveable { mutableStateOf(listOf<String>()) }
     var scheduling by remember { mutableStateOf<Task?>(null) }
@@ -107,10 +107,11 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
                 else -> {
                     val row: @Composable (Task) -> Unit = { task ->
                         BacklogRow(
-                            task, ui, viewModel, planViewModel, onOpen,
+                            task, ui, planViewModel, onOpen,
                             onSchedule = { scheduling = task },
                             onSprint = { sprintFor = task },
                             onActions = { actionsFor = task },
+                            onComments = onComments,
                         )
                     }
                     // Stranded sprint tickets render in their own warning group
@@ -154,12 +155,12 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
             ui.sprints.map { SelectOption<Long?>(it.id, it.name, "${formatDate(it.startDate)} – ${formatDate(it.endDate)} · ${it.status}", color = if (it.status == "active") colors.success else colors.primaryLight) },
             setOf(task.sprintId),
             onDismiss = { sprintFor = null },
-            onSelect = { ids -> ids.firstOrNull()?.let { viewModel.assignSprint(task, it) } },
+            onSelect = { ids -> ids.firstOrNull()?.let { planViewModel.assignSprint(task, it) } },
             icon = HeroIcons.RocketLaunch,
         )
     }
     actionsFor?.let { task ->
-        BacklogActionsSheet(task, ui, viewModel, planViewModel, onOpen = { onOpen(task) }, onSchedule = { scheduling = task }, onSprint = { sprintFor = task }, onDismiss = { actionsFor = null })
+        BacklogActionsSheet(task, ui, planViewModel, onOpen = { onOpen(task) }, onSchedule = { scheduling = task }, onSprint = { sprintFor = task }, onDismiss = { actionsFor = null }, onComments = onComments)
     }
 }
 
@@ -356,12 +357,12 @@ private fun BacklogGroupHeader(group: BacklogGroup, collapsed: Boolean, onToggle
 private fun BacklogRow(
     task: Task,
     ui: TaskUiState,
-    viewModel: TaskViewModel,
     planViewModel: PlanViewModel,
     onOpen: (Task) -> Unit,
     onSchedule: () -> Unit,
     onSprint: () -> Unit,
     onActions: () -> Unit,
+    onComments: (Long) -> Unit,
 ) {
     val colors = LocalWebColors.current
     val canSchedule = task.capability(TaskCapability.Schedule)
@@ -416,7 +417,7 @@ private fun BacklogRow(
             // Long-press starts selection; the checkbox only appears once selecting.
             onLongPress = { planViewModel.toggleSelection(task.id) },
             longPressLabel = "Select",
-            onComments = { viewModel.openComments(task.id) },
+            onComments = { onComments(task.id) },
             compact = ui.compact,
             selected = task.id in ui.selectedIds,
             attribution = ui.attribution[task.id],
@@ -455,12 +456,12 @@ private fun BacklogRow(
 private fun BacklogActionsSheet(
     task: Task,
     ui: TaskUiState,
-    viewModel: TaskViewModel,
     planViewModel: PlanViewModel,
     onOpen: () -> Unit,
     onSchedule: () -> Unit,
     onSprint: () -> Unit,
     onDismiss: () -> Unit,
+    onComments: (Long) -> Unit,
 ) {
     val colors = LocalWebColors.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
@@ -471,7 +472,7 @@ private fun BacklogActionsSheet(
         ActionRow(HeroIcons.CalendarDays, "Schedule to a day", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { onDismiss(); onSchedule() }
         val canPlaceInSprint = task.capability(TaskCapability.PlaceInSprint)
         if (ui.agileEnabled && ui.sprints.isNotEmpty()) ActionRow(HeroIcons.RocketLaunch, "Add to sprint", enabled = canPlaceInSprint.allowed, reason = canPlaceInSprint.reasonCopy()) { onDismiss(); onSprint() }
-        ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { onDismiss(); viewModel.openComments(task.id) }
+        ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { onDismiss(); onComments(task.id) }
         ActionRow(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") {
             clipboard.setText(androidx.compose.ui.text.AnnotatedString(task.displayKey))
             onDismiss()
@@ -496,7 +497,7 @@ private fun BacklogActionsSheet(
                     }
                 }
         val canCancel = task.capability(TaskCapability.Cancel)
-        ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { onDismiss(); viewModel.requestDelete(task) }
+        ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { onDismiss(); planViewModel.requestDelete(task) }
     }
 }
 

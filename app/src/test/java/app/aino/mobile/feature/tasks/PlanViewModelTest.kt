@@ -36,6 +36,39 @@ class PlanViewModelTest {
         assertTrue("Expected UI state did not arrive", condition())
     }
 
+    @Test fun cancellingFromBacklogConfirmsBeforeWritingAndClosesDetailAndSearch() {
+        val deletes = java.util.concurrent.atomic.AtomicInteger()
+        val ticket = """{"id":7,"title":"Ship","container":"backlog","capabilities":{"can":{"cancel":{"allowed":true}}}}"""
+        val repository = TaskRepository(ApiClient { request ->
+            val body = when {
+                request.path == "tasks/7" && request.method == "DELETE" -> {
+                    deletes.incrementAndGet()
+                    "{}"
+                }
+                request.path.startsWith("tasks/backlog") -> """{"tasks":[$ticket]}"""
+                request.path.startsWith("tasks/search") -> "[$ticket]"
+                request.path == "tasks/7/detail" -> ticket
+                else -> "[]"
+            }
+            ApiResponse(200, emptyMap(), body.toByteArray())
+        })
+        val shell = TasksShellViewModel(repository, ticketSession = session)
+        val plan = PlanViewModel(repository, session)
+        val detail = TicketDetailViewModel(7, repository, session)
+        plan.loadBacklog()
+        shell.setSearch("Ship")
+        await { plan.ui.value.backlog.size == 1 && shell.searchResults.value.size == 1 && !detail.ui.value.detailLoading }
+
+        plan.requestDelete(plan.ui.value.backlog.single())
+        assertEquals(0, deletes.get())
+        assertEquals("Cancel ticket", plan.ui.value.confirm?.title)
+        plan.acceptConfirm()
+
+        await { plan.ui.value.backlog.isEmpty() && shell.searchResults.value.isEmpty() && detail.ui.value.closed }
+        assertEquals(1, deletes.get())
+        assertEquals(null, plan.ui.value.confirm)
+    }
+
     @Test fun createdBacklogTicketAppearsWithoutARefresh() {
         val repository = TaskRepository(ApiClient { request ->
             val body = when {
@@ -95,7 +128,7 @@ class PlanViewModelTest {
         await { plan.ui.value.backlog.size == 2 }
         detail.refreshDetail()
         shell.setSearch("Ticket")
-        await { shell.ui.value.searchResults.size == 2 && detail.ui.value.detail != null }
+        await { shell.searchResults.value.size == 2 && detail.ui.value.detail != null }
         val boardSizes = java.util.concurrent.CopyOnWriteArrayList<Int>()
         val planSizes = java.util.concurrent.CopyOnWriteArrayList<Int>()
         val boardChanges = CoroutineScope(Dispatchers.Main).launch {
@@ -111,7 +144,7 @@ class PlanViewModelTest {
             await {
                 plan.ui.value.backlog.isEmpty() && board.ui.value.tasks.size == 2 &&
                     detail.ui.value.detail?.container == "sprint" &&
-                    shell.ui.value.searchResults.all { it.container == "sprint" }
+                    shell.searchResults.value.all { it.container == "sprint" }
             }
             assertEquals(1, bulkRequests)
             assertEquals(listOf(201L, 202L), board.ui.value.tasks.map { it.id }.sorted())

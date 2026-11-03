@@ -36,6 +36,48 @@ class ScheduledViewModelTest {
         assertTrue("Expected UI state did not arrive", condition())
     }
 
+    @Test fun carryingForwardRefreshesTheLoadedScheduleAfterTheWriteCompletes() {
+        val carried = java.util.concurrent.atomic.AtomicBoolean()
+        val today = LocalDate.now()
+        val repository = TaskRepository(ApiClient { request ->
+            val body = when {
+                request.path == "tasks/carry-forward" -> {
+                    carried.set(true)
+                    """{"carried":1}"""
+                }
+                request.path.startsWith("tasks/scheduled") -> {
+                    val day = if (carried.get()) today else today.minusDays(1)
+                    """{"tasks":[{"id":7,"title":"Ship","container":"scheduled","planned_date":"$day"}]}"""
+                }
+                else -> "{}"
+            }
+            ApiResponse(200, emptyMap(), body.toByteArray())
+        })
+        val scheduled = ScheduledViewModel(repository, session)
+        scheduled.loadScheduled()
+        await { scheduled.ui.value.scheduled.singleOrNull()?.plannedDate == today.minusDays(1).toString() }
+
+        scheduled.carryForward()
+
+        await { scheduled.ui.value.scheduled.singleOrNull()?.plannedDate == today.toString() }
+        assertEquals(today.toString(), scheduled.ui.value.scheduled.single().plannedDate)
+    }
+
+    @Test fun carryForwardRunsOncePerDayWithoutNeedingTheShell() {
+        val requests = java.util.concurrent.atomic.AtomicInteger()
+        val repository = TaskRepository(ApiClient { request ->
+            if (request.path == "tasks/carry-forward") requests.incrementAndGet()
+            ApiResponse(200, emptyMap(), """{"carried":0}""".toByteArray())
+        })
+        val scheduled = ScheduledViewModel(repository, session)
+
+        scheduled.carryForward()
+        await { requests.get() == 1 }
+        scheduled.carryForward()
+
+        assertEquals(1, requests.get())
+    }
+
     @Test fun scheduledFocusIsConsumedOnceWithoutBeingRestoredByReload() {
         val repository = TaskRepository(ApiClient { request ->
             ApiResponse(200, emptyMap(), (if (request.path.startsWith("tasks/scheduled")) """{"tasks":[]}""" else "{}").toByteArray())
@@ -43,7 +85,7 @@ class ScheduledViewModelTest {
         val shell = TaskViewModel(repository, ticketSession = session)
         val scheduled = ScheduledViewModel(repository, session)
         shell.openSearch()
-        shell.showScheduled("2026-11-03")
+        scheduled.showScheduled("2026-11-03")
         await { scheduled.ui.value.scheduledLoaded && shell.ui.value.tab == TaskTab.Scheduled }
         assertEquals("2026-11-03", scheduled.ui.value.scheduledFocus)
         assertEquals(false, shell.ui.value.searchOpen)

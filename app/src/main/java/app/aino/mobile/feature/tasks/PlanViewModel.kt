@@ -26,6 +26,12 @@ class PlanViewModel(
     private val ticketScope = CoroutineScope(viewModelScope.coroutineContext + SupervisorJob(ticketSession.job))
     private val _ui = ticketSession.state(PlanUiState(planScope = ticketSession.planScope.value))
     val ui: StateFlow<PlanUiState> = _ui.asStateFlow()
+    private val listActions = TicketListActions(repository, ticketSession, ticketScope,
+        confirm = { request -> _ui.update { it.copy(confirm = request) } },
+        fail = { error, message -> fail(failure(error, message)) },
+    )
+    fun assignSprint(task: Task, sprintId: Long?) = listActions.assignSprint(task, sprintId)
+    fun requestDelete(task: Task) = listActions.requestDelete(task)
     private var backlogJob: Job? = null
     private var errorJob: Job? = null
     private val backlogGen = java.util.concurrent.atomic.AtomicInteger()

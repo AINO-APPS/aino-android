@@ -85,7 +85,7 @@ class CompletedCountTest {
         vmPlan.setQuickFilters(BacklogQuickFilters(high = true, unscheduled = true))
         assertEquals(0, vmPlan.ui.value.backlogTotal)
         assertEquals(4, vmPlan.ui.value.planTasks.size)
-        vm.onTaskEvent("task_updated", Json.parseToJsonElement(
+        vm.ticketSession.onRealtimeEvent("task_updated", Json.parseToJsonElement(
             """{"taskId":4,"fields":{"priority":"high"}}""",
         ))
         waitFor { vmPlan.ui.value.backlogTotal == 1 }
@@ -96,7 +96,7 @@ class CompletedCountTest {
         vmPlan.toggleSelection(4)
         detailBody =
             """{"id":4,"title":"Ship","priority":"high","workflow_state_id":5,"completed_at":"2026-10-26","container":"backlog"}"""
-        vm.onTaskEvent("task_updated", Json.parseToJsonElement(
+        vm.ticketSession.onRealtimeEvent("task_updated", Json.parseToJsonElement(
             """{"taskId":4,"fields":{"workflow_state_id":5}}""",
         ))
         waitFor { vmPlan.ui.value.completedCount == 1 }

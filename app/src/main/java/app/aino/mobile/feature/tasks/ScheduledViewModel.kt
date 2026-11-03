@@ -26,8 +26,14 @@ class ScheduledViewModel(
     private val ticketScope = CoroutineScope(viewModelScope.coroutineContext + SupervisorJob(ticketSession.job))
     private val _ui = ticketSession.state(ScheduledUiState(planScope = ticketSession.planScope.value))
     val ui: StateFlow<ScheduledUiState> = _ui.asStateFlow()
+    private val listActions = TicketListActions(repository, ticketSession, ticketScope,
+        confirm = { request -> _ui.update { it.copy(confirm = request) } },
+        fail = { error, message -> fail(failure(error, message)) },
+    )
+    fun requestDelete(task: Task) = listActions.requestDelete(task)
     private var scheduledJob: Job? = null
     private var errorJob: Job? = null
+    private var carriedOn: String? = null
     private val scheduledGen = java.util.concurrent.atomic.AtomicInteger()
     private data class CachedScheduled(val ids: List<Long>, val loaded: Boolean)
     private val teamViews = mutableMapOf<TeamScope, CachedScheduled>()
@@ -83,6 +89,7 @@ class ScheduledViewModel(
         ticketScope.launch {
             ticketSession.scheduledRequests.collect { request ->
                 when (request) {
+                    ScheduledRequest.CarryForward -> carryForward()
                     ScheduledRequest.Load -> loadScheduled()
                     ScheduledRequest.ReloadLoaded -> if (_ui.value.scheduledLoaded) loadScheduled()
                     is ScheduledRequest.Show -> showScheduled(request.date)
@@ -125,6 +132,25 @@ class ScheduledViewModel(
     }
 
     fun dismissConfirm() = _ui.update { it.copy(confirm = null) }
+
+    fun carryForward() {
+        val today = java.time.LocalDate.now().toString()
+        if (carriedOn == today) return
+        carriedOn = today
+        io {
+            runCatching(repository::carryForward).fold(
+                onSuccess = { result ->
+                    if (result.carried > 0) {
+                        notify("${result.carried} incomplete item${if (result.carried > 1) "s" else ""} from yesterday carried forward")
+                        loadScheduled()
+                    }
+                },
+                onFailure = {
+                    if (isTransientFailure(it)) carriedOn = null else fail("Failed to carry forward tasks")
+                },
+            )
+        }
+    }
 
     fun showScheduled(date: String?) {
         _ui.update { it.copy(scheduledFocus = date) }
