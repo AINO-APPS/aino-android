@@ -29,6 +29,10 @@ class TaskRepository(
         teamScope: TeamScope = TeamScope(),
     ): TaskListResponse = decode(api.execute(ApiRequest(path = sprintTasksQuery(sprintId, filters, teamScope))))
 
+    /** The sprint's cancelled Tickets, which the board response leaves out. */
+    fun loadCancelledSprintTasks(sprintId: Long, teamScope: TeamScope = TeamScope()): List<Task> =
+        loadSprintTasks(sprintId, TaskFilters(status = CANCELLED_STATE), teamScope).tasks
+
     // @api GET sprints/:id/board
     fun loadSprintBoard(sprintId: Long): SprintBoardResponse =
         decode(api.execute(ApiRequest(path = "sprints/$sprintId/board")))
@@ -216,7 +220,7 @@ class TaskRepository(
     fun assignSprint(id: Long, sprintId: Long?): Task =
         mutate("tasks/$id/assign-sprint", AssignSprintPayload(sprintId), "PATCH")
 
-    fun deleteTask(id: Long): TaskMessageResponse = mutate("tasks/$id", Unit, "DELETE")
+    fun deleteTask(id: Long): CancelTaskResponse = mutate("tasks/$id", Unit, "DELETE")
 
     fun carryForward(): CarryForwardResponse = mutate("tasks/carry-forward", Unit)
 

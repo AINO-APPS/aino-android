@@ -89,6 +89,7 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
             ?.let { it to column }
     }
     var progressOpen by rememberSaveable { mutableStateOf(false) }
+    var cancelledOpen by rememberSaveable { mutableStateOf(false) }
     var actionsFor by remember { mutableStateOf<Task?>(null) }
 
     // Drag-to-column state (root coordinates). A column claims a drop target
@@ -100,6 +101,8 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
     var dragging by remember { mutableStateOf<Task?>(null) }
     var dragPos by remember { mutableStateOf(Offset.Zero) }
     var dragOrigin by remember { mutableStateOf(Offset.Zero) }
+    var dragGrab by remember { mutableStateOf(Offset.Zero) }
+    var dragCardWidthPx by remember { mutableStateOf(0) }
     var boardOrigin by remember { mutableStateOf(Offset.Zero) }
     val hoverKey = dragging?.let { _ -> dropTargetKey(headerBounds, bodyBounds, dragPos) }
     LaunchedEffect(hoverKey) { if (hoverKey != null) haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
@@ -174,6 +177,7 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                             items(columnTasks, key = { "t-${it.id}" }) { task ->
                                 val isDragged = dragging?.id == task.id
                                 var cardOrigin by remember { mutableStateOf(Offset.Zero) }
+                                var cardWidthPx by remember { mutableStateOf(0) }
                                 // pointerInput keeps its first lambdas; read the latest row (realtime may have patched it).
                                 val currentTask by rememberUpdatedState(task)
                                 val canMove = states.any { (target, column) ->
@@ -182,7 +186,11 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                                 Box(
                                     Modifier
                                         .padding(horizontal = 16.dp, vertical = 5.dp)
-                                        .onGloballyPositioned { cardOrigin = it.boundsInRoot().topLeft }
+                                        .onGloballyPositioned {
+                                            val bounds = it.boundsInRoot()
+                                            cardOrigin = bounds.topLeft
+                                            cardWidthPx = bounds.width.roundToInt()
+                                        }
                                         // The slot the card left stays readable but
                                         // faded; the lift happens on the floating
                                         // copy (see the ghost below).
@@ -194,6 +202,8 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                                                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     dragging = currentTask
                                                     dragOrigin = cardOrigin
+                                                    dragGrab = offset
+                                                    dragCardWidthPx = cardWidthPx
                                                     dragPos = cardOrigin + offset
                                                 },
                                                 onDrag = { change, amount ->
@@ -242,6 +252,15 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                             }
                         }
                     }
+                    val cancelled = boardUi.cancelled
+                    if (cancelled.isNotEmpty()) {
+                        item(key = "cancelled-header") {
+                            CancelledHeader(cancelled.size, cancelledOpen) { cancelledOpen = !cancelledOpen }
+                        }
+                        if (cancelledOpen) {
+                            items(cancelled, key = { "x-${it.id}" }) { task -> CompletedRow(task, ui.agile, onOpen) }
+                        }
+                    }
                     if (empty != BoardEmpty.None) {
                         item(key = "board-empty") {
                             BoardEmptyFooter(
@@ -254,11 +273,12 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                     }
                 }
             }
-            // Floating ghost of the dragged card: it lifts — grows, tilts and
-            // picks up a shadow — so the ticket under the finger is obviously
-            // the one being moved, and settles back when dropped.
+            // Floating copy of the dragged card at its real size, held where the
+            // finger grabbed it. It lifts slightly — a small scale and tilt plus
+            // a shadow — so the ticket in hand reads as the same card, not a chip.
             dragging?.let { task ->
-                val local = dragPos - boardOrigin
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val local = dragPos - boardOrigin - dragGrab
                 val lift by animateFloatAsState(
                     targetValue = 1f,
                     animationSpec = tween(durationMillis = 160),
@@ -266,24 +286,28 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                 )
                 Box(
                     Modifier
-                        .offset { IntOffset((local.x - 120.dp.toPx()).roundToInt(), (local.y - 36.dp.toPx()).roundToInt()) }
-                        .widthIn(max = 260.dp)
+                        .offset { IntOffset(local.x.roundToInt(), local.y.roundToInt()) }
+                        .then(
+                            if (dragCardWidthPx > 0) Modifier.width(with(density) { dragCardWidthPx.toDp() })
+                            else Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        )
                         .graphicsLayer {
-                            scaleX = 1f + 0.05f * lift
-                            scaleY = 1f + 0.05f * lift
-                            rotationZ = -2f + 4.5f * lift
-                            shadowElevation = 18.dp.toPx() * lift
+                            scaleX = 1f + 0.03f * lift
+                            scaleY = 1f + 0.03f * lift
+                            rotationZ = 1.5f * lift
+                            shadowElevation = 16.dp.toPx() * lift
+                            shape = CardShape
+                            clip = true
                         }
-                        .shadow(12.dp, CardShape)
-                        .clip(CardShape)
-                        .background(colors.bgElevated)
                         .border(1.5.dp, colors.primary, CardShape)
-                        .padding(12.dp),
+                        .clearAndSetSemantics { },
                 ) {
-                    Column {
-                        Text(task.displayKey, color = colors.textMuted, fontSize = 0.7.rem)
-                        Text(task.title, color = colors.text, fontSize = 0.88.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
+                    TaskCardM3(
+                        task, ui.agile,
+                        onOpen = {},
+                        compact = ui.compact,
+                        attribution = ui.attribution[task.id],
+                    )
                 }
             }
         }
@@ -291,6 +315,32 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
 
     actionsFor?.let { task ->
         TaskActionsSheet(task, ui, boardUi, boardViewModel, onOpen = { onOpen(task) }, onDismiss = { actionsFor = null }, onComments = onComments)
+    }
+}
+
+/** Collapsed-by-default toggle for the sprint's cancelled history; never a drop target. */
+@Composable
+private fun CancelledHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
+    val colors = LocalWebColors.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 12.dp)
+            .clickable(onClickLabel = if (open) "Collapse cancelled" else "Expand cancelled", onClick = onToggle)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(HeroIcons.ChevronDown, null, Modifier.size(16.dp).rotate(if (open) 0f else -90f), tint = colors.textMuted)
+        Spacer(Modifier.width(8.dp))
+        Text("Cancelled", color = colors.textSecondary, fontSize = 0.72.rem, fontWeight = FontWeight.Bold, letterSpacing = 0.06.rem)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "$count",
+            color = colors.textMuted,
+            fontSize = 0.68.rem,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.background(colors.textMuted.copy(alpha = 0.14f), CircleShape).padding(horizontal = 8.dp, vertical = 1.dp),
+        )
     }
 }
 

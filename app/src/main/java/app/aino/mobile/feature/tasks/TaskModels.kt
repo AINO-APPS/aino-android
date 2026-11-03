@@ -126,6 +126,12 @@ data class Task(
     /** The single definition of complete: the server derives `completed_at` (D5). */
     val isCompleted: Boolean get() = completedAt != null
 
+    /** Cancelled is terminal: kept as history, never part of the open work. */
+    val isCancelled: Boolean get() = workflowStateKey == CANCELLED_STATE
+
+    /** Finished either way — the Completed section's membership rule. */
+    val isClosed: Boolean get() = isCompleted || isCancelled
+
     val acceptanceCriteria: List<AcceptanceCriterion> get() = parseCriteria(acceptanceCriteriaRaw)
 }
 
@@ -471,6 +477,12 @@ data class CarryForwardResponse(val message: String = "", val carried: Int = 0)
 
 @Serializable
 data class TaskMessageResponse(val message: String = "")
+
+internal const val CANCELLED_STATE = "cancelled"
+
+/** `DELETE /tasks/:id` cancels and answers with the cancelled Ticket. */
+@Serializable
+data class CancelTaskResponse(val task: Task? = null)
 
 // ─── Next-generation payloads and responses ─────────────────────────────────
 

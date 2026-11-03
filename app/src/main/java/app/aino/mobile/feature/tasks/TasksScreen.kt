@@ -36,7 +36,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Tab
-import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -170,10 +170,11 @@ fun TasksScreen(
         Column(Modifier.padding(padding).fillMaxSize()) {
             TasksHeader(ui, viewModel, onOpenInsights)
             if (tabs.size > 1) {
-                PrimaryScrollableTabRow(
+                // Fixed, equal-width tabs: the planning surfaces are at most three,
+                // so a scrollable row only left-packed them and orphaned the divider.
+                PrimaryTabRow(
                     selectedTabIndex = pagerState.currentPage.coerceIn(0, tabs.lastIndex),
                     containerColor = colors.bg,
-                    edgePadding = 8.dp,
                     contentColor = colors.primary,
                     divider = { HorizontalDivider(color = colors.border) },
                 ) {
@@ -183,8 +184,8 @@ fun TasksScreen(
                             selected = pagerState.currentPage == index,
                             onClick = { viewModel.selectTab(tab) },
                             text = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(tabLabel(tab), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                                    Text(tabLabel(tab), fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                                     if (badge != null) {
                                         Spacer(Modifier.width(6.dp))
                                         Text(

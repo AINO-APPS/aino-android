@@ -242,6 +242,7 @@ private fun DetailHero(task: Task, ui: TicketDetailUiState, viewModel: TicketDet
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             WorkItemTypeBadge(task.workItemTypeId, ui.agile)
             when {
+                task.isCancelled -> MetaPill(HeroIcons.XCircle, "Cancelled", colors.textMuted)
                 task.container == "scheduled" -> MetaPill(HeroIcons.CalendarDays, formatDate(task.plannedDate), colors.primary)
                 task.container == "backlog" -> MetaPill(HeroIcons.ArchiveBox, "Backlog", colors.warning)
             }

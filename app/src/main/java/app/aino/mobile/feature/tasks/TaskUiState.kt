@@ -135,9 +135,8 @@ data class TaskUiState(
         ids.mapNotNull(tickets::get).filter { inScope(it) && belongs(it) }
 
     internal fun containsPlanTicket(ticket: Task): Boolean =
-        ticket.workflowStateKey != "cancelled" && (ticket.container == "backlog" ||
+        ticket.container == "backlog" ||
             (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId })
-        )
 
     internal fun containsScheduledTicket(ticket: Task): Boolean {
         val (from, to) = scheduledWindow
@@ -155,8 +154,8 @@ data class TaskUiState(
         containsPlanTicket(it) && matchesPlanFilters(it, filters, quickFilters, userId) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }
-    val backlog: List<Task> get() = filteredPlan.filterNot { it.isCompleted }
-    val completed: List<Task> get() = filteredPlan.filter { it.isCompleted }
+    val backlog: List<Task> get() = filteredPlan.filterNot { it.isClosed }
+    val completed: List<Task> get() = filteredPlan.filter { it.isClosed }
     internal val planFiltersActive: Boolean get() = filters != TaskFilters() || !quickFilters.isAll || selectedEpicId != null
     val backlogTotal: Int get() = readPlanTotals().total
     val completedCount: Int get() = readPlanTotals().completed
@@ -186,7 +185,7 @@ data class TaskUiState(
     val filterCount: Int get() = filterCount(filters, tab) + if (tab == TaskTab.Backlog) quickFilters.count + (if (selectedEpicId != null) 1 else 0) else 0
     /** Sprint planning is not narrowed by Backlog-only quick chips. */
     val planningBacklog: List<Task> get() = (if (planLoaded) planTasks else backlog).filter {
-        it.container == "backlog" && it.workflowStateKey != "cancelled" && !it.isCompleted &&
+        it.container == "backlog" && !it.isClosed &&
             matchesFilters(it, filters, userId, includeStatus = false) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }

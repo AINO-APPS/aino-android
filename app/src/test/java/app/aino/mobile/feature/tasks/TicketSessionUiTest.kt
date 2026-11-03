@@ -20,6 +20,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -404,6 +405,62 @@ class TicketSessionUiTest {
     }
 
     @Test
+    fun aTicketCancelledFromTheBoardMovesToTheSprintsCancelledSection() {
+        val harness = harness()
+        val cancellable = harness.original.replace("\"can\":{", "\"can\":{\"cancel\":{\"allowed\":true},")
+        harness.boardTicket = cancellable
+        harness.detailResponse = cancellable
+        harness.loadBoardPlanAndDetail()
+        val cancelled = cancellable.replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
+            .replace("\"workflow_state_id\":101", "\"workflow_state_id\":103,\"completed_at\":\"2026-11-03T05:00:00Z\"")
+        harness.cancelResponse = cancelled
+        harness.cancelledRows = cancelled
+        harness.boardTicket = ""
+
+        harness.boardViewModel.requestDelete(harness.boardViewModel.ui.value.tasks.single())
+        harness.boardViewModel.acceptConfirm()
+
+        harness.await {
+            harness.boardViewModel.ui.value.tasks.isEmpty() &&
+                harness.boardViewModel.ui.value.cancelled.singleOrNull()?.id == 201L &&
+                harness.detailViewModel.ui.value.closed
+        }
+        assertTrue(harness.boardViewModel.ui.value.cancelled.single().isCancelled)
+        assertNull(harness.detailViewModel.ui.value.detail)
+    }
+
+    @Test
+    fun aCancelledBacklogTicketIsListedUnderCompletedNotOpenWork() {
+        val harness = harness()
+        val cancelled = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
+            .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
+            .replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
+            .replace("\"workflow_state_id\":101", "\"workflow_state_id\":103,\"completed_at\":\"2026-11-03T05:00:00Z\"")
+        harness.planRows = cancelled
+        harness.detailResponse = cancelled
+
+        harness.viewModelPlan.loadBacklog()
+        harness.await { harness.viewModelPlan.ui.value.planLoaded }
+
+        assertTrue(harness.viewModelPlan.ui.value.backlog.isEmpty())
+        assertTrue(harness.viewModelPlan.ui.value.importable.isEmpty())
+        assertEquals(listOf(201L), harness.viewModelPlan.ui.value.completed.map { it.id })
+        assertEquals(0, harness.viewModelPlan.ui.value.backlogTotal)
+    }
+
+    @Test
+    fun aCancelledTicketOpenedFromCompletedStaysReadable() {
+        val harness = harness()
+        harness.detailResponse = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
+            .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
+            .replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
+
+        harness.await { harness.detailViewModel.ui.value.detail?.isCancelled == true }
+
+        assertFalse(harness.detailViewModel.ui.value.closed)
+    }
+
+    @Test
     fun searchResultsResolveTheLatestTicketFromAnotherViewModel() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
@@ -763,6 +820,10 @@ internal class TicketSessionHarness {
     @Volatile var commentWrites = 0
     @Volatile var commentsResponse = "[]"
     @Volatile var planRows = ""
+    /** Rows for `GET tasks?sprint_id=…&status=cancelled`; the board omits cancelled. */
+    @Volatile var cancelledRows = ""
+    /** The Ticket `DELETE tasks/201` answers with, or blank for a bare `{}`. */
+    @Volatile var cancelResponse = ""
     @Volatile var scheduledRows = ""
     @Volatile var searchRows = ""
     @Volatile var detailResponse = original
@@ -807,6 +868,9 @@ internal class TicketSessionHarness {
                 """{"tasks":[$scheduledRows]}"""
             }
             request.path.startsWith("tasks/search?") -> "[$searchRows]"
+            request.path.startsWith("tasks?") && "status=cancelled" in request.path -> """{"tasks":[$cancelledRows]}"""
+            request.path == "tasks/201" && request.method == "DELETE" ->
+                if (cancelResponse.isBlank()) "{}" else """{"cancelled":true,"id":201,"task":$cancelResponse}"""
             request.path == "tasks/201/detail" -> {
                 detailReads++
                 detailErrorStatus?.let { status ->

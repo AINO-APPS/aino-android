@@ -6,8 +6,8 @@
   },
   "totals": {
     "platform": 508,
-    "covered": 271,
-    "waived": 233,
+    "covered": 270,
+    "waived": 234,
     "missing": 6,
     "unmatched": 1
   },
@@ -1325,11 +1325,6 @@
     {
       "method": "GET",
       "path": "/api/tracker/status",
-      "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
-    },
-    {
-      "method": "GET",
-      "path": "/api/tracker/task-summary",
       "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
     },
     {

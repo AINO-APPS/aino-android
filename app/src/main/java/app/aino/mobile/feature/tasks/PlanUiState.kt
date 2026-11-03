@@ -47,16 +47,18 @@ data class PlanUiState(
         selectedTeamId != null -> ticket.teamId == selectedTeamId
         else -> true
     }
+    // Cancelled Tickets stay members so the Completed section can list them;
+    // `backlog` (open work) excludes them through `isClosed`.
     internal fun containsPlanTicket(ticket: Task): Boolean =
-        ticket.workflowStateKey != "cancelled" && (ticket.container == "backlog" ||
-            (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId }))
+        ticket.container == "backlog" ||
+            (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId })
     val planTasks get() = planTicketIds.mapNotNull(tickets::get).filter { inScope(it) && containsPlanTicket(it) }
     private val filteredPlan get() = planTasks.filter {
         matchesPlanFilters(it, filters, quickFilters, userId) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }
-    val backlog get() = filteredPlan.filterNot { it.isCompleted }
-    val completed get() = filteredPlan.filter { it.isCompleted }
+    val backlog get() = filteredPlan.filterNot { it.isClosed }
+    val completed get() = filteredPlan.filter { it.isClosed }
     internal val planFiltersActive get() = filters != TaskFilters() || !quickFilters.isAll || selectedEpicId != null
     val backlogTotal get() = readPlanTotals().total
     val completedCount get() = readPlanTotals().completed
@@ -64,7 +66,7 @@ data class PlanUiState(
     val sortedBacklog get() = sortBacklog(backlog, backlogSort)
     val backlogGroups get() = strandedSprintGroups(sortedBacklog, sprints)
     val planningBacklog get() = planTasks.filter {
-        it.container == "backlog" && it.workflowStateKey != "cancelled" && !it.isCompleted &&
+        it.container == "backlog" && !it.isClosed &&
             matchesFilters(it, filters, userId, includeStatus = false) &&
             (selectedEpicId == null || it.parentTaskId == selectedEpicId)
     }

@@ -19,7 +19,6 @@ import app.aino.mobile.feature.home.component.EventReminderToast
 import app.aino.mobile.feature.home.component.GreetingBanner
 import app.aino.mobile.feature.home.component.MyWorkCard
 import app.aino.mobile.feature.home.component.PendingApprovalsCard
-import app.aino.mobile.feature.home.component.TasksSummaryCard
 import app.aino.mobile.feature.home.component.TodayEventsCard
 
 private val ROLE_LEVEL = mapOf(
@@ -29,7 +28,7 @@ private val ROLE_LEVEL = mapOf(
 
 /**
  * Dashboard (P2). Render order at 430px: greeting banner, TodayEventsCard,
- * TasksSummary, MyWorkCard, PendingApprovalsCard (manager-gated),
+ * MyWorkCard (with the state stats), PendingApprovalsCard (manager-gated),
  * EventReminderToast. The work timer lives on Attendance only (TodayHeroCard).
  * Uses web-parity tokens, no glass/cream.
  */
@@ -39,7 +38,6 @@ fun HomeScreen(
     user: AinoUser,
     viewModel: DashboardViewModel,
     onCalendar: () -> Unit,
-    onTasks: () -> Unit,
     /** The Tasks tab to land on (Scheduled for the week, the board for a sprint). */
     onOpenTasksTab: (target: MyWorkTarget, sprintId: Long?) -> Unit,
     onOpenTask: (Long) -> Unit,
@@ -68,7 +66,8 @@ fun HomeScreen(
             ) {
                 GreetingBanner(user.fullName, snapshot?.announcements.orEmpty())
                 TodayEventsCard(snapshot?.todayEvents.orEmpty(), snapshot?.tomorrowEvents.orEmpty(), onCalendar)
-                TasksSummaryCard(snapshot?.tasks, onTasks)
+                // One work card: the stats the old "Today's Planner" showed now sit on
+                // top of My Work, computed from the same tickets the list shows.
                 snapshot?.myWork?.let { work ->
                     MyWorkCard(
                         work,

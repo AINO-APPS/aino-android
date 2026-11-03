@@ -45,9 +45,9 @@ internal class TicketListActions(
         ) {
             scope.launch(Dispatchers.IO) {
                 runCatching { repository.deleteTask(ticket.id) }.fold(
-                    onSuccess = {
+                    onSuccess = { response ->
                         session.planRevision.incrementAndGet()
-                        session.store.remove(ticket.id, preventReinsert = true, allowReopen = true)
+                        session.store.markCancelled(ticket.id, response.task)
                         session.requestBoard(BoardRequest.ReloadLoaded)
                         session.publishNotice(TaskNotice("Cancelled ${ticket.displayKey}"))
                     },

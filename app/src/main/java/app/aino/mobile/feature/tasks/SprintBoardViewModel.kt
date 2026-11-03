@@ -22,6 +22,8 @@ data class SprintBoardUiState(
     val planScope: PlanScope = PlanScope(),
     val tickets: Map<Long, Task> = emptyMap(),
     val boardTicketIds: List<Long> = emptyList(),
+    /** The selected sprint's cancelled Tickets: history under the board, never a column. */
+    val cancelledTicketIds: List<Long> = emptyList(),
     val board: SprintBoardResponse? = null,
     val sprintLoading: Boolean = true,
     val error: String? = null,
@@ -42,7 +44,9 @@ data class SprintBoardUiState(
     val agile get() = planScope.agile
     val selectedTeamId get() = planScope.selectedTeamId
     internal fun containsBoardTicket(ticket: Task): Boolean =
-        ticket.container == "sprint" && ticket.sprintId == selectedSprintId && ticket.workflowStateKey != "cancelled"
+        ticket.container == "sprint" && ticket.sprintId == selectedSprintId && !ticket.isCancelled
+    internal fun containsCancelledTicket(ticket: Task): Boolean =
+        ticket.container == "sprint" && ticket.sprintId == selectedSprintId && ticket.isCancelled
 
     private fun inScope(ticket: Task): Boolean = when {
         !showsTeamPicker(role) -> planScope.teamId == null || ticket.teamId == planScope.teamId
@@ -57,6 +61,7 @@ data class SprintBoardUiState(
         matchesFilters(it, planScope.filters, planScope.userId, includeStatus = true) &&
             (planScope.selectedEpicId == null || it.parentTaskId == planScope.selectedEpicId)
     }
+    val cancelled get() = cancelledTicketIds.mapNotNull(tickets::get).filter { inScope(it) && containsCancelledTicket(it) }
     val sprintBoard get() = board?.takeIf { it.sprint.id == selectedSprintId }?.copy(tickets = boardTickets)
     val stats get() = recomputeStats(tasks)
 }
@@ -84,7 +89,10 @@ class SprintBoardViewModel(
     private var sprintJob: Job? = null
     private var errorJob: Job? = null
     private val sprintGeneration = java.util.concurrent.atomic.AtomicInteger()
-    private data class CachedBoard(val board: SprintBoardResponse?, val ids: List<Long>, val stats: SprintStats?, val baseline: BaselineResponse?)
+    private data class CachedBoard(
+        val board: SprintBoardResponse?, val ids: List<Long>, val stats: SprintStats?, val baseline: BaselineResponse?,
+        val cancelledIds: List<Long> = emptyList(),
+    )
     private val boards = mutableMapOf<Pair<Long?, Long?>, CachedBoard>()
 
     init {
@@ -97,12 +105,14 @@ class SprintBoardViewModel(
                     if (changed) {
                         sprintGeneration.incrementAndGet()
                         sprintJob?.cancel()
-                        boards[previous.selectedTeamId to previous.selectedSprintId] =
-                            CachedBoard(previous.board, previous.boardTicketIds, previous.sprintStats, previous.baseline)
+                        boards[previous.selectedTeamId to previous.selectedSprintId] = CachedBoard(
+                            previous.board, previous.boardTicketIds, previous.sprintStats, previous.baseline, previous.cancelledTicketIds,
+                        )
                         val cached = boards[scope.selectedTeamId to scope.selectedSprintId]
                         _ui.update {
                             it.copy(
                                 planScope = scope, board = cached?.board, boardTicketIds = cached?.ids.orEmpty(),
+                                cancelledTicketIds = cached?.cancelledIds.orEmpty(),
                                 sprintStats = cached?.stats, baseline = cached?.baseline, completionPreview = null,
                                 completing = false, lifecycleBusy = false, lifecycleError = null, error = null, confirm = null,
                                 sprintLoading = scope.selectedSprintId != null && cached == null,
@@ -121,6 +131,8 @@ class SprintBoardViewModel(
                         recentlyUpdated = snapshot.recentlyChanged,
                         boardTicketIds = (current.boardTicketIds.filter(snapshot.tickets::containsKey) +
                             changed.filter(current::containsBoardTicket).map { it.id }).distinct(),
+                        cancelledTicketIds = (current.cancelledTicketIds.filter(snapshot.tickets::containsKey) +
+                            changed.filter(current::containsCancelledTicket).map { it.id }).distinct(),
                     )
                 }
             }
@@ -173,7 +185,7 @@ class SprintBoardViewModel(
         val generation = sprintGeneration.incrementAndGet()
         sprintJob?.cancel()
         if (sprintId == null) {
-            _ui.update { it.copy(boardTicketIds = emptyList(), board = null, sprintStats = null, sprintLoading = false) }
+            _ui.update { it.copy(boardTicketIds = emptyList(), cancelledTicketIds = emptyList(), board = null, sprintStats = null, sprintLoading = false) }
             return
         }
         _ui.update { it.copy(sprintLoading = it.tasks.isEmpty()) }
@@ -199,6 +211,14 @@ class SprintBoardViewModel(
                     }
                 },
             )
+            // The board endpoint drops cancelled Tickets; fetch them as history. A failure
+            // keeps whatever cancelled rows are already known rather than blanking them.
+            runCatching { repository.loadCancelledSprintTasks(sprintId, _ui.value.planScope.teamScope) }.onSuccess { cancelled ->
+                if (sprintGeneration.get() != generation || _ui.value.selectedSprintId != sprintId || _ui.value.selectedTeamId != teamId) return@onSuccess
+                val rows = cancelled.filter { it.isCancelled }
+                ticketSession.store.upsert(rows)
+                _ui.update { if (it.selectedSprintId == sprintId) it.copy(cancelledTicketIds = rows.map { row -> row.id }) else it }
+            }
             val stats = runCatching { repository.loadSprintStats(sprintId) }.getOrNull() ?: return@io
             _ui.update {
                 if (sprintGeneration.get() == generation && it.selectedSprintId == sprintId && it.selectedTeamId == teamId) {

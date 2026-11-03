@@ -80,6 +80,22 @@ class MyWorkLogicTest {
     }
 
     @Test
+    fun theCardStatsBucketMyTicketsByStateFromTheSameSetItLists() {
+        val tasks = listOf(
+            task(1, assignedTo = ME, completedAt = "2026-10-27T10:00:00Z"),
+            DashboardTask(2, "T2", assignedTo = ME, workflowStateCategory = "in_progress"),
+            DashboardTask(3, "T3", assignedTo = ME, workflowStateCategory = "in_review"),
+            DashboardTask(4, "T4", assignedTo = ME, workflowStateCategory = "open"),
+            task(5, assignedTo = ME),
+            task(6, assignedTo = 999),
+            task(7, assignedTo = ME, workflowStateKey = "cancelled", completedAt = "2026-10-27T10:00:00Z"),
+        )
+
+        assertEquals(MyWorkStats(done = 1, inProgress = 1, inReview = 1, pending = 2), myWorkStats(tasks, ME))
+        assertEquals(5, myWorkStats(tasks, ME).total)
+    }
+
+    @Test
     fun theWeekGroupsOverdueFirstThenEachDayThatHasWork() {
         val monday = LocalDate.of(2026, 10, 26)
         val overdue = listOf(task(1, assignedTo = ME, plannedDate = "2026-10-21"))

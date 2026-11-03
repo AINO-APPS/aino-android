@@ -750,7 +750,6 @@ private fun AuthenticatedShell(
                     user,
                     dashboard,
                     onCalendar = { navigate(AinoDestination.Calendar) },
-                    onTasks = { navigate(AinoDestination.Tasks) },
                     // The card's header goes to the surface it is summarising:
                     // Scheduled for a week, that sprint's board for a sprint.
                     onOpenTasksTab = { target, sprintId ->

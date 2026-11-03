@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -17,6 +19,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -27,6 +31,7 @@ import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.feature.home.DashboardTask
 import app.aino.mobile.feature.home.MyWork
 import app.aino.mobile.feature.home.MyWorkMode
+import app.aino.mobile.feature.home.MyWorkStats
 import app.aino.mobile.feature.home.rowDayLabel
 
 /**
@@ -66,6 +71,8 @@ fun MyWorkCard(work: MyWork, onOpenAll: () -> Unit, onOpenTask: (Long) -> Unit) 
             }
             Text("›", color = colors.textMuted, fontSize = 18.sp, modifier = Modifier.padding(start = 6.dp))
         }
+
+        if (work.stats.total > 0) MyWorkStatsRow(work.stats)
 
         if (work.isEmpty) {
             Text(
@@ -108,6 +115,46 @@ fun MyWorkCard(work: MyWork, onOpenAll: () -> Unit, onOpenTask: (Long) -> Unit) 
     }
 }
 
+/**
+ * In Review's tone. Fixed rather than the brand `primary`: an org whose accent is
+ * green would otherwise paint In Review the same colour as Done.
+ */
+private val ReviewTone = Color(0xFF8B7CF6)
+
+/** Four equal stat cells and a stacked done/in-progress/in-review progress bar. */
+@Composable
+private fun MyWorkStatsRow(stats: MyWorkStats) {
+    val colors = LocalWebColors.current
+    Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatCell(stats.done, "Done", colors.success, Modifier.weight(1f))
+        StatCell(stats.inProgress, "In Progress", colors.warning, Modifier.weight(1f))
+        StatCell(stats.inReview, "In Review", ReviewTone, Modifier.weight(1f))
+        StatCell(stats.pending, "Pending", colors.textSecondary, Modifier.weight(1f))
+    }
+    val total = stats.total.toFloat()
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp).height(6.dp).clip(RoundedCornerShape(3.dp)).background(colors.border),
+    ) {
+        listOf(stats.done to colors.success, stats.inProgress to colors.warning, stats.inReview to ReviewTone)
+            .filter { it.first > 0 }
+            .forEach { (count, color) -> Box(Modifier.weight(count / total).fillMaxHeight().background(color)) }
+        val rest = stats.pending
+        if (rest > 0) Spacer(Modifier.weight(rest / total))
+    }
+}
+
+@Composable
+private fun StatCell(value: Int, label: String, tone: Color, modifier: Modifier) {
+    val colors = LocalWebColors.current
+    Column(
+        modifier.clip(RoundedCornerShape(10.dp)).background(tone.copy(alpha = 0.08f)).padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(value.toString(), color = tone, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+        Text(label, color = colors.textMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
 /** Title, day (Overdue only), workflow-state label and priority — no avatar, no key. */
 @Composable
 private fun MyWorkRow(task: DashboardTask, groupKey: String, onOpenTask: (Long) -> Unit) {
@@ -124,7 +171,7 @@ private fun MyWorkRow(task: DashboardTask, groupKey: String, onOpenTask: (Long) 
             Modifier.size(6.dp).background(
                 when (task.workflowStateCategory) {
                     "in_progress" -> colors.warning
-                    "in_review" -> colors.primary
+                    "in_review" -> ReviewTone
                     else -> colors.textMuted
                 },
                 CircleShape,

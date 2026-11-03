@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import app.aino.mobile.ComposeTestHostActivity
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
@@ -166,6 +167,31 @@ class SprintBoardWiringTest {
         compose.onNodeWithText("1/1").assertIsDisplayed()
         compose.onNodeWithText("Cancelled").assertDoesNotExist()
         compose.onNodeWithText("Review the release plan").assertDoesNotExist()
+    }
+
+    @Test
+    fun cancelledSprintTicketsSitInACollapsedSectionThatOpensToReadableRows() {
+        val open = Task(id = 7, title = "Ship it", workflowStateKey = "pending", workflowStateId = 1, sprintId = 12, container = "sprint")
+        val cancelled = Task(id = 9, title = "Dropped idea", workflowStateKey = "cancelled", sprintId = 12, container = "sprint")
+        var opened: Task? = null
+        val ui = state(tasks = listOf(open)).let {
+            it.copy(tickets = it.tickets + (cancelled.id to cancelled), cancelledTicketIds = listOf(cancelled.id))
+        }
+        val vm = viewModel()
+        val boardVm = SprintBoardViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                SprintBoard(ui = TaskUiState(planScope = ui.planScope, tab = TaskTab.Sprint), boardUi = ui, viewModel = vm, boardViewModel = boardVm, onOpen = { opened = it })
+            }
+        }
+
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Cancelled"))
+        compose.onNodeWithText("Dropped idea").assertDoesNotExist()
+        compose.onNodeWithText("Cancelled").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Dropped idea"))
+        compose.onNodeWithText("Dropped idea").assertIsDisplayed().performClick()
+
+        org.junit.Assert.assertEquals(9L, opened?.id)
     }
 
     private fun actionSheetState(board: SprintBoardResponse): SprintBoardUiState {

@@ -5,28 +5,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-data class ActiveTask(
-    val title: String,
-    val priority: String? = null,
-    val status: String? = null,
-)
-
-@Serializable
-data class TaskSummary(
-    val total: Int = 0,
-    val done: Int = 0,
-    val pending: Int = 0,
-    @SerialName("inProgress") val inProgressRaw: Int? = null,
-    @SerialName("in_progress") val inProgressSnake: Int? = null,
-    @SerialName("inReview") val inReviewRaw: Int? = null,
-    @SerialName("in_review") val inReviewSnake: Int? = null,
-    val activeTasks: List<ActiveTask> = emptyList(),
-) {
-    val inProgress: Int get() = inProgressRaw ?: inProgressSnake ?: 0
-    val inReview: Int get() = inReviewRaw ?: inReviewSnake ?: 0
-}
-
-@Serializable
 data class DashboardEvent(
     val id: Long,
     val title: String,
@@ -103,7 +81,6 @@ data class Approval(
 
 data class DashboardSnapshot(
     val status: TrackerStatus,
-    val tasks: TaskSummary?,
     val todayEvents: List<DashboardEvent> = emptyList(),
     val tomorrowEvents: List<DashboardEvent> = emptyList(),
     val announcements: List<DashboardAnnouncement> = emptyList(),

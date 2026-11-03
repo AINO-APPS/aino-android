@@ -16,7 +16,7 @@ data class TicketPlanContribution(
 
 internal fun PlanUiState.planContribution(ticket: Task): TicketPlanContribution? =
     ticket.takeIf { inScope(it) && containsPlanTicket(it) }?.let {
-        TicketPlanContribution(it.isCompleted, it.workflowStateKey.orEmpty(), it.priority)
+        TicketPlanContribution(it.isClosed, it.workflowStateKey.orEmpty(), it.priority)
     }
 
 internal fun PlanUiState.pageBaseline(page: BacklogResponse): TicketPlanBaseline =

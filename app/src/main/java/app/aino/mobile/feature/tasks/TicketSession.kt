@@ -203,19 +203,23 @@ internal class TicketStore(
     private val highlights = mutableMapOf<Long, Job>()
     // Serialize snapshot writes so identity-checked restores cannot race with upserts.
     private val ticketLock = Any()
-    private class Removal(val allowReopen: Boolean)
+    /** [cancelled]: the store keeps the cancelled Ticket as history and only refuses open copies. */
+    private class Removal(val allowReopen: Boolean, val cancelled: Boolean = false)
     private val removedIds = mutableMapOf<Long, Removal>()
 
     // Only a detail read started after a local cancellation may observe a legitimate reopening.
     fun removalToken(id: Long): Any? = synchronized(ticketLock) { removedIds[id] }
+
+    private fun admits(removal: Removal, incoming: Task, token: Any?): Boolean =
+        if (incoming.isCancelled) removal.cancelled else removal.allowReopen && removal === token
 
     fun upsert(ticket: Task, removalToken: Any? = null): Task {
         val stored = withoutComments(ticket)
         synchronized(ticketLock) {
             val removal = removedIds[stored.id]
             if (removal != null) {
-                if (!removal.allowReopen || removal !== removalToken || stored.workflowStateKey == "cancelled") return stored
-                removedIds.remove(stored.id)
+                if (!admits(removal, stored, removalToken)) return stored
+                if (!stored.isCancelled) removedIds.remove(stored.id)
             }
             mutable.update { snapshot ->
                 snapshot.copy(tickets = snapshot.tickets + (stored.id to stored), ticketRevision = snapshot.ticketRevision + 1)
@@ -227,7 +231,7 @@ internal class TicketStore(
     fun upsert(tickets: List<Task>) {
         val stored = tickets.associate { ticket -> ticket.id to withoutComments(ticket) }
         synchronized(ticketLock) {
-            val accepted = stored.filterKeys { it !in removedIds }
+            val accepted = stored.filter { (id, ticket) -> removedIds[id]?.let { admits(it, ticket, null) } ?: true }
             if (accepted.isEmpty()) return
             mutable.update { snapshot ->
                 snapshot.copy(tickets = snapshot.tickets + accepted, ticketRevision = snapshot.ticketRevision + 1)
@@ -244,6 +248,24 @@ internal class TicketStore(
                 tickets = snapshot.tickets + (id to updated),
                 ticketRevision = snapshot.ticketRevision + 1,
             )
+        }
+    }
+
+    /**
+     * A local cancellation: keep the server's cancelled Ticket for the Completed
+     * sections, and refuse open copies from loads that started before it.
+     * Without a cancelled row in the response the Ticket simply leaves.
+     */
+    fun markCancelled(id: Long, cancelled: Task?) {
+        if (cancelled == null || cancelled.id != id || !cancelled.isCancelled) {
+            return remove(id, preventReinsert = true, allowReopen = true)
+        }
+        val stored = withoutComments(cancelled)
+        synchronized(ticketLock) {
+            removedIds[id] = Removal(allowReopen = true, cancelled = true)
+            mutable.update { snapshot ->
+                snapshot.copy(tickets = snapshot.tickets + (id to stored), ticketRevision = snapshot.ticketRevision + 1)
+            }
         }
     }
 

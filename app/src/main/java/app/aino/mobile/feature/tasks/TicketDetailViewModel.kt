@@ -72,7 +72,10 @@ class TicketDetailViewModel(
         ticketScope.launch {
             ticketSession.store.state.collect { snapshot ->
                 _ui.update { state ->
-                    val ticket = snapshot.tickets[ticketId]?.takeUnless { it.workflowStateKey == "cancelled" }
+                    // A Ticket cancelled while open closes; one opened already cancelled
+                    // (from Completed) stays readable as history.
+                    val stored = snapshot.tickets[ticketId].takeUnless { state.closed }
+                    val ticket = stored?.takeUnless { it.isCancelled && state.detail?.isCancelled == false }
                     state.copy(
                         detail = ticket,
                         recentlyUpdated = snapshot.recentlyChanged,
@@ -371,9 +374,9 @@ class TicketDetailViewModel(
         confirm("Cancel ticket", "Cancel \"${task.title}\"? The ticket and its history are kept, and it leaves the open work.", "Cancel ticket", true) {
             io {
                 runCatching { repository.deleteTask(ticketId) }.fold(
-                    onSuccess = {
+                    onSuccess = { response ->
                         ticketSession.planRevision.incrementAndGet()
-                        ticketSession.store.remove(ticketId, preventReinsert = true, allowReopen = true)
+                        ticketSession.store.markCancelled(ticketId, response.task)
                         closeDetail()
                         notify("Cancelled ${task.displayKey}")
                     },
