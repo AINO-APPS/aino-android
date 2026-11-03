@@ -16,6 +16,8 @@ import kotlinx.coroutines.test.setMain
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -48,10 +50,10 @@ class TicketSessionUiTest {
             .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
         val detail = harness.detailViewModel
         detail.updateFields(detail.ui.value.detail!!, buildJsonObject { put("sprint_id", null as String?) })
-        harness.await { detail.ui.value.detail?.container == "backlog" && vm.ui.value.backlog.size == 1 && vm.ui.value.tasks.isEmpty() }
+        harness.await { detail.ui.value.detail?.container == "backlog" && vm.ui.value.backlog.size == 1 && harness.boardViewModel.ui.value.tasks.isEmpty() }
 
-        assertTrue("Board must drop a ticket moved to backlog", vm.ui.value.tasks.isEmpty())
-        assertTrue("Board response must resolve current membership", vm.ui.value.sprintBoard!!.tickets.isEmpty())
+        assertTrue("Board must drop a ticket moved to backlog", harness.boardViewModel.ui.value.tasks.isEmpty())
+        assertTrue("Board response must resolve current membership", harness.boardViewModel.ui.value.sprintBoard!!.tickets.isEmpty())
         assertEquals(listOf(201L), vm.ui.value.backlog.map { it.id })
         assertEquals("backlog", detail.ui.value.detail?.container)
         assertEquals(null, detail.ui.value.detail?.sprintId)
@@ -64,10 +66,10 @@ class TicketSessionUiTest {
         harness.loadBoardPlanAndDetail()
         harness.saved = harness.original.replace("\"workflow_state_id\":101", "\"workflow_state_id\":102")
             .replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"in_progress\"")
-        harness.viewModel.moveTask(harness.viewModel.ui.value.tasks.single(), WorkflowState(102, "in_progress", "In Progress"))
+        harness.boardViewModel.moveTask(harness.boardViewModel.ui.value.tasks.single(), WorkflowState(102, "in_progress", "In Progress"))
         harness.await { harness.detailViewModel.ui.value.detail?.workflowStateKey == "in_progress" && harness.writes == 1 }
         assertEquals(102L, harness.detailViewModel.ui.value.detail?.workflowStateId)
-        assertEquals("in_progress", harness.viewModel.ui.value.sprintBoard?.tickets?.single()?.workflowStateKey)
+        assertEquals("in_progress", harness.boardViewModel.ui.value.sprintBoard?.tickets?.single()?.workflowStateKey)
     }
 
     @Test
@@ -88,7 +90,7 @@ class TicketSessionUiTest {
             },
         )
         harness.await {
-            harness.viewModel.ui.value.tasks.singleOrNull()?.title == "Realtime release" &&
+            harness.boardViewModel.ui.value.tasks.singleOrNull()?.title == "Realtime release" &&
                 harness.viewModel.ui.value.searchResults.singleOrNull()?.title == "Realtime release" &&
                 harness.detailViewModel.ui.value.detail?.title == "Realtime release"
         }
@@ -111,7 +113,7 @@ class TicketSessionUiTest {
             )
             harness.await {
                 201L !in harness.session.store.state.value.tickets &&
-                    harness.viewModel.ui.value.tasks.none { it.id == 201L } &&
+                    harness.boardViewModel.ui.value.tasks.none { it.id == 201L } &&
                     harness.detailViewModel.ui.value.detail == null
             }
 
@@ -239,12 +241,12 @@ class TicketSessionUiTest {
         harness.holdAndRejectNextStatusWrite()
 
         try {
-            harness.viewModel.moveTask(
-                harness.viewModel.ui.value.tasks.single(),
+            harness.boardViewModel.moveTask(
+                harness.boardViewModel.ui.value.tasks.single(),
                 WorkflowState(102, "in_progress", "In Progress"),
             )
             assertTrue("Move request should be in flight", harness.awaitStatusWrite())
-            harness.await { harness.viewModel.ui.value.tasks.single().workflowStateKey == "in_progress" }
+            harness.await { harness.boardViewModel.ui.value.tasks.single().workflowStateKey == "in_progress" }
 
             harness.detailResponse = harness.original.replace("Ship release", "Realtime release")
             harness.boardTicket = harness.detailResponse
@@ -257,16 +259,16 @@ class TicketSessionUiTest {
             )
             harness.await {
                 harness.detailReads > 1 &&
-                    harness.viewModel.ui.value.tasks.single().title == "Realtime release" &&
+                    harness.boardViewModel.ui.value.tasks.single().title == "Realtime release" &&
                     harness.detailViewModel.ui.value.detail?.title == "Realtime release"
             }
 
             harness.finishStatusWrite()
-            harness.await { harness.viewModel.ui.value.error != null }
+            harness.await { harness.boardViewModel.ui.value.error != null }
 
-            assertEquals("Realtime release", harness.viewModel.ui.value.tasks.single().title)
+            assertEquals("Realtime release", harness.boardViewModel.ui.value.tasks.single().title)
             assertEquals("Realtime release", harness.detailViewModel.ui.value.detail?.title)
-            assertEquals("todo", harness.viewModel.ui.value.tasks.single().workflowStateKey)
+            assertEquals("todo", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
         } finally {
             harness.finishStatusWrite()
         }
@@ -279,8 +281,8 @@ class TicketSessionUiTest {
         harness.holdAndRejectNextStatusWrite()
 
         try {
-            harness.viewModel.moveTask(
-                harness.viewModel.ui.value.tasks.single(),
+            harness.boardViewModel.moveTask(
+                harness.boardViewModel.ui.value.tasks.single(),
                 WorkflowState(102, "in_progress", "In Progress"),
             )
             assertTrue("Move request should be in flight", harness.awaitStatusWrite())
@@ -290,9 +292,9 @@ class TicketSessionUiTest {
             harness.await { harness.detailReads > 1 && !harness.detailViewModel.ui.value.detailLoading }
 
             harness.finishStatusWrite()
-            harness.await { harness.viewModel.ui.value.error != null }
+            harness.await { harness.boardViewModel.ui.value.error != null }
 
-            assertEquals("in_progress", harness.viewModel.ui.value.tasks.single().workflowStateKey)
+            assertEquals("in_progress", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
             assertEquals("in_progress", harness.detailViewModel.ui.value.detail?.workflowStateKey)
         } finally {
             harness.finishStatusWrite()
@@ -306,17 +308,17 @@ class TicketSessionUiTest {
         harness.holdAndRejectNextStatusWrite()
 
         try {
-            harness.viewModel.moveTask(
-                harness.viewModel.ui.value.tasks.single(),
+            harness.boardViewModel.moveTask(
+                harness.boardViewModel.ui.value.tasks.single(),
                 WorkflowState(102, "in_progress", "In Progress"),
             )
             assertTrue("Move request should be in flight", harness.awaitStatusWrite())
-            harness.await { harness.viewModel.ui.value.tasks.single().workflowStateKey == "in_progress" }
+            harness.await { harness.boardViewModel.ui.value.tasks.single().workflowStateKey == "in_progress" }
 
             harness.finishStatusWrite()
-            harness.await { harness.viewModel.ui.value.error != null }
+            harness.await { harness.boardViewModel.ui.value.error != null }
 
-            assertEquals("todo", harness.viewModel.ui.value.tasks.single().workflowStateKey)
+            assertEquals("todo", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
             assertEquals("todo", harness.detailViewModel.ui.value.detail?.workflowStateKey)
         } finally {
             harness.finishStatusWrite()
@@ -330,13 +332,13 @@ class TicketSessionUiTest {
         harness.saved = harness.original.replace("\"workflow_state_id\":101", "\"workflow_state_id\":102")
             .replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"in_progress\"")
 
-        harness.viewModel.moveTask(
-            harness.viewModel.ui.value.tasks.single(),
+        harness.boardViewModel.moveTask(
+            harness.boardViewModel.ui.value.tasks.single(),
             WorkflowState(102, "in_progress", "In Progress"),
         )
         harness.await {
             harness.writes == 1 &&
-                harness.viewModel.ui.value.tasks.single().workflowStateKey == "in_progress" &&
+                harness.boardViewModel.ui.value.tasks.single().workflowStateKey == "in_progress" &&
                 harness.detailViewModel.ui.value.detail?.workflowStateKey == "in_progress"
         }
         val notice = runBlocking { withTimeout(5_000) { harness.viewModel.notices.first() } }
@@ -345,10 +347,10 @@ class TicketSessionUiTest {
         assertEquals(102L, harness.detailViewModel.ui.value.detail?.workflowStateId)
         harness.saved = harness.original
         notice.action?.invoke()
-        harness.await { harness.writes == 2 && harness.viewModel.ui.value.tasks.single().workflowStateKey == "todo" }
+        harness.await { harness.writes == 2 && harness.boardViewModel.ui.value.tasks.single().workflowStateKey == "todo" }
 
-        assertEquals("todo", harness.viewModel.ui.value.tasks.single().workflowStateKey)
-        assertEquals(101L, harness.viewModel.ui.value.tasks.single().workflowStateId)
+        assertEquals("todo", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
+        assertEquals(101L, harness.boardViewModel.ui.value.tasks.single().workflowStateId)
         assertEquals("todo", harness.detailViewModel.ui.value.detail?.workflowStateKey)
         assertEquals(101L, harness.detailViewModel.ui.value.detail?.workflowStateId)
     }
@@ -372,12 +374,12 @@ class TicketSessionUiTest {
         )
         harness.await {
             harness.detailViewModel.ui.value.detail == null &&
-                harness.viewModel.ui.value.tasks.isEmpty() &&
+                harness.boardViewModel.ui.value.tasks.isEmpty() &&
                 harness.viewModel.ui.value.searchResults.isEmpty() &&
                 harness.inlineComments == null
         }
 
-        assertTrue(harness.viewModel.ui.value.sprintBoard!!.tickets.isEmpty())
+        assertTrue(harness.boardViewModel.ui.value.sprintBoard!!.tickets.isEmpty())
         assertTrue(harness.viewModel.ui.value.backlog.none { it.id == 201L })
         assertTrue(harness.viewModel.ui.value.scheduled.none { it.id == 201L })
     }
@@ -393,10 +395,10 @@ class TicketSessionUiTest {
         )
         harness.await {
             harness.detailViewModel.ui.value.detail == null &&
-                harness.viewModel.ui.value.tasks.isEmpty()
+                harness.boardViewModel.ui.value.tasks.isEmpty()
         }
 
-        assertTrue(harness.viewModel.ui.value.sprintBoard!!.tickets.isEmpty())
+        assertTrue(harness.boardViewModel.ui.value.sprintBoard!!.tickets.isEmpty())
         assertTrue(harness.viewModel.ui.value.backlog.none { it.id == 201L })
     }
 
@@ -481,7 +483,7 @@ class TicketSessionUiTest {
             put("action", "deleted")
         })
         harness.await {
-            harness.viewModel.ui.value.tasks.isEmpty() &&
+            harness.boardViewModel.ui.value.tasks.isEmpty() &&
                 harness.viewModel.ui.value.backlog.none { it.id == 201L } &&
                 harness.viewModel.ui.value.scheduled.isEmpty() &&
                 harness.viewModel.ui.value.searchResults.isEmpty() &&
@@ -491,10 +493,10 @@ class TicketSessionUiTest {
         }
 
         harness.viewModel.loadSprint()
-        harness.await { !harness.viewModel.ui.value.sprintLoading }
+        harness.await { !harness.boardViewModel.ui.value.sprintLoading }
 
         assertTrue(harness.session.store.state.value.tickets[201L] == null)
-        assertTrue(harness.viewModel.ui.value.tasks.isEmpty())
+        assertTrue(harness.boardViewModel.ui.value.tasks.isEmpty())
     }
 
     @Test
@@ -503,9 +505,9 @@ class TicketSessionUiTest {
         harness.loadBoardPlanAndDetail()
         harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
             .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
-        harness.viewModel.assignSprint(harness.viewModel.ui.value.tasks.single(), null)
+        harness.viewModel.assignSprint(harness.boardViewModel.ui.value.tasks.single(), null)
         harness.await {
-            harness.writes == 1 && harness.viewModel.ui.value.tasks.isEmpty() &&
+            harness.writes == 1 && harness.boardViewModel.ui.value.tasks.isEmpty() &&
                 201L in harness.viewModel.ui.value.recentlyUpdated &&
                 201L in harness.detailViewModel.ui.value.recentlyUpdated
         }
@@ -560,7 +562,7 @@ class TicketSessionUiTest {
 
         harness.viewModel.schedule(201, "2026-11-03")
         harness.await { harness.writes == 1 && harness.detailViewModel.ui.value.detail?.container == "scheduled" }
-        assertTrue(harness.viewModel.ui.value.tasks.isEmpty())
+        assertTrue(harness.boardViewModel.ui.value.tasks.isEmpty())
         assertTrue(harness.viewModel.ui.value.backlog.isEmpty())
         assertEquals(1, harness.detailReads)
 
@@ -618,7 +620,7 @@ class TicketSessionUiTest {
         harness.viewModel.loadBacklog()
         harness.await { harness.detailViewModel.ui.value.detail?.title == "Finished from Plan" && harness.viewModel.ui.value.completedCount == 1 }
 
-        assertTrue(harness.viewModel.ui.value.tasks.isEmpty())
+        assertTrue(harness.boardViewModel.ui.value.tasks.isEmpty())
         assertTrue(harness.viewModel.ui.value.backlog.isEmpty())
         assertEquals(listOf("Finished from Plan"), harness.viewModel.ui.value.completed.map { it.title })
         assertEquals("medium", harness.detailViewModel.ui.value.detail?.priority)
@@ -637,16 +639,16 @@ class TicketSessionUiTest {
         harness.viewModel.addComment(201, "From inline")
         harness.await { harness.inlineComments?.items?.any { it.content == "From inline" } == true }
         harness.await { harness.detailViewModel.ui.value.detailComments.any { it.content == "From inline" } }
-        harness.await { harness.viewModel.ui.value.tasks.singleOrNull()?.commentCount == 1 }
+        harness.await { harness.boardViewModel.ui.value.tasks.singleOrNull()?.commentCount == 1 }
 
         harness.detailViewModel.addComment(201, "From detail")
         harness.await { harness.detailViewModel.ui.value.detailComments.any { it.content == "From detail" } }
         harness.await { harness.inlineComments?.items?.any { it.content == "From detail" } == true }
         harness.await {
-            harness.viewModel.ui.value.tasks.singleOrNull()?.commentCount == 2 &&
+            harness.boardViewModel.ui.value.tasks.singleOrNull()?.commentCount == 2 &&
                 harness.detailViewModel.ui.value.detail?.commentCount == 2
         }
-        assertEquals(2, harness.viewModel.ui.value.tasks.single().commentCount)
+        assertEquals(2, harness.boardViewModel.ui.value.tasks.single().commentCount)
         assertEquals(2, harness.detailViewModel.ui.value.detail?.commentCount)
 
         harness.detailViewModel.editComment(201, 1, "Edited from detail")
@@ -658,10 +660,10 @@ class TicketSessionUiTest {
         harness.await { harness.inlineComments?.items?.none { it.id == 2L } == true }
         harness.await { harness.detailViewModel.ui.value.detailComments.none { it.id == 2L } }
         harness.await {
-            harness.viewModel.ui.value.tasks.singleOrNull()?.commentCount == 1 &&
+            harness.boardViewModel.ui.value.tasks.singleOrNull()?.commentCount == 1 &&
                 harness.detailViewModel.ui.value.detail?.commentCount == 1
         }
-        assertEquals(1, harness.viewModel.ui.value.tasks.single().commentCount)
+        assertEquals(1, harness.boardViewModel.ui.value.tasks.single().commentCount)
         assertEquals(1, harness.detailViewModel.ui.value.detail?.commentCount)
 
         harness.commentsResponse = """
@@ -674,7 +676,7 @@ class TicketSessionUiTest {
         })
         harness.await {
             harness.inlineComments?.items?.size == 2 &&
-                harness.viewModel.ui.value.tasks.singleOrNull()?.commentCount == 2
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.commentCount == 2
         }
         harness.await { harness.detailViewModel.ui.value.detailComments.size == 2 }
         assertEquals(listOf("Realtime comment", "Another remote comment"), harness.detailViewModel.ui.value.detailComments.map { it.content })
@@ -700,7 +702,7 @@ class TicketSessionUiTest {
         harness.await { harness.detailReads == 2 && !harness.detailViewModel.ui.value.detailLoading }
 
         assertEquals("Fresh key lookup", harness.detailViewModel.ui.value.detail?.title)
-        assertEquals("Fresh key lookup", harness.viewModel.ui.value.tasks.single().title)
+        assertEquals("Fresh key lookup", harness.boardViewModel.ui.value.tasks.single().title)
         assertEquals("Fresh key lookup", harness.detailViewModel.ui.value.detail?.title)
     }
 
@@ -727,7 +729,7 @@ class TicketSessionUiTest {
         harness.await { !harness.detailViewModel.ui.value.detailLoading }
         harness.rejectBoardReads = true
         harness.viewModel.bind(userId = 1, role = "employee", teamName = null, agileEnabled = true)
-        harness.await { harness.viewModel.ui.value.sprints.isNotEmpty() && !harness.viewModel.ui.value.sprintLoading }
+        harness.await { harness.viewModel.ui.value.sprints.isNotEmpty() && !harness.boardViewModel.ui.value.sprintLoading }
         harness.saved = harness.original.replace("Ship release", "Assigned copy")
         harness.rejectFieldWrites = true
         harness.viewModel.configureImport(ticket)
@@ -772,12 +774,22 @@ internal class TicketSessionHarness {
     private val statusWriteStarted = CountDownLatch(1)
     private val statusWriteRelease = CountDownLatch(1)
     @Volatile var boardTicket = original
+    @Volatile var boardColumnCount = 0
+    @Volatile var completedRollover: String? = null
     val repository = TaskRepository(ApiClient { request ->
         val body = when {
+            request.path == "sprints/11/board" ->
+                """{"sprint":{"id":11,"name":"Next sprint"},"columns":[{"stateId":102,"count":1,"accepting":true}],"tickets":[$saved]}"""
+            request.path == "sprints/10/complete" -> {
+                completedRollover = Json.parseToJsonElement(requireNotNull(request.body).toString(Charsets.UTF_8))
+                    .jsonObject["rolloverTo"]?.jsonPrimitive?.content
+                boardTicket = ""
+                "{}"
+            }
             request.path == "sprints/10/board" -> {
                 boardReads++
                 if (rejectBoardReads) throw java.io.IOException("offline")
-                """{"sprint":{"id":10,"name":"Sprint"},"columns":[{"stateId":102,"count":0,"accepting":true}],"tickets":[$boardTicket]}"""
+                """{"sprint":{"id":10,"name":"Sprint"},"columns":[{"stateId":102,"count":$boardColumnCount,"accepting":true}],"tickets":[$boardTicket]}"""
             }
             request.path.startsWith("tasks/backlog?") -> {
                 planReads++
@@ -814,7 +826,7 @@ internal class TicketSessionHarness {
                 saved
             }
             request.path.startsWith("tasks/by-key/") -> saved
-            request.path == "tasks/available-sprints" -> """[{"id":10,"name":"Sprint","status":"active"}]"""
+            request.path == "tasks/available-sprints" -> """[{"id":10,"name":"Sprint","status":"active"},{"id":11,"name":"Next sprint","status":"planned"}]"""
             request.path == "sprints" -> """{"sprints":[{"id":10,"name":"Sprint","status":"active"}],"currentSprintId":10}"""
             request.path in setOf("tasks/labels", "tasks/assignable-users", "projects", "tasks/201/history") -> "[]"
             (request.path == "tasks/201" && request.method == "PUT") ||
@@ -839,6 +851,7 @@ internal class TicketSessionHarness {
     })
     val session = TicketSession()
     val viewModel = TaskViewModel(repository, ticketSession = session)
+    val boardViewModel = SprintBoardViewModel(repository, session)
     private val detailModel = lazy {
         TicketDetailViewModel(201, repository, session).also { viewModels.put("detail", it) }
     }
@@ -846,6 +859,7 @@ internal class TicketSessionHarness {
     val inlineComments get() = viewModel.ui.value.inlineCommentTaskId?.let { session.commentThreads.value[it] }
     private val viewModels = ViewModelStore().apply {
         put("board-and-plan", viewModel)
+        put("board", boardViewModel)
     }
 
     fun close() {
@@ -866,7 +880,7 @@ internal class TicketSessionHarness {
 
     fun loadBoardPlanAndDetail() {
         viewModel.bind(userId = 1, role = "employee", teamName = null, agileEnabled = true)
-        await { !viewModel.ui.value.sprintLoading && viewModel.ui.value.tasks.size == 1 }
+        await { !boardViewModel.ui.value.sprintLoading && boardViewModel.ui.value.tasks.size == 1 }
         viewModel.loadBacklog()
         await { viewModel.ui.value.planLoaded }
         await { !detailViewModel.ui.value.detailLoading }
@@ -878,7 +892,7 @@ internal class TicketSessionHarness {
         val state = viewModel.ui.value
         assertTrue(
             "Timed out waiting for UI state: user=${state.userId}, tickets=${state.tickets.mapValues { it.value.workflowStateKey to it.value.plannedDate }}, " +
-                "board=${state.boardTicketIds}, plan=${state.planTicketIds}, scheduled=${state.scheduledTicketIds}, " +
+                "board=${boardViewModel.ui.value.boardTicketIds}, plan=${state.planTicketIds}, scheduled=${state.scheduledTicketIds}, " +
                 "search=${state.searchResultIds}, inline=${state.inlineCommentTaskId}, threads=${session.commentThreads.value.mapValues { it.value.items.size }}, " +
                 "counts=${state.tickets.mapValues { it.value.commentCount }}, store=${session.store.state.value.tickets.mapValues { it.value.commentCount }}, " +
                 "detail=${if (detailModel.isInitialized()) detailViewModel.ui.value.detail?.id else null}, commentReads=$commentReads, writes=$writes",

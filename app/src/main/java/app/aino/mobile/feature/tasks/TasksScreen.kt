@@ -97,11 +97,14 @@ internal fun tabLabel(tab: TaskTab): String = when (tab) {
 @Composable
 fun TasksScreen(
     viewModel: TaskViewModel,
+    boardViewModel: SprintBoardViewModel,
     onOpenDetail: (Long) -> Unit,
     onOpenInsights: () -> Unit,
     serviceDesk: @Composable () -> Unit,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    val boardState by boardViewModel.ui.collectAsStateWithLifecycle()
+    val boardUi = boardState.copy(planScope = ui.planScope)
     val colors = LocalWebColors.current
     val open: (Task) -> Unit = { task ->
         viewModel.closeSearch()
@@ -203,8 +206,8 @@ fun TasksScreen(
                     when (tabs.getOrNull(page)) {
                         // The Sprint tab is the board; the Plan split view is a
                         // Backlog action (ADR-015), reached from "Plan sprint".
-                        TaskTab.Sprint -> SprintBoard(ui, viewModel, open)
-                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, viewModel, open) else BacklogPage(ui, viewModel, open)
+                        TaskTab.Sprint -> SprintBoard(ui, boardUi, viewModel, boardViewModel, open)
+                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, open) else BacklogPage(ui, viewModel, open)
                         TaskTab.Scheduled -> ScheduledPage(ui, viewModel, open)
                         TaskTab.ServiceDesk -> serviceDesk()
                         null -> Unit
@@ -224,7 +227,7 @@ fun TasksScreen(
     }
     val commentThreads by viewModel.ticketSession.commentThreads.collectAsStateWithLifecycle()
     ui.inlineCommentTaskId?.let { commentThreads[it] ?: CommentThread(it) }?.let { thread ->
-        val task = (ui.tasks + ui.backlog).firstOrNull { it.id == thread.taskId }
+        val task = (boardUi.tasks + ui.backlog).firstOrNull { it.id == thread.taskId }
         TaskSheetScaffold("Comments", viewModel::closeComments, HeroIcons.ChatBubbleOvalLeft) {
             task?.let {
                 Text(it.title, color = colors.textSecondary, fontSize = 0.84.rem, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 10.dp))
@@ -458,7 +461,7 @@ private fun CommandPaletteBody(
             item {
                 PaletteRow(HeroIcons.PlayCircle, "Start sprint", "Begin the selected sprint") {
                     viewModel.closeSearch()
-                    viewModel.startSprint()
+                    viewModel.ticketSession.requestBoard(BoardRequest.Start)
                 }
             }
         }

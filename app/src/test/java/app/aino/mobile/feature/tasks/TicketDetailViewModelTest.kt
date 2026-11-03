@@ -42,7 +42,7 @@ class TicketDetailViewModelTest {
 
         harness.await {
             harness.detailViewModel.ui.value.detail?.isBlocked == true &&
-                harness.viewModel.ui.value.tasks.singleOrNull()?.isBlocked == true &&
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.isBlocked == true &&
                 harness.viewModel.ui.value.searchResults.singleOrNull()?.isBlocked == true
         }
         assertEquals(2, harness.detailReads)
@@ -61,7 +61,7 @@ class TicketDetailViewModelTest {
 
         harness.await {
             harness.detailViewModel.ui.value.detail?.parentTaskId == 77L &&
-                harness.viewModel.ui.value.tasks.singleOrNull()?.parentTaskId == 77L &&
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.parentTaskId == 77L &&
                 harness.viewModel.ui.value.searchResults.singleOrNull()?.parentTaskId == 77L
         }
         assertEquals(2, harness.detailReads)
@@ -73,9 +73,9 @@ class TicketDetailViewModelTest {
         harness.await {
             !harness.detailViewModel.ui.value.timerBusy &&
                 harness.detailViewModel.ui.value.detail?.loggedMinutes == 5 &&
-                harness.viewModel.ui.value.tasks.singleOrNull()?.loggedMinutes == 5
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.loggedMinutes == 5
         }
-        assertEquals(5, harness.viewModel.ui.value.sprintBoard?.tickets?.single()?.loggedMinutes)
+        assertEquals(5, harness.boardViewModel.ui.value.sprintBoard?.tickets?.single()?.loggedMinutes)
     }
 
     @Test fun separateTicketRoutesKeepEditingTabsHistoryAndTimersIsolated() {
@@ -132,7 +132,7 @@ class TicketDetailViewModelTest {
 
         harness.await {
             harness.detailViewModel.ui.value.detail?.acceptanceCriteria?.singleOrNull()?.done == true &&
-                harness.viewModel.ui.value.tasks.singleOrNull()?.acceptanceCriteria?.singleOrNull()?.done == true
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.acceptanceCriteria?.singleOrNull()?.done == true
         }
     }
 
