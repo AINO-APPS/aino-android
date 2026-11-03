@@ -162,26 +162,6 @@ class TaskNextGenTest {
 
     // ── Time tracking ────────────────────────────────────────────────────
 
-    @Test
-    fun aTimerStateCarriesTheTimeSummary() {
-        val state = Json { ignoreUnknownKeys = true }.decodeFromString<TaskTimerState>(
-            """{"taskId":7,"running":true,"startedAt":"2026-10-25T09:00:00Z","time":{"estimated":120,"logged":45,"remaining":75,"percent":38,"over":false}}""",
-        )
-        assertTrue(state.running)
-        assertEquals(45, state.time.logged)
-        assertEquals(120, state.time.estimated)
-        assertFalse(state.time.over)
-    }
-
-    @Test
-    fun stoppingATimerReportsTheMinutesAdded() {
-        val stop = Json { ignoreUnknownKeys = true }.decodeFromString<TaskTimerStop>(
-            """{"taskId":7,"running":false,"minutes":15,"time":{"estimated":120,"logged":60,"remaining":60,"percent":50,"over":false}}""",
-        )
-        assertEquals(15, stop.minutes)
-        assertEquals(60, stop.time.logged)
-    }
-
     // ── Bulk and rank payloads ───────────────────────────────────────────
 
     @Test

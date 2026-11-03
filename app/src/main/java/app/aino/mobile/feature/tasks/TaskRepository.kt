@@ -122,14 +122,21 @@ class TaskRepository(
         mutate("user/preferences", patch, "PUT")
 
     // ── Time tracking ────────────────────────────────────────────────────
-    /** `GET /tasks/:id/timer` — is a timer running for this task? */
-    fun loadTimer(id: Long): TaskTimerState = decode(api.execute(ApiRequest(path = "tasks/$id/timer")))
+    // @api GET tasks/:id/worklogs
+    fun loadWorklogs(id: Long): TaskWorklogList =
+        decode(api.execute(ApiRequest(path = "tasks/$id/worklogs")))
 
-    /** `POST /tasks/:id/timer/start` — attribute the elapsed time to this task. */
-    fun startTimer(id: Long): TaskTimerState = mutate("tasks/$id/timer/start", Unit)
+    // @api POST tasks/:id/worklogs
+    fun logWork(id: Long, payload: LogWorkPayload): WorklogMutationResponse =
+        mutate("tasks/$id/worklogs", payload)
 
-    /** `POST /tasks/:id/timer/stop` — log the elapsed minutes and roll them into the timesheet. */
-    fun stopTimer(id: Long): TaskTimerStop = mutate("tasks/$id/timer/stop", Unit)
+    // @api PATCH tasks/:id/worklogs/:worklogId
+    fun editWorklog(id: Long, worklogId: Long, payload: LogWorkPayload): WorklogMutationResponse =
+        mutate("tasks/$id/worklogs/$worklogId", payload, "PATCH")
+
+    // @api DELETE tasks/:id/worklogs/:worklogId
+    fun deleteWorklog(id: Long, worklogId: Long): DeleteWorklogResponse =
+        mutate("tasks/$id/worklogs/$worklogId", Unit, "DELETE")
 
     /** `GET /tracker/task-time` — the timesheet's per-task view. */
     fun loadTaskTime(from: String, to: String): List<TaskTimeDay> =
@@ -293,7 +300,8 @@ class TaskRepository(
             val bytes = if (body is Unit) null else json.encodeToString(body).toByteArray()
             return decode(api.execute(ApiRequest(method, path, body = bytes)))
         } catch (error: ApiError.Http) {
-            throw TaskFailure(serverMessage(error) ?: "Task action failed", error.statusCode, error)
+            throw TaskFailure(serverMessage(error) ?: "Task action failed", error.statusCode, error,
+                code = runCatching { json.parseToJsonElement(error.responseBody).jsonObject["code"]?.jsonPrimitive?.content }.getOrNull())
         }
     }
 
@@ -335,7 +343,7 @@ class TaskRepository(
         }
     }
 
-class TaskFailure(message: String, val statusCode: Int, cause: Throwable) : Exception(message, cause)
+class TaskFailure(message: String, val statusCode: Int, cause: Throwable, val code: String? = null) : Exception(message, cause)
 
 /** `content` text part + optional `file` part, as the web `FormData`. */
 internal fun buildCommentMultipart(

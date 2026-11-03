@@ -67,6 +67,7 @@ data class TaskCapabilityActions(
     val delete: TaskCapabilityDecision = TaskCapabilityDecision(),
     val placeInSprint: TaskCapabilityDecision = TaskCapabilityDecision(),
     val schedule: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val logWork: TaskCapabilityDecision = TaskCapabilityDecision(),
 )
 
 @Serializable
@@ -107,8 +108,9 @@ data class Task(
     @SerialName("workflow_state_category") val workflowStateCategory: String? = null,
     /** Planned effort in minutes, shown against [loggedMinutes]. */
     @SerialName("estimated_minutes") val estimatedMinutes: Int? = null,
-    /** Minutes logged by timers started from this task; rolls into the timesheet. */
+    /** Compatibility alias of the computed worklog total. */
     @SerialName("logged_minutes") val loggedMinutes: Int = 0,
+    @SerialName("time_spent_minutes") val timeSpentMinutes: Int = loggedMinutes,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("completed_at") val completedAt: String? = null,
     @SerialName("acceptance_criteria") val acceptanceCriteriaRaw: JsonElement? = null,
@@ -676,34 +678,6 @@ data class TaskPreferences(
 ) {
     val isCompact: Boolean get() = cardDensity == "compact"
 }
-
-/** `GET /tasks/:id/timer` and `POST /tasks/:id/timer/start`. */
-@Serializable
-data class TaskTimerState(
-    @SerialName("taskId") val taskId: Long = 0,
-    val running: Boolean = false,
-    @SerialName("startedAt") val startedAt: String? = null,
-    val time: TaskTimeSummary = TaskTimeSummary(),
-)
-
-/** `POST /tasks/:id/timer/stop`. */
-@Serializable
-data class TaskTimerStop(
-    @SerialName("taskId") val taskId: Long = 0,
-    val running: Boolean = false,
-    val minutes: Int = 0,
-    val time: TaskTimeSummary = TaskTimeSummary(),
-)
-
-/** Logged against estimated, with the overrun made explicit. */
-@Serializable
-data class TaskTimeSummary(
-    val estimated: Int = 0,
-    val logged: Int = 0,
-    val remaining: Int = 0,
-    val percent: Int = 0,
-    val over: Boolean = false,
-)
 
 /** `GET /tracker/task-time` — the timesheet's per-task view. */
 @Serializable

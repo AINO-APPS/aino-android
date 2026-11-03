@@ -774,16 +774,6 @@ class TicketSessionUiTest {
     }
 
     @Test
-    fun stoppingTheTimerPreservesTheLoggedMinutesInOpenDetail() {
-        val harness = harness()
-        harness.loadBoardPlanAndDetail()
-        harness.detailViewModel.stopTimer(201)
-        harness.await { !harness.detailViewModel.ui.value.timerBusy }
-
-        assertEquals(5, harness.detailViewModel.ui.value.detail?.loggedMinutes)
-    }
-
-    @Test
     fun importKeepsTheSuccessfulPlacementResponseWhenItsFollowingFieldWriteFails() {
         val harness = harness()
         val backlog = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
@@ -829,6 +819,11 @@ internal class TicketSessionHarness {
     @Volatile var commentReads = 0
     @Volatile var commentWrites = 0
     @Volatile var commentsResponse = "[]"
+    @Volatile var worklogsResponse = """{"worklogs":[],"time_spent_minutes":0}"""
+    @Volatile var worklogMutationResponse = "{}"
+    @Volatile var worklogError: String? = null
+    @Volatile var worklogsReadGate: HeldTicketResponse? = null
+    @Volatile var worklogPayload: kotlinx.serialization.json.JsonObject? = null
     @Volatile var planRows = ""
     /** Rows for `GET tasks?sprint_id=…&status=cancelled`; the board omits cancelled. */
     @Volatile var cancelledRows = ""
@@ -912,7 +907,12 @@ internal class TicketSessionHarness {
             request.path == "tasks/201/comments/1" && request.method == "PUT" ->
                 """{"id":1,"content":"Edited from detail"}"""
             request.path == "tasks/201/comments/2" && request.method == "DELETE" -> "{}"
-            request.path == "tasks/201/timer/stop" -> """{"taskId":201,"minutes":5}"""
+            request.path == "tasks/201/worklogs" && request.method == "GET" -> worklogsReadGate?.hold(worklogsResponse) ?: worklogsResponse
+            request.path.startsWith("tasks/201/worklogs") -> {
+                worklogPayload = request.body?.let { Json.parseToJsonElement(it.toString(Charsets.UTF_8)).jsonObject }
+                worklogError?.let { throw ApiError.Http(400, it, request.method, request.path) }
+                worklogMutationResponse
+            }
             request.path == "tasks/201/block" || request.path == "tasks/201/parent" && request.method == "PATCH" -> {
                 writes++
                 saved
@@ -966,6 +966,7 @@ internal class TicketSessionHarness {
     }
 
     fun close() {
+        worklogsReadGate?.release()
         detailResponseGate?.release()
         boardResponseGate?.release()
         commentResponseGate?.release()
