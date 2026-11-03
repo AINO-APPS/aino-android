@@ -27,6 +27,50 @@ class TicketWorklogsTest {
         Dispatchers.resetMain()
     }
 
+    @Test fun worklogListRefreshPublishesBothEstimatesIncludingNullAndZero() {
+        harness.detailResponse = harness.original.dropLast(1) + """, "original_estimate_minutes":120,"remaining_estimate_minutes":90}"""
+        harness.worklogsResponse = """{"worklogs":[],"time_spent_minutes":30,"original_estimate_minutes":60,"remaining_estimate_minutes":0}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        assertEquals(60, harness.detailViewModel.ui.value.detail?.originalEstimateMinutes)
+        assertEquals(0, harness.detailViewModel.ui.value.detail?.remainingEstimateMinutes)
+        harness.worklogsResponse = """{"worklogs":[],"time_spent_minutes":30,"original_estimate_minutes":null,"remaining_estimate_minutes":null}"""
+        harness.detailViewModel.loadWorklogs()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        assertNull(harness.boardViewModel.ui.value.tasks.single().originalEstimateMinutes)
+        assertNull(harness.detailViewModel.ui.value.detail?.remainingEstimateMinutes)
+    }
+
+    @Test fun estimateSaveGatesEveryCompetingWorklogWriteUntilPublication() {
+        harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"canEditEstimate\":{\"allowed\":true},\"logWork\":{\"allowed\":true}")
+        harness.worklogsResponse = """{"worklogs":[{"id":7,"day_worked":"2026-11-01","minutes":30,"canEdit":true,"canDelete":true}],"time_spent_minutes":30}"""
+        harness.estimateResponse = """{"ticket":{"id":201,"time_spent_minutes":30,"original_estimate_minutes":120,"remaining_estimate_minutes":90}}"""
+        harness.worklogMutationResponse = """{"worklog":{"id":8,"day_worked":"2026-11-01","minutes":60},"ticket":{"id":201,"time_spent_minutes":90,"original_estimate_minutes":120,"remaining_estimate_minutes":30}}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        val model = harness.detailViewModel
+        val gate = TicketSessionHarness.HeldTicketResponse().also { harness.estimateWriteGate = it }
+        model.startEstimateEdit(EstimateKind.Original)
+        model.saveEstimate("2h")
+        gate.awaitStarted()
+        try {
+            model.startLogWork()
+            model.startEditWorklog(7)
+            model.saveWorklog(WorklogDraft(timeSpent = "1h"))
+            model.deleteWorklog(7)
+            assertNull(model.ui.value.worklogDraft)
+            assertFalse(model.ui.value.worklogBusy)
+            assertNull(harness.worklogPayload)
+        } finally { gate.release() }
+        harness.await { !model.ui.value.estimateBusy }
+        assertEquals(90, model.ui.value.detail?.remainingEstimateMinutes)
+        model.saveWorklog(WorklogDraft(timeSpent = "1h"))
+        harness.await { !model.ui.value.worklogBusy }
+        assertEquals(90, model.ui.value.detail?.timeSpentMinutes)
+        assertEquals(30, model.ui.value.detail?.remainingEstimateMinutes)
+        assertEquals(2, harness.effortWrites)
+    }
+
     @Test fun loggingWorkDefaultsToAutomaticRemainingAdjustment() {
         harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"logWork\":{\"allowed\":true}")
         harness.worklogMutationResponse = """{"worklog":{"id":3,"day_worked":"2026-11-03","minutes":60},"ticket":{"id":201,"time_spent_minutes":60}}"""

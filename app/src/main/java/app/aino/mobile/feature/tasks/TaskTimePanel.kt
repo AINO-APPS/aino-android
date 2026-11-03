@@ -15,6 +15,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
@@ -53,7 +55,9 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
         if (!ui.worklogBusy && deleting != null && ui.worklogs.none { it.id == deleting?.id }) deleting = null
     }
 
-    val percent = if (estimated != null && estimated > 0) ((logged.toFloat() / estimated) * 100).toInt() else if (logged > 0) 100 else 0
+    val remaining = task.remainingEstimateMinutes
+    val total = logged.toLong() + (remaining ?: 0)
+    val progress = if (total > 0) logged.toFloat() / total else 0f
     val over = estimated != null && logged > estimated
 
     Column(
@@ -73,27 +77,30 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
         }
         InlineEstimate(EstimateKind.Original, task.originalEstimateMinutes, ui, viewModel)
         InlineEstimate(EstimateKind.Remaining, task.remainingEstimateMinutes, ui, viewModel)
-        if (estimated != null) {
-            Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(colors.border)) {
+        if (remaining != null) {
+            Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(colors.border).semantics {
+                contentDescription = "Time spent ${formatMinutes(logged)}; remaining ${formatMinutes(remaining)}"
+                progressBarRangeInfo = androidx.compose.ui.semantics.ProgressBarRangeInfo(progress, 0f..1f)
+            }) {
                 Box(
                     Modifier
-                        .fillMaxWidth((percent / 100f).coerceIn(0f, 1f))
+                        .fillMaxWidth(progress.coerceIn(0f, 1f))
                         .height(4.dp)
                         .clip(CircleShape)
                         .background(if (over) colors.danger else colors.success),
                 )
             }
-            if (over) {
+        }
+        if (over) {
                 Text(
-                    "${formatMinutes(logged - estimated)} over estimate",
+                    "${formatMinutes(logged - requireNotNull(estimated))} over estimate",
                     color = colors.danger,
                     fontSize = 0.72.rem,
                     fontWeight = FontWeight.SemiBold,
                 )
-            }
         }
         if (ui.canLogWork) {
-            PillButton("Log work", viewModel::startLogWork, primary = true, enabled = !ui.worklogBusy)
+            PillButton("Log work", viewModel::startLogWork, primary = true, enabled = !ui.worklogBusy && !ui.estimateBusy)
         }
         ui.worklogWarnings.forEach { warning ->
             Text(when (warning) {
@@ -117,10 +124,10 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
                 row.loggedByAttribution?.let { Text(it, color = colors.textMuted, fontSize = 0.76.rem) }
                 row.comment?.takeIf { it.isNotBlank() }?.let { Text(it, color = colors.textSecondary, fontSize = 0.84.rem) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (row.canEdit) TextButton(onClick = { viewModel.startEditWorklog(row.id) }, enabled = !ui.worklogBusy) {
+                    if (row.canEdit) TextButton(onClick = { viewModel.startEditWorklog(row.id) }, enabled = !ui.worklogBusy && !ui.estimateBusy) {
                         Text("Edit", color = colors.primary)
                     }
-                    if (row.canDelete) TextButton(onClick = { deleting = row }, enabled = !ui.worklogBusy) {
+                    if (row.canDelete) TextButton(onClick = { deleting = row }, enabled = !ui.worklogBusy && !ui.estimateBusy) {
                         Text("Delete", color = colors.danger)
                     }
                 }
@@ -137,8 +144,8 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
                 RemainingEstimateChoice(remainingMode, remainingEstimate, { remainingMode = it }, { remainingEstimate = it }, !ui.worklogBusy)
                 ui.worklogError?.let { Text(it, color = colors.danger) }
             } },
-            confirmButton = { TextButton(onClick = { viewModel.deleteWorklog(row.id, remainingMode, remainingEstimate) }, enabled = !ui.worklogBusy) { Text(if (ui.worklogBusy) "Deleting…" else "Delete", color = colors.danger) } },
-            dismissButton = { TextButton(onClick = { deleting = null }, enabled = !ui.worklogBusy) { Text("Cancel") } },
+            confirmButton = { TextButton(onClick = { viewModel.deleteWorklog(row.id, remainingMode, remainingEstimate) }, enabled = !ui.worklogBusy && !ui.estimateBusy) { Text(if (ui.worklogBusy) "Deleting…" else "Delete", color = colors.danger) } },
+            dismissButton = { TextButton(onClick = { deleting = null }, enabled = !ui.worklogBusy && !ui.estimateBusy) { Text("Cancel") } },
         )
     }
 }
@@ -157,7 +164,7 @@ private fun WorklogSheet(ui: TicketDetailUiState, draft: WorklogDraft, viewModel
                 if (current != null && people.none { it.first == current.authorId }) people.add(0, current.authorId to (current.author?.display() ?: "Current author"))
                 if (current == null) people.add(0, null to "Myself")
                 WebSelect(people, draft.authorId, { viewModel.updateWorklogDraft(draft.copy(authorId = it)) },
-                    Modifier.fillMaxWidth(), enabled = !ui.worklogBusy)
+                    Modifier.fillMaxWidth(), enabled = !ui.worklogBusy && !ui.estimateBusy)
             }
             FieldLabel("Day worked")
             WebDateField(draft.dayWorked, { viewModel.updateWorklogDraft(draft.copy(dayWorked = it)) }, clearable = false)
@@ -179,8 +186,8 @@ private fun WorklogSheet(ui: TicketDetailUiState, draft: WorklogDraft, viewModel
                     TimePickerDialog(context, { _, h, m ->
                         viewModel.updateWorklogDraft(draft.copy(startTime = java.time.LocalTime.of(h, m).toString()))
                     }, time.hour, time.minute, true).show()
-                }, enabled = !ui.worklogBusy) { Text(draft.startTime.ifBlank { "Choose start time" }, color = colors.primary) }
-                if (draft.startTime.isNotBlank()) TextButton(onClick = { viewModel.updateWorklogDraft(draft.copy(startTime = "")) }, enabled = !ui.worklogBusy) {
+                }, enabled = !ui.worklogBusy && !ui.estimateBusy) { Text(draft.startTime.ifBlank { "Choose start time" }, color = colors.primary) }
+                if (draft.startTime.isNotBlank()) TextButton(onClick = { viewModel.updateWorklogDraft(draft.copy(startTime = "")) }, enabled = !ui.worklogBusy && !ui.estimateBusy) {
                     Text("Clear", color = colors.textMuted)
                 }
             }

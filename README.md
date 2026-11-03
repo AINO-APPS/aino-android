@@ -103,6 +103,15 @@ it differs from the author. Attendance warnings remain visible after a save,
 until the next successful worklog save replaces them. The Attendance clock-in
 timer is unchanged.
 
+Estimate and worklog writes share an atomic gate and one effort publication path;
+competing writes are ignored until the current write finishes. Worklog list refreshes
+publish time spent and both estimates, without allowing an older in-flight read to
+undo a write. Shared compact and comfortable cards show spent, original and remaining
+effort. The accessible effort bar uses spent / (spent + remaining), hides an unknown
+forecast and treats a zero total as zero progress; overruns still compare spent to
+original. History renders worklog identity, author/logger, worked day, duration,
+comment and old/new values, including deleted records and nullable estimates.
+
 Endpoint snapshots are regenerated against the paired platform checkout using
 `node scripts/check-endpoint-parity.mjs <platform-path> --update`. Add
 `--platform-ref=<commit>` to pin an inventory when the checkout is shared.
