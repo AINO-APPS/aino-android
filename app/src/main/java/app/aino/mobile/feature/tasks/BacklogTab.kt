@@ -66,7 +66,7 @@ import app.aino.mobile.core.designsystem.tokens.rem
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, onOpen: (Task) -> Unit) {
+internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, scheduledViewModel: ScheduledViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
     var collapsed by rememberSaveable { mutableStateOf(listOf<String>()) }
     var scheduling by remember { mutableStateOf<Task?>(null) }
@@ -147,7 +147,7 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
         }
     }
 
-    scheduling?.let { task -> ScheduleDialog(task, onDismiss = { scheduling = null }) { date -> viewModel.schedule(task.id, date) } }
+    scheduling?.let { task -> ScheduleDialog(task, onDismiss = { scheduling = null }) { date -> scheduledViewModel.schedule(task.id, date) } }
     sprintFor?.let { task ->
         SelectSheet(
             "Add to sprint",

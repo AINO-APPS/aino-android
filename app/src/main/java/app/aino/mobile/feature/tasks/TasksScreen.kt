@@ -98,6 +98,7 @@ internal fun tabLabel(tab: TaskTab): String = when (tab) {
 fun TasksScreen(
     viewModel: TaskViewModel,
     planViewModel: PlanViewModel,
+    scheduledViewModel: ScheduledViewModel,
     boardViewModel: SprintBoardViewModel,
     onOpenDetail: (Long) -> Unit,
     onOpenInsights: () -> Unit,
@@ -105,7 +106,8 @@ fun TasksScreen(
 ) {
     val shellUi by viewModel.ui.collectAsStateWithLifecycle()
     val planUi by planViewModel.ui.collectAsStateWithLifecycle()
-    val ui = tasksScreenState(shellUi, planUi)
+    val scheduledUi by scheduledViewModel.ui.collectAsStateWithLifecycle()
+    val ui = tasksScreenState(shellUi, planUi, scheduledUi)
     val boardState by boardViewModel.ui.collectAsStateWithLifecycle()
     val boardUi = boardState.copy(planScope = ui.planScope)
     val colors = LocalWebColors.current
@@ -210,8 +212,8 @@ fun TasksScreen(
                         // The Sprint tab is the board; the Plan split view is a
                         // Backlog action (ADR-015), reached from "Plan sprint".
                         TaskTab.Sprint -> SprintBoard(ui, boardUi, viewModel, boardViewModel, open)
-                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, planViewModel, open) else BacklogPage(ui, viewModel, planViewModel, open)
-                        TaskTab.Scheduled -> ScheduledPage(ui, viewModel, open)
+                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, planViewModel, open) else BacklogPage(ui, viewModel, planViewModel, scheduledViewModel, open)
+                        TaskTab.Scheduled -> ScheduledPage(ui, viewModel, scheduledViewModel, open)
                         TaskTab.ServiceDesk -> serviceDesk()
                         null -> Unit
                     }
@@ -251,8 +253,16 @@ fun TasksScreen(
     ui.confirm?.let {
         TaskConfirmDialog(
             it,
-            { if (planUi.confirm != null) planViewModel.acceptConfirm() else viewModel.acceptConfirm() },
-            { if (planUi.confirm != null) planViewModel.dismissConfirm() else viewModel.dismissConfirm() },
+            { when {
+                scheduledUi.confirm != null -> scheduledViewModel.acceptConfirm()
+                planUi.confirm != null -> planViewModel.acceptConfirm()
+                else -> viewModel.acceptConfirm()
+            } },
+            { when {
+                scheduledUi.confirm != null -> scheduledViewModel.dismissConfirm()
+                planUi.confirm != null -> planViewModel.dismissConfirm()
+                else -> viewModel.dismissConfirm()
+            } },
         )
     }
 }

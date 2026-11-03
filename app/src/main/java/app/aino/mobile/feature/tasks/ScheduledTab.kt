@@ -62,7 +62,7 @@ private val WEEKDAY = DateTimeFormatter.ofPattern("EEE", Locale.US)
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (Task) -> Unit) {
+internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, scheduledViewModel: ScheduledViewModel, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
@@ -71,7 +71,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
     val groups = ui.scheduledGroups
     val today = LocalDate.now()
 
-    LaunchedEffect(Unit) { if (!ui.scheduledLoaded) viewModel.loadScheduled() }
+    LaunchedEffect(Unit) { if (!ui.scheduledLoaded) scheduledViewModel.loadScheduled() }
 
     // Index of each section header inside the LazyColumn (controls row = 0).
     val headerIndex = remember(groups, ui.error) {
@@ -86,7 +86,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
         val focus = ui.scheduledFocus?.let(::localDateOf) ?: return@LaunchedEffect
         if (groups.isEmpty()) return@LaunchedEffect
         jumpTo(focus)
-        viewModel.consumeScheduledFocus()
+        scheduledViewModel.consumeScheduledFocus()
     }
 
     TaskPage(loading = ui.scheduledLoading || ui.refreshing, onRefresh = { viewModel.refresh(pull = true) }) {
@@ -96,7 +96,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
                     WeekStrip(today, ui.scheduled, onPick = ::jumpTo)
                     ActiveFilterChips(ui, viewModel, Modifier.padding(horizontal = 16.dp))
                     // Read-only context: why a day has no capacity (D51).
-                    if (!ui.overlays.isEmpty) OverlayStrip(ui, viewModel, Modifier.padding(horizontal = 16.dp))
+                    if (!ui.overlays.isEmpty) OverlayStrip(ui, scheduledViewModel, Modifier.padding(horizontal = 16.dp))
                 }
             }
             ui.error?.let { item(key = "error") { ErrorMsg(it, Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) } }
@@ -117,10 +117,11 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
                     stickyHeader(key = "sh-${group.key}") { ScheduledHeader(group, today) }
                     items(group.tasks, key = { "st-${it.id}" }) { task ->
                         ScheduledRow(
-                            task, ui, viewModel, onOpen,
+                            task, ui, scheduledViewModel, onOpen,
                             showDate = group.date == null,
                             onReschedule = { rescheduling = task },
                             onActions = { actionsFor = task },
+                            onComments = { viewModel.openComments(task.id) },
                         )
                     }
                 }
@@ -138,7 +139,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
 
     rescheduling?.let { task ->
         ScheduleDialog(task, title = "Reschedule \"${task.title}\"", initial = task.plannedDate, onDismiss = { rescheduling = null }) { date ->
-            viewModel.schedule(task.id, date)
+            scheduledViewModel.schedule(task.id, date)
         }
     }
     actionsFor?.let { task ->
@@ -147,7 +148,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
             ActionRow(HeroIcons.ArrowTopRightOnSquare, "Open details") { actionsFor = null; onOpen(task) }
             val canSchedule = task.capability(TaskCapability.Schedule)
             ActionRow(HeroIcons.CalendarDays, "Reschedule", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { actionsFor = null; rescheduling = task }
-            ActionRow(HeroIcons.ArchiveBox, "Move to backlog", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { actionsFor = null; viewModel.unschedule(task.id, task.title, ask = false) }
+            ActionRow(HeroIcons.ArchiveBox, "Move to backlog", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { actionsFor = null; scheduledViewModel.unschedule(task.id, task.title, ask = false) }
             ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { actionsFor = null; viewModel.openComments(task.id) }
             val canCancel = task.capability(TaskCapability.Cancel)
             ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { actionsFor = null; viewModel.requestDelete(task) }
@@ -161,7 +162,7 @@ internal fun ScheduledPage(ui: TaskUiState, viewModel: TaskViewModel, onOpen: (T
  * day has no capacity; they never block planning onto it.
  */
 @Composable
-private fun OverlayStrip(ui: TaskUiState, viewModel: TaskViewModel, modifier: Modifier = Modifier) {
+private fun OverlayStrip(ui: TaskUiState, viewModel: ScheduledViewModel, modifier: Modifier = Modifier) {
     val colors = LocalWebColors.current
     val types = remember(ui.overlays) { ui.overlays.all.map { it.kind }.distinct() }
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -256,11 +257,12 @@ private fun ScheduledHeader(group: ScheduledGroup, today: LocalDate) {
 private fun ScheduledRow(
     task: Task,
     ui: TaskUiState,
-    viewModel: TaskViewModel,
+    viewModel: ScheduledViewModel,
     onOpen: (Task) -> Unit,
     showDate: Boolean,
     onReschedule: () -> Unit,
     onActions: () -> Unit,
+    onComments: () -> Unit,
 ) {
     val colors = LocalWebColors.current
     val canSchedule = task.capability(TaskCapability.Schedule)
@@ -310,7 +312,7 @@ private fun ScheduledRow(
             highlighted = task.id in ui.recentlyUpdated,
             showStatus = true,
             onLongPress = onActions,
-            onComments = { viewModel.openComments(task.id) },
+            onComments = onComments,
             compact = ui.compact,
             attribution = ui.attribution[task.id],
             trailing = {

@@ -43,6 +43,7 @@ import app.aino.mobile.core.navigation.AttendanceSystemActions
 import app.aino.mobile.feature.tasks.TaskViewModel
 import app.aino.mobile.feature.tasks.SprintBoardViewModel
 import app.aino.mobile.feature.tasks.PlanViewModel
+import app.aino.mobile.feature.tasks.ScheduledViewModel
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.core.push.PushNotifications
 import app.aino.mobile.core.push.PushTokenRegistrar
@@ -131,6 +132,10 @@ class MainActivity : FragmentActivity() {
                 key = "plan-${ticketSession.key}",
                 factory = PlanViewModel.factory(applicationContext, ticketSession),
             )
+            val scheduledViewModel = androidx.lifecycle.viewmodel.compose.viewModel<ScheduledViewModel>(
+                key = "scheduled-${ticketSession.key}",
+                factory = ScheduledViewModel.factory(applicationContext, ticketSession),
+            )
             val themeStore = ThemePreferenceStore(applicationContext)
             val isDark by themeStore.isDark.collectAsState(initial = true)
             val themeScope = rememberCoroutineScope()
@@ -162,6 +167,7 @@ class MainActivity : FragmentActivity() {
                     taskViewModel,
                     sprintBoardViewModel,
                     planViewModel,
+                    scheduledViewModel,
                     profileViewModel,
                     chatViewModel,
                     incomingCallViewModel,

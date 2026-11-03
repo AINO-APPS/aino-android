@@ -14,15 +14,9 @@ data class TaskShellUiState(
     val searching: Boolean = false,
     val searchOpen: Boolean = false,
     val carriedCount: Int = 0,
-    val scheduledTicketIds: List<Long> = emptyList(),
-    val scheduledLoading: Boolean = false,
-    val scheduledLoaded: Boolean = false,
-    val scheduledFocus: String? = null,
     val inlineCommentTaskId: Long? = null,
     val serviceDeskVersion: Int = 0,
     val preferences: TaskPreferences = TaskPreferences(),
-    val overlays: ScheduleOverlays = ScheduleOverlays(),
-    val overlayTypes: Set<String> = setOf("leave", "holiday", "meeting"),
     val attribution: Map<Long, String> = emptyMap(),
 ) {
     val userId get() = planScope.userId
@@ -50,34 +44,21 @@ data class TaskShellUiState(
     val sprintsEnabled get() = planScope.sprintsEnabled
     val visibleTabs get() = planningTabs(agileEnabled, teamSprints, currentSprintId)
     val teamScope get() = planScope.teamScope
-    internal fun inScope(ticket: Task): Boolean = when {
-        !showsTeamPicker(role) -> teamId == null || ticket.teamId == teamId
-        selectedTeamId == -1L -> ticket.teamId == null
-        selectedTeamId != null -> ticket.teamId == selectedTeamId
-        else -> true
-    }
-    internal fun containsScheduledTicket(ticket: Task): Boolean {
-        val (from, to) = scheduledWindow()
-        val plannedDay = localDateOf(ticket.plannedDate) ?: return false
-        return inScope(ticket) && ticket.container == "scheduled" && ticket.workflowStateKey != "cancelled" &&
-            !plannedDay.isBefore(from) && !plannedDay.isAfter(to) &&
-            matchesFilters(ticket, filters, userId, includeStatus = true)
-    }
-    val scheduled get() = scheduledTicketIds.mapNotNull(tickets::get).filter(::containsScheduledTicket)
     val searchResults get() = searchResultIds.mapNotNull(tickets::get)
 }
 
 /** Composed screen values, not another Ticket owner or a ViewModel dependency. */
-internal fun tasksScreenState(shell: TaskShellUiState, plan: PlanUiState): TaskUiState = TaskUiState(
+internal fun tasksScreenState(shell: TaskShellUiState, plan: PlanUiState, scheduled: ScheduledUiState): TaskUiState = TaskUiState(
     planScope = shell.planScope, tab = shell.tab, sheet = shell.sheet, refreshing = shell.refreshing,
     recentlyUpdated = shell.recentlyUpdated, tickets = shell.tickets,
-    error = plan.error ?: shell.error, confirm = plan.confirm ?: shell.confirm,
+    error = scheduled.error ?: plan.error ?: shell.error, confirm = scheduled.confirm ?: plan.confirm ?: shell.confirm,
     searchQuery = shell.searchQuery, searchResultIds = shell.searchResultIds,
     searching = shell.searching, searchOpen = shell.searchOpen, carriedCount = shell.carriedCount,
-    scheduledTicketIds = shell.scheduledTicketIds, scheduledLoading = shell.scheduledLoading,
-    scheduledLoaded = shell.scheduledLoaded, scheduledFocus = shell.scheduledFocus,
+    scheduledTicketIds = scheduled.scheduledTicketIds, scheduledLoading = scheduled.scheduledLoading,
+    scheduledLoaded = scheduled.scheduledLoaded, scheduledFocus = scheduled.scheduledFocus,
+    scheduledWindow = scheduled.window,
     inlineCommentTaskId = shell.inlineCommentTaskId, serviceDeskVersion = shell.serviceDeskVersion,
-    preferences = shell.preferences, overlays = shell.overlays, overlayTypes = shell.overlayTypes,
+    preferences = shell.preferences, overlays = scheduled.overlays, overlayTypes = scheduled.overlayTypes,
     attribution = shell.attribution,
     planOpen = plan.planOpen, planTicketIds = plan.planTicketIds, planLoaded = plan.planLoaded,
     planBaseline = plan.planBaseline, planOffset = plan.planOffset, planHasMore = plan.planHasMore,

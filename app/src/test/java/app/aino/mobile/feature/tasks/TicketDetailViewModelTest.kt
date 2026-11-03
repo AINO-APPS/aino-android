@@ -146,12 +146,12 @@ class TicketDetailViewModelTest {
         val models = androidx.lifecycle.ViewModelStore().apply { put("route", route) }
         try {
             harness.await { !route.ui.value.detailLoading }
-            harness.viewModel.loadScheduled()
-            harness.await { harness.viewModel.ui.value.scheduledLoaded }
+            harness.scheduledViewModel.loadScheduled()
+            harness.await { harness.scheduledViewModel.ui.value.scheduledLoaded }
             harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
                 .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
             route.unschedule(201, "Ship release", closeAfter = true, ask = false)
-            harness.await { route.ui.value.closed && harness.viewModel.ui.value.scheduled.isEmpty() }
+            harness.await { route.ui.value.closed && harness.scheduledViewModel.ui.value.scheduled.isEmpty() }
             val notice = runBlocking { withTimeout(1_000) { harness.session.notices.first() } }
             assertEquals("Undo", notice.actionLabel)
             models.clear()
@@ -159,7 +159,7 @@ class TicketDetailViewModelTest {
             harness.saved = scheduled
             notice.action!!.invoke()
 
-            harness.await { harness.viewModel.ui.value.scheduled.singleOrNull()?.plannedDate == day }
+            harness.await { harness.scheduledViewModel.ui.value.scheduled.singleOrNull()?.plannedDate == day }
         } finally {
             models.clear()
         }

@@ -45,6 +45,12 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
 
 ## Plan on Android
 
+The Activity-scoped `ScheduledViewModel` owns Scheduled membership ids and the
+visible date window, scheduling and unscheduling (including Undo), overlays and
+one-shot date focus. It reads the session Ticket store and Plan scope without
+referencing another ViewModel. Team switches restore cached ids before refreshing;
+the shell only coordinates tab navigation through session requests.
+
 The Activity-scoped `PlanViewModel` owns Backlog paging, sort and read-adjusted
 totals, Completed, selection and bulk actions, the create draft, epics, import
 and Sprint planning. It reads Tickets and Plan scope from the session, never

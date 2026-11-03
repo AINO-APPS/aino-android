@@ -79,6 +79,7 @@ data class TaskUiState(
     val scheduledTicketIds: List<Long> = emptyList(),
     val scheduledLoading: Boolean = false,
     val scheduledLoaded: Boolean = false,
+    val scheduledWindow: Pair<LocalDate, LocalDate> = scheduledWindow(),
     /** Day to bring into view after "View" on the schedule snackbar or a day-picker jump. */
     val scheduledFocus: String? = null,
     // Inline comment panel (the card's 💬).
@@ -142,7 +143,7 @@ data class TaskUiState(
         )
 
     internal fun containsScheduledTicket(ticket: Task): Boolean {
-        val (from, to) = scheduledWindow()
+        val (from, to) = scheduledWindow
         val plannedDay = localDateOf(ticket.plannedDate) ?: return false
         return inScope(ticket) &&
             ticket.container == "scheduled" &&

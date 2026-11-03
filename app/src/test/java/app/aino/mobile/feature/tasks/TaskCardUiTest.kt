@@ -119,9 +119,10 @@ class TaskCardUiTest {
     fun backlogShowsOnlyTheFourPreviewQuickChipsInline() {
         val vm = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }))
         val vmPlan = PlanViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
+        val vmScheduled = ScheduledViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                BacklogPage(TaskUiState(tickets = mapOf(task.id to task), planTicketIds = listOf(task.id)), vm, vmPlan, {})
+                BacklogPage(TaskUiState(tickets = mapOf(task.id to task), planTicketIds = listOf(task.id)), vm, vmPlan, vmScheduled, {})
             }
         }
         listOf("All", "Mine", "High", "Unscheduled").forEach { compose.onNodeWithText(it).assertIsDisplayed() }

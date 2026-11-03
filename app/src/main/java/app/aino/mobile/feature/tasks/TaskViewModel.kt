@@ -49,21 +49,12 @@ class TaskViewModel(
         ticketScope.launch {
             this@TaskViewModel.ticketSession.store.state.collect { snapshot ->
                 _ui.update { current ->
-                    val changed = snapshot.tickets.values.filter { it !== current.tickets[it.id] }
-                    val scheduledIds = current.scheduledTicketIds
-                        .filter { id -> snapshot.tickets[id]?.let(current::containsScheduledTicket) == true }
-                    val newlyScheduledIds = if (current.scheduledLoaded) {
-                        changed.filter(current::containsScheduledTicket).map { it.id }
-                    } else {
-                        emptyList()
-                    }
                     val searchableIds = current.searchResultIds.filter { id ->
                         snapshot.tickets[id]?.workflowStateKey?.let { it != "cancelled" } == true
                     }
                     current.copy(
                         tickets = snapshot.tickets,
                         recentlyUpdated = snapshot.recentlyChanged,
-                        scheduledTicketIds = (scheduledIds + newlyScheduledIds).distinct(),
                         searchResultIds = searchableIds,
                         inlineCommentTaskId = current.inlineCommentTaskId?.takeIf { id ->
                             snapshot.tickets[id]?.let { it.workflowStateKey != "cancelled" } == true
@@ -86,6 +77,10 @@ class TaskViewModel(
         ticketScope.launch {
             this@TaskViewModel.ticketSession.shellRequests.collect { request ->
                 when (request) {
+                    ShellRequest.ShowScheduled -> _ui.update {
+                        it.copy(tab = normalizeTab(TaskTab.Scheduled, it.visibleTabs), searchOpen = false)
+                    }
+                    ShellRequest.ReloadScheduledIfVisible -> if (_ui.value.tab == TaskTab.Scheduled) loadScheduled()
                     ShellRequest.CloseSheet -> closeSheet()
                     is ShellRequest.OpenSheet -> openSheet(request.sheet)
                     is ShellRequest.SelectSprint -> selectSprint(request.id)
@@ -125,13 +120,8 @@ class TaskViewModel(
         val currentSprintId: Long?,
         val currentSprintRow: AvailableSprint?,
         val selectedSprintId: Long?,
-        val scheduledTicketIds: List<Long>,
-        val scheduledLoaded: Boolean,
     )
     private val teamViews = mutableMapOf<Long?, CachedTeamViews>()
-    private var scheduledJob: Job? = null
-    /** Bumped on every list reload; a page/result from an older generation is discarded. */
-    private val scheduledGen = java.util.concurrent.atomic.AtomicInteger()
 
     init {
         this.ticketSession.onClose {
@@ -155,22 +145,10 @@ class TaskViewModel(
         }
     }
 
-    /** Background list reloads: a transient failure behind data already on screen stays silent. */
-    private fun loadFailed(e: Throwable, hasData: Boolean, message: String) {
-        if (hasData && isTransientFailure(e)) _ui.update { if (it.error == message) it.copy(error = null) else it }
-        else fail(message)
-    }
-
     private fun failure(e: Throwable, fallback: String): String {
         val message = if (e is ApiError) userFacingMessage(e, fallback)
         else e.message?.takeIf { it.isNotBlank() && it != "Task action failed" && !it.startsWith("HTTP ") } ?: fallback
         return capabilityFailureCopy(message) ?: message
-    }
-
-    private fun visibleTask(id: Long): Task? {
-        val s = _ui.value
-        return ticketSession.store.state.value.tickets[id] ?: (s.scheduled + s.searchResults)
-            .firstOrNull { it.id == id }
     }
 
     private fun confirm(title: String, message: String, confirmText: String, danger: Boolean = false, action: () -> Unit) {
@@ -333,13 +311,9 @@ class TaskViewModel(
                 if (state.tab == TaskTab.Sprint) loadSprint()
                 else ticketSession.requestBoard(BoardRequest.ReloadLoaded)
                 ticketSession.requestPlan(PlanRequest.ReloadLoaded)
-                if (state.scheduledLoaded) loadScheduled()
+                if (state.tab == TaskTab.Scheduled) loadScheduled()
+                else ticketSession.requestScheduled(ScheduledRequest.ReloadLoaded)
                 if (state.tab == TaskTab.ServiceDesk) reloadTab()
-                if (!state.scheduledLoaded &&
-                    state.tab != TaskTab.ServiceDesk && state.tab != TaskTab.Sprint
-                ) {
-                    reloadTab()
-                }
             }
         }
     }
@@ -388,55 +362,14 @@ class TaskViewModel(
 
     // ── Scheduled ────────────────────────────────────────────────────────
 
-    fun loadScheduled() {
-        scheduledJob?.cancel()
-        _ui.update { it.copy(scheduledLoading = !it.scheduledLoaded) }
-        val gen = scheduledGen.incrementAndGet()
-        val scope = _ui.value.teamScope
-        val filters = _ui.value.filters
-        scheduledJob = io {
-            val (from, to) = scheduledWindow()
-            // Overlays are read-only context for the same window, so they load
-            // alongside the tasks rather than on a second round trip.
-            runCatching { repository.loadScheduleOverlays(from.toString(), to.toString()) }
-                .onSuccess { list -> _ui.update { it.copy(overlays = list) } }
-            // Overlays are read-only context for the same window, so they load
-            // alongside the tasks rather than on a second round trip.
-            val scheduled = runCatching { repository.loadScheduled(filters, scope) }
-            scheduled.fold(
-                onSuccess = { list ->
-                    if (gen != scheduledGen.get() || scope != _ui.value.teamScope) return@fold
-                    ticketSession.store.upsert(list)
-                    _ui.update {
-                        if (scope == it.teamScope) it.copy(
-                            scheduledTicketIds = list.map { ticket -> ticket.id }.distinct(),
-                            scheduledLoading = false,
-                            scheduledLoaded = true,
-                        ) else it
-                    }
-                },
-                onFailure = {
-                    if (gen != scheduledGen.get()) return@fold
-                    val hadData = _ui.value.scheduledLoaded
-                    _ui.update { it.copy(scheduledLoading = false) }
-                    loadFailed(it, hadData, "Failed to load scheduled tasks")
-                },
-            )
-        }
-    }
+    fun loadScheduled() = ticketSession.requestScheduled(ScheduledRequest.Load)
 
     /**
      * Opens the Scheduled tab scrolled to [date]. A sprint team has no such
      * tab, so the focus is kept for when it does and the tab is normalized like
      * every other tab write instead of selecting a page that does not exist.
      */
-    fun showScheduled(date: String?) {
-        _ui.update {
-            val tab = normalizeTab(TaskTab.Scheduled, it.visibleTabs)
-            it.copy(tab = tab, scheduledFocus = date, searchOpen = false)
-        }
-        loadScheduled()
-    }
+    fun showScheduled(date: String?) = ticketSession.requestScheduled(ScheduledRequest.Show(date))
 
     /**
      * Open the Plan split view from the Backlog (its only entry point, as in
@@ -445,8 +378,6 @@ class TaskViewModel(
      * planner.
      */
     fun openCreateForColumn(state: WorkflowState) = ticketSession.requestPlan(PlanRequest.CreateForColumn(state))
-
-    fun consumeScheduledFocus() = _ui.update { it.copy(scheduledFocus = null) }
 
     /** Tasks.tsx runs carry-forward once per local day and shows a banner. */
     private suspend fun autoCarryForward() {
@@ -555,50 +486,7 @@ class TaskViewModel(
 
     fun loadSprint() = ticketSession.requestBoard(BoardRequest.Load)
 
-    private fun patchServerTask(saved: Task) {
-        patchTask(saved, highlight = false)
-    }
-
     fun loadBacklog() = ticketSession.requestPlan(PlanRequest.Load)
-
-    fun schedule(taskId: Long, date: String) {
-        if (date.isEmpty()) return
-        val task = visibleTask(taskId)
-        val decision = task?.capability(TaskCapability.Schedule) ?: TaskCapabilityDecision()
-        if (!decision.allowed) return notify(decision.reasonCopy())
-        io {
-            runCatching { repository.scheduleTask(taskId, date) }.fold(
-                onSuccess = { saved ->
-                    patchTask(saved, highlight = true)
-                    if (_ui.value.tab == TaskTab.Scheduled) loadScheduled()
-                    notify("Scheduled for ${formatDate(date)}", "View") { showScheduled(date) }
-                },
-                onFailure = { e -> fail(failure(e, "Failed to schedule task")) },
-            )
-        }
-    }
-
-    /** `handleUnscheduleTask`; the confirm dialog is skipped for the Scheduled list's swipe (it has Undo). */
-    fun unschedule(taskId: Long, title: String?, ask: Boolean = true) {
-        val decision = visibleTask(taskId)?.capability(TaskCapability.Schedule) ?: TaskCapabilityDecision()
-        if (!decision.allowed) return notify(decision.reasonCopy())
-        val previousDate = ticketSession.store.state.value.tickets[taskId]?.plannedDate
-        val run = {
-            io {
-                runCatching { repository.unscheduleTask(taskId) }.fold(
-                    onSuccess = { saved ->
-                        patchTask(saved, highlight = true)
-                        val back = previousDate?.take(10)
-                        if (back != null) notify("Moved to backlog", "Undo") { schedule(taskId, back) } else notify("Moved to backlog")
-                    },
-                    onFailure = { fail("Failed to move task to backlog") },
-                )
-            }
-            Unit
-        }
-        if (ask) confirm("Move to Backlog", "Move \"${title ?: "this task"}\" to backlog? It will be removed from the planner.", "Move to Backlog") { run() }
-        else run()
-    }
 
     /** Backlog swipe / detail sprint picker (`PATCH /tasks/:id/assign-sprint`). */
     fun assignSprint(task: Task, sprintId: Long?) {
@@ -778,7 +666,6 @@ class TaskViewModel(
         updatePlan { state ->
             teamViews[state.selectedTeamId] = CachedTeamViews(
                 state.currentSprintId, state.currentSprintRow, state.selectedSprintId,
-                state.scheduled.map { it.id }, state.scheduledLoaded,
             )
             val cached = teamViews[teamId]
             val currentSprintId = cached?.currentSprintId
@@ -799,8 +686,6 @@ class TaskViewModel(
                     selectedSprintId = pickSprint(selectedSprintId, teamSprints, currentSprintId),
                 ),
                 preferences = state.preferences.copy(defaultTeamId = teamId?.takeIf { id -> id > 0 }),
-                scheduledTicketIds = cached?.scheduledTicketIds.orEmpty(),
-                scheduledLoaded = cached?.scheduledLoaded ?: false,
                 tab = if (currentSprintId != null) TaskTab.Sprint else normalizeTab(state.tab, tabs),
             )
         }
@@ -872,23 +757,6 @@ class TaskViewModel(
     }
 
     fun selectEpic(id: Long?) = updatePlan { it.copy(planScope = it.planScope.copy(selectedEpicId = id)) }
-
-    // ── Schedule overlays ────────────────────────────────────────────────
-
-    fun loadOverlays(from: String, to: String) {
-        io {
-            runCatching { repository.loadScheduleOverlays(from, to) }.onSuccess { list ->
-                _ui.update { it.copy(overlays = list) }
-            }
-        }
-    }
-
-    /** Each overlay type toggles independently; the choice is per session. */
-    fun toggleOverlayType(type: String) {
-        _ui.update {
-            it.copy(overlayTypes = if (type in it.overlayTypes) it.overlayTypes - type else it.overlayTypes + type)
-        }
-    }
 
     companion object {
         fun factory(
