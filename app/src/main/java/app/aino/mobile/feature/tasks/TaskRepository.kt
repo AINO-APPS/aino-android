@@ -135,8 +135,12 @@ class TaskRepository(
         mutate("tasks/$id/worklogs/$worklogId", payload, "PATCH")
 
     // @api DELETE tasks/:id/worklogs/:worklogId
-    fun deleteWorklog(id: Long, worklogId: Long): DeleteWorklogResponse =
-        mutate("tasks/$id/worklogs/$worklogId", Unit, "DELETE")
+    fun deleteWorklog(id: Long, worklogId: Long, payload: RemainingEstimatePayload = RemainingEstimatePayload()): DeleteWorklogResponse =
+        mutate("tasks/$id/worklogs/$worklogId", payload, "DELETE")
+
+    // @api PATCH tasks/:id/estimates
+    fun setEstimates(id: Long, fields: JsonObject): EstimateResponse =
+        mutate("tasks/$id/estimates", fields, "PATCH")
 
     /** `GET /tracker/task-time` — the timesheet's per-task view. */
     fun loadTaskTime(from: String, to: String): List<TaskTimeDay> =

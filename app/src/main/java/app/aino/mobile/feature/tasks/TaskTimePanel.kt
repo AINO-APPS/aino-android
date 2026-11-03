@@ -15,6 +15,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,12 +44,17 @@ import app.aino.mobile.core.designsystem.tokens.rem
 @Composable
 internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel) {
     val colors = LocalWebColors.current
-    val estimated = task.estimatedMinutes ?: 0
+    val estimated = task.originalEstimateMinutes
     val logged = task.timeSpentMinutes
     var deleting by remember(task.id) { mutableStateOf<TaskWorklog?>(null) }
+    var remainingMode by remember(deleting?.id) { mutableStateOf("auto") }
+    var remainingEstimate by remember(deleting?.id) { mutableStateOf("") }
+    androidx.compose.runtime.LaunchedEffect(ui.worklogs, ui.worklogBusy) {
+        if (!ui.worklogBusy && deleting != null && ui.worklogs.none { it.id == deleting?.id }) deleting = null
+    }
 
-    val percent = if (estimated > 0) ((logged.toFloat() / estimated) * 100).toInt() else 0
-    val over = estimated > 0 && logged > estimated
+    val percent = if (estimated != null && estimated > 0) ((logged.toFloat() / estimated) * 100).toInt() else if (logged > 0) 100 else 0
+    val over = estimated != null && logged > estimated
 
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
@@ -59,13 +65,15 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
             Spacer(Modifier.width(12.dp))
             Text("Time spent", color = colors.textSecondary, fontSize = 0.84.rem, modifier = Modifier.weight(1f).semantics { heading() })
             Text(
-                if (estimated > 0) "${formatMinutes(logged)} / ${formatMinutes(estimated)}" else formatMinutes(logged),
+                "${formatMinutes(logged)} / ${estimated?.let(::formatMinutes) ?: "—"}",
                 color = if (over) colors.danger else colors.textSecondary,
                 fontSize = 0.8.rem,
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        if (estimated > 0) {
+        InlineEstimate(EstimateKind.Original, task.originalEstimateMinutes, ui, viewModel)
+        InlineEstimate(EstimateKind.Remaining, task.remainingEstimateMinutes, ui, viewModel)
+        if (estimated != null) {
             Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(colors.border)) {
                 Box(
                     Modifier
@@ -87,6 +95,14 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
         if (ui.canLogWork) {
             PillButton("Log work", viewModel::startLogWork, primary = true, enabled = !ui.worklogBusy)
         }
+        ui.worklogWarnings.forEach { warning ->
+            Text(when (warning) {
+                "ON_LEAVE" -> "The author has approved leave on this day."
+                "EXCEEDS_ATTENDANCE" -> "The author's total work logged for this day exceeds their clocked-in working time."
+                else -> warning
+            }, color = colors.warning, fontSize = 0.84.rem,
+                modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+        }
         if (ui.worklogsLoading) Text("Loading worklogs…", color = colors.textMuted, fontSize = 0.8.rem)
         else if (ui.worklogs.isEmpty()) Text("No work logged yet", color = colors.textMuted, fontSize = 0.8.rem)
         ui.worklogs.forEach { row ->
@@ -98,6 +114,7 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
                     Text(formatMinutes(row.minutes), color = colors.text, fontWeight = FontWeight.SemiBold, fontSize = 0.84.rem)
                 }
                 Text(listOfNotNull(row.dayWorked, row.startTime?.take(5)).joinToString(" · "), color = colors.textMuted, fontSize = 0.76.rem)
+                row.loggedByAttribution?.let { Text(it, color = colors.textMuted, fontSize = 0.76.rem) }
                 row.comment?.takeIf { it.isNotBlank() }?.let { Text(it, color = colors.textSecondary, fontSize = 0.84.rem) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (row.canEdit) TextButton(onClick = { viewModel.startEditWorklog(row.id) }, enabled = !ui.worklogBusy) {
@@ -113,11 +130,15 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
     ui.worklogDraft?.let { WorklogSheet(ui, it, viewModel) }
     deleting?.let { row ->
         AlertDialog(
-            onDismissRequest = { deleting = null },
+            onDismissRequest = { if (!ui.worklogBusy) deleting = null },
             title = { Text("Delete worklog?") },
-            text = { Text("Remove ${formatMinutes(row.minutes)} logged on ${row.dayWorked}?") },
-            confirmButton = { TextButton(onClick = { viewModel.deleteWorklog(row.id); deleting = null }) { Text("Delete", color = colors.danger) } },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Remove ${formatMinutes(row.minutes)} logged on ${row.dayWorked}?")
+                RemainingEstimateChoice(remainingMode, remainingEstimate, { remainingMode = it }, { remainingEstimate = it }, !ui.worklogBusy)
+                ui.worklogError?.let { Text(it, color = colors.danger) }
+            } },
+            confirmButton = { TextButton(onClick = { viewModel.deleteWorklog(row.id, remainingMode, remainingEstimate) }, enabled = !ui.worklogBusy) { Text(if (ui.worklogBusy) "Deleting…" else "Delete", color = colors.danger) } },
+            dismissButton = { TextButton(onClick = { deleting = null }, enabled = !ui.worklogBusy) { Text("Cancel") } },
         )
     }
 }
@@ -129,6 +150,15 @@ private fun WorklogSheet(ui: TicketDetailUiState, draft: WorklogDraft, viewModel
     TaskSheetScaffold(if (ui.editingWorklogId == null) "Log work" else "Edit worklog", viewModel::dismissWorklog, HeroIcons.Clock) {
         Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (ui.canLogWorkForOthers) {
+                FieldLabel("Person")
+                val current = ui.worklogs.firstOrNull { it.id == ui.editingWorklogId }
+                val people = ui.assignableUsers.map { it.id as Long? to it.display() }.toMutableList()
+                if (current != null && people.none { it.first == current.authorId }) people.add(0, current.authorId to (current.author?.display() ?: "Current author"))
+                if (current == null) people.add(0, null to "Myself")
+                WebSelect(people, draft.authorId, { viewModel.updateWorklogDraft(draft.copy(authorId = it)) },
+                    Modifier.fillMaxWidth(), enabled = !ui.worklogBusy)
+            }
             FieldLabel("Day worked")
             WebDateField(draft.dayWorked, { viewModel.updateWorklogDraft(draft.copy(dayWorked = it)) }, clearable = false)
             OutlinedTextField(
@@ -162,6 +192,9 @@ private fun WorklogSheet(ui: TicketDetailUiState, draft: WorklogDraft, viewModel
                 enabled = !ui.worklogBusy,
                 modifier = Modifier.fillMaxWidth(),
             )
+            RemainingEstimateChoice(draft.remainingMode, draft.remainingEstimate,
+                { viewModel.updateWorklogDraft(draft.copy(remainingMode = it)) },
+                { viewModel.updateWorklogDraft(draft.copy(remainingEstimate = it)) }, !ui.worklogBusy)
             ui.worklogError?.let { Text(it, color = colors.danger, fontSize = 0.84.rem) }
             PillButton(if (ui.worklogBusy) "Saving…" else "Save work", { viewModel.saveWorklog(draft) },
                 primary = true, enabled = !ui.worklogBusy && draft.dayWorked.isNotBlank() && draft.timeSpent.isNotBlank())

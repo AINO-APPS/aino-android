@@ -9,6 +9,8 @@ enum class TaskCapability {
     PlaceInSprint,
     Schedule,
     LogWork,
+    LogWorkForOthers,
+    EditEstimate,
 }
 
 fun Task.capability(action: TaskCapability): TaskCapabilityDecision {
@@ -22,6 +24,8 @@ fun Task.capability(action: TaskCapability): TaskCapabilityDecision {
         TaskCapability.PlaceInSprint -> can.placeInSprint
         TaskCapability.Schedule -> can.schedule
         TaskCapability.LogWork -> can.logWork
+        TaskCapability.LogWorkForOthers -> can.logWorkForOthers
+        TaskCapability.EditEstimate -> can.canEditEstimate
     }
 }
 

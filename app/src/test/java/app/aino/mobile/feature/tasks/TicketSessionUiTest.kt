@@ -824,6 +824,9 @@ internal class TicketSessionHarness {
     @Volatile var worklogError: String? = null
     @Volatile var worklogsReadGate: HeldTicketResponse? = null
     @Volatile var worklogPayload: kotlinx.serialization.json.JsonObject? = null
+    @Volatile var estimatePayload: kotlinx.serialization.json.JsonObject? = null
+    @Volatile var estimateResponse = "{}"
+    @Volatile var estimateError: String? = null
     @Volatile var planRows = ""
     /** Rows for `GET tasks?sprint_id=…&status=cancelled`; the board omits cancelled. */
     @Volatile var cancelledRows = ""
@@ -907,6 +910,11 @@ internal class TicketSessionHarness {
             request.path == "tasks/201/comments/1" && request.method == "PUT" ->
                 """{"id":1,"content":"Edited from detail"}"""
             request.path == "tasks/201/comments/2" && request.method == "DELETE" -> "{}"
+            request.path == "tasks/201/estimates" && request.method == "PATCH" -> {
+                estimatePayload = request.body?.let { Json.parseToJsonElement(it.toString(Charsets.UTF_8)).jsonObject }
+                estimateError?.let { throw ApiError.Http(400, it, request.method, request.path) }
+                estimateResponse
+            }
             request.path == "tasks/201/worklogs" && request.method == "GET" -> worklogsReadGate?.hold(worklogsResponse) ?: worklogsResponse
             request.path.startsWith("tasks/201/worklogs") -> {
                 worklogPayload = request.body?.let { Json.parseToJsonElement(it.toString(Charsets.UTF_8)).jsonObject }
