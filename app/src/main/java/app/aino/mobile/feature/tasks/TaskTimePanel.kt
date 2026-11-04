@@ -76,7 +76,7 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (task.capability(TaskCapability.LogWork).allowed) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (ui.timerRunning) {
                 PillButton(
                     if (ui.timerBusy) "Stopping…" else "Stop timer",

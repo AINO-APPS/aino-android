@@ -34,7 +34,13 @@ data class TaskPerson(
 }
 
 @Serializable
-data class TaskProject(val id: Long, val key: String? = null, val name: String? = null, val color: String? = null)
+data class TaskProject(
+    val id: Long,
+    val key: String? = null,
+    val name: String? = null,
+    val color: String? = null,
+    @SerialName("is_archived") val archived: Boolean = false,
+)
 
 @Serializable
 data class TaskSprint(
@@ -67,6 +73,11 @@ data class TaskCapabilityActions(
     val delete: TaskCapabilityDecision = TaskCapabilityDecision(),
     val placeInSprint: TaskCapabilityDecision = TaskCapabilityDecision(),
     val schedule: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val canMoveProject: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val comment: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val logWork: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val logWorkForOthers: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val canEditEstimate: TaskCapabilityDecision = TaskCapabilityDecision(),
 )
 
 @Serializable
@@ -92,6 +103,8 @@ data class Task(
     @SerialName("blocked_reason") val blockedReason: String? = null,
     @SerialName("comment_count") val commentCount: Int = 0,
     @SerialName("issue_key") val issueKey: String? = null,
+    @SerialName("ticket_key") val ticketKey: String? = null,
+    @SerialName("key_aliases") val keyAliases: List<String> = emptyList(),
     @SerialName("sprint_id") val sprintId: Long? = null,
     val container: String? = null,
     val capabilities: TaskCapabilities? = null,
@@ -121,7 +134,7 @@ data class Task(
     val comments: List<TaskComment> = emptyList(),
 ) {
     /** `issue_key || "#id"` (TaskCard / BacklogTab). */
-    val displayKey: String get() = issueKey ?: "#$id"
+    val displayKey: String get() = ticketKey ?: issueKey ?: "#$id"
 
     /** The single definition of complete: the server derives `completed_at` (D5). */
     val isCompleted: Boolean get() = completedAt != null
@@ -221,6 +234,7 @@ data class AvailableSprint(
     @SerialName("end_date") val endDate: String = "",
     val status: String = "planned",
     val goal: String? = null,
+    @SerialName("project_id") val projectId: Long? = null,
     @SerialName("team_id") val teamId: Long? = null,
     @SerialName("team_name") val teamName: String? = null,
     /** The sprint's running number within its team; the heading shows "#3". */
@@ -284,6 +298,18 @@ data class ProjectOption(
     val key: String = "",
     val name: String = "",
     val color: String? = null,
+    @SerialName("is_archived") val archived: Boolean = false,
+    val capabilities: ProjectCapabilities? = null,
+)
+
+@Serializable
+data class ProjectCapabilities(
+    val canAdminister: Boolean = false,
+    val canCreateTickets: Boolean = false,
+    val canManageMembers: Boolean = false,
+    val canEditWorkflow: Boolean = false,
+    val canRenameKey: Boolean = false,
+    val canArchive: Boolean = false,
 )
 
 // ─── Agile config (`GET /agile/config`, AgileConfigContext) ─────────────────

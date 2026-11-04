@@ -5,11 +5,11 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 508,
-    "covered": 270,
+    "platform": 532,
+    "covered": 274,
     "waived": 234,
-    "missing": 6,
-    "unmatched": 1
+    "missing": 26,
+    "unmatched": 0
   },
   "covered": [
     {
@@ -919,6 +919,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/projects/mine",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
       "path": "/api/public/branding",
       "source": "app/src/main/java/app/aino/mobile/core/branding/Branding.kt"
     },
@@ -1143,6 +1148,16 @@
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
+      "method": "POST",
+      "path": "/api/tasks/:param/move-project",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "POST",
+      "path": "/api/tasks/:param/move-project/preview",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/tasks/:param/parent",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
@@ -1210,6 +1225,11 @@
     {
       "method": "POST",
       "path": "/api/tasks/bulk",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks/by-key/:param",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -1363,11 +1383,5 @@
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     }
   ],
-  "unmatched": [
-    {
-      "method": "GET",
-      "path": "/api/tasks/by-key",
-      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
-    }
-  ]
+  "unmatched": []
 }

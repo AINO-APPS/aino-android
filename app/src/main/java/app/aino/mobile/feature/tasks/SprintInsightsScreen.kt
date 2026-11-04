@@ -93,10 +93,13 @@ fun SprintInsightsScreen(viewModel: TaskViewModel, onBack: () -> Unit, requested
     var refreshing by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
 
-    LaunchedEffect(reloadKey, ui.selectedTeamId) {
+    LaunchedEffect(reloadKey, ui.teamScope) {
         val teamId = ui.selectedTeamId.takeIf { showsTeamPicker(ui.role) }
         val list = withContext(Dispatchers.IO) {
-            runCatching { repo.loadTeamSprints(teamId) }
+            runCatching {
+                ui.planScope.selectedProjectId?.takeIf { ui.planScope.projectScoped }?.let(repo::loadProjectSprints)
+                    ?: repo.loadTeamSprints(teamId)
+            }
                 .getOrDefault(SprintListResponse(sprints = sprints, currentSprintId = ui.currentSprintId))
         }
         sprints = list.sprints

@@ -8,6 +8,11 @@ enum class TaskCapability {
     Delete,
     PlaceInSprint,
     Schedule,
+    MoveProject,
+    Comment,
+    LogWork,
+    LogWorkForOthers,
+    EditEstimate,
 }
 
 fun Task.capability(action: TaskCapability): TaskCapabilityDecision {
@@ -20,6 +25,11 @@ fun Task.capability(action: TaskCapability): TaskCapabilityDecision {
         TaskCapability.Delete -> can.delete
         TaskCapability.PlaceInSprint -> can.placeInSprint
         TaskCapability.Schedule -> can.schedule
+        TaskCapability.MoveProject -> can.canMoveProject
+        TaskCapability.Comment -> can.comment
+        TaskCapability.LogWork -> can.logWork
+        TaskCapability.LogWorkForOthers -> can.logWorkForOthers
+        TaskCapability.EditEstimate -> can.canEditEstimate
     }
 }
 
@@ -45,6 +55,9 @@ fun capabilityReasonCopy(reason: String?): String = when (reason) {
     "SPRINT_FROZEN" -> "This sprint is frozen."
     "IN_SPRINT" -> "Remove this ticket from its sprint before scheduling it."
     "SPRINT_TEAM_MISMATCH" -> "Choose a sprint from the ticket's team."
+    "SPRINT_PROJECT_MISMATCH" -> "Choose a sprint from the ticket's project."
+    "PROJECT_ARCHIVED" -> "This project is archived. Tickets are read-only; comments are still available."
+    "READ_ONLY_ROLE" -> "Your project role allows viewing and commenting only."
     "CANCELLED_TERMINAL" -> "Cancelled tickets cannot be changed."
     else -> "This action is not available."
 }
@@ -61,5 +74,8 @@ private val CAPABILITY_REASON_CODES = setOf(
     "SPRINT_FROZEN",
     "IN_SPRINT",
     "SPRINT_TEAM_MISMATCH",
+    "SPRINT_PROJECT_MISMATCH",
+    "PROJECT_ARCHIVED",
+    "READ_ONLY_ROLE",
     "CANCELLED_TERMINAL",
 )

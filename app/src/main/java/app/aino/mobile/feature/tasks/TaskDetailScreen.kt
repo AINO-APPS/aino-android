@@ -151,19 +151,31 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
                             }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(colors.bgElevated)) {
                                 val canEdit = task.capability(TaskCapability.Edit)
-                                MenuItem(HeroIcons.PencilSquare, "Edit title & description", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) { menu = false; viewModel.startEdit() }
-                                if (ui.agile.features.blockers) {
+                                if (TaskCapability.Edit in ui.availableActions) {
+                                    MenuItem(HeroIcons.PencilSquare, "Edit title & description") { menu = false; viewModel.startEdit() }
+                                }
+                                if (ui.agile.features.blockers && canEdit.allowed) {
                                     MenuItem(HeroIcons.NoSymbol, if (task.isBlocked) "Clear blocker" else "Mark blocked", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) { menu = false; blockSheet = true }
                                 }
                                 val canSchedule = task.capability(TaskCapability.Schedule)
-                                MenuItem(HeroIcons.CalendarDays, if (task.container == "scheduled") "Reschedule" else "Schedule to a day", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { menu = false; scheduleOpen = true }
-                                if (task.container == "scheduled") {
+                                if (canSchedule.allowed) {
+                                    MenuItem(HeroIcons.CalendarDays, if (task.container == "scheduled") "Reschedule" else "Schedule to a day") { menu = false; scheduleOpen = true }
+                                }
+                                if (task.container == "scheduled" && canSchedule.allowed) {
                                     MenuItem(HeroIcons.ArchiveBox, "Move to backlog", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { menu = false; viewModel.unschedule(task.id, task.title, closeAfter = true) }
                                 }
                                 MenuItem(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") { menu = false; copyKey() }
+                                if (task.capability(TaskCapability.MoveProject).allowed) {
+                                    MenuItem(HeroIcons.Folder, "Move to project", enabled = !ui.moveBusy) {
+                                        menu = false
+                                        viewModel.startProjectMove()
+                                    }
+                                }
                                 MenuItem(HeroIcons.ArrowPath, "Refresh") { menu = false; viewModel.refreshDetail() }
                                 val canCancel = task.capability(TaskCapability.Cancel)
-                                MenuItem(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { menu = false; viewModel.requestDelete(task) }
+                                if (canCancel.allowed) {
+                                    MenuItem(HeroIcons.Trash, "Cancel ticket", danger = true) { menu = false; viewModel.requestDelete(task) }
+                                }
                             }
                         }
                     }
@@ -224,6 +236,15 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
     if (scheduleOpen) {
         ScheduleDialog(task, initial = task.dueDate, onDismiss = { scheduleOpen = false }) { date -> viewModel.schedule(task.id, date, closeAfter = true) }
     }
+    if (ui.movePickerOpen) {
+        SelectSheet(
+            "Move to project",
+            ui.moveProjects.map { SelectOption(it.id, it.name, it.key, color = it.color?.let { color -> hexColor(color) }) },
+            emptySet(), viewModel::dismissProjectMove,
+            { ids -> ids.firstOrNull()?.let(viewModel::previewProjectMove) },
+            icon = HeroIcons.Folder,
+        )
+    }
     ui.confirm?.let { TaskConfirmDialog(it, viewModel::acceptConfirm, viewModel::dismissConfirm) }
 }
 
@@ -270,7 +291,7 @@ private fun DetailHero(task: Task, ui: TicketDetailUiState, viewModel: TicketDet
             StatusPill(
                 stateLabel(state),
                 hexColor(state.color, colors.textMuted),
-                onClick = onStatus,
+                onClick = onStatus.takeIf { task.capability(TaskCapability.ChangeState).allowed },
             )
         }
         if (task.isBlocked && ui.agile.features.blockers) {
@@ -304,7 +325,7 @@ private fun DetailHero(task: Task, ui: TicketDetailUiState, viewModel: TicketDet
                         Text("Show more", color = colors.primary, fontSize = 0.8.rem, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
                     }
                 }
-            } else {
+            } else if (task.capability(TaskCapability.Edit).allowed) {
                 Row(
                     Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Add description", onClick = viewModel::startEdit).padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -357,7 +378,7 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
                 PropertyText(p.label, color = colors.tone(p.tone))
             }
         }
-        PropertyRow(HeroIcons.CheckCircle, "Status", onStatus) {
+        PropertyRow(HeroIcons.CheckCircle, "Status", onStatus.takeIf { task.capability(TaskCapability.ChangeState).allowed }) {
             val state = stateOf(task, ui.agile)
             val column = columnOf(task.workflowStateKey)
             StatusPill(state?.let(::stateLabel) ?: column.label, hexColor(state?.color, colors.tone(column.tone)))
@@ -393,15 +414,18 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
             }
         }
         if (ui.projects.isNotEmpty() || task.project != null) {
-            // One-way: an issue key is permanent once a project is set.
             PropertyRow(
                 HeroIcons.Folder,
                 "Project",
-                if (task.projectId == null && canEdit.allowed) ({ picker = "project" }) else null,
-                reason = if (task.projectId == null && !canEdit.allowed) canEdit.reasonCopy() else null,
+                if (task.capability(TaskCapability.MoveProject).allowed) viewModel::startProjectMove else null,
             ) {
                 val p = task.project
                 PropertyText(p?.let { listOfNotNull(it.key, it.name).joinToString(" · ") } ?: "No project", muted = p == null, color = p?.color?.let { hexColor(it) })
+            }
+            if (task.keyAliases.isNotEmpty()) {
+                PropertyRow(HeroIcons.DocumentDuplicate, "Previous keys", null) {
+                    PropertyText(task.keyAliases.joinToString(", "), muted = true)
+                }
             }
         }
         val creator = task.creator
@@ -431,7 +455,7 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
         null -> Unit
         else -> TaskPickers(
             picker = picker,
-            ui = ui.planScope,
+            ui = ui.planScope.copy(sprints = ui.sprints, agile = ui.agile, selectedProjectId = task.projectId),
             assignee = task.assignedTo,
             typeId = task.workItemTypeId,
             sprintId = task.sprintId,
@@ -540,6 +564,7 @@ private fun DetailSections(task: Task, ui: TicketDetailUiState, viewModel: Ticke
             currentUserId = ui.userId,
             users = ui.assignableUsers,
             viewModel = viewModel,
+            canComment = TaskCapability.Comment in ui.availableActions,
         )
         DetailTab.History -> HistoryList(ui.history)
         DetailTab.Checklist -> AcceptanceCriteriaEditor(task.id, ui, viewModel)
@@ -549,7 +574,8 @@ private fun DetailSections(task: Task, ui: TicketDetailUiState, viewModel: Ticke
             if (!isEpic) DependenciesPanel(task.id, ui, viewModel, onOpenTicket)
         }
         DetailTab.Fields -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            CustomFieldsEditor(task, viewModel)
+            if (TaskCapability.Edit in ui.availableActions) CustomFieldsEditor(task, viewModel)
+            else CustomFieldsSummary(task.id, viewModel)
         }
     }
 }
@@ -559,6 +585,20 @@ private fun DetailSections(task: Task, ui: TicketDetailUiState, viewModel: Ticke
 private fun AcceptanceCriteriaEditor(taskId: Long, ui: TicketDetailUiState, viewModel: TicketDetailViewModel) {
     if (!ui.agile.features.acceptanceCriteria) return
     val colors = LocalWebColors.current
+    if (TaskCapability.Edit !in ui.availableActions) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val criteria = ui.detail?.acceptanceCriteria.orEmpty()
+            if (criteria.isEmpty()) Text("No acceptance criteria", color = colors.textMuted)
+            criteria.forEach { criterion ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(if (criterion.done) HeroIcons.SquareCheck else HeroIcons.Square, null, Modifier.size(20.dp), tint = colors.textMuted)
+                    Spacer(Modifier.width(6.dp))
+                    Text(criterion.text, color = colors.textSecondary)
+                }
+            }
+        }
+        return
+    }
     val items = remember(taskId) { mutableStateListOf<AcceptanceCriterion>() }
     var loading by remember(taskId) { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
@@ -758,10 +798,12 @@ private fun ParentChildPanel(task: Task, ui: TicketDetailUiState, viewModel: Tic
                         modifier = Modifier.weight(1f, fill = false).clickable { onOpenTicket(p.id) },
                     )
                     Spacer(Modifier.width(4.dp))
-                    Icon(HeroIcons.XMark, "Detach from parent", Modifier.size(11.dp).clickable { setParent(null) }, tint = colors.textMuted)
+                    if (TaskCapability.Edit in ui.availableActions) {
+                        Icon(HeroIcons.XMark, "Detach from parent", Modifier.size(11.dp).clickable { setParent(null) }, tint = colors.textMuted)
+                    }
                 }
-                if (!picking) Text("Change parent", color = colors.primary, fontSize = 0.75.rem, modifier = Modifier.clickable { picking = true })
-            } else if (!picking) {
+                if (!picking && TaskCapability.Edit in ui.availableActions) Text("Change parent", color = colors.primary, fontSize = 0.75.rem, modifier = Modifier.clickable { picking = true })
+            } else if (!picking && TaskCapability.Edit in ui.availableActions) {
                 Row(Modifier.clickable { picking = true }, verticalAlignment = Alignment.CenterVertically) {
                     Icon(HeroIcons.Link, null, Modifier.size(11.dp), tint = colors.primary)
                     Spacer(Modifier.width(4.dp))
@@ -769,7 +811,7 @@ private fun ParentChildPanel(task: Task, ui: TicketDetailUiState, viewModel: Tic
                 }
             }
         }
-        if (picking) {
+        if (picking && TaskCapability.Edit in ui.availableActions) {
             val epicIds = ui.agile.workItemTypes.filter { it.isEpic }.map { it.id }.toSet()
             TaskPicker(
                 placeholder = "Search by ID or title (Epics shown first)…",
@@ -811,9 +853,11 @@ private fun DependenciesPanel(taskId: Long, ui: TicketDetailUiState, viewModel: 
             Icon(HeroIcons.Link, null, Modifier.size(13.dp), tint = colors.text)
             Spacer(Modifier.width(4.dp))
             Text("Dependencies", color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            WebButton(if (adding) "Cancel" else "Add", { adding = !adding }, small = true, icon = HeroIcons.Plus)
+            if (TaskCapability.Edit in ui.availableActions) {
+                WebButton(if (adding) "Cancel" else "Add", { adding = !adding }, small = true, icon = HeroIcons.Plus)
+            }
         }
-        if (adding) {
+        if (adding && TaskCapability.Edit in ui.availableActions) {
             WebSelect(DEP_TYPES, linkType, { linkType = it }, Modifier.fillMaxWidth())
             TaskPicker(
                 placeholder = "Search tasks by ID or title…",
@@ -841,7 +885,7 @@ private fun DependenciesPanel(taskId: Long, ui: TicketDetailUiState, viewModel: 
                         dep.title, color = if (dep.isBlocked) colors.danger else colors.text, fontSize = 0.82.rem, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).clickable { onOpenTicket(dep.id) },
                     )
-                    Icon(HeroIcons.XMark, "Remove link", Modifier.size(14.dp).clickable {
+                    if (TaskCapability.Edit in ui.availableActions) Icon(HeroIcons.XMark, "Remove link", Modifier.size(14.dp).clickable {
                         viewModel.removeDependency(taskId, dep.linkId,
                             onDone = { reloadKey++ },
                             onError = { error = it },

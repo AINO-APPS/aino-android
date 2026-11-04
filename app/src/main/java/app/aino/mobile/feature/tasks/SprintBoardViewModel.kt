@@ -88,7 +88,7 @@ class SprintBoardViewModel(
         val board: SprintBoardResponse?, val ids: List<Long>, val stats: SprintStats?, val baseline: BaselineResponse?,
         val cancelledIds: List<Long> = emptyList(),
     )
-    private val boards = mutableMapOf<Pair<Long?, Long?>, CachedBoard>()
+    private val boards = mutableMapOf<Pair<TeamScope, Long?>, CachedBoard>()
 
     init {
         ticketScope.launch {
@@ -96,14 +96,14 @@ class SprintBoardViewModel(
                 synchronized(ticketSession.planScopeLock) {
                     if (scope != ticketSession.planScope.value) return@synchronized
                     val previous = _ui.value
-                    val changed = scope.selectedTeamId != previous.selectedTeamId || scope.selectedSprintId != previous.selectedSprintId
+                    val changed = scope.teamScope != previous.planScope.teamScope || scope.selectedSprintId != previous.selectedSprintId
                     if (changed) {
                         sprintGeneration.incrementAndGet()
                         sprintJob?.cancel()
-                        boards[previous.selectedTeamId to previous.selectedSprintId] = CachedBoard(
+                        boards[previous.planScope.teamScope to previous.selectedSprintId] = CachedBoard(
                             previous.board, previous.boardTicketIds, previous.sprintStats, previous.baseline, previous.cancelledTicketIds,
                         )
-                        val cached = boards[scope.selectedTeamId to scope.selectedSprintId]
+                        val cached = boards[scope.teamScope to scope.selectedSprintId]
                         _ui.update {
                             it.copy(
                                 planScope = scope, board = cached?.board, boardTicketIds = cached?.ids.orEmpty(),
@@ -322,7 +322,9 @@ class SprintBoardViewModel(
         _ui.update { it.copy(completing = true, rolloverTo = "backlog", completionPreview = null, rolloverOptions = emptyList()) }
         io {
             val options = runCatching {
-                repository.loadTeamSprints(sprint.teamId.takeIf { showsTeamPicker(_ui.value.role) }).sprints
+                val scope = _ui.value.planScope
+                if (scope.projectScoped && sprint.projectId != null) repository.loadProjectSprints(sprint.projectId).sprints
+                else repository.loadTeamSprints(sprint.teamId.takeIf { showsTeamPicker(_ui.value.role) }).sprints
             }.getOrDefault(emptyList()).filter { it.id != sprint.id && it.status != "completed" }
             _ui.update { if (it.selectedSprintId == sprint.id && it.completing) it.copy(rolloverOptions = options) else it }
             loadCompletionPreview(sprint.id)

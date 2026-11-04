@@ -816,7 +816,7 @@ internal class TicketSessionHarness {
     val original = """
         {"id":201,"title":"Ship release","priority":"high","sprint_id":10,"container":"sprint",
          "workflow_state_id":101,"workflow_state_key":"todo",
-         "capabilities":{"transitions":[{"to":102,"allowed":true}],"can":{"edit":{"allowed":true},"changeState":{"allowed":true},"placeInSprint":{"allowed":true},"schedule":{"allowed":true}}}}
+         "capabilities":{"transitions":[{"to":102,"allowed":true}],"can":{"edit":{"allowed":true},"changeState":{"allowed":true},"placeInSprint":{"allowed":true},"schedule":{"allowed":true},"comment":{"allowed":true},"logWork":{"allowed":true}}}}
     """.trimIndent()
     @Volatile var saved = original
     @Volatile var writes = 0

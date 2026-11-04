@@ -93,9 +93,11 @@ class TaskRepository(
         }
 
     // ── Next-generation surfaces ─────────────────────────────────────────
-    /** `GET /tasks/by-key/:key` — a canonical `PROJ-123` reference resolves to one task. */
-    fun loadByKey(key: String): Task =
-        decode(api.execute(ApiRequest(path = "tasks/by-key/" + java.net.URLEncoder.encode(key, "UTF-8"))))
+    /** Current and historical keys resolve to the canonical ticket on the server. */
+    fun loadByKey(key: String): Task {
+        val encoded = java.net.URLEncoder.encode(key, "UTF-8")
+        return decode(api.execute(ApiRequest(path = "tasks/by-key/$encoded")))
+    }
 
     /** `GET /tasks/epics` — epics with their rollups. */
         fun loadEpics(): List<EpicSummary> =
@@ -156,10 +158,24 @@ class TaskRepository(
         return if (element is JsonArray) json.decodeFromJsonElement<List<ProjectOption>>(element) else emptyList()
     }
 
+    fun loadAccessibleProjects(): List<ProjectOption>? {
+        val element = decode<kotlinx.serialization.json.JsonElement>(
+            api.execute(ApiRequest(path = "projects?include_archived=1")),
+        )
+        return if (element is JsonArray) json.decodeFromJsonElement<List<ProjectOption>>(element) else null
+    }
+
+    fun loadMyProjects(): List<ProjectOption> =
+        decode(api.execute(ApiRequest(path = "projects/mine")))
+
+    fun loadProjectSprints(projectId: Long): SprintListResponse =
+        decode(api.execute(ApiRequest(path = "sprints?project_id=$projectId")))
+
     fun loadAvailableSprints(): List<AvailableSprint> =
         decode(api.execute(ApiRequest(path = "tasks/available-sprints")))
 
-    fun loadAgileConfig(): AgileConfig = AgileConfig.from(decode(api.execute(ApiRequest(path = "agile/config"))))
+    fun loadAgileConfig(projectId: Long? = null): AgileConfig =
+        AgileConfig.from(decode(api.execute(ApiRequest(path = "agile/config" + (projectId?.let { "?project_id=$it" } ?: "")))))
 
     fun loadSprintStats(sprintId: Long): SprintStats = decode(api.execute(ApiRequest(path = "sprints/$sprintId/stats")))
 
@@ -219,6 +235,12 @@ class TaskRepository(
 
     fun assignSprint(id: Long, sprintId: Long?): Task =
         mutate("tasks/$id/assign-sprint", AssignSprintPayload(sprintId), "PATCH")
+
+    fun previewProjectMove(id: Long, projectId: Long): ProjectMovePreview =
+        mutate("tasks/$id/move-project/preview", ProjectMovePayload(projectId))
+
+    fun moveProject(id: Long, projectId: Long): Task =
+        mutate<ProjectMovePayload, ProjectMoveResponse>("tasks/$id/move-project", ProjectMovePayload(projectId)).task
 
     fun deleteTask(id: Long): CancelTaskResponse = mutate("tasks/$id", Unit, "DELETE")
 

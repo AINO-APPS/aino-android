@@ -42,16 +42,24 @@ data class TicketDetailUiState(
     val confirm: ConfirmRequest? = null,
     val planScope: PlanScope = PlanScope(),
     val sprintBoard: SprintBoardResponse? = null,
+    val movePickerOpen: Boolean = false,
+    val moveProjects: List<ProjectOption> = emptyList(),
+    val moveBusy: Boolean = false,
+    val projectAgile: AgileConfig? = null,
+    val projectSprints: List<AvailableSprint>? = null,
 ) {
-    val agile get() = planScope.agile
+    val agile get() = projectAgile ?: planScope.agile
     val agileEnabled get() = planScope.agileEnabled
     val customFieldsEnabled get() = planScope.customFieldsEnabled
     val selectedSprintId get() = planScope.selectedSprintId
-    val sprints get() = planScope.sprints
+    val sprints get() = projectSprints ?: planScope.sprints
     val labels get() = planScope.labels
     val projects get() = planScope.projects
     val assignableUsers get() = planScope.assignableUsers
     val userId get() = planScope.userId
+    val availableActions: Set<TaskCapability> get() = detail?.let { task ->
+        TaskCapability.entries.filter { task.capability(it).allowed }.toSet()
+    }.orEmpty()
 }
 
 /** One route, one Ticket id. All Ticket data is projected from the signed-in session. */
@@ -67,6 +75,7 @@ class TicketDetailViewModel(
     val notices = ticketSession.notices
     internal val repo get() = repository
     private var errorJob: Job? = null
+    private var workflowProjectId: Long? = null
 
     init {
         ticketScope.launch {
@@ -78,12 +87,26 @@ class TicketDetailViewModel(
                     val ticket = stored?.takeUnless { it.isCancelled && state.detail?.isCancelled == false }
                     state.copy(
                         detail = ticket,
+                        detailEditing = state.detailEditing && ticket?.capability(TaskCapability.Edit)?.allowed == true,
                         recentlyUpdated = snapshot.recentlyChanged,
                         detailStale = ticket != null && (state.detailStale ||
                             (state.detailEditing && state.detail != null && state.detail != ticket)),
                         history = if (ticket == null) emptyList() else state.history,
                         closed = state.closed || (state.detail != null && ticket == null),
                     )
+                }
+                val projectId = _ui.value.detail?.projectId
+                if (projectId != null && projectId != workflowProjectId) {
+                    workflowProjectId = projectId
+                    _ui.update { it.copy(projectAgile = null, projectSprints = null) }
+                    io {
+                        val config = runCatching { repository.loadAgileConfig(projectId) }.getOrNull()
+                        val sprints = runCatching { repository.loadProjectSprints(projectId) }.getOrNull()?.sprints
+                        _ui.update { state ->
+                            if (state.detail?.projectId == projectId) state.copy(projectAgile = config, projectSprints = sprints)
+                            else state
+                        }
+                    }
                 }
             }
         }
@@ -351,6 +374,70 @@ class TicketDetailViewModel(
         val name = _ui.value.sprints.firstOrNull { it.id == sprintId }?.name
         placement({ repository.assignSprint(ticketId, sprintId) }, TaskNotice(if (name != null) "Added to $name" else "Moved to backlog"))
     }
+    fun startProjectMove() {
+        val task = _ui.value.detail ?: return
+        if (!allowed(task, TaskCapability.MoveProject) || _ui.value.moveBusy) return
+        _ui.update { it.copy(moveBusy = true) }
+        io {
+            runCatching(repository::loadMyProjects).fold(
+                onSuccess = { projects ->
+                    _ui.update { state -> state.copy(
+                        movePickerOpen = true, moveBusy = false,
+                        moveProjects = projects.filter { !it.archived && it.id != state.detail?.projectId && it.capabilities?.canCreateTickets == true },
+                    ) }
+                },
+                onFailure = {
+                    _ui.update { state -> state.copy(moveBusy = false) }
+                    fail(it, "Failed to load move targets")
+                },
+            )
+        }
+    }
+
+    fun dismissProjectMove() = _ui.update { it.copy(movePickerOpen = false) }
+
+    fun previewProjectMove(projectId: Long) {
+        val state = _ui.value
+        val task = state.detail ?: return
+        if (state.moveBusy || state.moveProjects.none { it.id == projectId } || !allowed(task, TaskCapability.MoveProject)) return
+        _ui.update { it.copy(moveBusy = true, movePickerOpen = false) }
+        io {
+            runCatching { repository.previewProjectMove(ticketId, projectId) }.fold(
+                onSuccess = { preview ->
+                    _ui.update { it.copy(moveBusy = false) }
+                    if (preview.targetProjectId != projectId || _ui.value.closed) return@fold
+                    confirm(
+                        "Move to project",
+                        "New key: ${preview.keyFormat}\nStatus: ${preview.workflowState.name}\n" +
+                            if (preview.leavesSprint) "This ticket will leave its sprint." else "This ticket will not leave a sprint.",
+                        "Move ticket",
+                    ) {
+                        val latest = _ui.value.detail
+                        if (latest != null && allowed(latest, TaskCapability.MoveProject) && !_ui.value.moveBusy) {
+                            _ui.update { it.copy(moveBusy = true) }
+                            io {
+                                runCatching { repository.moveProject(ticketId, projectId) }.fold(
+                                    onSuccess = {
+                                        save(it)
+                                        notify("Moved to ${it.displayKey}")
+                                        refreshHistory()
+                                        ticketSession.requestPlanRefresh()
+                                    },
+                                    onFailure = { fail(it, "Failed to move ticket") },
+                                )
+                                _ui.update { it.copy(moveBusy = false) }
+                            }
+                        }
+                    }
+                },
+                onFailure = {
+                    _ui.update { state -> state.copy(moveBusy = false) }
+                    fail(it, "Failed to preview move")
+                },
+            )
+        }
+    }
+
     private fun placement(write: () -> Task, notice: TaskNotice, closeAfter: Boolean = false) {
         io {
             runCatching(write).fold(
@@ -393,6 +480,8 @@ class TicketDetailViewModel(
 
     override fun addComment(taskId: Long, text: String, file: CommentFile?, mentions: Map<String, Long>, onDone: () -> Unit) {
         if (taskId != ticketId || (text.isBlank() && file == null)) return
+        val task = _ui.value.detail ?: return
+        if (!allowed(task, TaskCapability.Comment)) return
         validateComment(text).takeIf { file == null }?.let { _ui.update { state -> state.copy(error = it) }; return }
         io {
             val html = plainTextToHtml(text, mentions)
@@ -416,6 +505,8 @@ class TicketDetailViewModel(
     }
     override fun editComment(taskId: Long, commentId: Long, text: String, onDone: () -> Unit) {
         if (taskId != ticketId || text.isBlank()) return
+        val task = _ui.value.detail ?: return
+        if (!allowed(task, TaskCapability.Comment)) return
         io {
             runCatching { repository.updateComment(ticketId, commentId, plainTextToHtml(text)) }.fold(
                 onSuccess = { updated ->
@@ -434,6 +525,8 @@ class TicketDetailViewModel(
     }
     override fun deleteComment(taskId: Long, commentId: Long) {
         if (taskId != ticketId) return
+        val task = _ui.value.detail ?: return
+        if (!allowed(task, TaskCapability.Comment)) return
         confirm("Delete Comment", "Are you sure you want to delete this comment? This cannot be undone.", "Delete", true) {
             io {
                 runCatching { repository.deleteComment(ticketId, commentId) }.fold(
@@ -455,6 +548,8 @@ class TicketDetailViewModel(
     }
     fun startTimer(taskId: Long) {
         if (taskId != ticketId || _ui.value.timerBusy) return
+        val task = _ui.value.detail ?: return
+        if (!allowed(task, TaskCapability.LogWork)) return
         _ui.update { it.copy(timerBusy = true) }
         io {
             runCatching { repository.startTimer(ticketId) }.fold(
@@ -465,6 +560,8 @@ class TicketDetailViewModel(
     }
     fun stopTimer(taskId: Long) {
         if (taskId != ticketId || _ui.value.timerBusy) return
+        val task = _ui.value.detail ?: return
+        if (!allowed(task, TaskCapability.LogWork)) return
         _ui.update { it.copy(timerBusy = true) }
         io {
             runCatching { repository.stopTimer(ticketId) }.fold(

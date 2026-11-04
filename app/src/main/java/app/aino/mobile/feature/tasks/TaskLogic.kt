@@ -148,6 +148,7 @@ private fun filterParams(filters: TaskFilters, includeStatus: Boolean): List<Pai
 
 /** The admin's team scope as query parameters. */
 private fun teamParams(scope: TeamScope): List<Pair<String, String>> = when {
+    scope.projectId != null -> listOf("project_id" to scope.projectId.toString())
     scope.unassigned -> listOf("unassigned" to "1")
     scope.teamId != null -> listOf("team_id" to scope.teamId.toString())
     else -> emptyList()

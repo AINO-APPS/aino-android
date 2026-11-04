@@ -174,6 +174,7 @@ internal sealed interface BoardRequest {
 }
 
 internal sealed interface PlanRequest {
+    data object PrepareCreate : PlanRequest
     data object Load : PlanRequest
     data object PrepareImport : PlanRequest
     data object EnsureLoaded : PlanRequest

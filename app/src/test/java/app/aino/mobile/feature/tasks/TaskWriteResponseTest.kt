@@ -46,7 +46,7 @@ class TaskWriteResponseTest {
         val session = TicketSession()
         session.store.upsert(task)
         val vm = TicketDetailViewModel(task.id, repository, session)
-        waitFor { vm.ui.value.detail?.title == "Old title" }
+        waitFor { !vm.ui.value.detailLoading && vm.ui.value.detail?.title == "Old title" }
 
         vm.updateFields(task, buildJsonObject { put("title", "Changed") })
         waitFor { vm.ui.value.detail?.title == "Server title" }

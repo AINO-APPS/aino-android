@@ -174,6 +174,26 @@ class TasksShellViewModel(
             val labels = runCatching(repository::loadLabels).getOrNull()
             val users = runCatching(repository::loadAssignableUsers).getOrNull()
             val projects = runCatching(repository::loadProjects).getOrNull()
+            val accessible = runCatching(repository::loadAccessibleProjects).getOrNull()
+                ?: _ui.value.planScope.takeIf { it.projectScoped }?.projects
+            if (accessible != null && (_ui.value.planScope.projectScoped || accessible.any { it.capabilities != null })) {
+                val mine = runCatching(repository::loadMyProjects).getOrNull() ?: _ui.value.planScope.myProjects
+                updatePlan { state ->
+                    state.copy(planScope = state.planScope.copy(
+                        labels = labels ?: state.labels,
+                        assignableUsers = users ?: state.assignableUsers,
+                        projects = accessible, myProjects = mine, projectScoped = true,
+                        selectedProjectId = state.planScope.selectedProjectId?.takeIf { id -> accessible.any { it.id == id } }
+                            ?: accessible.firstOrNull()?.id,
+                        selectedTeamId = null, teams = emptyList(), teamResolved = true,
+                    ))
+                }
+                loadProjectContext()
+                landingApplied = true
+                reloadTab()
+                _ui.update { it.copy(refreshing = false) }
+                return@io
+            }
             // A feature-gate 403 means "no sprints", not a retryable failure.
             val sprints = if (agile) runCatching(repository::loadAvailableSprints).getOrDefault(emptyList()) else emptyList()
             val config = if (agile) runCatching(repository::loadAgileConfig).getOrNull() else null
@@ -252,7 +272,7 @@ class TasksShellViewModel(
                 ) reloadTab()
             }
             TicketSyncSignal.FullReload -> {
-                reloadTab()
+                refresh()
             }
             TicketSyncSignal.Reconnect -> {
                 val state = _ui.value
@@ -303,6 +323,7 @@ class TasksShellViewModel(
     }
 
     fun openSheet(sheet: TaskSheet) {
+        if (sheet == TaskSheet.CreateTicket) ticketSession.requestPlan(PlanRequest.PrepareCreate)
         _ui.update { it.copy(sheet = sheet) }
         if (sheet == TaskSheet.Import) ticketSession.requestPlan(PlanRequest.PrepareImport)
     }
@@ -346,7 +367,12 @@ class TasksShellViewModel(
         _ui.update { it.copy(searchQuery = value, searching = true) }
         searchJob = ticketScope.launch(Dispatchers.IO) {
             delay(300)
-            val results = runCatching { repository.search(value.trim()) }.getOrDefault(emptyList())
+            val query = value.trim()
+            val results = runCatching {
+                if (Regex("^[A-Za-z][A-Za-z0-9]*-[1-9][0-9]*$").matches(query)) {
+                    listOf(repository.loadByKey(query.uppercase(java.util.Locale.ROOT)))
+                } else repository.search(query)
+            }.getOrDefault(emptyList())
             ticketSession.store.upsert(results)
             _ui.update {
                 it.copy(
@@ -413,6 +439,7 @@ class TasksShellViewModel(
      * remembered in the shared Tasks preferences (`default_team_id`).
      */
     fun selectTeam(teamId: Long?, persist: Boolean = true) {
+        if (_ui.value.planScope.projectScoped) return
         val s = _ui.value
         val scoped = sprintsForTeam(s.sprints, teamId, pickerVisible = true)
         updatePlan { state ->
@@ -427,6 +454,7 @@ class TasksShellViewModel(
             } else {
                 scoped
             }
+
             val tabs = planningTabs(state.agileEnabled, teamSprints, currentSprintId)
             val selectedSprintId = cached?.selectedSprintId
             state.copy(
@@ -477,6 +505,49 @@ class TasksShellViewModel(
         loadBacklog()
         loadScheduled()
         if (_ui.value.tab == TaskTab.Sprint) loadSprint()
+    }
+
+    fun selectProject(projectId: Long) {
+        val scope = _ui.value.planScope
+        if (!scope.projectScoped || scope.projects.none { it.id == projectId } || scope.selectedProjectId == projectId) return
+        updatePlan { state ->
+            state.copy(
+                planScope = state.planScope.copy(
+                    selectedProjectId = projectId, currentSprintId = null,
+                    currentSprintRow = null, selectedSprintId = null, sprints = emptyList(),
+                ),
+                tab = normalizeTab(state.tab, planningTabs(state.agileEnabled, emptyList(), null)),
+                sheet = null,
+            )
+        }
+        io {
+            loadProjectContext()
+            reloadTab()
+        }
+    }
+
+    private fun loadProjectContext() {
+        val scope = _ui.value.planScope
+        val projectId = scope.selectedProjectId ?: return
+        val list = if (scope.agileEnabled) runCatching { repository.loadProjectSprints(projectId) }.getOrNull() else null
+        val config = if (scope.agileEnabled) runCatching { repository.loadAgileConfig(projectId) }.getOrNull() else null
+        updatePlan { state ->
+            if (state.planScope.selectedProjectId != projectId) return@updatePlan state
+            val rows = list?.sprints.orEmpty().filter { it.projectId == projectId }
+            val current = list?.currentSprintId?.takeIf { id -> rows.any { it.id == id } }
+            state.copy(
+                planScope = state.planScope.copy(
+                    sprints = rows, currentSprintId = current,
+                    currentSprintRow = rows.firstOrNull { it.id == current },
+                    selectedSprintId = pickSprint(state.selectedSprintId, rows, current),
+                    agile = config ?: state.agile,
+                ),
+                tab = normalizeTab(
+                    if (!landingApplied && current != null) TaskTab.Sprint else state.tab,
+                    planningTabs(state.agileEnabled, rows, current),
+                ),
+            )
+        }
     }
 
     /** Toggle the completed section; the choice persists per user. */
