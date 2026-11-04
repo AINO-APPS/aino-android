@@ -442,7 +442,7 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
         }
         task.createdAt?.let { PropertyRow(HeroIcons.Clock, "Created", null) { PropertyText(formatLocaleString(it), muted = true) } }
         task.completedAt?.let { PropertyRow(HeroIcons.CheckCircle, "Completed", null) { PropertyText(formatLocaleString(it), muted = true) } }
-        // Logged against estimate, with the timer startable from the task (D13).
+        // Worklog totals and actions come from the server.
         TaskTimePanel(task, ui, viewModel)
     }
 

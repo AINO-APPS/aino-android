@@ -12,6 +12,22 @@ class TaskLogicTest {
     private val today = LocalDate.of(2026, 9, 25)
 
     @Test
+    fun effortHistoryShowsAuthorLoggerDeletedRecordAndOldNewValues() {
+        val before = """{"id":7,"author_id":2,"logged_by_id":1,"day_worked":"2026-11-01","minutes":30,"start_time":"09:00:00","comment":"Before"}"""
+        val after = """{"id":7,"author_id":3,"logged_by_id":1,"author":{"full_name":"Carol"},"logged_by":{"full_name":"Alice"},"day_worked":"2026-11-02","minutes":60,"comment":"Corrected"}"""
+        for (action in listOf("worklog_added", "worklog_updated", "worklog_deleted")) {
+            val text = historyText(TaskHistoryEntry(id = 1, action = action, oldValue = if (action == "worklog_added") null else before, newValue = after)).joinToString("") { it.second }
+            assertTrue(text.contains(if (action == "worklog_added") "added worklog" else if (action == "worklog_updated") "updated worklog" else "deleted worklog"))
+            for (value in listOf("#7", "Carol", "logged by Alice", "2026-11-02", "1h", "Corrected")) assertTrue(value, text.contains(value))
+            if (action != "worklog_added") for (value in listOf("author #2", "30m", "Before")) assertTrue(value, text.contains(value))
+        }
+        val estimate = historyText(TaskHistoryEntry(id = 1, action = "estimate_changed", oldValue = """{"original_estimate_minutes":null,"remaining_estimate_minutes":0}""",
+            newValue = """{"original_estimate_minutes":120,"remaining_estimate_minutes":90}""")).joinToString("") { it.second }
+        assertEquals("changed estimates: Original —, remaining 0m → Original 2h, remaining 1h 30m", estimate)
+        assertEquals("deleted worklog: invalid", historyText(TaskHistoryEntry(id = 1, action = "worklog_deleted", oldValue = "invalid")).joinToString("") { it.second })
+    }
+
+    @Test
     fun sprintQueryCarriesSprintIdThenPlannerFilters() {
         val filters = TaskFilters(assignee = "me", label = "3", priority = "high", status = "in_review")
         assertEquals(

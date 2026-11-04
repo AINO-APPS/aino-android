@@ -257,18 +257,18 @@ class TicketDetailViewModelTest {
         assertEquals(2, harness.detailReads)
     }
 
-    @Test fun timerStopUpdatesDetailAndListRowsTogether() {
+    @Test fun worklogListUpdatesDetailAndListRowsTogether() {
+        harness.worklogsResponse = """{"worklogs":[{"id":1,"day_worked":"2026-11-03","minutes":5}],"time_spent_minutes":5}"""
         harness.loadBoardPlanAndDetail()
-        harness.detailViewModel.stopTimer(201)
         harness.await {
-            !harness.detailViewModel.ui.value.timerBusy &&
+            !harness.detailViewModel.ui.value.worklogsLoading &&
                 harness.detailViewModel.ui.value.detail?.loggedMinutes == 5 &&
                 harness.boardViewModel.ui.value.tasks.singleOrNull()?.loggedMinutes == 5
         }
         assertEquals(5, harness.boardViewModel.ui.value.sprintBoard?.tickets?.single()?.loggedMinutes)
     }
 
-    @Test fun separateTicketRoutesKeepEditingTabsHistoryAndTimersIsolated() {
+    @Test fun separateTicketRoutesKeepEditingTabsHistoryAndWorklogsIsolated() {
         harness.loadBoardPlanAndDetail()
         val other = TicketDetailViewModel(202, harness.repository, harness.session)
         val models = androidx.lifecycle.ViewModelStore().apply { put("other", other) }
@@ -298,7 +298,8 @@ class TicketDetailViewModelTest {
         assertTrue(harness.detailViewModel.ui.value.history.isEmpty())
         assertTrue(harness.detailViewModel.ui.value.detailComments.isEmpty())
         assertFalse(harness.detailViewModel.ui.value.detailEditing)
-        assertFalse(harness.detailViewModel.ui.value.timerRunning)
+        assertTrue(harness.detailViewModel.ui.value.worklogs.isEmpty())
+        assertNull(harness.detailViewModel.ui.value.worklogDraft)
     }
 
     @Test fun schedulingFromDetailKeepsTheViewActionAfterTheRouteCloses() {

@@ -6,9 +6,10 @@
   },
   "totals": {
     "platform": 532,
-    "covered": 274,
+    "covered": 276,
     "waived": 234,
-    "missing": 26,
+    "clientRetired": 3,
+    "missing": 21,
     "unmatched": 0
   },
   "covered": [
@@ -1143,6 +1144,11 @@
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/estimates",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
       "method": "GET",
       "path": "/api/tasks/:param/history",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
@@ -1183,23 +1189,28 @@
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
+      "method": "PATCH",
+      "path": "/api/tasks/:param/unschedule",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
       "method": "GET",
-      "path": "/api/tasks/:param/timer",
+      "path": "/api/tasks/:param/worklogs",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
       "method": "POST",
-      "path": "/api/tasks/:param/timer/start",
+      "path": "/api/tasks/:param/worklogs",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
-      "method": "POST",
-      "path": "/api/tasks/:param/timer/stop",
+      "method": "DELETE",
+      "path": "/api/tasks/:param/worklogs/:param",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
       "method": "PATCH",
-      "path": "/api/tasks/:param/unschedule",
+      "path": "/api/tasks/:param/worklogs/:param",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -1381,6 +1392,23 @@
       "method": "PUT",
       "path": "/api/user/preferences",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    }
+  ],
+  "clientRetired": [
+    {
+      "key": "GET /api/tasks/:param/timer",
+      "owner": "Android manual-worklogs/ticket-07",
+      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
+    },
+    {
+      "key": "POST /api/tasks/:param/timer/start",
+      "owner": "Android manual-worklogs/ticket-07",
+      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
+    },
+    {
+      "key": "POST /api/tasks/:param/timer/stop",
+      "owner": "Android manual-worklogs/ticket-07",
+      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
     }
   ],
   "unmatched": []

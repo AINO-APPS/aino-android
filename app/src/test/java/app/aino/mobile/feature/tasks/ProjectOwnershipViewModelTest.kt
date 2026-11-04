@@ -132,7 +132,6 @@ class ProjectOwnershipViewModelTest {
                 response(when (request.path) {
                     "tasks/7/detail" -> ticket
                     "tasks/7/history" -> "[]"
-                    "tasks/7/timer/start" -> """{"running":true}"""
                     else -> "{}"
                 })
             })
@@ -141,10 +140,14 @@ class ProjectOwnershipViewModelTest {
             assertEquals(setOf(TaskCapability.Comment), detail.ui.value.availableActions)
             detail.startEdit()
             detail.startProjectMove()
-            detail.startTimer(7)
+            detail.startLogWork()
+            detail.startEstimateEdit(EstimateKind.Original)
             assertFalse(detail.ui.value.detailEditing)
             assertFalse(detail.ui.value.movePickerOpen)
-            assertFalse(detail.ui.value.timerBusy)
+            assertNull(detail.ui.value.worklogDraft)
+            assertNull(detail.ui.value.estimateDraft)
+            assertFalse(detail.ui.value.canLogWork)
+            assertFalse(detail.ui.value.canEditEstimate)
             assertNotEquals("This action is not available.", capabilityReasonCopy(reason))
         }
     }

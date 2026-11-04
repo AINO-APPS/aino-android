@@ -59,6 +59,7 @@ fun capabilityReasonCopy(reason: String?): String = when (reason) {
     "PROJECT_ARCHIVED" -> "This project is archived. Tickets are read-only; comments are still available."
     "READ_ONLY_ROLE" -> "Your project role allows viewing and commenting only."
     "CANCELLED_TERMINAL" -> "Cancelled tickets cannot be changed."
+    "WORKLOG_CANCELLED" -> "Work cannot be logged on a cancelled ticket."
     else -> "This action is not available."
 }
 
@@ -78,4 +79,5 @@ private val CAPABILITY_REASON_CODES = setOf(
     "PROJECT_ARCHIVED",
     "READ_ONLY_ROLE",
     "CANCELLED_TERMINAL",
+    "WORKLOG_CANCELLED",
 )

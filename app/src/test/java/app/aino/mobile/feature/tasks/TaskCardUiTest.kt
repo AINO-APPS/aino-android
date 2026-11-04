@@ -3,6 +3,7 @@ package app.aino.mobile.feature.tasks
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -46,6 +47,9 @@ class TaskCardUiTest {
         ),
         dueDate = "2099-11-01",
         commentCount = 4,
+        timeSpentMinutes = 30,
+        originalEstimateMinutes = 120,
+        remainingEstimateMinutes = 90,
         description = "<p>Retry safely with backoff.</p>",
     )
 
@@ -77,6 +81,39 @@ class TaskCardUiTest {
         compose.onNodeWithContentDescription("High priority").assertIsDisplayed()
         // The avatar is the assignee affordance; the name is not repeated.
         assertEquals(0, compose.onAllNodesWithText("Ada Lovelace").fetchSemanticsNodes().size)
+    }
+
+    @Test
+    fun remainingEffortBarUsesForecastAndKeepsOriginalBasedOverrun() {
+        val session = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) })).ticketSession
+        val model = TicketDetailViewModel(task.id, TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), session)
+        val forecast = mutableStateOf(task.copy(timeSpentMinutes = 150, originalEstimateMinutes = 120, remainingEstimateMinutes = 75))
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                TaskTimePanel(forecast.value, TicketDetailUiState(task.id, detail = forecast.value, worklogsLoading = false), model)
+            }
+        }
+        compose.onNodeWithContentDescription("Time spent 2h 30m; remaining 1h 15m").assertIsDisplayed()
+            .assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.ProgressBarRangeInfo,
+                androidx.compose.ui.semantics.ProgressBarRangeInfo(150f / 225f, 0f..1f)))
+        compose.onNodeWithText("30m over estimate").assertIsDisplayed()
+        compose.runOnIdle { forecast.value = task.copy(timeSpentMinutes = 0, remainingEstimateMinutes = 0) }
+        compose.onNodeWithContentDescription("Time spent 0m; remaining 0m").assertIsDisplayed()
+        compose.runOnIdle { forecast.value = task.copy(remainingEstimateMinutes = null) }
+        compose.onNodeWithContentDescription("Time spent 30m; remaining —").assertDoesNotExist()
+    }
+
+    @Test
+    fun compactCardShowsAccessibleEffortWithoutOpeningDetail() {
+        show(compact = true)
+        compose.onNodeWithText("Spent 30m · Original 2h · Remaining 1h 30m").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Time spent 30m; original estimate 2h; remaining estimate 1h 30m").assertIsDisplayed()
+    }
+
+    @Test
+    fun comfortableCardShowsAccessibleEffortWithoutOpeningDetail() {
+        show(compact = false)
+        compose.onNodeWithText("Spent 30m · Original 2h · Remaining 1h 30m").assertIsDisplayed()
     }
 
     @Test
