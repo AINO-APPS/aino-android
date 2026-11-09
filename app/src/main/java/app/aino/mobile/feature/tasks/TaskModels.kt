@@ -687,27 +687,6 @@ data class ScheduleOverlay(
     val day: String? get() = date ?: startTime?.take(10)
 }
 
-/** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
-@Serializable
-data class CompletionPreview(
-    val sprint: CompletionPreviewSprint? = null,
-    val defaultTarget: String? = null,
-    val moving: Int = 0,
-    val staying: Int = 0,
-    val movingPoints: Double = 0.0,
-) {
-    val doneTasks: Int get() = staying
-    val totalTasks: Int get() = moving + staying
-    val incompleteTasks: Int get() = moving
-}
-
-@Serializable
-data class CompletionPreviewSprint(
-    val id: Long = 0,
-    val name: String = "",
-    val status: String = "",
-)
-
 /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
 @Serializable
 data class BaselineResponse(

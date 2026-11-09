@@ -36,8 +36,12 @@ data class SprintBoardUiState(
     val rolloverOptions: List<AvailableSprint> = emptyList(),
     val rolloverTo: String = "backlog",
     val completionPreview: CompletionPreview? = null,
+    val completionPreviewLoading: Boolean = false,
+    val completionPreviewError: String? = null,
     val baseline: BaselineResponse? = null,
 ) {
+    val canCompleteSprint: Boolean get() = completing && completionPreview != null &&
+        !completionPreviewLoading && completionPreviewError == null && !lifecycleBusy
     val selectedSprintId get() = planScope.selectedSprintId
     val currentSprint get() = planScope.currentSprint
     val role get() = planScope.role
@@ -84,6 +88,7 @@ class SprintBoardViewModel(
     private var sprintJob: Job? = null
     private var errorJob: Job? = null
     private val sprintGeneration = java.util.concurrent.atomic.AtomicInteger()
+    private val completionGeneration = java.util.concurrent.atomic.AtomicInteger()
     private data class CachedBoard(
         val board: SprintBoardResponse?, val ids: List<Long>, val stats: SprintStats?, val baseline: BaselineResponse?,
         val cancelledIds: List<Long> = emptyList(),
@@ -99,6 +104,7 @@ class SprintBoardViewModel(
                     val changed = scope.teamScope != previous.planScope.teamScope || scope.selectedSprintId != previous.selectedSprintId
                     if (changed) {
                         sprintGeneration.incrementAndGet()
+                        completionGeneration.incrementAndGet()
                         sprintJob?.cancel()
                         boards[previous.planScope.teamScope to previous.selectedSprintId] = CachedBoard(
                             previous.board, previous.boardTicketIds, previous.sprintStats, previous.baseline, previous.cancelledTicketIds,
@@ -109,7 +115,8 @@ class SprintBoardViewModel(
                                 planScope = scope, board = cached?.board, boardTicketIds = cached?.ids.orEmpty(),
                                 cancelledTicketIds = cached?.cancelledIds.orEmpty(),
                                 sprintStats = cached?.stats, baseline = cached?.baseline, completionPreview = null,
-                                completing = false, lifecycleBusy = false, lifecycleError = null, error = null, confirm = null,
+                                completing = false, completionPreviewLoading = false, completionPreviewError = null,
+                                lifecycleBusy = false, lifecycleError = null, error = null, confirm = null,
                                 sprintLoading = scope.selectedSprintId != null && cached == null,
                             )
                         }
@@ -277,7 +284,7 @@ class SprintBoardViewModel(
         val teamId = _ui.value.selectedTeamId
         if (_ui.value.lifecycleBusy) return
         val ids = ticketSession.store.state.value.tickets.values
-            .filter { it.container == "sprint" && it.sprintId == sprint.id && it.workflowStateKey != "cancelled" }
+            .filter { it.container == "sprint" && it.sprintId == sprint.id }
             .map { it.id }
         _ui.update { it.copy(lifecycleBusy = true, lifecycleError = null) }
         io {
@@ -319,30 +326,100 @@ class SprintBoardViewModel(
 
     fun beginComplete() {
         val sprint = _ui.value.currentSprint ?: return
-        _ui.update { it.copy(completing = true, rolloverTo = "backlog", completionPreview = null, rolloverOptions = emptyList()) }
-        io {
-            val options = runCatching {
-                val scope = _ui.value.planScope
-                if (scope.projectScoped && sprint.projectId != null) repository.loadProjectSprints(sprint.projectId).sprints
-                else repository.loadTeamSprints(sprint.teamId.takeIf { showsTeamPicker(_ui.value.role) }).sprints
-            }.getOrDefault(emptyList()).filter { it.id != sprint.id && it.status != "completed" }
-            _ui.update { if (it.selectedSprintId == sprint.id && it.completing) it.copy(rolloverOptions = options) else it }
-            loadCompletionPreview(sprint.id)
-        }
+        if (_ui.value.lifecycleBusy) return
+        _ui.update { it.copy(
+            completing = true, rolloverTo = "backlog", completionPreview = null,
+            rolloverOptions = emptyList(), lifecycleError = null,
+        ) }
+        loadCompletionPreview(sprint.id)
     }
 
-    fun cancelComplete() = _ui.update { it.copy(completing = false, completionPreview = null) }
-    fun setRollover(value: String) = _ui.update { it.copy(rolloverTo = value) }
+    fun cancelComplete() {
+        if (_ui.value.lifecycleBusy) return
+        completionGeneration.incrementAndGet()
+        _ui.update { it.copy(
+            completing = false, completionPreview = null,
+            completionPreviewLoading = false, completionPreviewError = null,
+        ) }
+    }
+
+    fun setRollover(value: String) {
+        val state = _ui.value
+        val preview = state.completionPreview ?: return
+        if (!state.completing || state.lifecycleBusy || value == state.rolloverTo) return
+        val supported = preview.supportsNewSprint == true
+        val allowed = if (supported) {
+            value == "new" || value == "backlog" || (value == "next" && state.rolloverOptions.isNotEmpty())
+        } else value == "backlog" || value == preview.defaultTarget
+        if (!allowed) return
+        _ui.update { it.copy(rolloverTo = value, lifecycleError = null) }
+        if (supported) fetchCompletionPreview(state.selectedSprintId ?: return, value)
+    }
+
     fun completeSprint() {
-        val rollover = _ui.value.rolloverTo
+        val state = _ui.value
+        if (!state.canCompleteSprint) return
+        val rollover = state.rolloverTo
         lifecycle("Failed to complete sprint", { repository.completeSprint(it, rollover) }, "Sprint completed", rollover = true)
     }
 
-    fun loadCompletionPreview(sprintId: Long) {
+    fun retryCompletionPreview() {
+        val state = _ui.value
+        val sprintId = state.selectedSprintId ?: return
+        if (state.completionPreview?.supportsNewSprint == true) fetchCompletionPreview(sprintId, state.rolloverTo)
+        else loadCompletionPreview(sprintId)
+    }
+
+    fun loadCompletionPreview(sprintId: Long) = fetchCompletionPreview(sprintId, null)
+
+    private fun fetchCompletionPreview(sprintId: Long, target: String?) {
+        val state = _ui.value
+        if (!state.completing || state.lifecycleBusy || state.selectedSprintId != sprintId) return
+        val scope = state.planScope.teamScope
+        val generation = completionGeneration.incrementAndGet()
+        _ui.update { it.copy(completionPreviewLoading = true, completionPreviewError = null) }
         io {
-            runCatching { repository.loadCompletionPreview(sprintId) }.onSuccess { preview ->
-                _ui.update { if (it.selectedSprintId == sprintId && it.completing) it.copy(completionPreview = preview) else it }
-            }
+            runCatching {
+                repository.loadCompletionPreview(sprintId, target).also { preview ->
+                    check(preview.defaultTarget != null) { "Sprint completion preview is unavailable" }
+                    check(preview.sprint == null || preview.sprint.id == sprintId) { "Sprint completion preview changed. Please retry." }
+                    if (target != null) check(preview.supportsNewSprint == true && preview.selectedTarget == target) {
+                        "Sprint completion preview changed. Please retry."
+                    }
+                }
+            }.fold(
+                onSuccess = { preview ->
+                    _ui.update { current ->
+                        if (completionGeneration.get() != generation || current.selectedSprintId != sprintId ||
+                            current.planScope.teamScope != scope || !current.completing) current
+                        else {
+                            val next = preview.nextPlannedSprint ?: preview.defaultTarget?.toLongOrNull()?.let { id ->
+                                current.planScope.sprints.firstOrNull { it.id == id }
+                                    ?.let { CompletionPreviewSprint(it.id, it.name, it.status) }
+                                    ?: CompletionPreviewSprint(id, "Sprint $id", "planned")
+                            }
+                            val selected = target ?: if (preview.supportsNewSprint == true) {
+                                preview.defaultTargetType ?: if (next != null) "next" else "backlog"
+                            } else preview.defaultTarget!!
+                            current.copy(
+                                completionPreview = preview, rolloverTo = selected,
+                                rolloverOptions = listOfNotNull(next?.let {
+                                    AvailableSprint(it.id, it.name, status = "planned", projectId = current.planScope.selectedProjectId)
+                                }),
+                                completionPreviewLoading = false, completionPreviewError = null,
+                            )
+                        }
+                    }
+                },
+                onFailure = { error ->
+                    _ui.update { current ->
+                        if (completionGeneration.get() == generation && current.selectedSprintId == sprintId &&
+                            current.planScope.teamScope == scope && current.completing) {
+                            current.copy(completionPreviewLoading = false, completionPreviewError = failure(error, "Failed to load completion preview"))
+                        } else current
+                    }
+                },
+            )
         }
     }
 
