@@ -13,7 +13,8 @@ import java.util.Locale
 
 /** `Tasks.tsx` tabs plus Android's Scheduled view; `key` is the `?tab=` value. */
 enum class TaskTab(val key: String) {
-    Backlog("backlog"), Scheduled("scheduled"), Sprint("sprint"), KanbanBoard("board"), ServiceDesk("service-desk");
+    Backlog("backlog"), Scheduled("scheduled"), Sprint("sprint"), KanbanBoard("board"),
+    List("list"), Upcoming("upcoming"), ServiceDesk("service-desk");
 
     companion object {
         fun fromKey(key: String?): TaskTab? = entries.firstOrNull { it.key == key }
@@ -110,6 +111,16 @@ fun planningTabs(agileEnabled: Boolean, sprints: List<AvailableSprint>, currentS
 }
 
 fun planningTabs(scope: PlanScope, agileEnabled: Boolean, sprints: List<AvailableSprint>, currentSprintId: Long?): List<TaskTab> {
+    if (scope.projectScoped && scope.projectType == "task_list") {
+        return scope.planTabs.mapNotNull { tab ->
+            when (tab) {
+                "list" -> TaskTab.List
+                "board" -> TaskTab.KanbanBoard
+                "calendar", "upcoming" -> TaskTab.Upcoming
+                else -> null
+            }
+        }.distinct()
+    }
     if (scope.projectScoped && scope.projectType == "kanban") {
         return scope.planTabs.mapNotNull { tab ->
             when (tab) {
@@ -140,7 +151,7 @@ fun strandedSprintGroups(tasks: List<Task>, sprints: List<AvailableSprint>): Lis
 /** `useFilters.filterCount` — status is a board, sprint or scheduled filter. */
 fun filterCount(filters: TaskFilters, tab: TaskTab): Int {
     val base = mutableListOf(filters.assignee, filters.label, filters.priority, filters.search.trim())
-    if (tab == TaskTab.Sprint || tab == TaskTab.KanbanBoard || tab == TaskTab.Scheduled) base += filters.status
+    if (tab in setOf(TaskTab.Sprint, TaskTab.KanbanBoard, TaskTab.Scheduled, TaskTab.List, TaskTab.Upcoming)) base += filters.status
     return base.count(String::isNotEmpty)
 }
 

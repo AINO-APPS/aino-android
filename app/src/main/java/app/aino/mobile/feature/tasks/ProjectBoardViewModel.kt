@@ -98,10 +98,10 @@ class ProjectBoardViewModel(
                             backlogError = null,
                         )
                     }
-                    if (scope.projectScoped && scope.projectType == "kanban") {
+                    if (scope.projectScoped && scope.projectType in setOf("kanban", "task_list")) {
                         scope.selectedProjectId?.let(::loadBoard)
                     }
-                } else if (metadataChanged && scope.projectScoped && scope.projectType == "kanban") {
+                } else if (metadataChanged && scope.projectScoped && scope.projectType in setOf("kanban", "task_list")) {
                     scope.selectedProjectId?.let { loadBoard(it, force = true) }
                 }
             }
@@ -130,7 +130,7 @@ class ProjectBoardViewModel(
 
     fun ensureBoardLoaded() {
         val state = _ui.value
-        if (state.planScope.projectType != "kanban" || !state.planScope.projectScoped) return
+        if (state.planScope.projectType !in setOf("kanban", "task_list") || !state.planScope.projectScoped) return
         val projectId = state.planScope.selectedProjectId ?: return
         if (state.board?.project?.id != projectId && !state.boardLoading) loadBoard(projectId)
     }
@@ -176,7 +176,7 @@ class ProjectBoardViewModel(
     fun refresh() {
         val state = _ui.value
         val projectId = state.planScope.selectedProjectId ?: return
-        if (!state.planScope.projectScoped || state.planScope.projectType != "kanban") return
+        if (!state.planScope.projectScoped || state.planScope.projectType !in setOf("kanban", "task_list")) return
         loadBoard(projectId, force = true)
         if (state.backlogLoaded) loadBacklog(force = true)
     }
@@ -217,7 +217,7 @@ class ProjectBoardViewModel(
         projectGeneration.get() == revision &&
             _ui.value.planScope.selectedProjectId == projectId &&
             _ui.value.planScope.projectScoped &&
-            _ui.value.planScope.projectType == "kanban"
+            _ui.value.planScope.projectType in setOf("kanban", "task_list")
 
     private fun io(block: suspend () -> Unit) = ticketScope.launch(Dispatchers.IO) { block() }
 

@@ -295,7 +295,7 @@ class TasksShellViewModel(
     private fun reloadTab() {
         when (_ui.value.tab) {
             TaskTab.Sprint -> loadSprint()
-            TaskTab.KanbanBoard -> Unit
+            TaskTab.KanbanBoard, TaskTab.List, TaskTab.Upcoming -> Unit
             TaskTab.Backlog -> if (_ui.value.planScope.projectType != "kanban") loadBacklog()
             TaskTab.Scheduled -> loadScheduled()
             TaskTab.ServiceDesk -> _ui.update { it.copy(serviceDeskVersion = it.serviceDeskVersion + 1) }
