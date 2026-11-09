@@ -57,6 +57,14 @@ The app shell forwards realtime, reconnect and visible polling directly to the
 signed-in `TicketSession`, and schedule notice links go to `ScheduledViewModel`.
 Service desk and Sprint insights retain their independent reads and selection.
 
+Project reads and the shared `PlanScope` retain the server's project type,
+ordered `planTabs`, Kanban backlog/WIP switches and `canChangeType` capability.
+The project switcher shows Scrum, Kanban or Task list, including archived
+projects. Responses from older Phase 2 servers without these fields use Scrum
+metadata defaults and do not grant type changes. Project settings remain
+web-only. This ticket01 compatibility slice does not replace planning tabs or
+Scheduled behavior, or add Kanban and Task list planning surfaces.
+
 The Activity-scoped `ScheduledViewModel` owns Scheduled membership ids and the
 visible date window, scheduling and unscheduling (including Undo), overlays and
 one-shot date focus, including daily carry-forward. It reads the session Ticket store and Plan scope without
