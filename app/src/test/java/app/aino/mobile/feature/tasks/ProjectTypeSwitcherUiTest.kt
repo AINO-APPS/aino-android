@@ -2,6 +2,7 @@ package app.aino.mobile.feature.tasks
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -56,6 +57,9 @@ class ProjectTypeSwitcherUiTest {
         compose.onNodeWithText("Kanban", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("FLOW", useUnmergedTree = true).performClick()
         compose.onNodeWithText("FLOW · Flow · Kanban").assertIsDisplayed()
+        compose.onNodeWithText("Board").assertIsDisplayed()
+        compose.onNodeWithText("Backlog").assertDoesNotExist()
+        compose.onNodeWithText("Scheduled").assertDoesNotExist()
         compose.onNodeWithText("OPS · Operations · Task list · Archived").assertIsDisplayed().performClick()
         compose.onNodeWithText("Task list", useUnmergedTree = true).assertIsDisplayed()
         compose.runOnIdle {
@@ -83,10 +87,32 @@ class ProjectTypeSwitcherUiTest {
         }
     }
 
+    @Test fun kanbanTabsFollowTheServerPlanAndBacklogSelectionLoadsItsProjectEndpoint() {
+        showProjects("""[
+            {"id":3,"key":"FLOW","name":"Flow","type":"kanban",
+                "planTabs":["backlog","board"],"kanban_backlog_enabled":true,
+                "capabilities":{"canCreateTickets":true}}
+        ]""")
+
+        compose.onNodeWithText("FLOW", useUnmergedTree = true).performClick()
+        compose.onNodeWithText("Backlog").assertIsDisplayed()
+        compose.onNodeWithText("Board").assertIsDisplayed()
+        compose.onNodeWithText("Scheduled").assertDoesNotExist()
+        compose.onNodeWithText("Board").performClick()
+        compose.onNodeWithText("Backlog").performClick()
+        compose.onNodeWithText("Backlog is empty").assertIsDisplayed()
+    }
+
     private fun showProjects(projects: String) {
         val repository = TaskRepository(ApiClient { request ->
             val body = when (request.path) {
                 "projects", "projects?include_archived=1", "projects/mine" -> projects
+                "projects/3/board", "projects/3/backlog" -> """
+                    {"project":{"id":3,"key":"FLOW","name":"Flow","type":"kanban",
+                        "planTabs":["backlog","board"],"kanban_backlog_enabled":true,
+                        "capabilities":{"canCreateTickets":true}},
+                     "columns":[],"tickets":[]}
+                """.trimIndent()
                 "tasks/labels", "tasks/assignable-users" -> "[]"
                 else -> "{}"
             }
@@ -96,14 +122,16 @@ class ProjectTypeSwitcherUiTest {
         val plan = PlanViewModel(repository, session)
         val scheduled = ScheduledViewModel(repository, session)
         val board = SprintBoardViewModel(repository, session)
+        val projectBoard = ProjectBoardViewModel(repository, session)
         viewModels.put("shell", shell)
         viewModels.put("plan", plan)
         viewModels.put("scheduled", scheduled)
         viewModels.put("board", board)
+        viewModels.put("project-board", projectBoard)
         shell.bind(1, "employee", "Team", agileEnabled = false, teamId = 8)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                TasksScreen(shell, plan, scheduled, board, {}, {}, {})
+                TasksScreen(shell, plan, scheduled, board, projectBoard, {}, {}, {})
             }
         }
         compose.waitUntil(5_000) { shell.ui.value.teamResolved }

@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -278,6 +279,23 @@ data class SprintBoardResponse(
 )
 
 @Serializable
+data class ProjectBoardColumn(
+    val stateId: Long,
+    val count: Int = 0,
+    val limit: Int? = null,
+    val accepting: Boolean = true,
+    val state: WorkflowState? = null,
+)
+
+@Serializable
+data class ProjectBoardResponse(
+    val project: ProjectOption,
+    val sprint: AvailableSprint? = null,
+    val columns: List<ProjectBoardColumn> = emptyList(),
+    val tickets: List<Task> = emptyList(),
+)
+
+@Serializable
 data class SprintEnvelope(val sprint: AvailableSprint? = null)
 
 @Serializable
@@ -313,7 +331,9 @@ data class ProjectOption(
     val availableTypes: List<String> = emptyList(),
     val changeableTypes: List<String> = emptyList(),
     @SerialName("kanban_backlog_enabled") val kanbanBacklogEnabled: Boolean = false,
-    @SerialName("wip_enabled") val wipEnabled: Boolean = false,
+    @SerialName("enable_wip_limits")
+    @JsonNames("wip_enabled")
+    val wipEnabled: Boolean = false,
 ) {
     val typeDisplayName: String
         get() = when (type) {

@@ -62,8 +62,10 @@ ordered `planTabs`, Kanban backlog/WIP switches and `canChangeType` capability.
 The project switcher shows Scrum, Kanban or Task list, including archived
 projects. Responses from older Phase 2 servers without these fields use Scrum
 metadata defaults and do not grant type changes. Project settings remain
-web-only. This ticket01 compatibility slice does not replace planning tabs or
-Scheduled behavior, or add Kanban and Task list planning surfaces.
+web-only. Kanban projects use the server's project-board response for workflow
+columns, tickets and WIP occupancy; the separate project backlog is shown only
+when the server enables it. Scrum planning and Scheduled behavior remain
+unchanged. Task List views remain outside this Android slice.
 
 The Activity-scoped `ScheduledViewModel` owns Scheduled membership ids and the
 visible date window, scheduling and unscheduling (including Undo), overlays and

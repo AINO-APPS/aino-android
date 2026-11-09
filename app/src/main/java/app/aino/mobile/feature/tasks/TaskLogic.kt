@@ -13,7 +13,7 @@ import java.util.Locale
 
 /** `Tasks.tsx` tabs plus Android's Scheduled view; `key` is the `?tab=` value. */
 enum class TaskTab(val key: String) {
-    Backlog("backlog"), Scheduled("scheduled"), Sprint("sprint"), ServiceDesk("service-desk");
+    Backlog("backlog"), Scheduled("scheduled"), Sprint("sprint"), KanbanBoard("board"), ServiceDesk("service-desk");
 
     companion object {
         fun fromKey(key: String?): TaskTab? = entries.firstOrNull { it.key == key }
@@ -109,6 +109,19 @@ fun planningTabs(agileEnabled: Boolean, sprints: List<AvailableSprint>, currentS
     }
 }
 
+fun planningTabs(scope: PlanScope, agileEnabled: Boolean, sprints: List<AvailableSprint>, currentSprintId: Long?): List<TaskTab> {
+    if (scope.projectScoped && scope.projectType == "kanban") {
+        return scope.planTabs.mapNotNull { tab ->
+            when (tab) {
+                "board" -> TaskTab.KanbanBoard
+                "backlog" -> TaskTab.Backlog.takeIf { scope.kanbanBacklogEnabled }
+                else -> null
+            }
+        }
+    }
+    return planningTabs(agileEnabled, sprints, currentSprintId)
+}
+
 /**
  * A sprint-assigned ticket that reached the backlog snapshot even though its
  * sprint is gone. It stays visible in its own group instead of disappearing:
@@ -124,10 +137,10 @@ fun strandedSprintGroups(tasks: List<Task>, sprints: List<AvailableSprint>): Lis
     }
 }
 
-/** `useFilters.filterCount` — status only counts on the Sprint tab. */
+/** `useFilters.filterCount` — status is a board, sprint or scheduled filter. */
 fun filterCount(filters: TaskFilters, tab: TaskTab): Int {
     val base = mutableListOf(filters.assignee, filters.label, filters.priority, filters.search.trim())
-    if (tab == TaskTab.Sprint || tab == TaskTab.Scheduled) base += filters.status
+    if (tab == TaskTab.Sprint || tab == TaskTab.KanbanBoard || tab == TaskTab.Scheduled) base += filters.status
     return base.count(String::isNotEmpty)
 }
 
