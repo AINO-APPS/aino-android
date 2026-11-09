@@ -25,8 +25,10 @@ internal class TicketListActions(
                 onSuccess = { saved ->
                     session.planRevision.incrementAndGet()
                     session.store.upsert(saved)
+                    refreshLoadedSubtasks(saved, repository, session)
                     session.store.highlight(saved.id)
                     session.requestBoard(BoardRequest.ReloadLoaded)
+                    session.requestPlanRefresh()
                     val name = session.planScope.value.sprints.firstOrNull { it.id == sprintId }?.name
                     session.publishNotice(TaskNotice(if (name != null) "Added to $name" else "Moved to backlog"))
                 },

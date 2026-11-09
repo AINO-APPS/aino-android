@@ -77,6 +77,13 @@ internal fun TaskTimePanel(task: Task, ui: TicketDetailUiState, viewModel: Ticke
         }
         InlineEstimate(EstimateKind.Original, task.originalEstimateMinutes, ui, viewModel)
         InlineEstimate(EstimateKind.Remaining, task.remainingEstimateMinutes, ui, viewModel)
+        task.effort?.takeIf { (task.subtaskSummary?.total ?: 0) > 0 }?.let { effort ->
+            Text("Including subtasks", color = colors.textSecondary, fontSize = 0.8.rem, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Spent ${formatMinutes(effort.totalTimeSpentMinutes)} · Remaining ${effort.totalRemainingEstimateMinutes?.let(::formatMinutes) ?: "—"}",
+                color = colors.textMuted, fontSize = 0.8.rem,
+            )
+        }
         if (remaining != null) {
             Box(Modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(colors.border).semantics {
                 contentDescription = "Time spent ${formatMinutes(logged)}; remaining ${formatMinutes(remaining)}"

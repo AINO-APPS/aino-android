@@ -193,6 +193,7 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
                 Spacer(Modifier.height(16.dp))
                 PropertiesCard(task, ui, viewModel, onStatus = { statusSheet = true })
                 Spacer(Modifier.height(20.dp))
+                SubtaskPanel(task, onOpenTicket)
                 DetailSections(task, ui, viewModel, onOpenTicket)
             }
         }
@@ -396,7 +397,7 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
                 else FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { task.labels.forEach { LabelPill(it) } }
             }
         }
-        if (ui.agile.features.storyPoints) {
+        if (ui.agile.features.storyPoints && !task.isSubtask) {
             PropertyRow(HeroIcons.ChartBar, "Estimate", if (canEdit.allowed) ({ pointsOpen = true }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
                 val pts = formatPoints(task.storyPoints)
                 PropertyText(if (pts.isEmpty()) "Not estimated" else "$pts ${ui.agile.unitLabel}", muted = pts.isEmpty())
@@ -696,10 +697,41 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TicketDetailUiState, view
     }
 }
 
+@Composable
+private fun SubtaskPanel(task: Task, onOpenTicket: (Long) -> Unit) {
+    val colors = LocalWebColors.current
+    if (task.isSubtask) {
+        task.parentTaskId?.let { parentId ->
+            val key = task.parentKey ?: task.parent?.ticketKey ?: task.parent?.issueKey ?: "#$parentId"
+            Text(
+                "Parent $key", color = colors.primary, fontSize = 0.84.rem,
+                modifier = Modifier.fillMaxWidth().clickable { onOpenTicket(parentId) }.padding(vertical = 12.dp),
+            )
+        }
+    } else {
+        task.subtaskSummary?.takeIf { it.total > 0 }?.let { summary ->
+            PanelBox {
+                Text("Subtasks · ${summary.done}/${summary.total} done", color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold)
+                task.subtasks.orEmpty().forEach { child ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable(onClickLabel = "Open ${child.displayKey}") { onOpenTicket(child.id) }.padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(child.displayKey, color = colors.textMuted, fontSize = 0.75.rem)
+                        Text(child.title, color = colors.primary, fontSize = 0.82.rem, modifier = Modifier.weight(1f))
+                        if (child.isCompleted) Text("Done", color = colors.success, fontSize = 0.75.rem)
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
 /** ParentChildPanel: Epics list children + rollup; others show "Part of" + a picker. */
 @Composable
 private fun ParentChildPanel(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onOpenTicket: (Long) -> Unit) {
-    if (!ui.agile.features.epics) return
+    if (!ui.agile.features.epics || task.isSubtask) return
     val colors = LocalWebColors.current
     val isEpic = ui.agile.type(task.workItemTypeId)?.isEpic == true
     var loading by remember(task.id, isEpic) { mutableStateOf(true) }

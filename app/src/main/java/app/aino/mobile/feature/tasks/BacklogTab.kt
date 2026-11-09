@@ -105,18 +105,30 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
                 }
                 else -> {
                     val row: @Composable (Task) -> Unit = { task ->
-                        BacklogRow(
-                            task, ui, planViewModel, onOpen,
-                            onSprint = { sprintFor = task },
-                            onActions = { actionsFor = task },
-                            onComments = onComments,
-                        )
+                        Column {
+                            BacklogRow(
+                                task, ui, planViewModel, onOpen,
+                                onSprint = { sprintFor = task },
+                                onActions = { actionsFor = task },
+                                onComments = onComments,
+                            )
+                            task.subtasks.orEmpty().forEach { child ->
+                                Box(Modifier.padding(start = 24.dp)) {
+                                    BacklogRow(
+                                        child, ui, planViewModel, onOpen,
+                                        onSprint = { sprintFor = child },
+                                        onActions = { actionsFor = child },
+                                        onComments = onComments,
+                                    )
+                                }
+                            }
+                        }
                     }
                     // Stranded sprint tickets render in their own warning group
                     // *after* the ordinary backlog rows — never instead of them.
                     val stranded = ui.backlogGroups.orEmpty()
                     val grouped = stranded.flatMap { group -> group.tasks.map { it.id } }.toSet()
-                    items(ui.sortedBacklog.filterNot { it.id in grouped }, key = { "b-${it.id}" }) { row(it) }
+                    items(planningFamilies(ui.sortedBacklog.filterNot { it.id in grouped }, ui.tickets), key = { "b-${it.id}" }) { row(it) }
                     stranded.forEach { group ->
                         val isCollapsed = group.key in collapsed
                         stickyHeader(key = "g-${group.key}") {
@@ -124,7 +136,7 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
                                 collapsed = if (isCollapsed) collapsed - group.key else collapsed + group.key
                             }
                         }
-                        if (!isCollapsed) items(group.tasks, key = { "b-${it.id}" }) { row(it) }
+                        if (!isCollapsed) items(planningFamilies(group.tasks, ui.tickets), key = { "b-${it.id}" }) { row(it) }
                     }
                     item(key = "footer") {
                         Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
@@ -333,7 +345,7 @@ private fun BacklogGroupHeader(group: BacklogGroup, collapsed: Boolean, onToggle
             modifier = Modifier.background(accent.copy(alpha = 0.14f), CircleShape).padding(horizontal = 8.dp, vertical = 1.dp),
         )
         // Points alongside the count, so a group's weight is visible before opening it.
-        val points = group.tasks.sumOf { it.storyPoints ?: 0.0 }
+        val points = group.tasks.sumOf { it.planningPoints ?: 0.0 }
         if (points > 0) {
             Spacer(Modifier.width(6.dp))
             Text(
@@ -362,6 +374,7 @@ private fun BacklogRow(
 ) {
     val colors = LocalWebColors.current
     val canPlaceInSprint = task.capability(TaskCapability.PlaceInSprint)
+    val selectable = !task.isSubtask
     val canSprint = ui.sprintTabVisible && ui.sprints.isNotEmpty() && canPlaceInSprint.allowed
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
@@ -380,7 +393,7 @@ private fun BacklogRow(
             .padding(horizontal = 16.dp, vertical = 5.dp)
             .semantics {
                 customActions = buildList {
-                    add(CustomAccessibilityAction("Select") { planViewModel.toggleSelection(task.id); true })
+                    if (selectable) add(CustomAccessibilityAction("Select") { planViewModel.toggleSelection(task.id); true })
                     if (canSprint) add(CustomAccessibilityAction("Add to sprint") { onSprint(); true })
                     add(CustomAccessibilityAction("More actions") { onActions(); true })
                 }
@@ -405,17 +418,17 @@ private fun BacklogRow(
     ) {
         TaskCardM3(
             task, ui.agile,
-            onOpen = { if (ui.hasSelection) planViewModel.toggleSelection(task.id) else onOpen(task) },
+            onOpen = { if (ui.hasSelection && selectable) planViewModel.toggleSelection(task.id) else onOpen(task) },
             highlighted = task.id in ui.recentlyUpdated,
             showStatus = true,
             // Long-press starts selection; the checkbox only appears once selecting.
-            onLongPress = { planViewModel.toggleSelection(task.id) },
+            onLongPress = if (selectable) ({ planViewModel.toggleSelection(task.id) }) else null,
             longPressLabel = "Select",
             onComments = { onComments(task.id) },
             compact = ui.compact,
             selected = task.id in ui.selectedIds,
             attribution = ui.attribution[task.id],
-            leading = if (ui.hasSelection) {
+            leading = if (ui.hasSelection && selectable) {
                 { SelectionToggle(task.id in ui.selectedIds) { planViewModel.toggleSelection(task.id) } }
             } else null,
             // Long-press selects; the overflow keeps the row actions one tap away.

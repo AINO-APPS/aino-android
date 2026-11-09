@@ -113,14 +113,25 @@ internal fun KanbanBoardPage(
                         }
                     }
                 } else {
-                    items(tasks, key = { "kanban-backlog-${it.id}" }) { task ->
-                        TaskCardM3(
-                            task = task,
-                            agile = ui.agile,
-                            onOpen = { onOpen(task) },
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            highlighted = task.id in ui.recentlyUpdated,
-                        )
+                    items(planningFamilies(tasks, boardUi.tickets), key = { "kanban-backlog-${it.id}" }) { task ->
+                        Column {
+                            TaskCardM3(
+                                task = task,
+                                agile = ui.agile,
+                                onOpen = { onOpen(task) },
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                highlighted = task.id in ui.recentlyUpdated,
+                            )
+                            task.subtasks.orEmpty().forEach { child ->
+                                TaskCardM3(
+                                    task = child,
+                                    agile = ui.agile,
+                                    onOpen = { onOpen(child) },
+                                    modifier = Modifier.padding(start = 40.dp, end = 16.dp, top = 4.dp, bottom = 4.dp),
+                                    highlighted = child.id in ui.recentlyUpdated,
+                                )
+                            }
+                        }
                     }
                 }
             } else {

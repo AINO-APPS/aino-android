@@ -106,6 +106,16 @@ class PlanViewModel(
         ticketScope.launch {
             ticketSession.planRefreshes.collect { if (_ui.value.planLoaded) loadBacklog() }
         }
+        ticketScope.launch {
+            ticketSession.sync(repository).changes.collect { change ->
+                val state = _ui.value
+                val changed = ticketSession.store.state.value.tickets[change.ticketId]
+                if (state.planLoaded && (state.planTasks.any { parent -> parent.subtasks.orEmpty().any { it.id == change.ticketId } } ||
+                        (changed?.isSubtask == true && changed.parentTaskId in state.planTicketIds))) {
+                    loadBacklog()
+                }
+            }
+        }
         ticketSession.onClose { synchronized(ticketSession.planScopeLock) { teamViews.clear() } }
     }
 
@@ -157,7 +167,7 @@ class PlanViewModel(
                         loadBacklog()
                         return@fold
                     }
-                    ticketSession.store.upsert(page.tasks)
+                    ticketSession.store.upsert(planningTickets(page.tasks))
                     _ui.update {
                         val next = it.copy(
                             tickets = ticketSession.store.state.value.tickets,
@@ -200,7 +210,7 @@ class PlanViewModel(
                         loadBacklog()
                         return@fold
                     }
-                    ticketSession.store.upsert(page.tasks)
+                    ticketSession.store.upsert(planningTickets(page.tasks))
                     _ui.update { current ->
                         val offset = s.planOffset + page.tasks.size
                         val next = current.copy(
@@ -403,6 +413,14 @@ class PlanViewModel(
                     }
                     if (action == "delete") saved.forEach { ticketSession.store.markCancelled(it.id, it) }
                     else ticketSession.store.upsert(saved)
+                    if (action == "move_to_sprint") {
+                        saved.forEach { refreshLoadedSubtasks(it, repository, ticketSession) }
+                        if (saved.any { parent ->
+                                !parent.subtasks.isNullOrEmpty() || ticketSession.store.state.value.tickets.values.any {
+                                    it.isSubtask && it.parentTaskId == parent.id
+                                }
+                            }) ticketSession.requestBoard(BoardRequest.ReloadLoaded)
+                    }
                     clearSelection()
                     notify(bulkSummary(result))
                     loadBacklog()
@@ -430,7 +448,9 @@ class PlanViewModel(
         ) { bulkAction("delete") }) }
     }
     fun reorder(taskId: Long, beforeId: Long?, afterId: Long?) {
-        val decision = ticketSession.store.state.value.tickets[taskId]?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
+        val task = ticketSession.store.state.value.tickets[taskId]
+        if (task?.isSubtask == true) return notify(capabilityReasonCopy("SUBTASK_FOLLOWS_PARENT"))
+        val decision = task?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
         if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.rankTask(taskId, beforeId, afterId) }.fold(

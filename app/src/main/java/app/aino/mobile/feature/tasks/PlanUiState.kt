@@ -45,8 +45,8 @@ data class PlanUiState(
     // Cancelled Tickets stay members so the Completed section can list them;
     // `backlog` (open work) excludes them through `isClosed`.
     internal fun containsPlanTicket(ticket: Task): Boolean =
-        ticket.container == "backlog" ||
-            (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId })
+        !ticket.isSubtask && (ticket.container == "backlog" ||
+            (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId }))
     val planTasks get() = planTicketIds.mapNotNull(tickets::get).filter { inScope(it) && containsPlanTicket(it) }
     private val filteredPlan get() = planTasks.filter {
         matchesPlanFilters(it, filters, quickFilters, userId) &&

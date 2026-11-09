@@ -151,7 +151,7 @@ class ProjectBoardViewModel(
             try {
                 val response = repository.loadProjectBacklog(projectId)
                 if (isCurrent(projectId, projectRevision) && backlogGeneration.get() == request) {
-                    ticketSession.store.upsert(response.tickets)
+                    ticketSession.store.upsert(planningTickets(response.tickets))
                     _ui.update {
                         it.copy(
                             backlog = response,

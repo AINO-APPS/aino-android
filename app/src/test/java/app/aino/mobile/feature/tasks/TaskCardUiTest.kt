@@ -69,6 +69,49 @@ class TaskCardUiTest {
     }
 
     @Test
+    fun parentEffortSeparatesOwnEstimatesFromServerSubtaskTotals() {
+        val repository = TaskRepository(ApiClient {
+            ApiResponse(200, emptyMap(), """
+                {"id":7,"title":"Parent","time_spent_minutes":20,"remaining_estimate_minutes":30,
+                 "subtask_summary":{"total":2,"done":1},
+                 "effort":{"own_time_spent_minutes":20,"total_time_spent_minutes":70,
+                    "own_remaining_estimate_minutes":30,"total_remaining_estimate_minutes":120}}
+            """.trimIndent().toByteArray())
+        })
+        val parent = repository.loadDetail(7)
+        val session = TaskViewModel(repository).ticketSession
+        val model = TicketDetailViewModel(parent.id, repository, session)
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                TaskTimePanel(parent, TicketDetailUiState(parent.id, detail = parent, worklogsLoading = false), model)
+            }
+        }
+        compose.onNodeWithText("20m / —").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Time spent 20m; remaining 30m").assertIsDisplayed()
+        compose.onNodeWithText("Including subtasks").assertIsDisplayed()
+        compose.onNodeWithText("Spent 1h 10m · Remaining 2h").assertIsDisplayed()
+        session.close()
+    }
+
+    @Test
+    fun subtaskCardShowsServerParentKeyWithoutLegacyStoryPoints() {
+        val child = TaskRepository(ApiClient {
+            ApiResponse(200, emptyMap(), """
+                {"id":8,"title":"Retry test","ticket_key":"PAY-143",
+                 "is_subtask":true,"parent_task_id":7,"parent_key":"PAY-142","story_points":"13"}
+            """.trimIndent().toByteArray())
+        }).loadDetail(8)
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                TaskCardM3(child, AgileConfig(), onOpen = {})
+            }
+        }
+        compose.onNodeWithText("Parent PAY-142").assertIsDisplayed()
+        compose.onNodeWithContentDescription("13 SP").assertDoesNotExist()
+        compose.onNodeWithText("Retry test").assertIsDisplayed()
+    }
+
+    @Test
     fun compactCardShowsPreviewHierarchyWithoutLabelsOrDescription() {
         show(compact = true)
         compose.onNodeWithText("PAY-142").assertIsDisplayed()

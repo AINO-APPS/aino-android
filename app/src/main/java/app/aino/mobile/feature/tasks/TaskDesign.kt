@@ -390,7 +390,7 @@ internal fun TaskCardM3(
     val colors = LocalWebColors.current
     val haptics = LocalHapticFeedback.current
     val done = task.isCompleted || stateOf(task, agile)?.isTerminal == true
-    val points = if (agile.features.storyPoints) formatPoints(task.storyPoints) else ""
+    val points = if (agile.features.storyPoints) formatPoints(task.planningPoints) else ""
     val due = formatDueDate(if (sprintEndDate != null) task.dueDate else task.startDate ?: task.dueDate)
     val overdue = isDueOverdue(task.dueDate) && !done
     val ring = when {
@@ -452,6 +452,9 @@ internal fun TaskCardM3(
             Spacer(Modifier.weight(1f))
             PriorityGlyph(task.priority)
             topTrailing?.invoke()
+        }
+        if (task.isSubtask && task.parentKey != null) {
+            Text("Parent ${task.parentKey}", color = colors.textMuted, fontSize = 11.sp)
         }
         Text(
             task.title,

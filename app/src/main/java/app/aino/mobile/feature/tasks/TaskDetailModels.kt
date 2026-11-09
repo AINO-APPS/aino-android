@@ -97,7 +97,19 @@ data class ParentTask(
     val title: String = "",
     val status: String? = null,
     @SerialName("issue_key") val issueKey: String? = null,
+    @SerialName("ticket_key") val ticketKey: String? = null,
     @SerialName("work_item_type_id") val workItemTypeId: Long? = null,
+)
+
+@Serializable
+data class SubtaskSummary(val total: Int = 0, val done: Int = 0)
+
+@Serializable
+data class TaskEffort(
+    @SerialName("own_time_spent_minutes") val ownTimeSpentMinutes: Int = 0,
+    @SerialName("total_time_spent_minutes") val totalTimeSpentMinutes: Int = 0,
+    @SerialName("own_remaining_estimate_minutes") val ownRemainingEstimateMinutes: Int? = null,
+    @SerialName("total_remaining_estimate_minutes") val totalRemainingEstimateMinutes: Int? = null,
 )
 
 @Serializable

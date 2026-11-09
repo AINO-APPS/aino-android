@@ -116,6 +116,9 @@ data class Task(
     val rank: String? = null,
     @SerialName("project_id") val projectId: Long? = null,
     @SerialName("parent_task_id") val parentTaskId: Long? = null,
+    @SerialName("parent_key") val parentKey: String? = null,
+    @SerialName("is_subtask") val isSubtask: Boolean = false,
+    @SerialName("is_epic") val isEpic: Boolean = false,
     @SerialName("work_item_type_id") val workItemTypeId: Long? = null,
     /** The workflow state is the only status (D4). */
     @SerialName("workflow_state_id") val workflowStateId: Long? = null,
@@ -138,9 +141,16 @@ data class Task(
     val sprint: TaskSprint? = null,
     /** Only present on `GET /tasks/:id/detail`. */
     val comments: List<TaskComment> = emptyList(),
+    /** Null means this collection did not include hierarchy; an empty list clears it. */
+    val subtasks: List<Task>? = null,
+    @SerialName("subtask_summary") val subtaskSummary: SubtaskSummary? = null,
+    val effort: TaskEffort? = null,
+    val parent: ParentTask? = null,
 ) {
     /** `issue_key || "#id"` (TaskCard / BacklogTab). */
     val displayKey: String get() = ticketKey ?: issueKey ?: "#$id"
+
+    val planningPoints: Double? get() = storyPoints.takeUnless { isSubtask || isEpic }
 
     /** The single definition of complete: the server derives `completed_at` (D5). */
     val isCompleted: Boolean get() = completedAt != null
@@ -384,6 +394,7 @@ data class WorkItemType(
     val icon: String? = null,
     @SerialName("is_default") val isDefault: Boolean = false,
     @SerialName("is_epic") val isEpic: Boolean = false,
+    @SerialName("is_subtask") val isSubtask: Boolean = false,
     @SerialName("sort_order") val sortOrder: Int = 0,
 )
 

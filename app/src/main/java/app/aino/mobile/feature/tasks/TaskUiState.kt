@@ -116,8 +116,8 @@ data class TaskUiState(
         ids.mapNotNull(tickets::get).filter { inScope(it) && belongs(it) }
 
     internal fun containsPlanTicket(ticket: Task): Boolean =
-        ticket.container == "backlog" ||
-            (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId })
+        !ticket.isSubtask && (ticket.container == "backlog" ||
+            (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId }))
 
     val planTasks: List<Task> get() = resolve(planTicketIds, ::containsPlanTicket)
     private val filteredPlan: List<Task> get() = planTasks.filter {

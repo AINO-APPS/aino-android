@@ -87,6 +87,22 @@ sprint configuration are no longer exposed or called by the app. Start/due dates
 remain independent ticket fields. Selecting a sprint does not prefill or replace
 the due date, and board cards show the ticket due date and sprint end separately.
 
+Scrum backlog/sprint plans and the Kanban backlog nest server-provided subtasks
+under their parents, including completed children. Boards keep independent child
+cards labelled with the parent's key; Task list collections retain those rows.
+Only parents are ranked or selected for backlog bulk actions. Placement and
+project-move permissions remain server decisions; successful family moves refetch
+loaded children for their canonical placement, workflow state, keys and aliases.
+Subtask story points are neither editable nor counted in native planning totals.
+Sprint report, baseline and completion metrics remain server-owned.
+
+Ticket Detail shows subtask done/total counts and child/parent navigation without
+requiring the Epic feature. Its editable estimates and worklogs remain the ticket's
+own effort; a separate read-only total includes non-deleted subtasks exactly as
+returned by the server. Child changes and effort writes refresh those server
+totals instead of adding local worklog amounts. Older responses without hierarchy
+metadata retain their existing flat lists and own-effort presentation.
+
 The Activity-scoped `PlanViewModel` owns Backlog paging, sort and read-adjusted
 totals, Completed, selection and bulk actions, the create draft, epics, import
 and Sprint planning. It reads Tickets and Plan scope from the session, never

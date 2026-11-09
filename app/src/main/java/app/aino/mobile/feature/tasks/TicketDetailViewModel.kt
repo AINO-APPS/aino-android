@@ -115,6 +115,22 @@ class TicketDetailViewModel(
         }
     }
 
+    private fun refreshFamilyEffort() {
+        val task = _ui.value.detail ?: return
+        val ids = buildList {
+            if (task.effort != null || task.isSubtask || (task.subtaskSummary?.total ?: 0) > 0) add(ticketId)
+            task.parentTaskId?.takeIf { task.isSubtask && it in ticketSession.store.state.value.tickets }?.let(::add)
+        }
+        ids.forEach { id ->
+            ticketSession.store.update(id) { it.copy(effort = null) }
+            runCatching { repository.loadDetail(id) }.onSuccess { fresh ->
+                ticketSession.store.update(id) { current ->
+                    current.copy(effort = fresh.effort, subtaskSummary = fresh.subtaskSummary, subtasks = fresh.subtasks)
+                }
+            }.onFailure { fail(it, "Failed to refresh subtask totals") }
+        }
+    }
+
     init {
         ticketScope.launch {
             ticketSession.store.state.collect { snapshot ->
@@ -166,6 +182,15 @@ class TicketDetailViewModel(
         }
         ticketScope.launch {
             sync.changes.collect { change ->
+                val detail = _ui.value.detail
+                val changed = ticketSession.store.state.value.tickets[change.ticketId]
+                val familyChanged = change.ticketId != ticketId && detail != null &&
+                    (detail.subtasks.orEmpty().any { it.id == change.ticketId } ||
+                        (changed?.isSubtask == true && changed.parentTaskId == ticketId))
+                if (familyChanged) {
+                    if (_ui.value.detailEditing) _ui.update { it.copy(detailStale = true) }
+                    else refreshDetail()
+                }
                 when (change) {
                     is TicketSyncChange.Updated -> if (change.ticketId == ticketId) {
                         if (change.staleDetail) loadWorklogs()
@@ -340,7 +365,11 @@ class TicketDetailViewModel(
     })
     fun setDueDate(task: Task, date: String) = updateFields(task, buildJsonObject { put("due_date", date.ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull) })
     fun setLabels(task: Task, ids: List<Long>) = updateFields(task, buildJsonObject { put("label_ids", JsonArray(ids.map(::JsonPrimitive))) })
-    fun setStoryPoints(task: Task, value: String?) = updateFields(task, buildJsonObject { put("story_points", value?.ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull) })
+    fun setStoryPoints(task: Task, value: String?) {
+        val current = ticketSession.store.state.value.tickets[task.id] ?: task
+        if (current.isSubtask) return
+        updateFields(task, buildJsonObject { put("story_points", value?.ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull) })
+    }
     fun setWorkItemType(task: Task, id: Long?) = updateFields(task, buildJsonObject { put("work_item_type_id", id?.let(::JsonPrimitive) ?: JsonNull) })
     fun setProject(task: Task, id: Long) = updateFields(task, buildJsonObject { put("project_id", id) })
     fun setStatus(task: Task, state: WorkflowState) {
@@ -461,9 +490,11 @@ class TicketDetailViewModel(
                                 runCatching { repository.moveProject(ticketId, projectId) }.fold(
                                     onSuccess = {
                                         save(it)
+                                        refreshLoadedSubtasks(it, repository, ticketSession)
                                         notify("Moved to ${it.displayKey}")
                                         refreshHistory()
                                         ticketSession.requestPlanRefresh()
+                                        ticketSession.requestBoard(BoardRequest.ReloadLoaded)
                                     },
                                     onFailure = { fail(it, "Failed to move ticket") },
                                 )
@@ -485,6 +516,9 @@ class TicketDetailViewModel(
             runCatching(write).fold(
                 onSuccess = {
                     save(it)
+                    refreshLoadedSubtasks(it, repository, ticketSession)
+                    ticketSession.requestPlanRefresh()
+                    ticketSession.requestBoard(BoardRequest.ReloadLoaded)
                     ticketSession.store.highlight(it.id)
                     ticketSession.publishNotice(notice)
                     refreshHistory()
@@ -614,6 +648,7 @@ class TicketDetailViewModel(
                             _ui.update { it.copy(estimateDraft = null) }
                         }
                     }
+                    refreshFamilyEffort()
                     refreshHistory()
                 },
                 onFailure = { error -> _ui.update { it.copy(estimateError = error.message ?: "Failed to save estimate") } },
@@ -664,6 +699,7 @@ class TicketDetailViewModel(
                                 worklogDraft = null, editingWorklogId = null, worklogWarnings = result.warnings) }
                         }
                     }
+                    refreshFamilyEffort()
                     refreshHistory()
                 },
                 onFailure = { error ->
@@ -691,6 +727,7 @@ class TicketDetailViewModel(
                             _ui.update { it.copy(worklogs = it.worklogs.filterNot { row -> row.id == worklogId }) }
                         }
                     }
+                    refreshFamilyEffort()
                     refreshHistory()
                 },
                 onFailure = { error -> _ui.update { it.copy(worklogError = error.message ?: "Failed to delete worklog") } },

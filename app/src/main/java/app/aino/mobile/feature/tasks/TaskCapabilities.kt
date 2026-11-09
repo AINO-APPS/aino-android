@@ -60,6 +60,9 @@ fun capabilityReasonCopy(reason: String?): String = when (reason) {
     "READ_ONLY_ROLE" -> "Your project role allows viewing and commenting only."
     "CANCELLED_TERMINAL" -> "Cancelled tickets cannot be changed."
     "WORKLOG_CANCELLED" -> "Work cannot be logged on a cancelled ticket."
+    "SUBTASK_FOLLOWS_PARENT" -> "Subtasks follow their parent's project and sprint."
+    "PROJECT_HAS_NO_SPRINTS" -> "This project does not use sprints."
+    "INVALID_HIERARCHY" -> "This parent and ticket type are not a valid hierarchy."
     else -> "This action is not available."
 }
 
@@ -80,4 +83,7 @@ private val CAPABILITY_REASON_CODES = setOf(
     "READ_ONLY_ROLE",
     "CANCELLED_TERMINAL",
     "WORKLOG_CANCELLED",
+    "SUBTASK_FOLLOWS_PARENT",
+    "PROJECT_HAS_NO_SPRINTS",
+    "INVALID_HIERARCHY",
 )
