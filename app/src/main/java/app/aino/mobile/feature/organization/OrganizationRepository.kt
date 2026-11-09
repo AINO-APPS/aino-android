@@ -147,37 +147,6 @@ class OrganizationRepository(
         mutate<Unit, JsonObject>("org/teams/$id", Unit, "DELETE")
     }
 
-    fun teamSprintConfig(teamId: Long): SprintConfig = load {
-        // @api GET org/teams/:id/sprint-config
-        decode(api.execute(ApiRequest(path = "org/teams/$teamId/sprint-config")))
-    }
-
-    fun updateTeamSprintConfig(teamId: Long, weeks: Int, startDate: String?, mode: String) {
-        val body = buildJsonObject {
-            put("sprint_duration_weeks", weeks)
-            put("sprint_start_date", startDate?.let(::JsonPrimitive) ?: JsonNull)
-            put("sprint_mode", mode)
-        }
-        // @api PUT org/teams/:id/sprint-config
-        mutate<JsonObject, JsonObject>("org/teams/$teamId/sprint-config", body, "PUT")
-    }
-
-    // ── Sprints (pause / resume from the team edit panel) ───────────────────
-
-    fun activeSprint(): Sprint? = load {
-        decode<SprintEnvelope>(api.execute(ApiRequest(path = "sprints/active"))).sprint
-    }
-
-    fun pauseSprint(sprintId: Long): Sprint? {
-        // @api POST sprints/:id/pause
-        return mutate<Unit, SprintEnvelope>("sprints/$sprintId/pause", Unit, "POST").sprint
-    }
-
-    fun resumeSprint(sprintId: Long): Sprint? {
-        // @api POST sprints/:id/resume
-        return mutate<Unit, SprintEnvelope>("sprints/$sprintId/resume", Unit, "POST").sprint
-    }
-
     // ── Org chart ───────────────────────────────────────────────────────────
 
     fun orgChart(orgId: Long?): OrgChart = load {

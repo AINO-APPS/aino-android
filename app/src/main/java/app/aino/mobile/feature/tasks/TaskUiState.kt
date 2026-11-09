@@ -1,7 +1,5 @@
 package app.aino.mobile.feature.tasks
 
-import java.time.LocalDate
-
 /** The web `showConfirm(title, message, onConfirm, { confirmText, isDanger })`. */
 data class ConfirmRequest(
     val title: String,
@@ -33,7 +31,6 @@ data class TaskNotice(
     val actionLabel: String? = null,
     val action: (() -> Unit)? = null,
     val openTicketId: Long? = null,
-    val scheduledDate: String? = null,
 )
 
 /** Shared bottom sheets on the Tasks page. */
@@ -74,13 +71,6 @@ data class TaskUiState(
     val backlogLoadingMore: Boolean = false,
     val draft: BacklogDraft = BacklogDraft(),
     val creating: Boolean = false,
-    // Scheduled membership is retained as ids; ticket state lives in the session store.
-    val scheduledTicketIds: List<Long> = emptyList(),
-    val scheduledLoading: Boolean = false,
-    val scheduledLoaded: Boolean = false,
-    val scheduledWindow: Pair<LocalDate, LocalDate> = scheduledWindow(),
-    /** Day to bring into view after "View" on the schedule snackbar or a day-picker jump. */
-    val scheduledFocus: String? = null,
     /** Bumped on refresh while the Service Desk tab is visible; the tab reloads on change. */
     val serviceDeskVersion: Int = 0,
     // ── Next-generation surfaces ─────────────────────────────────────────
@@ -95,10 +85,6 @@ data class TaskUiState(
     val selectedIds: Set<Long> = emptySet(),
     /** Epics with their rollups, for the epic filter. */
     val epics: List<EpicSummary> = emptyList(),
-    /** Read-only background context on the schedule. */
-        val overlays: ScheduleOverlays = ScheduleOverlays(),
-    /** Which overlay types are currently shown; each toggles independently. */
-    val overlayTypes: Set<String> = setOf("leave", "holiday", "meeting"),
     /** "Updated by <name>" flashes keyed by task id, from realtime deltas. */
     val attribution: Map<Long, String> = emptyMap(),
 ) {
@@ -133,17 +119,6 @@ data class TaskUiState(
         ticket.container == "backlog" ||
             (ticket.container == "sprint" && ticket.sprintId != null && sprints.none { it.id == ticket.sprintId })
 
-    internal fun containsScheduledTicket(ticket: Task): Boolean {
-        val (from, to) = scheduledWindow
-        val plannedDay = localDateOf(ticket.plannedDate) ?: return false
-        return inScope(ticket) &&
-            ticket.container == "scheduled" &&
-            ticket.workflowStateKey != "cancelled" &&
-            !plannedDay.isBefore(from) &&
-            !plannedDay.isAfter(to) &&
-            matchesFilters(ticket, filters, userId, includeStatus = true)
-    }
-
     val planTasks: List<Task> get() = resolve(planTicketIds, ::containsPlanTicket)
     private val filteredPlan: List<Task> get() = planTasks.filter {
         containsPlanTicket(it) && matchesPlanFilters(it, filters, quickFilters, userId) &&
@@ -163,9 +138,9 @@ data class TaskUiState(
     val sprintsEnabled: Boolean get() = planScope.sprintsEnabled
     /** The sprint rows on screen belong to the selected team only. */
     val teamSprints: List<AvailableSprint> get() = planScope.teamSprints
-    val sprintTabVisible: Boolean get() = agileEnabled && currentSprintId != null && teamSprints.any { it.id == currentSprintId }
-    val visibleTabs: List<TaskTab> get() = planningTabs(agileEnabled, teamSprints, currentSprintId)
-    /** The query scope for backlog, scheduled and sprint loads. */
+    val sprintTabVisible: Boolean get() = TaskTab.Sprint in visibleTabs
+    val visibleTabs: List<TaskTab> get() = planScope.visibleTabs
+    /** The query scope for backlog and sprint loads. */
     val teamScope: TeamScope get() = planScope.teamScope
     /**
      * The heading's team. The admin's pick wins; otherwise the user's own team,
@@ -187,10 +162,7 @@ data class TaskUiState(
     }
     val importable: List<Task> get() = planningBacklog
     val backlogHasMore: Boolean get() = planHasMore
-    val scheduled: List<Task> get() = scheduledTicketIds.mapNotNull(tickets::get).filter(::containsScheduledTicket)
     val searchResults: List<Task> get() = searchResultIds.mapNotNull(tickets::get)
-    val scheduledGroups: List<ScheduledGroup> get() = groupScheduled(scheduled)
-    val scheduledOverdue: Int get() = scheduledGroups.firstOrNull { it.date == null }?.tasks?.size ?: 0
     /** Compact cards keep key, title and points; comfortable adds the rest. */
     val compact: Boolean get() = preferences.isCompact
     val hasSelection: Boolean get() = selectedIds.isNotEmpty()
@@ -216,7 +188,3 @@ data class TaskUiState(
 internal fun TaskUiState.projectPlan(): TaskUiState {
     return copy(selectedIds = selectedIds.intersect(backlog.map { it.id }.toSet()))
 }
-
-/** The Scheduled view's fetch window, relative to today. */
-internal fun scheduledWindow(today: LocalDate = LocalDate.now()): Pair<LocalDate, LocalDate> =
-    today.minusDays(SCHEDULED_PAST_DAYS) to today.plusDays(SCHEDULED_AHEAD_DAYS)

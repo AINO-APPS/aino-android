@@ -54,4 +54,11 @@ data class PlanScope(
     }
     val currentSprint: AvailableSprint? get() = teamSprints.firstOrNull { it.id == selectedSprintId }
     val sprintsEnabled: Boolean get() = sprintEnabled ?: sprints.isNotEmpty()
+    val visibleTabs: List<TaskTab> get() = planningTabs(
+        agileEnabled = agileEnabled,
+        sprints = teamSprints,
+        currentSprintId = currentSprintId,
+        projectTabs = selectedProject?.planTabs,
+        projectScoped = projectScoped,
+    )
 }

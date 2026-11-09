@@ -74,20 +74,20 @@ import kotlinx.coroutines.launch
 internal fun tabIcon(tab: TaskTab): ImageVector = when (tab) {
     TaskTab.Sprint -> HeroIcons.RocketLaunch
     TaskTab.Backlog -> HeroIcons.ArchiveBox
-    TaskTab.Scheduled -> HeroIcons.CalendarDays
+    TaskTab.Reports -> HeroIcons.ChartBar
     TaskTab.ServiceDesk -> HeroIcons.Lifebuoy
 }
 
 internal fun tabLabel(tab: TaskTab): String = when (tab) {
     TaskTab.Sprint -> "Sprint"
     TaskTab.Backlog -> "Backlog"
-    TaskTab.Scheduled -> "Scheduled"
+    TaskTab.Reports -> "Reports"
     TaskTab.ServiceDesk -> "Service Desk"
 }
 
 /**
  * Tasks page — mobile-first: a compact header (title, search, filters,
- * overflow), tabs (Sprint · Backlog · Service Desk) synced to a swipeable
+ * overflow), server-selected tabs synced to a swipeable
  * pager, then the tab body with its own scroll state and pull-to-refresh.
  * Search opens a full-page overlay; filters, create, import and the sprint
  * picker are bottom sheets; results and Undo arrive as snackbars. Deep links
@@ -98,7 +98,6 @@ internal fun tabLabel(tab: TaskTab): String = when (tab) {
 fun TasksScreen(
     viewModel: TaskViewModel,
     planViewModel: PlanViewModel,
-    scheduledViewModel: ScheduledViewModel,
     boardViewModel: SprintBoardViewModel,
     onOpenDetail: (Long) -> Unit,
     onOpenInsights: () -> Unit,
@@ -106,10 +105,8 @@ fun TasksScreen(
 ) {
     val shellUi by viewModel.ui.collectAsStateWithLifecycle()
     val planUi by planViewModel.ui.collectAsStateWithLifecycle()
-    val scheduledUi by scheduledViewModel.ui.collectAsStateWithLifecycle()
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
-    val ui = tasksScreenState(shellUi, planUi, scheduledUi)
-    val scheduledScreenUi = ui.copy(tickets = scheduledUi.tickets, recentlyUpdated = scheduledUi.recentlyUpdated)
+    val ui = tasksScreenState(shellUi, planUi)
     val boardUi by boardViewModel.ui.collectAsStateWithLifecycle()
     var inlineCommentTicketId by rememberSaveable(viewModel.ticketSession.key) { mutableStateOf<Long?>(null) }
     val openComments: (Long) -> Unit = { inlineCommentTicketId = it }
@@ -179,7 +176,7 @@ fun TasksScreen(
                     divider = { HorizontalDivider(color = colors.border) },
                 ) {
                     tabs.forEachIndexed { index, tab ->
-                        val badge = when (tab) { TaskTab.Backlog -> planUi.backlogTotal.takeIf { it > 0 }; TaskTab.Scheduled -> scheduledScreenUi.scheduledOverdue.takeIf { it > 0 }; else -> null }
+                        val badge = when (tab) { TaskTab.Backlog -> planUi.backlogTotal.takeIf { it > 0 }; else -> null }
                         Tab(
                             selected = pagerState.currentPage == index,
                             onClick = { viewModel.selectTab(tab) },
@@ -192,8 +189,8 @@ fun TasksScreen(
                                             if (badge > 999) "999+" else "$badge",
                                             fontSize = 0.66.rem,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (tab == TaskTab.Scheduled) colors.danger else androidx.compose.ui.graphics.Color.Unspecified,
-                                            modifier = Modifier.background((if (tab == TaskTab.Scheduled) colors.danger else colors.primary).copy(alpha = 0.16f), CircleShape).padding(horizontal = 6.dp, vertical = 1.dp),
+                                            color = androidx.compose.ui.graphics.Color.Unspecified,
+                                            modifier = Modifier.background(colors.primary.copy(alpha = 0.16f), CircleShape).padding(horizontal = 6.dp, vertical = 1.dp),
                                         )
                                     }
                                 }
@@ -213,11 +210,9 @@ fun TasksScreen(
                     userScrollEnabled = true,
                 ) { page ->
                     when (tabs.getOrNull(page)) {
-                        // The Sprint tab is the board; the Plan split view is a
-                        // Backlog action (ADR-015), reached from "Plan sprint".
                         TaskTab.Sprint -> SprintBoard(ui, boardUi, viewModel, boardViewModel, open, openComments)
-                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, planViewModel, open) else BacklogPage(ui, viewModel, planViewModel, scheduledViewModel, open, openComments)
-                        TaskTab.Scheduled -> ScheduledPage(scheduledScreenUi, viewModel, scheduledViewModel, open, openComments)
+                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, planViewModel, open) else BacklogPage(ui, viewModel, planViewModel, open, openComments)
+                        TaskTab.Reports -> SprintInsightsScreen(viewModel, onBack = { viewModel.selectTab(TaskTab.Backlog) }, onOpenTask = onOpenDetail)
                         TaskTab.ServiceDesk -> serviceDesk()
                         null -> Unit
                     }
@@ -242,13 +237,11 @@ fun TasksScreen(
             it,
             { when {
                 boardUi.confirm != null -> boardViewModel.acceptConfirm()
-                scheduledUi.confirm != null -> scheduledViewModel.acceptConfirm()
                 planUi.confirm != null -> planViewModel.acceptConfirm()
                 else -> Unit
             } },
             { when {
                 boardUi.confirm != null -> boardViewModel.dismissConfirm()
-                scheduledUi.confirm != null -> scheduledViewModel.dismissConfirm()
                 planUi.confirm != null -> planViewModel.dismissConfirm()
                 else -> Unit
             } },
@@ -282,16 +275,16 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
         Box {
             RoundIconButton(HeroIcons.EllipsisVertical, "More options", { menu = true })
             androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, modifier = Modifier.background(colors.bgElevated)) {
-                if (ui.tab != TaskTab.ServiceDesk) {
+                if (ui.tab != TaskTab.ServiceDesk && ui.tab != TaskTab.Reports) {
                     MenuItem(HeroIcons.Bars3BottomLeft, "Filters and view options" + if (ui.filterCount > 0) " (${ui.filterCount})" else "") {
                         menu = false
                         viewModel.openSheet(TaskSheet.Filters)
                     }
                 }
-                if (ui.agileEnabled) {
+                if (TaskTab.Reports in ui.visibleTabs) {
                     MenuItem(HeroIcons.ChartBar, "Sprint insights") { menu = false; onOpenInsights() }
                 }
-                if (ui.agileEnabled && ui.tab == TaskTab.Sprint && ui.selectedSprintId != null) {
+                if (ui.sprintTabVisible && ui.tab == TaskTab.Sprint && ui.selectedSprintId != null) {
                     MenuItem(HeroIcons.ArchiveBoxArrowDown, "Import from backlog") { menu = false; viewModel.openSheet(TaskSheet.Import) }
                 }
                 MenuItem(HeroIcons.ArrowPath, "Refresh") { menu = false; viewModel.refresh(pull = true) }
@@ -403,11 +396,7 @@ private fun headerSubtitle(ui: TaskUiState): String = when (ui.tab) {
         val total = ui.backlogTotal.takeIf { it > 0 } ?: ui.backlog.size
         if (total > 0) "$total ticket${if (total == 1) "" else "s"} to plan" else "Sprint and backlog work"
     }
-    TaskTab.Scheduled -> {
-        val overdue = ui.scheduledOverdue
-        val upcoming = ui.scheduled.count { t -> localDateOf(t.plannedDate)?.isBefore(java.time.LocalDate.now()) == false }
-        listOfNotNull("$upcoming upcoming", overdue.takeIf { it > 0 }?.let { "$it overdue" }).joinToString(" · ")
-    }
+    TaskTab.Reports -> "Sprint reports and insights"
     TaskTab.ServiceDesk -> "Report bugs, request features, or raise access issues"
 }
 
@@ -427,7 +416,7 @@ internal fun ActiveFilterChips(ui: TaskUiState, viewModel: TaskViewModel, modifi
             add("Label: $name" to { viewModel.setFilters(f.copy(label = "")) })
         }
         if (f.priority.isNotEmpty()) add("Priority: ${priorityOf(f.priority).label}" to { viewModel.setFilters(f.copy(priority = "")) })
-        if ((ui.tab == TaskTab.Sprint || ui.tab == TaskTab.Scheduled) && f.status.isNotEmpty()) {
+        if (ui.tab == TaskTab.Sprint && f.status.isNotEmpty()) {
             val name = ui.agile.workflowStates.firstOrNull { it.key == f.status }?.let(::stateLabel) ?: columnOf(f.status).label
             add("Status: $name" to { viewModel.setFilters(f.copy(status = "")) })
         }
@@ -505,7 +494,7 @@ private fun CommandPaletteBody(
                 "Toggle the completed section",
             ) { planViewModel.setShowCompleted(!ui.completedOpen) }
         }
-        if (ui.agileEnabled && ui.currentSprint != null) {
+        if (ui.sprintTabVisible && ui.currentSprint != null) {
             item {
                 PaletteRow(HeroIcons.PlayCircle, "Start sprint", "Begin the selected sprint") {
                     viewModel.closeSearch()
@@ -614,7 +603,7 @@ private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel
     val colors = LocalWebColors.current
     val f = ui.filters
     var picker by remember { mutableStateOf<String?>(null) }
-    TaskSheetScaffold(when (ui.tab) { TaskTab.Sprint -> "Filter sprint"; TaskTab.Scheduled -> "Filter scheduled"; else -> "Filter backlog" }, viewModel::closeSheet, HeroIcons.Bars3BottomLeft) {
+    TaskSheetScaffold(if (ui.tab == TaskTab.Sprint) "Filter sprint" else "Filter backlog", viewModel::closeSheet, HeroIcons.Bars3BottomLeft) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (ui.tab == TaskTab.Backlog) {
                 SectionTitle("View options")
@@ -639,7 +628,7 @@ private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel
                     }
                 }
             }
-            if (ui.tab == TaskTab.Sprint || ui.tab == TaskTab.Scheduled) {
+            if (ui.tab == TaskTab.Sprint) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SectionTitle("Status")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

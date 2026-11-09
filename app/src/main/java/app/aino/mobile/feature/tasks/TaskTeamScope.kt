@@ -9,7 +9,7 @@ private val TEAM_PICKER_ROLES = setOf("super_admin", "platform_admin")
 data class TeamOption(val id: Long, val name: String)
 
 /**
- * The team scope sent with backlog, scheduled and sprint queries.
+ * The team scope sent with backlog and sprint queries.
  *
  * [unassigned] is the admin bucket for legacy tickets with no owning team.
  */

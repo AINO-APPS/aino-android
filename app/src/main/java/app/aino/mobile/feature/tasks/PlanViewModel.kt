@@ -244,8 +244,7 @@ class PlanViewModel(
         ))
     }
     fun setDraftSprint(id: Long?) = _ui.update { s ->
-        val end = id?.let { wanted -> s.sprints.firstOrNull { it.id == wanted }?.endDate?.take(10) }
-        s.copy(draft = s.draft.copy(sprintId = id, dueDate = if (id == null) "" else end ?: s.draft.dueDate))
+        s.copy(draft = s.draft.copy(sprintId = id))
     }
 
     fun submitBacklog() {
@@ -294,7 +293,6 @@ class PlanViewModel(
         _ui.update {
             it.copy(draft = BacklogDraft(
                 sprintId = sprintId, workflowStateId = state.id.takeIf { id -> id != 0L },
-                dueDate = s.sprints.firstOrNull { sp -> sp.id == sprintId }?.endDate?.take(10).orEmpty(),
             ))
         }
         ticketSession.requestShell(ShellRequest.OpenSheet(TaskSheet.CreateTicket))
@@ -304,8 +302,7 @@ class PlanViewModel(
         val s = _ui.value
         val targetId = planTargetId(s.teamSprints, s.currentSprintId)
         if (targetId == null) {
-            notify(if (canManageSprint(s.role)) "No sprint yet — create one in Admin → Teams"
-            else "No sprint yet — an admin can create one in Admin → Teams")
+            notify("No sprint yet — plan tickets in the backlog until a sprint starts.")
             return
         }
         _ui.update { it.copy(planOpen = true) }
@@ -328,7 +325,7 @@ class PlanViewModel(
 
     fun configureImport(task: Task) = _ui.update { s ->
         s.copy(importTaskId = task.id, importAssignedTo = task.assignedTo,
-            importDueDate = s.currentSprint?.endDate?.take(10) ?: task.dueDate?.take(10).orEmpty())
+            importDueDate = task.dueDate?.take(10).orEmpty())
     }
     fun cancelImportConfig() = _ui.update { it.copy(importTaskId = null, importAssignedTo = null, importDueDate = "") }
     fun setImportAssignee(id: Long?) = _ui.update { it.copy(importAssignedTo = id) }

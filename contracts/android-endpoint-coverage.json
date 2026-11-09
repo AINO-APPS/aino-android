@@ -6,10 +6,10 @@
   },
   "totals": {
     "platform": 532,
-    "covered": 276,
+    "covered": 270,
     "waived": 234,
     "clientRetired": 3,
-    "missing": 21,
+    "missing": 27,
     "unmatched": 0
   },
   "covered": [
@@ -849,16 +849,6 @@
       "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
     },
     {
-      "method": "GET",
-      "path": "/api/org/teams/:param/sprint-config",
-      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
-    },
-    {
-      "method": "PUT",
-      "path": "/api/org/teams/:param/sprint-config",
-      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
-    },
-    {
       "method": "DELETE",
       "path": "/api/profile",
       "source": "app/src/main/java/app/aino/mobile/feature/profile/ProfileRepository.kt"
@@ -1056,7 +1046,7 @@
     {
       "method": "GET",
       "path": "/api/sprints/active",
-      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/home/DashboardRepository.kt"
     },
     {
       "method": "GET",
@@ -1180,17 +1170,7 @@
     },
     {
       "method": "PATCH",
-      "path": "/api/tasks/:param/schedule",
-      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
-    },
-    {
-      "method": "PATCH",
       "path": "/api/tasks/:param/status",
-      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/tasks/:param/unschedule",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
@@ -1244,11 +1224,6 @@
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {
-      "method": "POST",
-      "path": "/api/tasks/carry-forward",
-      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
-    },
-    {
       "method": "GET",
       "path": "/api/tasks/epics",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
@@ -1281,11 +1256,6 @@
     {
       "method": "GET",
       "path": "/api/tasks/lookup/quicksearch",
-      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
-    },
-    {
-      "method": "GET",
-      "path": "/api/tasks/schedule-overlays",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {

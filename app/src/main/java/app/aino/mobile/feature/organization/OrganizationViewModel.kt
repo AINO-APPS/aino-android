@@ -25,17 +25,12 @@ data class OrgNotice(val ok: Boolean, val text: String)
 
 data class TeamsData(val teams: List<Team>, val departments: List<Department>)
 
-/** Teams.tsx `editForm` + the active sprint driving Pause/Resume. */
+/** Team ownership fields; sprint settings are project-owned. */
 data class TeamEdit(
     val teamId: Long,
     val name: String,
     val departmentId: Long?,
     val leadId: Long?,
-    val sprintDurationWeeks: Int = 2,
-    val sprintStartDate: String = "",
-    val sprintMode: String = "manual",
-    val activeSprint: Sprint? = null,
-    val paused: Boolean = false,
 )
 
 enum class NoticeSlot { Salary, Departments, Teams, Labels }
@@ -288,27 +283,9 @@ class OrganizationViewModel(
         onError = { notify(NoticeSlot.Teams, false, it.orgMessage("Failed")) },
     )
 
-    /** Edit click: seed the form, then load the sprint config and the active sprint. */
+    /** Edit team ownership fields without loading legacy sprint configuration. */
     fun beginTeamEdit(team: Team) {
         _ui.update { it.copy(teamEdit = TeamEdit(team.id, team.name, team.departmentId, team.leadId)) }
-        io {
-            runCatching { repository.teamSprintConfig(team.id) }.onSuccess { config ->
-                updateEditFor(team.id) {
-                    it.copy(
-                        sprintDurationWeeks = config.sprintDurationWeeks?.takeIf { w -> w != 0 } ?: 2,
-                        sprintStartDate = normalizeDate(config.sprintStartDate).orEmpty(),
-                        sprintMode = config.sprintMode?.takeIf(String::isNotEmpty) ?: "manual",
-                        paused = config.sprintPaused,
-                    )
-                }
-            }
-            // Non-fatal: Pause/Resume is simply not offered without it.
-            runCatching(repository::activeSprint).onSuccess { sprint ->
-                updateEditFor(team.id) {
-                    if (sprint != null) it.copy(activeSprint = sprint, paused = sprint.status == "paused") else it.copy(activeSprint = null)
-                }
-            }
-        }
     }
 
     fun updateTeamEdit(transform: (TeamEdit) -> TeamEdit) {
@@ -317,24 +294,11 @@ class OrganizationViewModel(
 
     fun cancelTeamEdit() = _ui.update { it.copy(teamEdit = null) }
 
-    private fun updateEditFor(teamId: Long, transform: (TeamEdit) -> TeamEdit) {
-        _ui.update { state ->
-            val edit = state.teamEdit
-            if (edit?.teamId == teamId) state.copy(teamEdit = transform(edit)) else state
-        }
-    }
-
     fun saveTeamEdit() {
         val edit = _ui.value.teamEdit ?: return
         mutation(
             action = {
                 repository.updateTeam(edit.teamId, edit.name, edit.departmentId, edit.leadId)
-                repository.updateTeamSprintConfig(
-                    edit.teamId,
-                    edit.sprintDurationWeeks.takeIf { it != 0 } ?: 2,
-                    edit.sprintStartDate.ifEmpty { null },
-                    edit.sprintMode.ifEmpty { "manual" },
-                )
             },
             onSuccess = {
                 _ui.update { s -> if (s.teamEdit?.teamId == edit.teamId) s.copy(teamEdit = null) else s }
@@ -344,19 +308,6 @@ class OrganizationViewModel(
         )
     }
 
-    fun toggleSprintPause() {
-        val edit = _ui.value.teamEdit ?: return
-        val sprint = edit.activeSprint ?: return
-        val wasPaused = edit.paused
-        mutation(
-            action = { if (wasPaused) repository.resumeSprint(sprint.id) else repository.pauseSprint(sprint.id) },
-            onSuccess = {
-                updateEditFor(edit.teamId) { it.copy(paused = !wasPaused) }
-                notify(NoticeSlot.Teams, true, if (wasPaused) "Sprint resumed" else "Sprint paused")
-            },
-            onError = { notify(NoticeSlot.Teams, false, it.orgMessage("Failed")) },
-        )
-    }
 
     fun deleteTeam(id: Long) = mutation(
         action = { repository.deleteTeam(id) },

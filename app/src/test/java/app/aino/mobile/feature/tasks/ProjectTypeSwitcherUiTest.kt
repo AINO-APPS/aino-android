@@ -66,14 +66,16 @@ class ProjectTypeSwitcherUiTest {
         }
     }
 
-    @Test fun phaseTwoProjectsWithoutTypeFieldsStillRenderAndKeepLegacyPlanning() {
+    @Test fun phaseTwoProjectsWithoutTypeFieldsStillRenderWithSafeScrumPlanning() {
         showProjects("""[
             {"id":3,"key":"OLD","name":"Old project",
                 "capabilities":{"canAdminister":true,"canCreateTickets":true}}
         ]""")
 
         compose.onNodeWithText("Scrum", useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("Scheduled").assertIsDisplayed()
+        compose.onNodeWithText("Scheduled").assertDoesNotExist()
+        compose.onNodeWithText("Sprint").assertIsDisplayed()
+        compose.onNodeWithText("Reports").assertIsDisplayed()
         compose.onNodeWithText("OLD", useUnmergedTree = true).performClick()
         compose.onNodeWithText("OLD · Old project · Scrum").assertIsDisplayed()
         compose.runOnIdle {
@@ -94,16 +96,14 @@ class ProjectTypeSwitcherUiTest {
         })
         val shell = TaskViewModel(repository, ticketSession = session)
         val plan = PlanViewModel(repository, session)
-        val scheduled = ScheduledViewModel(repository, session)
         val board = SprintBoardViewModel(repository, session)
         viewModels.put("shell", shell)
         viewModels.put("plan", plan)
-        viewModels.put("scheduled", scheduled)
         viewModels.put("board", board)
         shell.bind(1, "employee", "Team", agileEnabled = false, teamId = 8)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                TasksScreen(shell, plan, scheduled, board, {}, {}, {})
+                TasksScreen(shell, plan, board, {}, {}, {})
             }
         }
         compose.waitUntil(5_000) { shell.ui.value.teamResolved }

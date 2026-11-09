@@ -84,6 +84,8 @@ import kotlin.math.roundToInt
 internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel: TaskViewModel, boardViewModel: SprintBoardViewModel, onOpen: (Task) -> Unit, onComments: (Long) -> Unit = {}) {
     val colors = LocalWebColors.current
     val haptics = LocalHapticFeedback.current
+    val sprintEndDate = boardUi.sprintBoard?.sprint?.endDate?.takeIf(String::isNotBlank)
+        ?: ui.currentSprint?.endDate?.takeIf(String::isNotBlank)
     val states = boardUi.sprintBoard?.columns.orEmpty().mapNotNull { column ->
         ui.agile.workflowStates.firstOrNull { it.id == column.stateId && it.key != "cancelled" }
             ?.let { it to column }
@@ -134,7 +136,13 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                     }
                 } else if (ui.selectedSprintId == null) {
                     item(key = "no-sprint") {
-                        TaskEmptyState(HeroIcons.RocketLaunch, "No sprint selected", "Create a sprint for your team to start planning.")
+                        TaskEmptyState(
+                            HeroIcons.RocketLaunch,
+                            "No sprint yet",
+                            "Plan tickets in the backlog until a sprint starts.",
+                            action = "Go to backlog",
+                            onAction = { viewModel.selectTab(TaskTab.Backlog) },
+                        )
                     }
                 } else {
                     // One board-level state when nothing is visible, instead of a
@@ -241,6 +249,7 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                                         onComments = { onComments(task.id) },
                                         compact = ui.compact,
                                         attribution = ui.attribution[task.id],
+                                        sprintEndDate = sprintEndDate ?: task.sprint?.endDate,
                                         topTrailing = {
                                             Box(
                                                 Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "Task actions") { actionsFor = task },
@@ -307,6 +316,7 @@ internal fun SprintBoard(ui: TaskUiState, boardUi: SprintBoardUiState, viewModel
                         onOpen = {},
                         compact = ui.compact,
                         attribution = ui.attribution[task.id],
+                        sprintEndDate = sprintEndDate ?: task.sprint?.endDate,
                     )
                 }
             }

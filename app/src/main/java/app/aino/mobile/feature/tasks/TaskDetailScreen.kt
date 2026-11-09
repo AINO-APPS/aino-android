@@ -109,7 +109,6 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
     var menu by remember { mutableStateOf(false) }
     var statusSheet by remember { mutableStateOf(false) }
     var blockSheet by remember { mutableStateOf(false) }
-    var scheduleOpen by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val copyKey = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(task.displayKey)) }
 
@@ -156,13 +155,6 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
                                 }
                                 if (ui.agile.features.blockers && canEdit.allowed) {
                                     MenuItem(HeroIcons.NoSymbol, if (task.isBlocked) "Clear blocker" else "Mark blocked", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) { menu = false; blockSheet = true }
-                                }
-                                val canSchedule = task.capability(TaskCapability.Schedule)
-                                if (canSchedule.allowed) {
-                                    MenuItem(HeroIcons.CalendarDays, if (task.container == "scheduled") "Reschedule" else "Schedule to a day") { menu = false; scheduleOpen = true }
-                                }
-                                if (task.container == "scheduled" && canSchedule.allowed) {
-                                    MenuItem(HeroIcons.ArchiveBox, "Move to backlog", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { menu = false; viewModel.unschedule(task.id, task.title, closeAfter = true) }
                                 }
                                 MenuItem(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") { menu = false; copyKey() }
                                 if (task.capability(TaskCapability.MoveProject).allowed) {
@@ -233,9 +225,6 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
         )
         }
     if (blockSheet) BlockerSheet(task, viewModel) { blockSheet = false }
-    if (scheduleOpen) {
-        ScheduleDialog(task, initial = task.dueDate, onDismiss = { scheduleOpen = false }) { date -> viewModel.schedule(task.id, date, closeAfter = true) }
-    }
     if (ui.movePickerOpen) {
         SelectSheet(
             "Move to project",
@@ -394,7 +383,7 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
             if (due != null) PropertyText("${formatDate(task.dueDate)} · $due", color = if (overdue) colors.danger else null)
             else PropertyText("No due date", muted = true)
         }
-        if (ui.agileEnabled && ui.sprints.isNotEmpty()) {
+        if (TaskTab.Sprint in ui.planScope.visibleTabs && ui.sprints.isNotEmpty()) {
             val canPlace = task.capability(TaskCapability.PlaceInSprint)
             PropertyRow(HeroIcons.RocketLaunch, "Sprint", if (canPlace.allowed) ({ picker = "sprint" }) else null, reason = if (canPlace.allowed) null else canPlace.reasonCopy()) {
                 val name = task.sprint?.name ?: task.sprintId?.let { id -> ui.sprints.firstOrNull { it.id == id }?.name ?: "Sprint #$id" }

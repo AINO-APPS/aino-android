@@ -135,25 +135,21 @@ class TaskRepositoryTest {
         })
 
         repository.createBacklogTask(CreateBacklogPayload(title = "Later", labelIds = listOf(3), storyPoints = "5", projectId = 1))
-        repository.scheduleTask(7, "2026-09-26")
-        repository.unscheduleTask(7)
         repository.assignSprint(7, 2)
         repository.updateImportFields(7, ImportUpdatePayload(assignedTo = 4, dueDate = null))
         repository.completeSprint(2, "backlog")
         repository.startSprint(2)
 
-        assertEquals(listOf("POST", "PATCH", "PATCH", "PATCH", "PUT", "POST", "POST"), captured.map { it.method })
+        assertEquals(listOf("POST", "PATCH", "PUT", "POST", "POST"), captured.map { it.method })
         assertEquals(
-            listOf("tasks/backlog", "tasks/7/schedule", "tasks/7/unschedule", "tasks/7/assign-sprint", "tasks/7", "sprints/2/complete", "sprints/2/start"),
+            listOf("tasks/backlog", "tasks/7/assign-sprint", "tasks/7", "sprints/2/complete", "sprints/2/start"),
             captured.map { it.path },
         )
         assertTrue(body(captured[0]).contains("\"label_ids\":[3]"))
         assertTrue(body(captured[0]).contains("\"story_points\":\"5\""))
-        assertEquals("""{"date":"2026-09-26"}""", body(captured[1]))
-        assertNull(captured[2].body)
-        assertEquals("""{"sprint_id":2}""", body(captured[3]))
-        assertEquals("""{"assigned_to":4,"due_date":null}""", body(captured[4]))
-        assertEquals("""{"rolloverTo":"backlog"}""", body(captured[5]))
+        assertEquals("""{"sprint_id":2}""", body(captured[1]))
+        assertEquals("""{"assigned_to":4,"due_date":null}""", body(captured[2]))
+        assertEquals("""{"rolloverTo":"backlog"}""", body(captured[3]))
     }
 
     @Test

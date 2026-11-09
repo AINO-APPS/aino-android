@@ -109,33 +109,6 @@ class TaskSyncTest {
     }
 
     @Test
-    fun scheduledViewQueryGroupsAndMembership() {
-        val today = java.time.LocalDate.of(2026, 10, 6)
-        assertEquals(
-            "tasks/scheduled?priority=high&team_id=3",
-            scheduledQuery(TaskFilters(priority = "high"), TeamScope(teamId = 3)),
-        )
-        val groups = groupScheduled(
-            listOf(
-                task(1, plannedDate = "2026-10-04"),                       // overdue
-                task(2, plannedDate = "2026-10-03", completedAt = "2026-10-03T10:00:00Z"), // past + recently done → kept
-                task(3, plannedDate = "2026-10-06", priority = "low"),
-                task(4, plannedDate = "2026-10-06", priority = "high"),
-                task(5, plannedDate = "2026-10-07"),
-                task(6, plannedDate = "2026-10-12"),
-                task(7),                                            // undated → ignored
-            ),
-            today,
-        )
-        assertEquals(listOf("Overdue", "Sat, Oct 3", "Today", "Tomorrow", "Mon, Oct 12"), groups.map { it.label })
-        assertEquals(listOf(1L), groups[0].tasks.map { it.id })
-        assertEquals(listOf(2L), groups[1].tasks.map { it.id })
-        assertEquals(listOf(4L, 3L), groups[2].tasks.map { it.id })
-        assertEquals(1, filterCount(TaskFilters(status = "done"), TaskTab.Scheduled))
-        assertEquals(TaskTab.Scheduled, TaskTab.fromKey("scheduled"))
-    }
-
-    @Test
     fun backlogWindowKeepsLoadedRows() {
         assertEquals(25, backlogWindow(0, 25))
         assertEquals(75, backlogWindow(75, 25))

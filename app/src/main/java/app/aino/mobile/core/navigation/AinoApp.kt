@@ -77,7 +77,6 @@ import app.aino.mobile.feature.tasks.TasksShellViewModel
 import app.aino.mobile.feature.tasks.TicketSession
 import app.aino.mobile.feature.tasks.SprintBoardViewModel
 import app.aino.mobile.feature.tasks.PlanViewModel
-import app.aino.mobile.feature.tasks.ScheduledViewModel
 import app.aino.mobile.feature.profile.ProfileScreen
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.feature.chat.ChatScreen
@@ -129,7 +128,6 @@ fun AinoApp(
     ticketSession: TicketSession,
     sprintBoard: SprintBoardViewModel,
     plan: PlanViewModel,
-    scheduled: ScheduledViewModel,
     profile: ProfileViewModel,
     chat: ChatViewModel,
     incomingCall: IncomingCallViewModel,
@@ -467,7 +465,6 @@ fun AinoApp(
             ticketSession,
             sprintBoard,
             plan,
-            scheduled,
             profile,
             chat,
             biometricAvailable,
@@ -540,7 +537,6 @@ private fun AuthenticatedShell(
     ticketSession: TicketSession,
     sprintBoard: SprintBoardViewModel,
     plan: PlanViewModel,
-    scheduled: ScheduledViewModel,
     profile: ProfileViewModel,
     chat: ChatViewModel,
     biometricAvailable: Boolean,
@@ -768,7 +764,6 @@ private fun AuthenticatedShell(
                     viewModel = tasks,
                     boardViewModel = sprintBoard,
                     planViewModel = plan,
-                    scheduledViewModel = scheduled,
                     onOpenDetail = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
                     onOpenInsights = { nav.navigate(SPRINT_INSIGHTS_ROUTE) { launchSingleTop = true } },
                     serviceDesk = { app.aino.mobile.feature.tasks.ServiceDeskTab(tasks, user.role) },
@@ -1350,15 +1345,11 @@ private fun AuthenticatedShell(
             modifier = Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBars).padding(top = 64.dp, end = 12.dp),
         )
     }
-    // Tasks snackbars live at shell level so Undo / View survive the detail screen closing.
+    // Tasks snackbars live at shell level so Undo survives the detail screen closing.
     app.aino.mobile.feature.tasks.TaskNoticeHost(
         ticketSession,
         modifier = Modifier.align(Alignment.BottomCenter).windowInsetsPadding(WindowInsets.navigationBars).padding(bottom = if (fullScreen) 8.dp else 72.dp),
         onOpenTicket = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
-        onShowScheduled = { date ->
-            scheduled.showScheduled(date)
-            nav.navigate(AinoDestination.Tasks.route) { launchSingleTop = true }
-        },
     )
     // Direct Share: keep the latest chats published as share-sheet targets.
     val shareTargets = androidx.compose.runtime.remember(chatUi.conversations) {

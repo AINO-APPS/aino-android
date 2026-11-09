@@ -35,6 +35,6 @@ data class TaskShellUiState(
     val currentSprint get() = planScope.currentSprint
     val teamSprints get() = planScope.teamSprints
     val sprintsEnabled get() = planScope.sprintsEnabled
-    val visibleTabs get() = planningTabs(agileEnabled, teamSprints, currentSprintId)
+    val visibleTabs get() = planScope.visibleTabs
     val teamScope get() = planScope.teamScope
 }

@@ -91,6 +91,21 @@ class PlanViewModelTest {
         assertEquals(1, plan.ui.value.backlogTotal)
     }
 
+    @Test fun changingSprintDoesNotChangeTheTicketDueDate() {
+        val plan = PlanViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "[]".toByteArray()) }), session)
+        plan.updateDraft { it.copy(dueDate = "2026-10-10") }
+
+        plan.setDraftSprint(10)
+        assertEquals("2026-10-10", plan.ui.value.draft.dueDate)
+
+        plan.setDraftSprint(null)
+        assertEquals("2026-10-10", plan.ui.value.draft.dueDate)
+
+        val ticket = Task(11, "Keep its due date", dueDate = "2026-10-10")
+        plan.configureImport(ticket)
+        assertEquals("2026-10-10", plan.ui.value.importDueDate)
+    }
+
     @Test fun bulkPlacementUpdatesPlanBoardSearchAndDetailFromOneRequest() {
         var placed = false
         var bulkRequests = 0

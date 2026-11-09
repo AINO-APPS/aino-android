@@ -74,14 +74,6 @@ class TaskRepository(
     fun search(q: String): List<Task> = decode(api.execute(ApiRequest(path = searchQuery(q))))
 
     /**
-     * `GET /tasks/scheduled` — every unsprinted ticket with a planned day only.
-     * The date window still goes to the overlays endpoint (leave and holidays
-     * are calendar context, not the task set).
-     */
-    fun loadScheduled(filters: TaskFilters, teamScope: TeamScope = TeamScope()): List<Task> =
-        decode<TaskListResponse>(api.execute(ApiRequest(path = scheduledQuery(filters, teamScope)))).tasks
-
-    /**
      * `GET /org/teams` — the admin's team picker options. The endpoint returns a
      * plain array of team rows (see `modules/organization/teamListing.ts`).
      */
@@ -102,10 +94,6 @@ class TaskRepository(
     /** `GET /tasks/epics` — epics with their rollups. */
         fun loadEpics(): List<EpicSummary> =
             decode<EpicListResponse>(api.execute(ApiRequest(path = "tasks/epics"))).epics
-
-        /** `GET /tasks/schedule-overlays` — read-only leave, holidays and meetings. */
-        fun loadScheduleOverlays(from: String, to: String): ScheduleOverlays =
-            decode(api.execute(ApiRequest(path = "tasks/schedule-overlays?from=$from&to=$to")))
 
         /** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
         fun loadCompletionPreview(id: Long): CompletionPreview =
@@ -244,10 +232,6 @@ class TaskRepository(
     fun updateStatus(id: Long, status: String): Task =
         mutate("tasks/$id/status", TaskStatusPayload(status), "PATCH")
 
-    fun scheduleTask(id: Long, date: String): Task = mutate("tasks/$id/schedule", SchedulePayload(date), "PATCH")
-
-    fun unscheduleTask(id: Long): Task = mutate("tasks/$id/unschedule", Unit, "PATCH")
-
     fun assignSprint(id: Long, sprintId: Long?): Task =
         mutate("tasks/$id/assign-sprint", AssignSprintPayload(sprintId), "PATCH")
 
@@ -258,8 +242,6 @@ class TaskRepository(
         mutate<ProjectMovePayload, ProjectMoveResponse>("tasks/$id/move-project", ProjectMovePayload(projectId)).task
 
     fun deleteTask(id: Long): CancelTaskResponse = mutate("tasks/$id", Unit, "DELETE")
-
-    fun carryForward(): CarryForwardResponse = mutate("tasks/carry-forward", Unit)
 
     // ── Detail ───────────────────────────────────────────────────────────
     fun loadDetail(id: Long): Task = decode(api.execute(ApiRequest(path = "tasks/$id/detail")))

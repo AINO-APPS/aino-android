@@ -1,17 +1,14 @@
 package app.aino.mobile.feature.tasks
 
 /** Presentation values composed at the screen boundary, never retained by a ViewModel. */
-internal fun tasksScreenState(shell: TaskShellUiState, plan: PlanUiState, scheduled: ScheduledUiState): TaskUiState = TaskUiState(
+internal fun tasksScreenState(shell: TaskShellUiState, plan: PlanUiState): TaskUiState = TaskUiState(
     planScope = shell.planScope, tab = shell.tab, sheet = shell.sheet, refreshing = shell.refreshing,
     recentlyUpdated = plan.recentlyUpdated, tickets = plan.tickets,
-    error = scheduled.error ?: plan.error, confirm = scheduled.confirm ?: plan.confirm,
+    error = plan.error, confirm = plan.confirm,
     searchQuery = shell.searchQuery, searchResultIds = shell.searchResultIds,
     searching = shell.searching, searchOpen = shell.searchOpen,
-    scheduledTicketIds = scheduled.scheduledTicketIds, scheduledLoading = scheduled.scheduledLoading,
-    scheduledLoaded = scheduled.scheduledLoaded, scheduledFocus = scheduled.scheduledFocus,
-    scheduledWindow = scheduled.window,
     serviceDeskVersion = shell.serviceDeskVersion,
-    preferences = shell.preferences, overlays = scheduled.overlays, overlayTypes = scheduled.overlayTypes,
+    preferences = shell.preferences,
     planOpen = plan.planOpen, planTicketIds = plan.planTicketIds, planLoaded = plan.planLoaded,
     planBaseline = plan.planBaseline, planOffset = plan.planOffset, planHasMore = plan.planHasMore,
     quickFilters = plan.quickFilters, backlogPageSize = plan.backlogPageSize, backlogSort = plan.backlogSort,

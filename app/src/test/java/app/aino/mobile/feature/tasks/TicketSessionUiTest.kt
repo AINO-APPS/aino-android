@@ -175,33 +175,26 @@ class TicketSessionUiTest {
     fun reconnectResyncsEveryLoadedView() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
-        harness.scheduledViewModel.loadScheduled()
-        harness.await { harness.scheduledViewModel.ui.value.scheduledLoaded }
         val boardReads = harness.boardReads
         val planReads = harness.planReads
-        val scheduledReads = harness.scheduledReads
         val detailReads = harness.detailReads
         harness.boardTicket = harness.original.replace("Ship release", "Refreshed release")
         harness.detailResponse = harness.boardTicket
         harness.planRows = """{"id":203,"title":"Refreshed backlog","container":"backlog"}"""
-        harness.scheduledRows = """{"id":202,"title":"Refreshed schedule","container":"scheduled","planned_date":"${harness.scheduledViewModel.ui.value.window.first}"}"""
 
         harness.session.onReconnect()
         harness.await {
             harness.boardReads > boardReads &&
                 harness.planReads > planReads &&
-                harness.scheduledReads > scheduledReads &&
                 harness.detailReads > detailReads &&
                 harness.boardViewModel.ui.value.tasks.singleOrNull()?.title == "Refreshed release" &&
                 harness.detailViewModel.ui.value.detail?.title == "Refreshed release" &&
-                harness.viewModelPlan.ui.value.backlog.any { it.id == 203L } &&
-                harness.scheduledViewModel.ui.value.scheduled.any { it.id == 202L }
+                harness.viewModelPlan.ui.value.backlog.any { it.id == 203L }
         }
 
         assertEquals(boardReads + 1, harness.boardReads)
         // A concurrent Detail refresh invalidates Plan's aggregate baseline and retries its read.
         assertTrue(harness.planReads >= planReads + 1)
-        assertEquals(scheduledReads + 1, harness.scheduledReads)
         assertEquals(detailReads + 1, harness.detailReads)
     }
 
@@ -370,8 +363,6 @@ class TicketSessionUiTest {
     fun aCancelledTicketLeavesEveryLoadedViewIncludingDetailAndInlineComments() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
-        harness.scheduledViewModel.loadScheduled()
-        harness.await { harness.scheduledViewModel.ui.value.scheduledLoaded }
         harness.searchRows = harness.original
         harness.viewModel.setSearch("Ship")
         harness.await { harness.viewModel.searchResults.value.size == 1 }
@@ -392,7 +383,6 @@ class TicketSessionUiTest {
 
         assertTrue(harness.boardViewModel.ui.value.sprintBoard!!.tickets.isEmpty())
         assertTrue(harness.viewModelPlan.ui.value.backlog.none { it.id == 201L })
-        assertTrue(harness.scheduledViewModel.ui.value.scheduled.none { it.id == 201L })
     }
 
     @Test
@@ -493,53 +483,10 @@ class TicketSessionUiTest {
     }
 
     @Test
-    fun aCancelledScheduledTicketLeavesScheduledAndSearchResults() {
-        val harness = harness()
-        harness.loadBoardPlanAndDetail()
-        harness.scheduledViewModel.loadScheduled()
-        harness.await { harness.scheduledViewModel.ui.value.scheduledLoaded }
-        val plannedDay = LocalDate.now().plusDays(1).toString()
-        val scheduled = harness.original
-            .replace("\"sprint_id\":10", "\"sprint_id\":null")
-            .replace("\"container\":\"sprint\"", "\"container\":\"scheduled\",\"planned_date\":\"$plannedDay\"")
-
-        harness.saved = scheduled
-        harness.detailViewModel.schedule(201, plannedDay)
-        harness.await { harness.writes == 1 && harness.scheduledViewModel.ui.value.scheduled.size == 1 }
-        harness.searchRows = scheduled
-        harness.viewModel.setSearch("Ship")
-        harness.await { harness.viewModel.searchResults.value.size == 1 }
-
-        harness.saved = scheduled.replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
-        harness.detailViewModel.updateFields(
-            harness.detailViewModel.ui.value.detail!!,
-            buildJsonObject { put("workflow_state_key", "cancelled") },
-        )
-        harness.await {
-            harness.writes == 2 &&
-                harness.scheduledViewModel.ui.value.scheduled.isEmpty() &&
-                harness.viewModel.searchResults.value.isEmpty() &&
-                harness.detailViewModel.ui.value.detail == null
-        }
-
-        assertTrue(harness.scheduledViewModel.ui.value.scheduled.none { it.id == 201L })
-        assertTrue(harness.viewModel.searchResults.value.none { it.id == 201L })
-    }
-
-    @Test
     fun removingATicketFromTheSharedStoreRemovesItFromEveryLoadedView() {
         val harness = harness()
         harness.loadBoardPlanAndDetail()
-        harness.scheduledViewModel.loadScheduled()
-        harness.await { harness.scheduledViewModel.ui.value.scheduledLoaded }
-        val plannedDay = LocalDate.now().plusDays(1).toString()
-        val scheduled = harness.original
-            .replace("\"sprint_id\":10", "\"sprint_id\":null")
-            .replace("\"container\":\"sprint\"", "\"container\":\"scheduled\",\"planned_date\":\"$plannedDay\"")
-        harness.saved = scheduled
-        harness.detailViewModel.schedule(201, plannedDay)
-        harness.await { harness.writes == 1 && harness.scheduledViewModel.ui.value.scheduled.size == 1 }
-        harness.searchRows = scheduled
+        harness.searchRows = harness.original
         harness.viewModel.setSearch("Ship")
         harness.await { harness.viewModel.searchResults.value.size == 1 }
         harness.openInlineComments()
@@ -552,7 +499,6 @@ class TicketSessionUiTest {
         harness.await {
             harness.boardViewModel.ui.value.tasks.isEmpty() &&
                 harness.viewModelPlan.ui.value.backlog.none { it.id == 201L } &&
-                harness.scheduledViewModel.ui.value.scheduled.isEmpty() &&
                 harness.viewModel.searchResults.value.isEmpty() &&
                 harness.detailViewModel.ui.value.detail == null &&
                 harness.inlineComments == null &&
@@ -618,52 +564,6 @@ class TicketSessionUiTest {
 
         assertEquals(listOf("New ticket"), harness.viewModelPlan.ui.value.backlog.map { it.title })
         assertEquals(1, harness.viewModelPlan.ui.value.backlogTotal)
-    }
-
-    @Test
-    fun schedulingUsesTheFullResponseToRemovePlanWorkAndUpdateDetail() {
-        val harness = harness()
-        harness.loadBoardPlanAndDetail()
-        harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
-            .replace("\"container\":\"sprint\"", "\"container\":\"scheduled\",\"planned_date\":\"2026-11-03\"")
-
-        harness.scheduledViewModel.schedule(201, "2026-11-03")
-        harness.await { harness.writes == 1 && harness.detailViewModel.ui.value.detail?.container == "scheduled" }
-        assertTrue(harness.boardViewModel.ui.value.tasks.isEmpty())
-        assertTrue(harness.viewModelPlan.ui.value.backlog.isEmpty())
-        assertEquals(1, harness.detailReads)
-
-        harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
-            .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
-        harness.scheduledViewModel.unschedule(201, "Ship release", ask = false)
-        harness.await { harness.writes == 2 && harness.detailViewModel.ui.value.detail?.container == "backlog" }
-        assertEquals(listOf(201L), harness.viewModelPlan.ui.value.backlog.map { it.id })
-        assertEquals(1, harness.detailReads)
-    }
-
-    @Test
-    fun scheduledResultsFollowTheSharedPlannedDayIntoAndOutOfTheWindow() {
-        val harness = harness()
-        val plannedDay = LocalDate.now().plusDays(1).toString()
-        val scheduled = harness.original
-            .replace("\"sprint_id\":10", "\"sprint_id\":null")
-            .replace("\"container\":\"sprint\"", "\"container\":\"scheduled\",\"planned_date\":\"$plannedDay\"")
-        val outsideWindow = LocalDate.now().plusDays(90).toString()
-        harness.loadBoardPlanAndDetail()
-        harness.scheduledViewModel.loadScheduled()
-        harness.await { harness.scheduledViewModel.ui.value.scheduledLoaded && harness.scheduledViewModel.ui.value.scheduled.isEmpty() }
-
-        harness.saved = scheduled
-        harness.detailViewModel.schedule(201, plannedDay)
-        harness.await {
-            harness.writes == 1 && harness.scheduledViewModel.ui.value.scheduled.singleOrNull()?.plannedDate == plannedDay
-        }
-        assertEquals(plannedDay, harness.scheduledViewModel.ui.value.scheduled.single().plannedDate)
-
-        harness.saved = scheduled.replace(plannedDay, outsideWindow)
-        harness.detailViewModel.schedule(201, outsideWindow)
-        harness.await { harness.writes == 2 && harness.scheduledViewModel.ui.value.scheduled.isEmpty() }
-        assertTrue(harness.scheduledViewModel.ui.value.scheduled.none { it.id == 201L })
     }
 
     @Test
@@ -815,7 +715,6 @@ internal class TicketSessionHarness {
     @Volatile var planReads = 0
     @Volatile var boardReads = 0
     @Volatile var sprintStatsReads = 0
-    @Volatile var scheduledReads = 0
     @Volatile var commentReads = 0
     @Volatile var commentWrites = 0
     @Volatile var commentsResponse = "[]"
@@ -835,7 +734,6 @@ internal class TicketSessionHarness {
     @Volatile var cancelledRows = ""
     /** The Ticket `DELETE tasks/201` answers with, or blank for a bare `{}`. */
     @Volatile var cancelResponse = ""
-    @Volatile var scheduledRows = ""
     @Volatile var searchRows = ""
     @Volatile var detailResponse = original
     @Volatile var detailResponseGate: HeldTicketResponse? = null
@@ -881,10 +779,6 @@ internal class TicketSessionHarness {
                 planReads++
                 if (rejectPlanLoads) throw java.io.IOException("offline")
                 """{"tasks":[$planRows],"pagination":{"total":0,"hasMore":false}}"""
-            }
-            request.path.startsWith("tasks/scheduled") -> {
-                scheduledReads++
-                """{"tasks":[$scheduledRows]}"""
             }
             request.path.startsWith("tasks/search?") -> "[$searchRows]"
             request.path.startsWith("tasks?") && "status=cancelled" in request.path -> {
@@ -940,7 +834,6 @@ internal class TicketSessionHarness {
             request.path in setOf("tasks/labels", "tasks/assignable-users", "projects") -> "[]"
             (request.path == "tasks/201" && request.method == "PUT") ||
                 request.path == "tasks/201/status" || request.path == "tasks/201/assign-sprint" ||
-                request.path == "tasks/201/schedule" || request.path == "tasks/201/unschedule" ||
                 (request.path == "tasks/backlog" && request.method == "POST") -> {
                 if (request.method == "PUT") {
                     fieldPayload = request.body?.let { Json.parseToJsonElement(it.toString(Charsets.UTF_8)).jsonObject }
@@ -965,7 +858,6 @@ internal class TicketSessionHarness {
     val session = TicketSession()
     val viewModel = TaskViewModel(repository, ticketSession = session)
     val viewModelPlan = PlanViewModel(repository, viewModel.ticketSession)
-    val scheduledViewModel = ScheduledViewModel(repository, session)
     val boardViewModel = SprintBoardViewModel(repository, session)
     private val detailModel = lazy {
         TicketDetailViewModel(201, repository, session).also { viewModels.put("detail", it) }
@@ -981,7 +873,6 @@ internal class TicketSessionHarness {
     private val viewModels = ViewModelStore().apply {
         put("tasks", viewModel)
         put("plan", viewModelPlan)
-        put("scheduled", scheduledViewModel)
         put("board", boardViewModel)
     }
 
@@ -1039,7 +930,7 @@ internal class TicketSessionHarness {
         val state = viewModel.ui.value
         assertTrue(
             "Timed out waiting for UI state: user=${state.userId}, " +
-                "board=${boardViewModel.ui.value.boardTicketIds}, plan=${viewModelPlan.ui.value.planTicketIds}, scheduled=${scheduledViewModel.ui.value.scheduledTicketIds}, " +
+                "board=${boardViewModel.ui.value.boardTicketIds}, plan=${viewModelPlan.ui.value.planTicketIds}, " +
                 "search=${state.searchResultIds}, inline=${inlineComments?.items?.size}, " +
                 "detail=${if (detailModel.isInitialized()) detailViewModel.ui.value.detail?.id else null}, commentReads=$commentReads, writes=$writes",
             condition(),

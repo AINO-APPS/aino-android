@@ -24,7 +24,6 @@ class PlanScopeBehaviorTest {
     private lateinit var session: TicketSession
     private lateinit var viewModel: TaskViewModel
     private lateinit var planViewModel: PlanViewModel
-    private lateinit var scheduledViewModel: ScheduledViewModel
     private lateinit var boardViewModel: SprintBoardViewModel
     private lateinit var reader: TaskViewModel
     private lateinit var viewModels: ViewModelStore
@@ -35,13 +34,11 @@ class PlanScopeBehaviorTest {
         session = TicketSession()
         viewModel = TaskViewModel(TaskRepository(api), ticketSession = session)
         planViewModel = PlanViewModel(TaskRepository(api), session)
-        scheduledViewModel = ScheduledViewModel(TaskRepository(api), session)
         boardViewModel = SprintBoardViewModel(TaskRepository(api), session)
         reader = TaskViewModel(TaskRepository(api), ticketSession = session)
         viewModels = ViewModelStore().apply {
             put("tasks", viewModel)
             put("plan", planViewModel)
-            put("scheduled", scheduledViewModel)
             put("board", boardViewModel)
             put("reader", reader)
         }
@@ -63,10 +60,8 @@ class PlanScopeBehaviorTest {
         )
         await { boardViewModel.ui.value.tasks.map { it.id } == listOf(401L) }
         viewModel.loadBacklog()
-        scheduledViewModel.loadScheduled()
         await {
-            planViewModel.ui.value.planLoaded && planViewModel.ui.value.backlog.map { it.id } == listOf(301L) &&
-                scheduledViewModel.ui.value.scheduled.map { it.id } == listOf(501L)
+            planViewModel.ui.value.planLoaded && planViewModel.ui.value.backlog.map { it.id } == listOf(301L)
         }
         val filters = TaskFilters(priority = "medium")
         viewModel.setFilters(filters)
@@ -74,11 +69,9 @@ class PlanScopeBehaviorTest {
         viewModel.selectTeam(12, persist = false)
         assertTrue(boardViewModel.ui.value.tasks.none { it.teamId == 11L })
         assertTrue(planViewModel.ui.value.backlog.none { it.teamId == 11L })
-        assertTrue(scheduledViewModel.ui.value.scheduled.none { it.teamId == 11L })
         await {
             planViewModel.ui.value.planLoaded && planViewModel.ui.value.backlog.map { it.id } == listOf(302L) &&
-                boardViewModel.ui.value.tasks.map { it.id } == listOf(402L) &&
-                scheduledViewModel.ui.value.scheduled.map { it.id } == listOf(502L)
+                boardViewModel.ui.value.tasks.map { it.id } == listOf(402L)
         }
 
         api.blockNextTeamOneLoad()
@@ -87,7 +80,6 @@ class PlanScopeBehaviorTest {
 
         assertEquals(listOf(301L), planViewModel.ui.value.backlog.map { it.id })
         assertEquals(listOf(401L), boardViewModel.ui.value.tasks.map { it.id })
-        assertEquals(listOf(501L), scheduledViewModel.ui.value.scheduled.map { it.id })
         assertEquals(11L, viewModel.ui.value.selectedTeamId)
         assertEquals("Team One ticket", planViewModel.ui.value.backlog.single().title)
         await { reader.ui.value.selectedTeamId == 11L && reader.ui.value.filters == filters }
