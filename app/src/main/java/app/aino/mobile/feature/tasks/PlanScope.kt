@@ -29,6 +29,13 @@ data class PlanScope(
     val filters: TaskFilters = TaskFilters(),
     val selectedEpicId: Long? = null,
 ) {
+    val selectedProject: ProjectOption? get() = projects.firstOrNull { it.id == selectedProjectId }
+    val projectType: String get() = selectedProject?.type ?: "scrum"
+    val planTabs: List<String> get() = selectedProject?.planTabs ?: DEFAULT_SCRUM_PLAN_TABS
+    val kanbanBacklogEnabled: Boolean get() = selectedProject?.kanbanBacklogEnabled == true
+    val wipEnabled: Boolean get() = selectedProject?.wipEnabled == true
+    val canChangeType: Boolean get() = selectedProject?.capabilities?.canChangeType == true
+
     internal fun contains(ticket: Task): Boolean = when {
         projectScoped -> selectedProjectId != null && ticket.projectId == selectedProjectId
         !showsTeamPicker(role) -> teamId == null || ticket.teamId == teamId

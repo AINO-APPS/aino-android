@@ -296,7 +296,10 @@ data class SprintTotals(
 @Serializable
 data class SprintStats(val totals: SprintTotals = SprintTotals())
 
-/** Lightweight `GET /projects` row for pickers (full CRUD lives in the Projects page). */
+/** Metadata fallback only; older servers still use the existing planning-tab behavior. */
+internal val DEFAULT_SCRUM_PLAN_TABS = listOf("backlog", "sprint", "reports")
+
+/** Lightweight `GET /projects` row for pickers (project settings remain web-only). */
 @Serializable
 data class ProjectOption(
     val id: Long,
@@ -305,7 +308,21 @@ data class ProjectOption(
     val color: String? = null,
     @SerialName("is_archived") val archived: Boolean = false,
     val capabilities: ProjectCapabilities? = null,
-)
+    val type: String = "scrum",
+    val planTabs: List<String> = DEFAULT_SCRUM_PLAN_TABS,
+    val availableTypes: List<String> = emptyList(),
+    val changeableTypes: List<String> = emptyList(),
+    @SerialName("kanban_backlog_enabled") val kanbanBacklogEnabled: Boolean = false,
+    @SerialName("wip_enabled") val wipEnabled: Boolean = false,
+) {
+    val typeDisplayName: String
+        get() = when (type) {
+            "scrum" -> "Scrum"
+            "kanban" -> "Kanban"
+            "task_list" -> "Task list"
+            else -> type.replace('_', ' ').replaceFirstChar(Char::uppercase)
+        }
+}
 
 @Serializable
 data class ProjectCapabilities(
@@ -315,6 +332,7 @@ data class ProjectCapabilities(
     val canEditWorkflow: Boolean = false,
     val canRenameKey: Boolean = false,
     val canArchive: Boolean = false,
+    val canChangeType: Boolean = false,
 )
 
 // ─── Agile config (`GET /agile/config`, AgileConfigContext) ─────────────────

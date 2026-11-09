@@ -360,17 +360,28 @@ private fun ProjectPicker(ui: TaskUiState, viewModel: TaskViewModel) {
     val colors = LocalWebColors.current
     var open by remember { mutableStateOf(false) }
     val scope = ui.planScope
-    val current = scope.projects.firstOrNull { it.id == scope.selectedProjectId }
+    val current = scope.selectedProject
     Box {
         TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-            Text(current?.key ?: "Select project", color = colors.text, fontSize = 0.78.rem, maxLines = 1)
+            Column {
+                Text(
+                    current?.key ?: "Select project",
+                    color = colors.text,
+                    fontSize = 0.78.rem,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                current?.let {
+                    Text(it.typeDisplayName, color = colors.textMuted, fontSize = 0.7.rem, maxLines = 1)
+                }
+            }
             Icon(HeroIcons.ChevronDown, null, tint = colors.textMuted, modifier = Modifier.size(14.dp))
         }
         androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.background(colors.bgElevated)) {
             scope.projects.forEach { project ->
                 MenuItem(
                     if (project.id == scope.selectedProjectId) HeroIcons.Check else HeroIcons.Folder,
-                    "${project.key} · ${project.name}" + if (project.archived) " · Archived" else "",
+                    "${project.key} · ${project.name} · ${project.typeDisplayName}" + if (project.archived) " · Archived" else "",
                 ) {
                     open = false
                     viewModel.selectProject(project.id)
