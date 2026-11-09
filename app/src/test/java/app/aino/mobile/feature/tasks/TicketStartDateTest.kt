@@ -201,8 +201,8 @@ class TicketStartDateTest {
         harness.loadBoardPlanAndDetail()
 
         val detail = requireNotNull(harness.detailViewModel.ui.value.detail)
-        assertEquals(LocalDate.of(2026, 11, 10), scheduleDateOf(detail))
-        assertEquals(LocalDate.of(2026, 11, 10), scheduleDateOf(harness.boardViewModel.ui.value.tasks.single()))
+        assertEquals(LocalDate.of(2026, 11, 10), localDateOf(detail.startDate))
+        assertEquals(LocalDate.of(2026, 11, 10), localDateOf(harness.boardViewModel.ui.value.tasks.single().startDate))
         assertEquals(10L, detail.sprintId)
         assertEquals("sprint", detail.container)
     }

@@ -84,6 +84,24 @@ class TaskCardUiTest {
     }
 
     @Test
+    fun sprintCardShowsTicketDueDateSeparatelyFromSprintEndDate() {
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                TaskCardM3(
+                    task = task.copy(dueDate = "2026-10-10"),
+                    agile = AgileConfig(),
+                    onOpen = {},
+                    compact = true,
+                    sprintEndDate = "2026-10-14",
+                )
+            }
+        }
+
+        compose.onNodeWithText("Due Oct 10, 2026").assertIsDisplayed()
+        compose.onNodeWithText("Sprint ends Oct 14, 2026").assertIsDisplayed()
+    }
+
+    @Test
     fun remainingEffortBarUsesForecastAndKeepsOriginalBasedOverrun() {
         val session = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) })).ticketSession
         val model = TicketDetailViewModel(task.id, TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), session)
@@ -156,13 +174,12 @@ class TaskCardUiTest {
     fun backlogShowsOnlyTheFourPreviewQuickChipsInline() {
         val vm = TaskViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }))
         val vmPlan = PlanViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
-        val vmScheduled = ScheduledViewModel(TaskRepository(ApiClient { ApiResponse(200, emptyMap(), "{}".toByteArray()) }), vm.ticketSession)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                BacklogPage(TaskUiState(tickets = mapOf(task.id to task), planTicketIds = listOf(task.id)), vm, vmPlan, vmScheduled, {})
+                BacklogPage(TaskUiState(tickets = mapOf(task.id to task), planTicketIds = listOf(task.id)), vm, vmPlan, {})
             }
         }
-        listOf("All", "Mine", "High", "Unscheduled").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+        listOf("All", "Mine", "High", "No start date").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
         listOf("Medium", "Low", "Compact", "All epics", "Priority").forEach { compose.onNodeWithText(it).assertDoesNotExist() }
     }
 }

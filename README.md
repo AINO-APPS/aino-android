@@ -47,14 +47,14 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
 
 The Activity-scoped `TasksShellViewModel` owns team scope, tabs, shared sheets,
 search membership, preferences and metadata. It is the only Plan-scope writer.
-Its `TaskShellUiState` contains no Tickets or Board, Plan, Scheduled or Detail
+Its `TaskShellUiState` contains no Tickets or Board, Plan or Detail
 state; search rows are a session-reset projection, not another Ticket owner.
 `TaskViewModel` remains a source-compatible alias for the shell. `TasksScreen`
 composes the owners' states only at the UI boundary. List actions belong to their
 surface's ViewModel, and the inline comments sheet has its own id-keyed Detail
 ViewModel, disposed when the sheet closes. No ViewModel references another.
 The app shell forwards realtime, reconnect and visible polling directly to the
-signed-in `TicketSession`, and schedule notice links go to `ScheduledViewModel`.
+signed-in `TicketSession`.
 Service desk and Sprint insights retain their independent reads and selection.
 
 Project reads and the shared `PlanScope` retain the server's project type,
@@ -62,16 +62,18 @@ ordered `planTabs`, Kanban backlog/WIP switches and `canChangeType` capability.
 The project switcher shows Scrum, Kanban or Task list, including archived
 projects. Responses from older Phase 2 servers without these fields use Scrum
 metadata defaults and do not grant type changes. Project settings remain
-web-only. Kanban projects use the server's project-board response for workflow
+web-only. Supported tabs follow the server's ordered `planTabs`: Scrum keeps
+Backlog, Sprint and Reports even without an active sprint. The empty Sprint
+surface links to Backlog. Older project responses use the Scrum default; unknown
+future tabs degrade safely to Backlog without enabling new planning surfaces.
+Kanban projects use the server's project-board response for workflow
 columns, tickets and WIP occupancy; the separate project backlog is shown only
-when the server enables it. Scrum planning and Scheduled behavior remain
-unchanged. Task List views remain outside this Android slice.
+when the server enables it. Task List views remain outside this Android slice.
 
-The Activity-scoped `ScheduledViewModel` owns Scheduled membership ids and the
-visible date window, scheduling and unscheduling (including Undo), overlays and
-one-shot date focus, including daily carry-forward. It reads the session Ticket store and Plan scope without
-referencing another ViewModel. Team switches restore cached ids before refreshing;
-the shell only coordinates tab navigation through session requests.
+Scheduled planning, date-placement actions, daily carry-forward and team automatic
+sprint configuration are no longer exposed or called by the app. Start/due dates
+remain independent ticket fields. Selecting a sprint does not prefill or replace
+the due date, and board cards show the ticket due date and sprint end separately.
 
 The Activity-scoped `PlanViewModel` owns Backlog paging, sort and read-adjusted
 totals, Completed, selection and bulk actions, the create draft, epics, import

@@ -315,7 +315,7 @@ data class SprintTotals(
 @Serializable
 data class SprintStats(val totals: SprintTotals = SprintTotals())
 
-/** Metadata fallback only; older servers still use the existing planning-tab behavior. */
+/** Older servers omit the project-type planning contract. */
 internal val DEFAULT_SCRUM_PLAN_TABS = listOf("backlog", "sprint", "reports")
 
 /** Lightweight `GET /projects` row for pickers (project settings remain web-only). */
@@ -526,9 +526,6 @@ data class TaskStatusPayload(val status: String)
 @Serializable
 data class TaskCommentPayload(val content: String)
 
-@Serializable
-data class SchedulePayload(val date: String)
-
 /** `PUT /sprints/:id` — the only field the planner edits inline. */
 @Serializable
 data class SprintGoalPayload(val goal: String)
@@ -541,9 +538,6 @@ data class CompleteSprintPayload(val rolloverTo: String)
 
 @Serializable
 data class BlockPayload(@SerialName("is_blocked") val isBlocked: Boolean, @SerialName("blocked_reason") val blockedReason: String?)
-
-@Serializable
-data class CarryForwardResponse(val message: String = "", val carried: Int = 0)
 
 @Serializable
 data class TaskMessageResponse(val message: String = "")

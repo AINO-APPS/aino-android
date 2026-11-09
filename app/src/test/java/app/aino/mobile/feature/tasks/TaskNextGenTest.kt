@@ -326,9 +326,9 @@ class TaskNextGenTest {
     }
 
     @Test
-    fun theSprintTabHasBothSurfaces() {
-        // The Board/Plan switch is gone; the planner is a Backlog action now.
-        assertEquals(TaskTab.Scheduled, TaskTab.fromKey("scheduled"))
+    fun reportsReplaceTheRetiredScheduledTab() {
+        assertEquals(TaskTab.Reports, TaskTab.fromKey("reports"))
+        assertNull(TaskTab.fromKey("scheduled"))
         assertNull(TaskTab.fromKey("nonsense"))
     }
 

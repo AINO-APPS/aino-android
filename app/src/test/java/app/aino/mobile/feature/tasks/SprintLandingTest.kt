@@ -39,7 +39,7 @@ class SprintLandingTest {
 
     @Test
     fun anExplicitTabIsNeverOverridden() {
-        assertEquals(TaskTab.Scheduled, landingTab(TaskTab.Scheduled, listOf(active), active.id, agileEnabled = true))
+        assertEquals(TaskTab.Reports, landingTab(TaskTab.Reports, listOf(active), active.id, agileEnabled = true))
         assertEquals(TaskTab.ServiceDesk, landingTab(TaskTab.ServiceDesk, listOf(active), active.id, agileEnabled = true))
     }
 }

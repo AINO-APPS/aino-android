@@ -351,7 +351,7 @@ internal fun PriorityGlyph(priority: String, modifier: Modifier = Modifier) {
 // ── Task card ────────────────────────────────────────────────────────────
 
 /**
- * The one task card used by the Sprint board, the Backlog and Scheduled —
+ * The one task card used by the Sprint board and Backlog —
  * the same anatomy as web's `TaskCardParts`:
  *
  *   top     KEY · points · blocked              priority  [menu]
@@ -370,11 +370,13 @@ internal fun TaskCardM3(
     modifier: Modifier = Modifier,
     highlighted: Boolean = false,
     showStatus: Boolean = false,
+    /** A sprint deadline is context, not a replacement for the ticket's due date. */
+    sprintEndDate: String? = null,
     onLongPress: (() -> Unit)? = null,
     /** Accessibility label for the long-press gesture. */
     longPressLabel: String = "More actions",
     onComments: (() -> Unit)? = null,
-    /** Footer actions: selection, schedule, reschedule. */
+    /** Footer actions such as selection. */
     trailing: (@Composable () -> Unit)? = null,
     /** Top-right slot, reserved for the overflow menu so it is always visible. */
     topTrailing: (@Composable () -> Unit)? = null,
@@ -389,7 +391,7 @@ internal fun TaskCardM3(
     val haptics = LocalHapticFeedback.current
     val done = task.isCompleted || stateOf(task, agile)?.isTerminal == true
     val points = if (agile.features.storyPoints) formatPoints(task.storyPoints) else ""
-    val due = formatDueDate(task.startDate ?: task.dueDate)
+    val due = formatDueDate(if (sprintEndDate != null) task.dueDate else task.startDate ?: task.dueDate)
     val overdue = isDueOverdue(task.dueDate) && !done
     val ring = when {
         selected -> colors.primary
@@ -489,16 +491,21 @@ internal fun TaskCardM3(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(
+            FlowRow(
                 Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 if (showStatus || done) {
                     val state = stateOf(task, agile)
                     CardStatusPill(state?.let(::stateLabel) ?: columnOf(task.workflowStateKey).label, state?.let { hexColor(it.color, colors.textMuted) } ?: colors.textMuted)
                 }
-                if (overdue) {
+                if (sprintEndDate != null) {
+                    task.dueDate?.let {
+                        MetaChip(HeroIcons.CalendarDays, "Due ${formatDate(it)}", if (overdue) colors.dangerInk else colors.textSecondary, bold = overdue)
+                    }
+                    MetaChip(HeroIcons.CalendarDays, "Sprint ends ${formatDate(sprintEndDate)}", colors.textSecondary)
+                } else if (overdue) {
                     MetaChip(HeroIcons.Clock, "Overdue", colors.dangerInk, bold = true)
                 } else {
                     due?.let { MetaChip(HeroIcons.CalendarDays, it, colors.textSecondary) }
@@ -792,14 +799,13 @@ internal fun PropertyText(text: String, muted: Boolean = false, color: Color? = 
 
 /**
  * The single collector of [TicketSession.notices], hosted by the app shell so a
- * notice raised while the detail screen closes (schedule, delete…) still shows.
+ * notice raised while the detail screen closes still shows.
  */
 @Composable
 fun TaskNoticeHost(
     session: TicketSession,
     modifier: Modifier = Modifier,
     onOpenTicket: (Long) -> Unit = {},
-    onShowScheduled: (String) -> Unit = {},
 ) {
     val host = remember { androidx.compose.material3.SnackbarHostState() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -816,7 +822,6 @@ fun TaskNoticeHost(
                 if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
                     when {
                         notice.openTicketId != null -> onOpenTicket(notice.openTicketId)
-                        notice.scheduledDate != null -> onShowScheduled(notice.scheduledDate)
                         else -> notice.action?.invoke()
                     }
                 }

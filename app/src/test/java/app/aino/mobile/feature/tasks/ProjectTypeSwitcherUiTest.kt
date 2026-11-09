@@ -2,7 +2,6 @@ package app.aino.mobile.feature.tasks
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -57,7 +56,6 @@ class ProjectTypeSwitcherUiTest {
         compose.onNodeWithText("Kanban", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("FLOW", useUnmergedTree = true).performClick()
         compose.onNodeWithText("FLOW · Flow · Kanban").assertIsDisplayed()
-        compose.onNodeWithText("Board").assertIsDisplayed()
         compose.onNodeWithText("Backlog").assertDoesNotExist()
         compose.onNodeWithText("Scheduled").assertDoesNotExist()
         compose.onNodeWithText("OPS · Operations · Task list · Archived").assertIsDisplayed().performClick()
@@ -70,14 +68,16 @@ class ProjectTypeSwitcherUiTest {
         }
     }
 
-    @Test fun phaseTwoProjectsWithoutTypeFieldsStillRenderAndKeepLegacyPlanning() {
+    @Test fun phaseTwoProjectsWithoutTypeFieldsStillRenderWithSafeScrumPlanning() {
         showProjects("""[
             {"id":3,"key":"OLD","name":"Old project",
                 "capabilities":{"canAdminister":true,"canCreateTickets":true}}
         ]""")
 
         compose.onNodeWithText("Scrum", useUnmergedTree = true).assertIsDisplayed()
-        compose.onNodeWithText("Scheduled").assertIsDisplayed()
+        compose.onNodeWithText("Scheduled").assertDoesNotExist()
+        compose.onNodeWithText("Sprint").assertIsDisplayed()
+        compose.onNodeWithText("Reports").assertIsDisplayed()
         compose.onNodeWithText("OLD", useUnmergedTree = true).performClick()
         compose.onNodeWithText("OLD · Old project · Scrum").assertIsDisplayed()
         compose.runOnIdle {
@@ -120,18 +120,16 @@ class ProjectTypeSwitcherUiTest {
         })
         val shell = TaskViewModel(repository, ticketSession = session)
         val plan = PlanViewModel(repository, session)
-        val scheduled = ScheduledViewModel(repository, session)
         val board = SprintBoardViewModel(repository, session)
         val projectBoard = ProjectBoardViewModel(repository, session)
         viewModels.put("shell", shell)
         viewModels.put("plan", plan)
-        viewModels.put("scheduled", scheduled)
         viewModels.put("board", board)
         viewModels.put("project-board", projectBoard)
         shell.bind(1, "employee", "Team", agileEnabled = false, teamId = 8)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                TasksScreen(shell, plan, scheduled, board, projectBoard, {}, {}, {})
+                TasksScreen(shell, plan, board, projectBoard, {}, {}, {})
             }
         }
         compose.waitUntil(5_000) { shell.ui.value.teamResolved }

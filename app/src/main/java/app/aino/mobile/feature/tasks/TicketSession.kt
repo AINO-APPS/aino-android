@@ -43,9 +43,6 @@ class TicketSession {
     private val mutablePlanRequests = MutableSharedFlow<PlanRequest>(extraBufferCapacity = 32)
     internal val planRequests = mutablePlanRequests.asSharedFlow()
     internal fun requestPlan(request: PlanRequest) { mutablePlanRequests.tryEmit(request) }
-    private val mutableScheduledRequests = MutableSharedFlow<ScheduledRequest>(extraBufferCapacity = 32)
-    internal val scheduledRequests = mutableScheduledRequests.asSharedFlow()
-    internal fun requestScheduled(request: ScheduledRequest) { mutableScheduledRequests.tryEmit(request) }
     private val mutableShellRequests = MutableSharedFlow<ShellRequest>(extraBufferCapacity = 32)
     internal val shellRequests = mutableShellRequests.asSharedFlow()
     internal fun requestShell(request: ShellRequest) { mutableShellRequests.tryEmit(request) }
@@ -186,16 +183,7 @@ internal sealed interface PlanRequest {
     data class CreateForColumn(val state: WorkflowState) : PlanRequest
 }
 
-internal sealed interface ScheduledRequest {
-    data object CarryForward : ScheduledRequest
-    data object Load : ScheduledRequest
-    data object ReloadLoaded : ScheduledRequest
-    data class Show(val date: String?) : ScheduledRequest
-}
-
 internal sealed interface ShellRequest {
-    data object ShowScheduled : ShellRequest
-    data object ReloadScheduledIfVisible : ShellRequest
     data object CloseSheet : ShellRequest
     data class OpenSheet(val sheet: TaskSheet) : ShellRequest
     data class SelectSprint(val id: Long) : ShellRequest

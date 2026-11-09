@@ -411,32 +411,6 @@ class TicketDetailViewModel(
         }
     }
 
-    fun schedule(taskId: Long, date: String, closeAfter: Boolean = false) {
-        val task = _ui.value.detail ?: return
-        if (taskId != ticketId || date.isEmpty() || !allowed(task, TaskCapability.Schedule)) return
-        placement(
-            { repository.scheduleTask(ticketId, date) },
-            TaskNotice("Scheduled for ${formatDate(date)}", "View", scheduledDate = date),
-            closeAfter,
-        )
-    }
-    fun unschedule(taskId: Long, title: String?, closeAfter: Boolean = false, ask: Boolean = true) {
-        val task = _ui.value.detail ?: return
-        if (taskId != ticketId || !allowed(task, TaskCapability.Schedule)) return
-        val previousDate = task.plannedDate?.take(10)
-        val notice = if (previousDate == null) TaskNotice("Moved to backlog")
-        else TaskNotice("Moved to backlog", "Undo", action = {
-            ticketSession.launch {
-                runCatching { withContext(Dispatchers.IO) { repository.scheduleTask(ticketId, previousDate) } }.fold(
-                    onSuccess = { save(it) },
-                    onFailure = { ticketSession.publishNotice(TaskNotice("Failed to undo move")) },
-                )
-            }
-        })
-        val action = { placement({ repository.unscheduleTask(ticketId) }, notice, closeAfter); Unit }
-        if (ask) confirm("Move to Backlog", "Move \"${title ?: "this task"}\" to backlog? It will be removed from the planner.", "Move to Backlog", action = action)
-        else action()
-    }
     fun assignSprint(task: Task, sprintId: Long?) {
         if (!allowed(task, TaskCapability.PlaceInSprint)) return
         val name = _ui.value.sprints.firstOrNull { it.id == sprintId }?.name

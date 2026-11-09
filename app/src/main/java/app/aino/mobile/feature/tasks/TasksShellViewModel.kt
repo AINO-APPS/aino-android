@@ -73,10 +73,6 @@ class TasksShellViewModel(
         ticketScope.launch {
             this@TasksShellViewModel.ticketSession.shellRequests.collect { request ->
                 when (request) {
-                    ShellRequest.ShowScheduled -> _ui.update {
-                        it.copy(tab = normalizeTab(TaskTab.Scheduled, it.visibleTabs), searchOpen = false)
-                    }
-                    ShellRequest.ReloadScheduledIfVisible -> if (_ui.value.tab == TaskTab.Scheduled) loadScheduled()
                     ShellRequest.CloseSheet -> closeSheet()
                     is ShellRequest.OpenSheet -> openSheet(request.sheet)
                     is ShellRequest.SelectSprint -> selectSprint(request.id)
@@ -155,12 +151,10 @@ class TasksShellViewModel(
             )
             base.copy(
                 planScope = planScope,
-                // Sprint switched off mid-session (agile, or no current sprint):
-                // bounce off the board rather than show a tab that is gone.
                 tab = if (changedUser) TaskTab.Backlog
                 else normalizeTab(
                     current.tab,
-                    planningTabs(planScope, agileEnabled, planScope.teamSprints, planScope.currentSprintId),
+                    planScope.visibleTabs,
                 ),
             )
         }
@@ -264,7 +258,6 @@ class TasksShellViewModel(
                 )
             }
             landingApplied = true
-            ticketSession.requestScheduled(ScheduledRequest.CarryForward)
             reloadTab()
             _ui.update { it.copy(refreshing = false) }
         }
@@ -285,8 +278,6 @@ class TasksShellViewModel(
                 if (state.tab == TaskTab.Sprint) loadSprint()
                 else ticketSession.requestBoard(BoardRequest.ReloadLoaded)
                 ticketSession.requestPlan(PlanRequest.ReloadLoaded)
-                if (state.tab == TaskTab.Scheduled) loadScheduled()
-                else ticketSession.requestScheduled(ScheduledRequest.ReloadLoaded)
                 if (state.tab == TaskTab.ServiceDesk) reloadTab()
             }
         }
@@ -295,16 +286,12 @@ class TasksShellViewModel(
     private fun reloadTab() {
         when (_ui.value.tab) {
             TaskTab.Sprint -> loadSprint()
+            TaskTab.Reports -> Unit
             TaskTab.KanbanBoard -> Unit
             TaskTab.Backlog -> if (_ui.value.planScope.projectType != "kanban") loadBacklog()
-            TaskTab.Scheduled -> loadScheduled()
             TaskTab.ServiceDesk -> _ui.update { it.copy(serviceDeskVersion = it.serviceDeskVersion + 1) }
         }
     }
-
-    // ── Scheduled ────────────────────────────────────────────────────────
-
-    fun loadScheduled() = ticketSession.requestScheduled(ScheduledRequest.Load)
 
     // ── Tabs, sheets, sprint picker, filters ─────────────────────────────
 
@@ -439,7 +426,7 @@ class TasksShellViewModel(
     }
 
     /**
-     * Show another team's sprint, backlog and scheduled tickets.
+     * Show another team's sprint and backlog tickets.
      *
      * Only super admin and above reach this. The chosen team narrows the sprint
      * list, drives the tabs and is sent with every list query; the choice is
@@ -510,7 +497,6 @@ class TasksShellViewModel(
             }
         }
         loadBacklog()
-        loadScheduled()
         if (_ui.value.tab == TaskTab.Sprint) loadSprint()
     }
 
@@ -524,10 +510,7 @@ class TasksShellViewModel(
             )
             state.copy(
                 planScope = planScope,
-                tab = normalizeTab(
-                    state.tab,
-                    planningTabs(planScope, state.agileEnabled, emptyList(), null),
-                ),
+                tab = normalizeTab(state.tab, planScope.visibleTabs),
                 sheet = null,
             )
         }
@@ -540,12 +523,11 @@ class TasksShellViewModel(
     private fun loadProjectContext() {
         val scope = _ui.value.planScope
         val projectId = scope.selectedProjectId ?: return
-        val list = if (scope.agileEnabled && scope.projectType != "kanban") {
-            runCatching { repository.loadProjectSprints(projectId) }.getOrNull()
-        } else {
-            null
-        }
-        val config = if (scope.agileEnabled) runCatching { repository.loadAgileConfig(projectId) }.getOrNull() else null
+        val hasSprintTab = TaskTab.Sprint in scope.visibleTabs
+        val list = if (hasSprintTab) runCatching { repository.loadProjectSprints(projectId) }.getOrNull() else null
+        val config = if (hasSprintTab || (scope.agileEnabled && scope.projectType == "kanban")) {
+            runCatching { repository.loadAgileConfig(projectId) }.getOrNull()
+        } else null
         updatePlan { state ->
             if (state.planScope.selectedProjectId != projectId) return@updatePlan state
             val rows = list?.sprints.orEmpty().filter { it.projectId == projectId }
@@ -560,7 +542,7 @@ class TasksShellViewModel(
                 planScope = planScope,
                 tab = normalizeTab(
                     if (!landingApplied && current != null) TaskTab.Sprint else state.tab,
-                    planningTabs(planScope, state.agileEnabled, rows, current),
+                    planScope.visibleTabs,
                 ),
             )
         }

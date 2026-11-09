@@ -11,9 +11,9 @@ import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 
-/** `Tasks.tsx` tabs plus Android's Scheduled view; `key` is the `?tab=` value. */
+/** Android planning tabs; `key` matches a server `planTabs` value. */
 enum class TaskTab(val key: String) {
-    Backlog("backlog"), Scheduled("scheduled"), Sprint("sprint"), KanbanBoard("board"), ServiceDesk("service-desk");
+    Backlog("backlog"), Sprint("sprint"), Reports("reports"), KanbanBoard("board"), ServiceDesk("service-desk");
 
     companion object {
         fun fromKey(key: String?): TaskTab? = entries.firstOrNull { it.key == key }
@@ -86,26 +86,33 @@ fun matchesPlanFilters(task: Task, filters: TaskFilters, quick: BacklogQuickFilt
         (filters.epic.isEmpty() || task.parentTaskId?.toString() == filters.epic) &&
         (!quick.mine || (userId != null && (task.assignedTo == userId || (task.userId == userId && task.assignedTo == null)))) &&
         (!quick.high || task.priority == "high") &&
-        (!quick.unscheduled || task.plannedDate == null)
+        (!quick.unscheduled || task.startDate == null)
 
 /**
- * The tab set for the selected team, decided by the server's current sprint.
- *
- * Sprint and Scheduled are **alternatives**, never companions: a team that
- * plans work in a sprint plans it there, and a dated list beside it is noise.
- * A current sprint therefore shows Sprint, Backlog and Service Desk; with no
- * current sprint, Scheduled takes the board's place and the team works from
- * Backlog and Scheduled. Service Desk always renders.
- *
- * [sprints] must already be narrowed to the selected team, so one team's sprint
- * never drives another's tabs.
+ * Project responses decide planning tabs. Older responses fall back to a
+ * stable, supported surface set; Android never recreates Scheduled or adds
+ * the not-yet-supported Task list views. Kanban tabs are resolved by project type.
  */
-fun planningTabs(agileEnabled: Boolean, sprints: List<AvailableSprint>, currentSprintId: Long?): List<TaskTab> {
-    val hasCurrentSprint = agileEnabled && currentSprintId != null && sprints.any { it.id == currentSprintId }
-    return if (hasCurrentSprint) {
-        listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk)
-    } else {
-        listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk)
+fun planningTabs(
+    agileEnabled: Boolean,
+    sprints: List<AvailableSprint>,
+    currentSprintId: Long?,
+    projectTabs: List<String>? = null,
+    projectScoped: Boolean = false,
+): List<TaskTab> {
+    if (projectTabs != null) {
+        return projectTabs.mapNotNull(TaskTab::fromKey).distinct()
+            .filter { it != TaskTab.ServiceDesk && it != TaskTab.KanbanBoard }
+            .ifEmpty { listOf(TaskTab.Backlog) }
+    }
+
+    return buildList {
+        add(TaskTab.Backlog)
+        if (agileEnabled) {
+            add(TaskTab.Sprint)
+            add(TaskTab.Reports)
+        }
+        if (!projectScoped) add(TaskTab.ServiceDesk)
     }
 }
 
@@ -119,7 +126,11 @@ fun planningTabs(scope: PlanScope, agileEnabled: Boolean, sprints: List<Availabl
             }
         }
     }
-    return planningTabs(agileEnabled, sprints, currentSprintId)
+    return planningTabs(
+        agileEnabled, sprints, currentSprintId,
+        projectTabs = scope.selectedProject?.planTabs,
+        projectScoped = scope.projectScoped,
+    )
 }
 
 /**
@@ -137,10 +148,10 @@ fun strandedSprintGroups(tasks: List<Task>, sprints: List<AvailableSprint>): Lis
     }
 }
 
-/** `useFilters.filterCount` — status is a board, sprint or scheduled filter. */
+/** `useFilters.filterCount` — status is a board or sprint filter. */
 fun filterCount(filters: TaskFilters, tab: TaskTab): Int {
     val base = mutableListOf(filters.assignee, filters.label, filters.priority, filters.search.trim())
-    if (tab == TaskTab.Sprint || tab == TaskTab.KanbanBoard || tab == TaskTab.Scheduled) base += filters.status
+    if (tab == TaskTab.Sprint || tab == TaskTab.KanbanBoard) base += filters.status
     return base.count(String::isNotEmpty)
 }
 
@@ -186,73 +197,6 @@ fun backlogQuery(
 )
 
 fun searchQuery(q: String): String = withQuery("tasks/search", listOf("q" to q.trim()))
-
-/** Days back (for overdue history) and ahead covered by the Scheduled view. */
-const val SCHEDULED_PAST_DAYS = 30L
-const val SCHEDULED_AHEAD_DAYS = 30L
-
-/**
- * Scheduled view: `GET /tasks/scheduled?<plannerFilters>&<teamScope>`.
- *
- * The server returns unsprinted tickets with a planned day. The Scheduled view
- * applies its visible date window and active filters when resolving these ids
- * against the session store.
- */
-fun scheduledQuery(filters: TaskFilters, teamScope: TeamScope = TeamScope()): String =
-    withQuery("tasks/scheduled", filterParams(filters, includeStatus = true) + teamParams(teamScope))
-
-/** A dated section of the Scheduled view. `date == null` is the Overdue bucket. */
-data class ScheduledGroup(val key: String, val label: String, val date: LocalDate?, val tasks: List<Task>)
-
-private val DAY_HEADER = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)
-
-/** The displayed day for a Scheduled row. */
-fun scheduleDateOf(task: Task): LocalDate? = localDateOf(task.startDate) ?: localDateOf(task.dueDate)
-
-/**
- * Overdue (past day, not done) first, then one section per day for the next 30
- * days, then everything further out under "Later" so no dated ticket goes
- * missing. A ticket finished within the [SCHEDULED_PAST_DAYS] window keeps its
- * past day (the server applies the same window); older finished work is history.
- */
-fun groupScheduled(tasks: List<Task>, today: LocalDate = LocalDate.now()): List<ScheduledGroup> {
-    val horizon = today.plusDays(SCHEDULED_AHEAD_DAYS - 1)
-    val historyFrom = today.minusDays(SCHEDULED_PAST_DAYS)
-    val dated = tasks.mapNotNull { t -> scheduleDateOf(t)?.let { it to t } }
-    val overdue = dated.filter { (d, t) -> d.isBefore(today) && !t.isCompleted }
-        .sortedWith(compareBy<Pair<LocalDate, Task>> { it.first }.thenBy { priorityRank(it.second.priority) })
-        .map { it.second }
-    val byDay = sortedMapOf<LocalDate, MutableList<Task>>()
-    val later = mutableListOf<Pair<LocalDate, Task>>()
-    dated.forEach { entry ->
-        val (day, task) = entry
-        when {
-            day.isBefore(today) -> {
-                val finishedAt = localDateOf(task.completedAt)
-                if (finishedAt != null && !finishedAt.isBefore(historyFrom)) byDay.getOrPut(day) { mutableListOf() } += task
-            }
-            day.isAfter(horizon) -> later += entry
-            else -> byDay.getOrPut(day) { mutableListOf() } += task
-        }
-    }
-    return buildList {
-        if (overdue.isNotEmpty()) add(ScheduledGroup("overdue", "Overdue", null, overdue))
-        byDay.forEach { (day, list) ->
-            val label = when (ChronoUnit.DAYS.between(today, day)) {
-                0L -> "Today"
-                1L -> "Tomorrow"
-                else -> day.format(DAY_HEADER)
-            }
-            add(ScheduledGroup(day.toString(), label, day, list.sortedWith(compareBy<Task> { it.isCompleted }.thenBy { priorityRank(it.priority) })))
-        }
-        if (later.isNotEmpty()) {
-            later.sortWith(compareBy<Pair<LocalDate, Task>> { it.first }.thenBy { it.second.isCompleted }.thenBy { priorityRank(it.second.priority) })
-            add(ScheduledGroup("later", "Later", null, later.map { it.second }))
-        }
-    }
-}
-
-private fun priorityRank(priority: String): Int = when (priority) { "high" -> 0; "medium" -> 1; else -> 2 }
 
 /** `useBacklog` sort options, in `<select>` order. */
 enum class BacklogSort(val key: String, val label: String) {
@@ -395,9 +339,9 @@ fun landingTab(current: TaskTab, sprints: List<AvailableSprint>, currentSprintId
     return if (currentSprintId != null && sprints.any { it.id == currentSprintId }) TaskTab.Sprint else current
 }
 
-/** A tab the current team must not be shown is never selectable, whatever chose it. */
+/** Unsupported selections fall back to a visible server-selected tab. */
 fun normalizeTab(selected: TaskTab, visible: List<TaskTab>): TaskTab =
-    if (selected in visible) selected else TaskTab.Backlog
+    if (selected in visible) selected else visible.firstOrNull { it == TaskTab.Backlog } ?: visible.firstOrNull() ?: TaskTab.Backlog
 
 /**
  * Which empty state the sprint board shows.

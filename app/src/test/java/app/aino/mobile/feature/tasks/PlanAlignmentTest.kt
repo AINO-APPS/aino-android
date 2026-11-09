@@ -18,8 +18,7 @@ class PlanAlignmentTest {
     @Test fun planDefaultsToBacklogCompactAndExpandedCompleted() {
         val ui = TaskUiState(planScope = PlanScope(agileEnabled = true))
         assertEquals(TaskTab.Backlog, ui.tab)
-        // No running sprint: no board, so no Sprint tab.
-        assertEquals(listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk), ui.visibleTabs)
+        assertEquals(listOf(TaskTab.Backlog, TaskTab.Sprint, TaskTab.Reports, TaskTab.ServiceDesk), ui.visibleTabs)
         assertTrue(ui.quickFilters.isAll)
         assertTrue(ui.compact)
         assertTrue(ui.completedExpanded)
@@ -27,39 +26,34 @@ class PlanAlignmentTest {
         assertFalse(ui.copy(planScope = ui.planScope.copy(agileEnabled = false)).visibleTabs.contains(TaskTab.Sprint))
     }
 
-    @Test fun tabSetFollowsTheSelectedTeamsSprintState() {
-        // A started sprint is the working surface; Scheduled is the alternative
-        // to the board, never a companion (ADR-015).
+    @Test fun tabSetIsStableAcrossSprintStates() {
         assertEquals(
-            listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk),
+            listOf(TaskTab.Backlog, TaskTab.Sprint, TaskTab.Reports, TaskTab.ServiceDesk),
             TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = listOf(sprint), currentSprintId = sprint.id)).visibleTabs,
         )
-        // Only a planned sprint is not a board, so Sprint is hidden.
         val planned = sprint.copy(id = 13, status = "planned")
         assertEquals(
-            listOf(TaskTab.Backlog, TaskTab.Scheduled, TaskTab.ServiceDesk),
+            listOf(TaskTab.Backlog, TaskTab.Sprint, TaskTab.Reports, TaskTab.ServiceDesk),
             TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = listOf(planned))).visibleTabs,
         )
         val paused = sprint.copy(status = "paused")
         assertEquals(
-            listOf(TaskTab.Sprint, TaskTab.Backlog, TaskTab.ServiceDesk),
+            listOf(TaskTab.Backlog, TaskTab.Sprint, TaskTab.Reports, TaskTab.ServiceDesk),
             TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = listOf(paused), currentSprintId = paused.id)).visibleTabs,
         )
         // Agile off loses the Sprint tab whatever is running.
         assertFalse(TaskUiState(planScope = PlanScope(agileEnabled = false, sprints = listOf(sprint))).visibleTabs.contains(TaskTab.Sprint))
-        // The sprint config alone is not enough: there must be a running sprint.
         val configured = TaskUiState(planScope = PlanScope(agileEnabled = true, sprintEnabled = true, sprints = emptyList()))
-        assertFalse(configured.visibleTabs.contains(TaskTab.Sprint))
+        assertTrue(configured.visibleTabs.contains(TaskTab.Sprint))
     }
 
     @Test fun aHiddenTabIsNeverSelectable() {
         val running = TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = listOf(sprint), currentSprintId = sprint.id))
         assertEquals(TaskTab.Sprint, normalizeTab(TaskTab.Sprint, running.visibleTabs))
-        // A sprint team has no Scheduled tab.
-        assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Scheduled, running.visibleTabs))
+        assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.fromKey("scheduled") ?: TaskTab.Backlog, running.visibleTabs))
         val idle = TaskUiState(planScope = PlanScope(agileEnabled = true, sprints = emptyList()))
-        assertEquals(TaskTab.Backlog, normalizeTab(TaskTab.Sprint, idle.visibleTabs))
-        assertEquals(TaskTab.Scheduled, normalizeTab(TaskTab.Scheduled, idle.visibleTabs))
+        assertEquals(TaskTab.Sprint, normalizeTab(TaskTab.Sprint, idle.visibleTabs))
+        assertEquals(TaskTab.Reports, normalizeTab(TaskTab.Reports, idle.visibleTabs))
         // Service Desk is a support queue and outlives both rules.
         assertEquals(TaskTab.ServiceDesk, normalizeTab(TaskTab.ServiceDesk, idle.visibleTabs))
     }
