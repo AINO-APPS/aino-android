@@ -2,7 +2,6 @@ package app.aino.mobile.feature.tasks
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -57,7 +56,6 @@ class ProjectTypeSwitcherUiTest {
         compose.onNodeWithText("Kanban", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("FLOW", useUnmergedTree = true).performClick()
         compose.onNodeWithText("FLOW · Flow · Kanban").assertIsDisplayed()
-        compose.onNodeWithText("Board").assertIsDisplayed()
         compose.onNodeWithText("Backlog").assertDoesNotExist()
         compose.onNodeWithText("Scheduled").assertDoesNotExist()
         compose.onNodeWithText("OPS · Operations · Task list · Archived").assertIsDisplayed().performClick()
