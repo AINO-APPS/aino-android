@@ -427,7 +427,7 @@ private fun MemberTasksSubTab(section: Section<List<MemberTaskRow>>) {
                 ManagerRowCard {
                     Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(task.title.orEmpty(), color = colors.text, fontSize = 0.85.rem, modifier = Modifier.weight(1f))
-                        task.date?.let { Text(formatShortDate(it), color = colors.textMuted, fontSize = 0.7.rem) }
+                        task.startDate?.let { Text(formatShortDate(it), color = colors.textMuted, fontSize = 0.7.rem) }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PriorityBadge(task.priority)

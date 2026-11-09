@@ -51,6 +51,7 @@ data class DashboardTask(
     val title: String,
     val priority: String? = null,
     @SerialName("planned_date") val plannedDate: String? = null,
+    @SerialName("start_date") val startDate: String? = plannedDate,
     @SerialName("assigned_to") val assignedTo: Long? = null,
     @SerialName("workflow_state_key") val workflowStateKey: String? = null,
     @SerialName("workflow_state_name") val workflowStateName: String? = null,

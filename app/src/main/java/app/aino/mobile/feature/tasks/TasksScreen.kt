@@ -583,8 +583,8 @@ private fun SearchOverlay(ui: TaskUiState, viewModel: TaskViewModel, planViewMod
                         trailing = {
                             Spacer(Modifier.width(6.dp))
                             MetaChip(
-                                if (task.plannedDate != null) HeroIcons.CalendarDays else if (task.sprintId != null) HeroIcons.RocketLaunch else HeroIcons.ArchiveBox,
-                                task.plannedDate?.take(10) ?: if (task.sprintId != null) "Sprint" else "Backlog",
+                                if (task.startDate != null) HeroIcons.CalendarDays else if (task.sprintId != null) HeroIcons.RocketLaunch else HeroIcons.ArchiveBox,
+                                task.startDate?.take(10) ?: if (task.sprintId != null) "Sprint" else "Backlog",
                                 colors.textMuted,
                             )
                         },

@@ -180,6 +180,8 @@ data class MemberTaskRow(
     val status: String? = null,
     val priority: String? = null,
     val date: String? = null,
+    @SerialName("planned_date") val plannedDate: String? = date,
+    @SerialName("start_date") val startDate: String? = plannedDate,
 )
 
 @Serializable
