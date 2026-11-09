@@ -175,4 +175,28 @@ class ProjectTicketViewModelTest {
         await { vm.ui.value.tickets.singleOrNull()?.title == "New request" }
         assertEquals(listOf(7L), vm.ui.value.tickets.map(Task::id))
     }
+
+    @Test fun editingAnExistingTicketReappliesTheServersCollectionFilters() {
+        val edited = java.util.concurrent.atomic.AtomicBoolean()
+        fun ticket() = """{"id":7,"title":"Ship","project_id":3,"priority":"${if (edited.get()) "low" else "high"}",
+            "capabilities":{"can":{"edit":{"allowed":true}}}}"""
+        val repository = TaskRepository(ApiClient { request ->
+            val body = when {
+                request.path == "tasks/7" && request.method == "PUT" -> {
+                    edited.set(true)
+                    ticket()
+                }
+                request.path.startsWith("tasks?") -> """{"tasks":[${if (edited.get()) "" else ticket()}]}"""
+                request.path == "tasks/7/detail" -> ticket()
+                else -> "{}"
+            }
+            ApiResponse(200, emptyMap(), body.toByteArray())
+        })
+        session.writePlanScope(scope().copy(filters = TaskFilters(priority = "high")))
+        val vm = ProjectTicketViewModel(repository, session)
+        val detail = TicketDetailViewModel(7, repository, session)
+        await { vm.ui.value.tickets.size == 1 && detail.ui.value.detail != null }
+        detail.setPriority(detail.ui.value.detail!!, "low")
+        await { edited.get() && !vm.ui.value.loading && vm.ui.value.tickets.isEmpty() }
+    }
 }

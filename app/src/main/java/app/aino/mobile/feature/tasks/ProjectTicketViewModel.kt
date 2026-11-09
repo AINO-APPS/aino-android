@@ -1,6 +1,5 @@
 package app.aino.mobile.feature.tasks
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -84,11 +83,12 @@ class ProjectTicketViewModel(
                 val joined = snapshot.tickets.values.any {
                     it.id !in knownIds && it.id !in ids && current.planScope.contains(it)
                 }
+                val changed = current.tickets.any { snapshot.tickets[it.id] != it }
                 knownIds = snapshot.tickets.keys
                 _ui.update { current ->
                     current.copy(tickets = ids.mapNotNull(snapshot.tickets::get).filter(current.planScope::contains))
                 }
-                if (current.loaded && joined) refresh()
+                if (current.loaded && (joined || (!current.loading && changed))) refresh()
             }
         }
         scope.launch {
@@ -158,10 +158,10 @@ class ProjectTicketViewModel(
     override fun onCleared() = scope.cancel()
 
     companion object {
-        fun factory(context: Context, session: TicketSession) = object : ViewModelProvider.Factory {
+        fun factory(repository: TaskRepository, session: TicketSession) = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                ProjectTicketViewModel(TaskRepository(app.aino.mobile.core.AppContainer.get(context).api), session) as T
+                ProjectTicketViewModel(repository, session) as T
         }
     }
 }

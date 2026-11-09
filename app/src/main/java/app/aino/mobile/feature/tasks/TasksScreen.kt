@@ -121,7 +121,7 @@ fun TasksScreen(
     val projectBoardUi by projectBoardViewModel.ui.collectAsStateWithLifecycle()
     val projectTicketViewModel = androidx.lifecycle.viewmodel.compose.viewModel<ProjectTicketViewModel>(
         key = "project-tickets-${viewModel.ticketSession.key}",
-        factory = ProjectTicketViewModel.factory(androidx.compose.ui.platform.LocalContext.current, viewModel.ticketSession),
+        factory = ProjectTicketViewModel.factory(viewModel.repo, viewModel.ticketSession),
     )
     val projectTicketUi by projectTicketViewModel.ui.collectAsStateWithLifecycle()
     var inlineCommentTicketId by rememberSaveable(viewModel.ticketSession.key) { mutableStateOf<Long?>(null) }
