@@ -81,7 +81,15 @@ session requests coordinate those writes and shared sheets.
 
 The Activity-scoped `SprintBoardViewModel` owns Board membership ids, optimistic
 moves and identity-checked rollback, sprint lifecycle and rollover, completion
-preview, stats and scope baseline. It reads the session Ticket store and Plan
+preview, stats and scope baseline. Completion opens a server-preview-driven
+dialog for the next planned sprint, a new planned sprint, or backlog. Parents,
+subtasks, points, staying tickets and new-sprint dates are never inferred from
+the locally loaded board. New-target requests require the preview's explicit
+`supportsNewSprint` opt-in; older servers retain numeric-sprint/backlog requests.
+Loading or failed previews block completion and can be retried. Lifecycle
+authorization controls are unchanged: member access awaits an explicit server
+`canManageSprint` capability, not the API-support flag.
+It reads the session Ticket store and Plan
 scope without referencing another ViewModel. The Tasks shell remains the only
 Plan-scope writer; session requests coordinate Board reloads and metadata refresh.
 Completing a sprint refetches enriched Tickets so rollover Placement updates in
