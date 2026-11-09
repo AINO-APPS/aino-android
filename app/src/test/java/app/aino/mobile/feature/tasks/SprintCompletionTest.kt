@@ -56,4 +56,21 @@ class SprintCompletionTest {
         assertEquals(8.0, preview.movingPoints, 0.0)
         assertEquals("2026-11-10", preview.newSprint?.startDate)
     }
+
+    @Test
+    fun sprintListDecodesServerManagementCapability() {
+        val repository = TaskRepository(ApiClient {
+            ApiResponse(200, emptyMap(), """
+                {"sprints":[{"id":10,"name":"Sprint","status":"active","can_manage":true}],
+                 "currentSprintId":10}
+            """.trimIndent().toByteArray())
+        })
+
+        val sprint = repository.loadProjectSprints(7).sprints.single()
+
+        assertEquals(true, sprint.canManage)
+        assertTrue(canManageSprint(sprint, "employee"))
+        assertTrue(!canManageSprint(sprint.copy(canManage = false), "team_lead"))
+        assertTrue(canManageSprint(sprint.copy(canManage = null), "team_lead"))
+    }
 }

@@ -247,6 +247,7 @@ data class AvailableSprint(
     @SerialName("sprint_number") val sprintNumber: Int? = null,
     @Serializable(with = LenientDoubleNullableSerializer::class)
     @SerialName("velocity_points") val velocityPoints: Double? = null,
+    @SerialName("can_manage") val canManage: Boolean? = null,
 ) {
     /**
      * The sprint's number, from `sprint_number` or the trailing digits of its

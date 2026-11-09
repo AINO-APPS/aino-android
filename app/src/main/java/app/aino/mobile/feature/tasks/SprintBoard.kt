@@ -618,7 +618,7 @@ private fun MiniStat(value: String, label: String, tint: androidx.compose.ui.gra
 @Composable
 private fun SprintLifecycleControls(ui: SprintBoardUiState, sprint: AvailableSprint, viewModel: SprintBoardViewModel) {
     val colors = LocalWebColors.current
-    val canEdit = canManageSprint(ui.role)
+    val canEdit = canManageSprint(sprint, ui.role)
     if (!canEdit && sprint.status != "completed") return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when {

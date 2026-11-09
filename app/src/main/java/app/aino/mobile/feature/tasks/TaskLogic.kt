@@ -432,6 +432,9 @@ fun dropTargetKey(headers: Map<String, Rect>, bodies: Map<String, Rect>, pos: Of
 fun canManageSprint(role: String?): Boolean =
     role in setOf("team_lead", "manager", "super_admin", "hr_admin", "platform_admin")
 
+fun canManageSprint(sprint: AvailableSprint, role: String?): Boolean =
+    sprint.canManage ?: canManageSprint(role)
+
 /** KanbanBoard `getColTasks`: by workflow_state_id, else by the workflow-state key. */
 fun tasksForColumn(tasks: List<Task>, state: WorkflowState): List<Task> = tasks.filter { t ->
     (t.workflowStateId != null && state.id != 0L && t.workflowStateId == state.id) || t.workflowStateKey == state.key
