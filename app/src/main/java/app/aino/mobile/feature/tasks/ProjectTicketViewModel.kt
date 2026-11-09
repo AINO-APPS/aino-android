@@ -78,10 +78,17 @@ class ProjectTicketViewModel(
             }
         }
         scope.launch {
+            var knownIds = ticketSession.store.state.value.tickets.keys
             ticketSession.store.state.collect { snapshot ->
+                val current = _ui.value
+                val joined = snapshot.tickets.values.any {
+                    it.id !in knownIds && it.id !in ids && current.planScope.contains(it)
+                }
+                knownIds = snapshot.tickets.keys
                 _ui.update { current ->
                     current.copy(tickets = ids.mapNotNull(snapshot.tickets::get).filter(current.planScope::contains))
                 }
+                if (current.loaded && joined) refresh()
             }
         }
         scope.launch {

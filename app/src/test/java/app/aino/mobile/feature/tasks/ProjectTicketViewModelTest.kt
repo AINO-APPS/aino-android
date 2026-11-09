@@ -150,4 +150,29 @@ class ProjectTicketViewModelTest {
         await { vm.ui.value.loaded && !vm.ui.value.loading }
         assertEquals(listOf(7L), vm.ui.value.tickets.map(Task::id))
     }
+
+    @Test fun aTicketCreatedFromTheSharedFormAppearsWithoutPullingToRefresh() {
+        val created = java.util.concurrent.atomic.AtomicBoolean()
+        val ticket = """{"id":7,"title":"New request","project_id":3,"container":"backlog"}"""
+        val repository = TaskRepository(ApiClient { request ->
+            val body = when {
+                request.path == "tasks/backlog" && request.method == "POST" -> {
+                    created.set(true)
+                    ticket
+                }
+                request.path.startsWith("tasks?") -> """{"tasks":[${if (created.get()) ticket else ""}]}"""
+                else -> "{}"
+            }
+            ApiResponse(200, emptyMap(), body.toByteArray())
+        })
+        val project = scope().projects.single().copy(capabilities = ProjectCapabilities(canCreateTickets = true))
+        session.writePlanScope(scope().copy(projects = listOf(project), myProjects = listOf(project)))
+        val vm = ProjectTicketViewModel(repository, session)
+        val plan = PlanViewModel(repository, session)
+        await { vm.ui.value.loaded }
+        plan.updateDraft { it.copy(projectId = 3, title = "New request") }
+        plan.submitBacklog()
+        await { vm.ui.value.tickets.singleOrNull()?.title == "New request" }
+        assertEquals(listOf(7L), vm.ui.value.tickets.map(Task::id))
+    }
 }
