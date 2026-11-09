@@ -540,12 +540,12 @@ class TasksShellViewModel(
     private fun loadProjectContext() {
         val scope = _ui.value.planScope
         val projectId = scope.selectedProjectId ?: return
-        val list = if (scope.agileEnabled && scope.projectType != "kanban") {
+        val list = if (scope.agileEnabled && scope.projectType == "scrum") {
             runCatching { repository.loadProjectSprints(projectId) }.getOrNull()
         } else {
             null
         }
-        val config = if (scope.agileEnabled) runCatching { repository.loadAgileConfig(projectId) }.getOrNull() else null
+        val config = runCatching { repository.loadAgileConfig(projectId) }.getOrNull()
         updatePlan { state ->
             if (state.planScope.selectedProjectId != projectId) return@updatePlan state
             val rows = list?.sprints.orEmpty().filter { it.projectId == projectId }

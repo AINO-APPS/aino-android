@@ -450,7 +450,7 @@ private fun headerSubtitle(ui: TaskUiState): String = when (ui.tab) {
         val label = sp.number?.let { "#$it" } ?: sp.name
         team + label + if (sp.status == "active") " · ${sprintDaysLeft(sp.endDate)}d left" else " · ${sp.status.replaceFirstChar(Char::uppercase)}"
     } ?: "Sprint board"
-    TaskTab.KanbanBoard -> ui.planScope.selectedProject?.name ?: "Kanban board"
+    TaskTab.KanbanBoard -> ui.planScope.selectedProject?.name ?: "Project board"
     TaskTab.List -> "Every ticket in this project"
     TaskTab.Upcoming -> "By start date · overdue first"
     TaskTab.Backlog -> {

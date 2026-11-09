@@ -207,7 +207,7 @@ class ProjectBoardViewModel(
                 throw cancelled
             } catch (error: Throwable) {
                 if (isCurrent(projectId, projectRevision) && boardGeneration.get() == request) {
-                    _ui.update { it.copy(boardLoading = false, boardError = failure(error, "Could not load the Kanban board")) }
+                    _ui.update { it.copy(boardLoading = false, boardError = failure(error, "Could not load the project board")) }
                 }
             }
         }
