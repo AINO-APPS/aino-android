@@ -358,6 +358,7 @@ private fun MetaPill(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onStatus: () -> Unit) {
     val colors = LocalWebColors.current
     var picker by remember { mutableStateOf<String?>(null) }
+    var startOpen by remember { mutableStateOf(false) }
     var dueOpen by remember { mutableStateOf(false) }
     var pointsOpen by remember { mutableStateOf(false) }
     val canEdit = task.capability(TaskCapability.Edit)
@@ -382,6 +383,10 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
             val state = stateOf(task, ui.agile)
             val column = columnOf(task.workflowStateKey)
             StatusPill(state?.let(::stateLabel) ?: column.label, hexColor(state?.color, colors.tone(column.tone)))
+        }
+        PropertyRow(HeroIcons.CalendarDays, "Start date", if (canEdit.allowed) ({ startOpen = true }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
+            if (task.startDate != null) PropertyText(formatDate(task.startDate))
+            else PropertyText("No start date", muted = true)
         }
         PropertyRow(HeroIcons.CalendarDays, "Due date", if (canEdit.allowed) ({ dueOpen = true }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
             val due = formatDueDate(task.dueDate)
@@ -469,7 +474,8 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
             onLabels = { viewModel.setLabels(task, it) },
         )
     }
-    if (dueOpen) DueDateSheet(task, viewModel) { dueOpen = false }
+    if (startOpen) TicketDateSheet("Start date", task.startDate, { viewModel.setStartDate(task, it) }) { startOpen = false }
+    if (dueOpen) TicketDateSheet("Due date", task.dueDate, { viewModel.setDueDate(task, it) }) { dueOpen = false }
     if (pointsOpen) {
         TaskSheetScaffold("Estimate", { pointsOpen = false }, HeroIcons.ChartBar) {
             StoryPointPicker(task.storyPoints?.let(::formatPoints), { v -> viewModel.setStoryPoints(task, v); pointsOpen = false }, ui.agile)
@@ -481,25 +487,25 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DueDateSheet(task: Task, viewModel: TicketDetailViewModel, onDismiss: () -> Unit) {
+private fun TicketDateSheet(label: String, date: String?, onDate: (String) -> Unit, onDismiss: () -> Unit) {
     val colors = LocalWebColors.current
-    val start = localDateOf(task.dueDate) ?: java.time.LocalDate.now()
+    val start = localDateOf(date) ?: java.time.LocalDate.now()
     val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli())
     androidx.compose.material3.DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = {
-                state.selectedDateMillis?.let { ms -> viewModel.setDueDate(task, java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString()) }
+                state.selectedDateMillis?.let { ms -> onDate(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString()) }
                 onDismiss()
             }) { Text("Set", color = colors.primary, fontWeight = FontWeight.SemiBold) }
         },
         dismissButton = {
             Row {
-                if (task.dueDate != null) TextButton(onClick = { viewModel.setDueDate(task, ""); onDismiss() }) { Text("Clear", color = colors.danger) }
+                if (date != null) TextButton(onClick = { onDate(""); onDismiss() }) { Text("Clear", color = colors.danger) }
                 TextButton(onClick = onDismiss) { Text("Cancel", color = colors.textSecondary) }
             }
         },
-    ) { androidx.compose.material3.DatePicker(state = state) }
+    ) { androidx.compose.material3.DatePicker(state = state, title = { Text(label, Modifier.padding(start = 24.dp, top = 16.dp)) }) }
 }
 
 /** Set / clear the blocker with a reason (`PATCH /tasks/:id/block`). */

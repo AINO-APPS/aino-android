@@ -194,7 +194,7 @@ data class ScheduledGroup(val key: String, val label: String, val date: LocalDat
 private val DAY_HEADER = DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)
 
 /** The displayed day for a Scheduled row. */
-fun scheduleDateOf(task: Task): LocalDate? = localDateOf(task.plannedDate) ?: localDateOf(task.dueDate)
+fun scheduleDateOf(task: Task): LocalDate? = localDateOf(task.startDate) ?: localDateOf(task.dueDate)
 
 /**
  * Overdue (past day, not done) first, then one section per day for the next 30
@@ -549,7 +549,7 @@ enum class HistoryPart { Plain, Old, New }
 
 private val HISTORY_FIELDS = mapOf(
     "workflow_state" to "status", "title" to "title", "description" to "description", "priority" to "priority",
-    "assigned_to" to "assignee", "due_date" to "due date", "planned_date" to "schedule", "labels" to "labels",
+    "assigned_to" to "assignee", "due_date" to "due date", "start_date" to "start date", "planned_date" to "start date", "labels" to "labels",
     "story_points" to "story points", "work_item_type" to "work item type", "sprint" to "sprint",
     "parent" to "parent task", "is_blocked" to "blocked status", "project" to "project",
 )

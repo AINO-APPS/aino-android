@@ -92,8 +92,10 @@ data class Task(
     val title: String,
     val description: String? = null,
     val priority: String = "medium",
-    /** Date-only planning metadata. Never affects backlog membership (D2). */
+    /** Compatibility field for servers that predate start dates. */
     @SerialName("planned_date") val plannedDate: String? = null,
+    /** Date metadata independent of placement; an explicit null clears the date. */
+    @SerialName("start_date") val startDate: String? = plannedDate,
     @SerialName("due_date") val dueDate: String? = null,
     @SerialName("assigned_to") val assignedTo: Long? = null,
     @SerialName("user_id") val userId: Long? = null,

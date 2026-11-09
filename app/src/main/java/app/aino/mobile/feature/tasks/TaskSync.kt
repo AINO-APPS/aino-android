@@ -105,7 +105,7 @@ fun backlogWindow(loaded: Int, pageSize: Int): Int = maxOf(pageSize, loaded).coe
  * (`server/modules/tasks/tasks.deltas.ts`) and the web mirror.
  */
 val DELTA_FIELDS = setOf(
-    "title", "description", "priority", "assigned_to", "due_date", "planned_date",
+    "title", "description", "priority", "assigned_to", "due_date", "start_date", "planned_date",
     "sprint_id", "story_points", "work_item_type_id", "workflow_state_id",
     "parent_task_id", "is_blocked", "blocked_reason", "project_id", "rank",
     "estimated_minutes", "logged_minutes", "acceptance_criteria", "team_id",
@@ -154,7 +154,11 @@ fun applyTaskDelta(task: Task, delta: TaskDelta, lastAppliedAt: String? = null):
             "priority" -> next.copy(priority = value.stringOrNull() ?: next.priority)
             "assigned_to" -> next.copy(assignedTo = value.longOrNull())
             "due_date" -> next.copy(dueDate = value.stringOrNull())
-            "planned_date" -> next.copy(plannedDate = value.stringOrNull())
+            "start_date" -> next.copy(startDate = value.stringOrNull())
+            "planned_date" -> next.copy(
+                plannedDate = value.stringOrNull(),
+                startDate = if ("start_date" in delta.fields) delta.fields["start_date"]?.stringOrNull() else value.stringOrNull(),
+            )
             "sprint_id" -> next.copy(sprintId = value.longOrNull())
             "story_points" -> next.copy(storyPoints = value.stringOrNull()?.toDoubleOrNull())
             "work_item_type_id" -> next.copy(workItemTypeId = value.longOrNull())

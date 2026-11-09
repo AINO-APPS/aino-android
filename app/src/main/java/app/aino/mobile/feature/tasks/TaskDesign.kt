@@ -389,7 +389,7 @@ internal fun TaskCardM3(
     val haptics = LocalHapticFeedback.current
     val done = task.isCompleted || stateOf(task, agile)?.isTerminal == true
     val points = if (agile.features.storyPoints) formatPoints(task.storyPoints) else ""
-    val due = formatDueDate(task.plannedDate ?: task.dueDate)
+    val due = formatDueDate(task.startDate ?: task.dueDate)
     val overdue = isDueOverdue(task.dueDate) && !done
     val ring = when {
         selected -> colors.primary

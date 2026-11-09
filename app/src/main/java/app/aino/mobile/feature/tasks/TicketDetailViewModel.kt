@@ -308,6 +308,17 @@ class TicketDetailViewModel(
     }
     fun updateFields(task: Task, fields: JsonObject, done: String? = null, onSaved: () -> Unit = {}) {
         if (!allowed(task, TaskCapability.Edit)) return
+        if (fields.keys.any { it in setOf("start_date", "planned_date", "due_date") }) {
+            val current = ticketSession.store.state.value.tickets[ticketId] ?: task
+            fun date(field: String, fallback: String?): String? =
+                if (field in fields) (fields[field] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content else fallback
+            val start = localDateOf(date("start_date", date("planned_date", current.startDate)))
+            val due = localDateOf(date("due_date", current.dueDate))
+            if (start != null && due != null && due.isBefore(start)) {
+                fail(IllegalArgumentException("Due date cannot be earlier than the start date"), "Invalid dates")
+                return
+            }
+        }
         io {
             runCatching { repository.patchFields(ticketId, fields) }.fold(
                 onSuccess = {
@@ -322,6 +333,11 @@ class TicketDetailViewModel(
     }
     fun setPriority(task: Task, value: String) = updateFields(task, buildJsonObject { put("priority", value) })
     fun setAssignee(task: Task, userId: Long?) = updateFields(task, buildJsonObject { put("assigned_to", userId?.let(::JsonPrimitive) ?: JsonNull) })
+    fun setStartDate(task: Task, date: String) = updateFields(task, buildJsonObject {
+        val value = date.ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull
+        put("start_date", value)
+        put("planned_date", value)
+    })
     fun setDueDate(task: Task, date: String) = updateFields(task, buildJsonObject { put("due_date", date.ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull) })
     fun setLabels(task: Task, ids: List<Long>) = updateFields(task, buildJsonObject { put("label_ids", JsonArray(ids.map(::JsonPrimitive))) })
     fun setStoryPoints(task: Task, value: String?) = updateFields(task, buildJsonObject { put("story_points", value?.ifEmpty { null }?.let(::JsonPrimitive) ?: JsonNull) })

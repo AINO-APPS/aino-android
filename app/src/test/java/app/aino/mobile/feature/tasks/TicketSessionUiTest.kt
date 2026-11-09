@@ -850,6 +850,9 @@ internal class TicketSessionHarness {
     @Volatile var detailErrorStatus: Int? = null
     @Volatile var rejectBoardReads = false
     @Volatile var rejectFieldWrites = false
+    @Volatile var fieldPayload: kotlinx.serialization.json.JsonObject? = null
+    @Volatile var fieldError: String? = null
+    @Volatile var historyResponse = "[]"
     @Volatile private var holdStatusWrite = false
     @Volatile private var rejectStatusWrite = false
     private val statusWriteStarted = CountDownLatch(1)
@@ -933,13 +936,17 @@ internal class TicketSessionHarness {
             request.path.startsWith("tasks/by-key/") -> saved
             request.path == "tasks/available-sprints" -> """[{"id":10,"name":"Sprint","status":"active"},{"id":11,"name":"Next sprint","status":"planned"}]"""
             request.path == "sprints" -> """{"sprints":[{"id":10,"name":"Sprint","status":"active"}],"currentSprintId":10}"""
-            request.path == "tasks/201/history" -> { historyReads++; "[]" }
+            request.path == "tasks/201/history" -> { historyReads++; historyResponse }
             request.path in setOf("tasks/labels", "tasks/assignable-users", "projects") -> "[]"
             (request.path == "tasks/201" && request.method == "PUT") ||
                 request.path == "tasks/201/status" || request.path == "tasks/201/assign-sprint" ||
                 request.path == "tasks/201/schedule" || request.path == "tasks/201/unschedule" ||
                 (request.path == "tasks/backlog" && request.method == "POST") -> {
-                if (rejectFieldWrites && request.method == "PUT") throw java.io.IOException("offline")
+                if (request.method == "PUT") {
+                    fieldPayload = request.body?.let { Json.parseToJsonElement(it.toString(Charsets.UTF_8)).jsonObject }
+                    fieldError?.let { throw ApiError.Http(400, it, request.method, request.path) }
+                    if (rejectFieldWrites) throw java.io.IOException("offline")
+                }
                 if (request.path == "tasks/201/status" && holdStatusWrite) {
                     statusWriteStarted.countDown()
                     if (!statusWriteRelease.await(5, TimeUnit.SECONDS)) {

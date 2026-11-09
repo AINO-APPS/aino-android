@@ -88,6 +88,15 @@ full Ticket before opening the id-keyed route. Comment threads remain shared wit
 the inline panel, and session notices keep Open, View and Undo available after a
 Detail route closes.
 
+Ticket Detail shows Start date immediately before Due date. Both are editable
+with the Ticket's edit capability, independently of sprint or Scheduled placement.
+Due dates before the start date are refused, and Activity names start-date edits.
+Ticket, My Work and manager attendance-day readers prefer `start_date`; rows from
+older servers fall back to `planned_date` only when `start_date` is absent, so an
+explicit null stays cleared. Start-date edits send both fields to support older
+servers without calling placement endpoints. Planning tabs and Scheduled behavior
+remain unchanged in this compatibility slice.
+
 Ticket time tracking uses manual worklogs, not Start/Stop. Log work defaults to
 today and accepts a worked day, a duration such as `2h 30m`, optional local start
 time and comment. Server `INVALID_DURATION` errors stay inline without losing
