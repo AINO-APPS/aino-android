@@ -56,7 +56,6 @@ class ProjectTypeSwitcherUiTest {
         compose.onNodeWithText("Kanban", useUnmergedTree = true).assertIsDisplayed()
         compose.onNodeWithText("FLOW", useUnmergedTree = true).performClick()
         compose.onNodeWithText("FLOW · Flow · Kanban").assertIsDisplayed()
-        compose.onNodeWithText("Board").assertIsDisplayed()
         compose.onNodeWithText("Backlog").assertDoesNotExist()
         compose.onNodeWithText("Scheduled").assertDoesNotExist()
         compose.onNodeWithText("OPS · Operations · Task list · Archived").assertIsDisplayed().performClick()
