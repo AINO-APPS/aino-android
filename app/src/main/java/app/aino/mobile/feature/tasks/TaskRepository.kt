@@ -37,6 +37,14 @@ class TaskRepository(
     fun loadSprintBoard(sprintId: Long): SprintBoardResponse =
         decode(api.execute(ApiRequest(path = "sprints/$sprintId/board")))
 
+    // @api GET projects/:id/board
+    fun loadProjectBoard(projectId: Long): ProjectBoardResponse =
+        decode(api.execute(ApiRequest(path = "projects/$projectId/board")))
+
+    // @api GET projects/:id/backlog
+    fun loadProjectBacklog(projectId: Long): ProjectBoardResponse =
+        decode(api.execute(ApiRequest(path = "projects/$projectId/backlog")))
+
     fun loadBacklog(
         filters: TaskFilters,
         limit: Int,

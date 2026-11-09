@@ -35,6 +35,41 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun projectBoardAndOptionalBacklogUseTheProjectEndpointsAndServerMetadata() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = TaskRepository(client(captured) {
+            """
+            {
+              "project":{"id":17,"key":"FLOW","name":"Flow","type":"kanban",
+                "planTabs":["backlog","board"],"kanban_backlog_enabled":true,
+                "enable_wip_limits":true,
+                "capabilities":{"canCreateTickets":true,"canChangeType":false}},
+              "sprint":null,
+              "columns":[{"stateId":21,"count":2,"limit":3,"accepting":true,
+                "state":{"id":21,"key":"in_progress","name":"In Progress","category":"open","wip_limit":3}}],
+              "tickets":[{"id":91,"title":"Ship the board","project_id":17,
+                "workflow_state_id":21,"workflow_state_key":"in_progress","priority":"high"}]
+            }
+            """.trimIndent()
+        })
+
+        val board = repository.loadProjectBoard(17)
+        val backlog = repository.loadProjectBacklog(17)
+
+        assertEquals(listOf("projects/17/board", "projects/17/backlog"), captured.map { it.path })
+        assertEquals("kanban", board.project.type)
+        assertEquals(listOf("backlog", "board"), board.project.planTabs)
+        assertTrue(board.project.kanbanBacklogEnabled)
+        assertTrue(board.project.wipEnabled)
+        assertTrue(board.project.capabilities!!.canCreateTickets)
+        assertEquals("In Progress", board.columns.single().state?.name)
+        assertEquals(2, board.columns.single().count)
+        assertEquals(3, board.columns.single().limit)
+        assertEquals(91L, board.tickets.single().id)
+        assertEquals(17L, backlog.project.id)
+    }
+
+    @Test
     fun decodesAnEnrichedSprintRowWithNumericStoryPointsAndCriteria() {
         val captured = mutableListOf<ApiRequest>()
         val repository = TaskRepository(

@@ -164,7 +164,7 @@ data class TaskUiState(
     /** The sprint rows on screen belong to the selected team only. */
     val teamSprints: List<AvailableSprint> get() = planScope.teamSprints
     val sprintTabVisible: Boolean get() = agileEnabled && currentSprintId != null && teamSprints.any { it.id == currentSprintId }
-    val visibleTabs: List<TaskTab> get() = planningTabs(agileEnabled, teamSprints, currentSprintId)
+    val visibleTabs: List<TaskTab> get() = planningTabs(planScope, agileEnabled, teamSprints, currentSprintId)
     /** The query scope for backlog, scheduled and sprint loads. */
     val teamScope: TeamScope get() = planScope.teamScope
     /**

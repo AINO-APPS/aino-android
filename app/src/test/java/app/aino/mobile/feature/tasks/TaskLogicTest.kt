@@ -44,10 +44,12 @@ class TaskLogicTest {
     }
 
     @Test
-    fun filterCountOnlyIncludesStatusOnTheSprintTab() {
+    fun filterCountIncludesStatusOnSprintKanbanAndScheduledSurfaces() {
         val filters = TaskFilters(assignee = "me", status = "done")
         assertEquals(1, filterCount(filters, TaskTab.Backlog))
         assertEquals(2, filterCount(filters, TaskTab.Sprint))
+        assertEquals(2, filterCount(filters, TaskTab.KanbanBoard))
+        assertEquals(2, filterCount(filters, TaskTab.Scheduled))
     }
 
     @Test
