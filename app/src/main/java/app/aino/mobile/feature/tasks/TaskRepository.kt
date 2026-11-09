@@ -37,6 +37,14 @@ class TaskRepository(
     fun loadSprintBoard(sprintId: Long): SprintBoardResponse =
         decode(api.execute(ApiRequest(path = "sprints/$sprintId/board")))
 
+    // @api GET projects/:id/board
+    fun loadProjectBoard(projectId: Long): ProjectBoardResponse =
+        decode(api.execute(ApiRequest(path = "projects/$projectId/board")))
+
+    // @api GET projects/:id/backlog
+    fun loadProjectBacklog(projectId: Long): ProjectBoardResponse =
+        decode(api.execute(ApiRequest(path = "projects/$projectId/backlog")))
+
     fun loadBacklog(
         filters: TaskFilters,
         limit: Int,
@@ -96,8 +104,12 @@ class TaskRepository(
             decode<EpicListResponse>(api.execute(ApiRequest(path = "tasks/epics"))).epics
 
         /** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
-        fun loadCompletionPreview(id: Long): CompletionPreview =
-            decode(api.execute(ApiRequest(path = "sprints/$id/completion-preview")))
+        // @api GET sprints/:param/completion-preview
+        fun loadCompletionPreview(id: Long, rolloverTo: String? = null): CompletionPreview {
+            val query = rolloverTo?.let { "?rolloverTo=${java.net.URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+            val path = "sprints/$id/completion-preview" + query
+            return decode(api.execute(ApiRequest(path = path)))
+        }
 
         /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
         fun loadBaseline(id: Long): BaselineResponse =

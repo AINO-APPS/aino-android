@@ -5,11 +5,11 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 532,
-    "covered": 270,
+    "platform": 537,
+    "covered": 272,
     "waived": 234,
     "clientRetired": 3,
-    "missing": 27,
+    "missing": 30,
     "unmatched": 0
   },
   "covered": [
@@ -906,6 +906,16 @@
     {
       "method": "GET",
       "path": "/api/projects",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:param/backlog",
+      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+    },
+    {
+      "method": "GET",
+      "path": "/api/projects/:param/board",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {

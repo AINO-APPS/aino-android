@@ -73,6 +73,7 @@ import kotlinx.coroutines.launch
 
 internal fun tabIcon(tab: TaskTab): ImageVector = when (tab) {
     TaskTab.Sprint -> HeroIcons.RocketLaunch
+    TaskTab.KanbanBoard -> HeroIcons.ViewColumns
     TaskTab.Backlog -> HeroIcons.ArchiveBox
     TaskTab.Reports -> HeroIcons.ChartBar
     TaskTab.ServiceDesk -> HeroIcons.Lifebuoy
@@ -80,6 +81,7 @@ internal fun tabIcon(tab: TaskTab): ImageVector = when (tab) {
 
 internal fun tabLabel(tab: TaskTab): String = when (tab) {
     TaskTab.Sprint -> "Sprint"
+    TaskTab.KanbanBoard -> "Board"
     TaskTab.Backlog -> "Backlog"
     TaskTab.Reports -> "Reports"
     TaskTab.ServiceDesk -> "Service Desk"
@@ -99,6 +101,7 @@ fun TasksScreen(
     viewModel: TaskViewModel,
     planViewModel: PlanViewModel,
     boardViewModel: SprintBoardViewModel,
+    projectBoardViewModel: ProjectBoardViewModel,
     onOpenDetail: (Long) -> Unit,
     onOpenInsights: () -> Unit,
     serviceDesk: @Composable () -> Unit,
@@ -108,6 +111,7 @@ fun TasksScreen(
     val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
     val ui = tasksScreenState(shellUi, planUi)
     val boardUi by boardViewModel.ui.collectAsStateWithLifecycle()
+    val projectBoardUi by projectBoardViewModel.ui.collectAsStateWithLifecycle()
     var inlineCommentTicketId by rememberSaveable(viewModel.ticketSession.key) { mutableStateOf<Long?>(null) }
     val openComments: (Long) -> Unit = { inlineCommentTicketId = it }
     val colors = LocalWebColors.current
@@ -120,6 +124,9 @@ fun TasksScreen(
     val tabs = ui.visibleTabs
     val pagerState = rememberPagerState(initialPage = tabs.indexOf(ui.tab).coerceAtLeast(0)) { tabs.size }
     var animatingTo by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(ui.planScope.selectedProjectId, ui.planScope.projectType, ui.tab) {
+        projectBoardViewModel.onTabSelected(ui.tab)
+    }
     LaunchedEffect(ui.tab, tabs) {
         // A deep-linked Sprint tab may precede the sprint list; wait rather than snapping to page 0.
         val target = tabs.indexOf(ui.tab).takeIf { it >= 0 } ?: return@LaunchedEffect
@@ -176,7 +183,12 @@ fun TasksScreen(
                     divider = { HorizontalDivider(color = colors.border) },
                 ) {
                     tabs.forEachIndexed { index, tab ->
-                        val badge = when (tab) { TaskTab.Backlog -> planUi.backlogTotal.takeIf { it > 0 }; else -> null }
+                        val badge = when (tab) {
+                            TaskTab.Backlog -> if (ui.planScope.projectType == "kanban") {
+                                projectBoardUi.backlogTicketIds.size.takeIf { it > 0 }
+                            } else planUi.backlogTotal.takeIf { it > 0 }
+                            else -> null
+                        }
                         Tab(
                             selected = pagerState.currentPage == index,
                             onClick = { viewModel.selectTab(tab) },
@@ -211,8 +223,29 @@ fun TasksScreen(
                 ) { page ->
                     when (tabs.getOrNull(page)) {
                         TaskTab.Sprint -> SprintBoard(ui, boardUi, viewModel, boardViewModel, open, openComments)
-                        TaskTab.Backlog -> if (ui.planOpen) SprintPlanPage(ui, boardUi, viewModel, planViewModel, open) else BacklogPage(ui, viewModel, planViewModel, open, openComments)
                         TaskTab.Reports -> SprintInsightsScreen(viewModel, onBack = { viewModel.selectTab(TaskTab.Backlog) }, onOpenTask = onOpenDetail)
+                        TaskTab.KanbanBoard -> KanbanBoardPage(
+                            ui = ui,
+                            boardUi = projectBoardUi,
+                            viewModel = viewModel,
+                            onRefresh = projectBoardViewModel::refresh,
+                            onRetry = projectBoardViewModel::refresh,
+                            onOpen = open,
+                        )
+                        TaskTab.Backlog -> when {
+                            ui.planScope.projectScoped && ui.planScope.projectType == "kanban" ->
+                                KanbanBoardPage(
+                                    ui = ui,
+                                    boardUi = projectBoardUi,
+                                    viewModel = viewModel,
+                                    backlog = true,
+                                    onRefresh = projectBoardViewModel::refresh,
+                                    onRetry = { projectBoardViewModel.loadBacklog(force = true) },
+                                    onOpen = open,
+                                )
+                            ui.planOpen -> SprintPlanPage(ui, boardUi, viewModel, planViewModel, open)
+                            else -> BacklogPage(ui, viewModel, planViewModel, open, openComments)
+                        }
                         TaskTab.ServiceDesk -> serviceDesk()
                         null -> Unit
                     }
@@ -392,9 +425,14 @@ private fun headerSubtitle(ui: TaskUiState): String = when (ui.tab) {
         val label = sp.number?.let { "#$it" } ?: sp.name
         team + label + if (sp.status == "active") " · ${sprintDaysLeft(sp.endDate)}d left" else " · ${sp.status.replaceFirstChar(Char::uppercase)}"
     } ?: "Sprint board"
+    TaskTab.KanbanBoard -> ui.planScope.selectedProject?.name ?: "Kanban board"
     TaskTab.Backlog -> {
-        val total = ui.backlogTotal.takeIf { it > 0 } ?: ui.backlog.size
-        if (total > 0) "$total ticket${if (total == 1) "" else "s"} to plan" else "Sprint and backlog work"
+        if (ui.planScope.projectScoped && ui.planScope.projectType == "kanban") {
+            "Tickets in the initial state"
+        } else {
+            val total = ui.backlogTotal.takeIf { it > 0 } ?: ui.backlog.size
+            if (total > 0) "$total ticket${if (total == 1) "" else "s"} to plan" else "Sprint and backlog work"
+        }
     }
     TaskTab.Reports -> "Sprint reports and insights"
     TaskTab.ServiceDesk -> "Report bugs, request features, or raise access issues"
@@ -603,7 +641,15 @@ private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel
     val colors = LocalWebColors.current
     val f = ui.filters
     var picker by remember { mutableStateOf<String?>(null) }
-    TaskSheetScaffold(if (ui.tab == TaskTab.Sprint) "Filter sprint" else "Filter backlog", viewModel::closeSheet, HeroIcons.Bars3BottomLeft) {
+    TaskSheetScaffold(
+        when (ui.tab) {
+            TaskTab.Sprint -> "Filter sprint"
+            TaskTab.KanbanBoard -> "Filter board"
+            else -> "Filter backlog"
+        },
+        viewModel::closeSheet,
+        HeroIcons.Bars3BottomLeft,
+    ) {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             if (ui.tab == TaskTab.Backlog) {
                 SectionTitle("View options")

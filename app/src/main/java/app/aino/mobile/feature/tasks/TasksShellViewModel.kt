@@ -143,16 +143,18 @@ class TasksShellViewModel(
         }
         if (changedUser) teamViews.clear()
         updatePlan { state ->
-            (if (changedUser) TaskShellUiState() else state).copy(
-                planScope = (if (changedUser) PlanScope() else state.planScope).copy(
-                    userId = userId, role = role, teamName = teamName, teamId = teamId,
-                    agileEnabled = agileEnabled, customFieldsEnabled = customFieldsEnabled,
-                    sprintEnabled = sprintEnabled,
-                ),
+            val base = if (changedUser) TaskShellUiState() else state
+            val planScope = base.planScope.copy(
+                userId = userId, role = role, teamName = teamName, teamId = teamId,
+                agileEnabled = agileEnabled, customFieldsEnabled = customFieldsEnabled,
+                sprintEnabled = sprintEnabled,
+            )
+            base.copy(
+                planScope = planScope,
                 tab = if (changedUser) TaskTab.Backlog
                 else normalizeTab(
                     current.tab,
-                    current.planScope.copy(agileEnabled = agileEnabled).visibleTabs,
+                    planScope.visibleTabs,
                 ),
             )
         }
@@ -234,23 +236,24 @@ class TasksShellViewModel(
                 val current = currentSprintRow?.takeIf { it.id == currentSprintId }
                 val teamSprints = if (current != null && scoped.none { it.id == current.id }) scoped + current else scoped
                 val selected = pickSprint(s.selectedSprintId, teamSprints, currentSprintId)
+                val planScope = s.planScope.copy(
+                    labels = labels ?: s.labels,
+                    assignableUsers = users ?: s.assignableUsers,
+                    projects = projects ?: s.projects,
+                    sprints = sprints,
+                    currentSprintId = currentSprintId,
+                    currentSprintRow = currentSprintRow,
+                    teams = resolvedTeams,
+                    selectedTeamId = resolvedTeamId,
+                    teamResolved = true,
+                    agile = config ?: s.agile,
+                    selectedSprintId = selected,
+                )
                 s.copy(
-                    planScope = s.planScope.copy(
-                        labels = labels ?: s.labels,
-                        assignableUsers = users ?: s.assignableUsers,
-                        projects = projects ?: s.projects,
-                        sprints = sprints,
-                        currentSprintId = currentSprintId,
-                        currentSprintRow = currentSprintRow,
-                        teams = resolvedTeams,
-                        selectedTeamId = resolvedTeamId,
-                        teamResolved = true,
-                        agile = config ?: s.agile,
-                        selectedSprintId = selected,
-                    ),
+                    planScope = planScope,
                     tab = normalizeTab(
                         if (!landingApplied) landingTab(s.tab, teamSprints, currentSprintId, agile) else s.tab,
-                        planningTabs(agile, teamSprints, currentSprintId),
+                        planningTabs(planScope, agile, teamSprints, currentSprintId),
                     ),
                 )
             }
@@ -283,8 +286,9 @@ class TasksShellViewModel(
     private fun reloadTab() {
         when (_ui.value.tab) {
             TaskTab.Sprint -> loadSprint()
-            TaskTab.Backlog -> loadBacklog()
             TaskTab.Reports -> Unit
+            TaskTab.KanbanBoard -> Unit
+            TaskTab.Backlog -> if (_ui.value.planScope.projectType != "kanban") loadBacklog()
             TaskTab.ServiceDesk -> _ui.update { it.copy(serviceDeskVersion = it.serviceDeskVersion + 1) }
         }
     }
@@ -519,23 +523,26 @@ class TasksShellViewModel(
     private fun loadProjectContext() {
         val scope = _ui.value.planScope
         val projectId = scope.selectedProjectId ?: return
-        val hasSprintTab = scope.selectedProject?.planTabs?.contains(TaskTab.Sprint.key) ?: scope.agileEnabled
+        val hasSprintTab = TaskTab.Sprint in scope.visibleTabs
         val list = if (hasSprintTab) runCatching { repository.loadProjectSprints(projectId) }.getOrNull() else null
-        val config = if (hasSprintTab) runCatching { repository.loadAgileConfig(projectId) }.getOrNull() else null
+        val config = if (hasSprintTab || (scope.agileEnabled && scope.projectType == "kanban")) {
+            runCatching { repository.loadAgileConfig(projectId) }.getOrNull()
+        } else null
         updatePlan { state ->
             if (state.planScope.selectedProjectId != projectId) return@updatePlan state
             val rows = list?.sprints.orEmpty().filter { it.projectId == projectId }
             val current = list?.currentSprintId?.takeIf { id -> rows.any { it.id == id } }
+            val planScope = state.planScope.copy(
+                sprints = rows, currentSprintId = current,
+                currentSprintRow = rows.firstOrNull { it.id == current },
+                selectedSprintId = pickSprint(state.selectedSprintId, rows, current),
+                agile = config ?: state.agile,
+            )
             state.copy(
-                planScope = state.planScope.copy(
-                    sprints = rows, currentSprintId = current,
-                    currentSprintRow = rows.firstOrNull { it.id == current },
-                    selectedSprintId = pickSprint(state.selectedSprintId, rows, current),
-                    agile = config ?: state.agile,
-                ),
+                planScope = planScope,
                 tab = normalizeTab(
                     if (!landingApplied && current != null) TaskTab.Sprint else state.tab,
-                    state.planScope.visibleTabs,
+                    planScope.visibleTabs,
                 ),
             )
         }

@@ -47,6 +47,58 @@ class PlanningSurfaceTest {
     }
 
     @Test
+    fun kanbanUsesItsOrderedServerTabsAndOnlyOffersTheEnabledBacklog() {
+        val project = ProjectOption(
+            id = 31,
+            type = "kanban",
+            planTabs = listOf("backlog", "board"),
+            kanbanBacklogEnabled = true,
+        )
+        val scope = PlanScope(projects = listOf(project), projectScoped = true, selectedProjectId = project.id)
+
+        assertEquals(
+            listOf(TaskTab.Backlog, TaskTab.KanbanBoard),
+            planningTabs(scope, agileEnabled = false, sprints = listOf(active), currentSprintId = active.id),
+        )
+        assertEquals(listOf(TaskTab.Backlog, TaskTab.KanbanBoard), scope.visibleTabs)
+        assertEquals(scope.visibleTabs, TaskShellUiState(planScope = scope).visibleTabs)
+        assertEquals(scope.visibleTabs, TaskUiState(planScope = scope).visibleTabs)
+        assertEquals(
+            listOf(TaskTab.KanbanBoard),
+            planningTabs(
+                scope.copy(
+                    projects = listOf(project.copy(planTabs = listOf("board"), kanbanBacklogEnabled = false)),
+                ),
+                agileEnabled = true,
+                sprints = listOf(active),
+                currentSprintId = active.id,
+            ),
+        )
+
+        val taskList = scope.copy(
+            projects = listOf(project.copy(type = "task_list", planTabs = listOf("list", "board", "calendar"))),
+        )
+        assertEquals(
+            listOf(TaskTab.Backlog),
+            planningTabs(taskList, agileEnabled = false, sprints = emptyList(), currentSprintId = null),
+        )
+    }
+
+    @Test
+    fun switchingBetweenScrumAndKanbanKeepsEachProjectsServerTabs() {
+        val scrum = ProjectOption(id = 3, planTabs = listOf("reports", "backlog", "sprint"))
+        val kanban = ProjectOption(id = 4, type = "kanban", planTabs = listOf("board"))
+        val scope = PlanScope(projects = listOf(scrum, kanban), projectScoped = true, selectedProjectId = scrum.id)
+
+        assertEquals(listOf(TaskTab.Reports, TaskTab.Backlog, TaskTab.Sprint), scope.visibleTabs)
+        val kanbanScope = scope.copy(selectedProjectId = kanban.id)
+        assertEquals(listOf(TaskTab.KanbanBoard), kanbanScope.visibleTabs)
+        assertEquals(TaskTab.KanbanBoard, normalizeTab(TaskTab.Sprint, kanbanScope.visibleTabs))
+        assertFalse(TaskUiState(planScope = kanbanScope).sprintTabVisible)
+        assertEquals(scope.visibleTabs, kanbanScope.copy(selectedProjectId = scrum.id).visibleTabs)
+    }
+
+    @Test
     fun theServerCurrentSprintIsTheBoardsDefaultEvenWhenPaused() {
         assertEquals(12L, pickSprint(null, listOf(planned, active), currentSprintId = 12L))
         val paused = active.copy(id = 14, status = "paused")

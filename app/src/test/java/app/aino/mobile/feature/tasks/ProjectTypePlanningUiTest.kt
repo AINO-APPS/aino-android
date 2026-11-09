@@ -45,13 +45,15 @@ class ProjectTypePlanningUiTest {
         val shell = TaskViewModel(repository, ticketSession = session)
         val plan = PlanViewModel(repository, session)
         val board = SprintBoardViewModel(repository, session)
+        val projectBoard = ProjectBoardViewModel(repository, session)
         models.put("shell", shell)
         models.put("plan", plan)
         models.put("board", board)
+        models.put("project-board", projectBoard)
         shell.bind(1, "employee", "Team", agileEnabled = false)
         compose.setContent {
             CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
-                TasksScreen(shell, plan, board, {}, {}, {})
+                TasksScreen(shell, plan, board, projectBoard, {}, {}, {})
             }
         }
         compose.waitUntil(5_000) { shell.ui.value.teamResolved }

@@ -66,7 +66,9 @@ web-only. Supported tabs follow the server's ordered `planTabs`: Scrum keeps
 Backlog, Sprint and Reports even without an active sprint. The empty Sprint
 surface links to Backlog. Older project responses use the Scrum default; unknown
 future tabs degrade safely to Backlog without enabling new planning surfaces.
-Kanban and Task list planning surfaces are separate slices.
+Kanban projects use the server's project-board response for workflow
+columns, tickets and WIP occupancy; the separate project backlog is shown only
+when the server enables it. Task List views remain outside this Android slice.
 
 Scheduled planning, date-placement actions, daily carry-forward and team automatic
 sprint configuration are no longer exposed or called by the app. Start/due dates
@@ -83,7 +85,15 @@ session requests coordinate those writes and shared sheets.
 
 The Activity-scoped `SprintBoardViewModel` owns Board membership ids, optimistic
 moves and identity-checked rollback, sprint lifecycle and rollover, completion
-preview, stats and scope baseline. It reads the session Ticket store and Plan
+preview, stats and scope baseline. Completion opens a server-preview-driven
+dialog for the next planned sprint, a new planned sprint, or backlog. Parents,
+subtasks, points, staying tickets and new-sprint dates are never inferred from
+the locally loaded board. New-target requests require the preview's explicit
+`supportsNewSprint` opt-in; older servers retain numeric-sprint/backlog requests.
+Loading or failed previews block completion and can be retried. Lifecycle
+authorization controls are unchanged: member access awaits an explicit server
+`canManageSprint` capability, not the API-support flag.
+It reads the session Ticket store and Plan
 scope without referencing another ViewModel. The Tasks shell remains the only
 Plan-scope writer; session requests coordinate Board reloads and metadata refresh.
 Completing a sprint refetches enriched Tickets so rollover Placement updates in

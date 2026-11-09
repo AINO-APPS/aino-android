@@ -76,6 +76,7 @@ import app.aino.mobile.feature.tasks.TasksScreen
 import app.aino.mobile.feature.tasks.TasksShellViewModel
 import app.aino.mobile.feature.tasks.TicketSession
 import app.aino.mobile.feature.tasks.SprintBoardViewModel
+import app.aino.mobile.feature.tasks.ProjectBoardViewModel
 import app.aino.mobile.feature.tasks.PlanViewModel
 import app.aino.mobile.feature.profile.ProfileScreen
 import app.aino.mobile.feature.profile.ProfileViewModel
@@ -127,6 +128,7 @@ fun AinoApp(
     tasks: TasksShellViewModel,
     ticketSession: TicketSession,
     sprintBoard: SprintBoardViewModel,
+    projectBoard: ProjectBoardViewModel,
     plan: PlanViewModel,
     profile: ProfileViewModel,
     chat: ChatViewModel,
@@ -464,6 +466,7 @@ fun AinoApp(
             tasks,
             ticketSession,
             sprintBoard,
+            projectBoard,
             plan,
             profile,
             chat,
@@ -536,6 +539,7 @@ private fun AuthenticatedShell(
     tasks: TasksShellViewModel,
     ticketSession: TicketSession,
     sprintBoard: SprintBoardViewModel,
+    projectBoard: ProjectBoardViewModel,
     plan: PlanViewModel,
     profile: ProfileViewModel,
     chat: ChatViewModel,
@@ -763,6 +767,7 @@ private fun AuthenticatedShell(
                 TasksScreen(
                     viewModel = tasks,
                     boardViewModel = sprintBoard,
+                    projectBoardViewModel = projectBoard,
                     planViewModel = plan,
                     onOpenDetail = { id -> nav.navigate(ticketDetailRoute(id)) { launchSingleTop = true } },
                     onOpenInsights = { nav.navigate(SPRINT_INSIGHTS_ROUTE) { launchSingleTop = true } },

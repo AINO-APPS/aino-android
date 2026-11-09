@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -278,6 +279,23 @@ data class SprintBoardResponse(
 )
 
 @Serializable
+data class ProjectBoardColumn(
+    val stateId: Long,
+    val count: Int = 0,
+    val limit: Int? = null,
+    val accepting: Boolean = true,
+    val state: WorkflowState? = null,
+)
+
+@Serializable
+data class ProjectBoardResponse(
+    val project: ProjectOption,
+    val sprint: AvailableSprint? = null,
+    val columns: List<ProjectBoardColumn> = emptyList(),
+    val tickets: List<Task> = emptyList(),
+)
+
+@Serializable
 data class SprintEnvelope(val sprint: AvailableSprint? = null)
 
 @Serializable
@@ -313,7 +331,9 @@ data class ProjectOption(
     val availableTypes: List<String> = emptyList(),
     val changeableTypes: List<String> = emptyList(),
     @SerialName("kanban_backlog_enabled") val kanbanBacklogEnabled: Boolean = false,
-    @SerialName("wip_enabled") val wipEnabled: Boolean = false,
+    @SerialName("enable_wip_limits")
+    @JsonNames("wip_enabled")
+    val wipEnabled: Boolean = false,
 ) {
     val typeDisplayName: String
         get() = when (type) {
@@ -660,27 +680,6 @@ data class ScheduleOverlay(
     /** The day this overlay belongs to, whether it is a date or a timestamp. */
     val day: String? get() = date ?: startTime?.take(10)
 }
-
-/** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
-@Serializable
-data class CompletionPreview(
-    val sprint: CompletionPreviewSprint? = null,
-    val defaultTarget: String? = null,
-    val moving: Int = 0,
-    val staying: Int = 0,
-    val movingPoints: Double = 0.0,
-) {
-    val doneTasks: Int get() = staying
-    val totalTasks: Int get() = moving + staying
-    val incompleteTasks: Int get() = moving
-}
-
-@Serializable
-data class CompletionPreviewSprint(
-    val id: Long = 0,
-    val name: String = "",
-    val status: String = "",
-)
 
 /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
 @Serializable

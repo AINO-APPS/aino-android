@@ -760,6 +760,8 @@ internal class TicketSessionHarness {
     @Volatile var completedRollover: String? = null
     val repository = TaskRepository(ApiClient { request ->
         val body = when {
+            request.path == "sprints/10/completion-preview" ->
+                """{"defaultTarget":11,"moving":[{"id":201,"title":"Ship release"}],"staying":[],"movingPoints":0}"""
             request.path == "sprints/11/board" ->
                 """{"sprint":{"id":11,"name":"Next sprint"},"columns":[{"stateId":102,"count":1,"accepting":true}],"tickets":[$saved]}"""
             request.path == "sprints/10/complete" -> {

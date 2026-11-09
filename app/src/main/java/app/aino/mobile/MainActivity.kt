@@ -42,6 +42,7 @@ import app.aino.mobile.feature.attendance.VerifyFix
 import app.aino.mobile.core.navigation.AttendanceSystemActions
 import app.aino.mobile.feature.tasks.TasksShellViewModel
 import app.aino.mobile.feature.tasks.SprintBoardViewModel
+import app.aino.mobile.feature.tasks.ProjectBoardViewModel
 import app.aino.mobile.feature.tasks.PlanViewModel
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.core.push.PushNotifications
@@ -127,6 +128,10 @@ class MainActivity : FragmentActivity() {
                 key = "sprint-board-${ticketSession.key}",
                 factory = SprintBoardViewModel.factory(applicationContext, ticketSession),
             )
+            val projectBoardViewModel = androidx.lifecycle.viewmodel.compose.viewModel<ProjectBoardViewModel>(
+                key = "project-board-${ticketSession.key}",
+                factory = ProjectBoardViewModel.factory(applicationContext, ticketSession),
+            )
             val planViewModel = androidx.lifecycle.viewmodel.compose.viewModel<PlanViewModel>(
                 key = "plan-${ticketSession.key}",
                 factory = PlanViewModel.factory(applicationContext, ticketSession),
@@ -162,6 +167,7 @@ class MainActivity : FragmentActivity() {
                     taskViewModel,
                     ticketSession,
                     sprintBoardViewModel,
+                    projectBoardViewModel,
                     planViewModel,
                     profileViewModel,
                     chatViewModel,

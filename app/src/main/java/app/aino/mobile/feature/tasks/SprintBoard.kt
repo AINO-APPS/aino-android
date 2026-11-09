@@ -629,58 +629,15 @@ private fun MiniStat(value: String, label: String, tint: androidx.compose.ui.gra
 private fun SprintLifecycleControls(ui: SprintBoardUiState, sprint: AvailableSprint, viewModel: SprintBoardViewModel) {
     val colors = LocalWebColors.current
     val canEdit = canManageSprint(ui.role)
-    var rolloverPicker by remember { mutableStateOf(false) }
     if (!canEdit && sprint.status != "completed") return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when {
             sprint.status == "planned" ->
                 PillButton("Start sprint", viewModel::startSprint, Modifier.fillMaxWidth(), primary = true, icon = HeroIcons.PlayCircle, enabled = !ui.lifecycleBusy)
-            (sprint.status == "active" || sprint.status == "paused") && !ui.completing -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (sprint.status == "active") PillButton("Pause", viewModel::pauseSprint, Modifier.weight(1f), icon = HeroIcons.Pause, enabled = !ui.lifecycleBusy)
-                else PillButton("Resume", viewModel::resumeSprint, Modifier.weight(1f), icon = HeroIcons.Play, enabled = !ui.lifecycleBusy)
-                PillButton("Complete", viewModel::beginComplete, Modifier.weight(1f), primary = true, icon = HeroIcons.CheckCircle, enabled = !ui.lifecycleBusy)
-            }
-            ui.completing -> {
-                // Pre-flight (D32): what moves, where to, and what is dropped —
-                // shown before the sprint is actually completed.
-                ui.completionPreview?.let { preview ->
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(CardShape)
-                            .background(colors.bg)
-                            .padding(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            "${preview.doneTasks} of ${preview.totalTasks} done" +
-                                                        if (preview.movingPoints > 0) " · ${formatPoints(preview.movingPoints)} ${ui.agile.unitLabel}" else "",
-                            color = colors.textSecondary,
-                            fontSize = 0.8.rem,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                        if (preview.incompleteTasks > 0) {
-                            Text(
-                                                        "${preview.incompleteTasks} unfinished (${formatPoints(preview.movingPoints)} ${ui.agile.unitLabel}) will move",
-                                color = colors.warning,
-                                fontSize = 0.76.rem,
-                            )
-                        } else {
-                            Text("Nothing carries over", color = colors.success, fontSize = 0.76.rem)
-                        }
-                        Text(
-                            "Finished work stays with this sprint.",
-                            color = colors.textMuted,
-                            fontSize = 0.72.rem,
-                        )
-                    }
-                }
-                val target = if (ui.rolloverTo == "backlog") "Backlog" else ui.rolloverOptions.firstOrNull { it.id.toString() == ui.rolloverTo }?.name ?: "Backlog"
-                PropertyRow(HeroIcons.ArrowTurnDownRight, "Roll over to", { rolloverPicker = true }) { PropertyText(target) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PillButton("Cancel", viewModel::cancelComplete, Modifier.weight(1f), enabled = !ui.lifecycleBusy)
-                    PillButton("Complete sprint", viewModel::completeSprint, Modifier.weight(1f), primary = true, enabled = !ui.lifecycleBusy)
-                }
+            sprint.status == "active" || sprint.status == "paused" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (sprint.status == "active") PillButton("Pause", viewModel::pauseSprint, Modifier.weight(1f), icon = HeroIcons.Pause, enabled = !ui.lifecycleBusy && !ui.completing)
+                else PillButton("Resume", viewModel::resumeSprint, Modifier.weight(1f), icon = HeroIcons.Play, enabled = !ui.lifecycleBusy && !ui.completing)
+                PillButton("Complete", viewModel::beginComplete, Modifier.weight(1f), primary = true, icon = HeroIcons.CheckCircle, enabled = !ui.lifecycleBusy && !ui.completing)
             }
             sprint.status == "completed" -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(HeroIcons.CheckCircle, null, Modifier.size(16.dp), tint = colors.success)
@@ -688,18 +645,9 @@ private fun SprintLifecycleControls(ui: SprintBoardUiState, sprint: AvailableSpr
                 Text("Sprint completed", color = colors.success, fontSize = 0.84.rem, fontWeight = FontWeight.SemiBold)
             }
         }
-        ui.lifecycleError?.let { Text(it, color = colors.danger, fontSize = 0.78.rem) }
+        if (!ui.completing) ui.lifecycleError?.let { Text(it, color = colors.danger, fontSize = 0.78.rem) }
     }
-    if (rolloverPicker) {
-        SelectSheet(
-            "Roll over incomplete tickets",
-            listOf(SelectOption("backlog", "Backlog")) + ui.rolloverOptions.map { SelectOption(it.id.toString(), it.name, it.status.replaceFirstChar(Char::uppercase)) },
-            setOf(ui.rolloverTo),
-            onDismiss = { rolloverPicker = false },
-            onSelect = { viewModel.setRollover(it.firstOrNull() ?: "backlog") },
-            icon = HeroIcons.ArrowTurnDownRight,
-        )
-    }
+    if (ui.completing) SprintCompletionDialog(ui, sprint, viewModel)
 }
 
 /** Long-press / overflow actions for a card: move, comments, open, delete. */
