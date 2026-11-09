@@ -287,7 +287,7 @@ class TasksShellViewModel(
         when (_ui.value.tab) {
             TaskTab.Sprint -> loadSprint()
             TaskTab.Reports -> Unit
-            TaskTab.KanbanBoard -> Unit
+            TaskTab.KanbanBoard, TaskTab.List, TaskTab.Upcoming -> Unit
             TaskTab.Backlog -> if (_ui.value.planScope.projectType != "kanban") loadBacklog()
             TaskTab.ServiceDesk -> _ui.update { it.copy(serviceDeskVersion = it.serviceDeskVersion + 1) }
         }
@@ -525,7 +525,10 @@ class TasksShellViewModel(
         val projectId = scope.selectedProjectId ?: return
         val hasSprintTab = TaskTab.Sprint in scope.visibleTabs
         val list = if (hasSprintTab) runCatching { repository.loadProjectSprints(projectId) }.getOrNull() else null
-        val config = if (hasSprintTab || (scope.agileEnabled && scope.projectType == "kanban")) {
+        val config = if (
+            hasSprintTab || scope.projectType == "task_list" ||
+            (scope.agileEnabled && scope.projectType == "kanban")
+        ) {
             runCatching { repository.loadAgileConfig(projectId) }.getOrNull()
         } else null
         updatePlan { state ->

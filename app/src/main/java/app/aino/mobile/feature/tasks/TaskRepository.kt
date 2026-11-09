@@ -21,6 +21,14 @@ class TaskRepository(
 ) {
     // ── Lists ────────────────────────────────────────────────────────────
     // @api GET tasks
+    fun loadProjectTickets(
+        projectId: Long,
+        query: ProjectTicketQuery = ProjectTicketQuery(),
+        filters: TaskFilters = TaskFilters(),
+        offset: Int = 0,
+    ): ProjectTicketCollection = decode(api.execute(ApiRequest(path = projectTicketsQuery(projectId, query, filters, offset))))
+
+    // @api GET tasks
     // @api GET tasks/backlog
     // @api GET tasks/search
     fun loadSprintTasks(

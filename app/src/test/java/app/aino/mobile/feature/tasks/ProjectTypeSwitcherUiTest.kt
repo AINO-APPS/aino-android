@@ -60,6 +60,12 @@ class ProjectTypeSwitcherUiTest {
         compose.onNodeWithText("Scheduled").assertDoesNotExist()
         compose.onNodeWithText("OPS · Operations · Task list · Archived").assertIsDisplayed().performClick()
         compose.onNodeWithText("Task list", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("List").assertIsDisplayed()
+        compose.onNodeWithText("Board").assertIsDisplayed()
+        compose.onNodeWithText("Upcoming").assertIsDisplayed()
+        compose.onNodeWithText("Calendar").assertDoesNotExist()
+        compose.onNodeWithText("Upcoming").performClick()
+        compose.onNodeWithText("Calendar is available on the web.").assertIsDisplayed()
         compose.runOnIdle {
             assertEquals(4L, session.planScope.value.selectedProjectId)
             assertEquals("task_list", session.planScope.value.projectType)

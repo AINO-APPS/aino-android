@@ -76,6 +76,8 @@ internal fun tabIcon(tab: TaskTab): ImageVector = when (tab) {
     TaskTab.KanbanBoard -> HeroIcons.ViewColumns
     TaskTab.Backlog -> HeroIcons.ArchiveBox
     TaskTab.Reports -> HeroIcons.ChartBar
+    TaskTab.List -> HeroIcons.ArchiveBox
+    TaskTab.Upcoming -> HeroIcons.CalendarDays
     TaskTab.ServiceDesk -> HeroIcons.Lifebuoy
 }
 
@@ -84,6 +86,8 @@ internal fun tabLabel(tab: TaskTab): String = when (tab) {
     TaskTab.KanbanBoard -> "Board"
     TaskTab.Backlog -> "Backlog"
     TaskTab.Reports -> "Reports"
+    TaskTab.List -> "List"
+    TaskTab.Upcoming -> "Upcoming"
     TaskTab.ServiceDesk -> "Service Desk"
 }
 
@@ -112,6 +116,11 @@ fun TasksScreen(
     val ui = tasksScreenState(shellUi, planUi)
     val boardUi by boardViewModel.ui.collectAsStateWithLifecycle()
     val projectBoardUi by projectBoardViewModel.ui.collectAsStateWithLifecycle()
+    val projectTicketViewModel = androidx.lifecycle.viewmodel.compose.viewModel<ProjectTicketViewModel>(
+        key = "project-tickets-${viewModel.ticketSession.key}",
+        factory = ProjectTicketViewModel.factory(viewModel.repo, viewModel.ticketSession),
+    )
+    val projectTicketUi by projectTicketViewModel.ui.collectAsStateWithLifecycle()
     var inlineCommentTicketId by rememberSaveable(viewModel.ticketSession.key) { mutableStateOf<Long?>(null) }
     val openComments: (Long) -> Unit = { inlineCommentTicketId = it }
     val colors = LocalWebColors.current
@@ -230,6 +239,14 @@ fun TasksScreen(
                             viewModel = viewModel,
                             onRefresh = projectBoardViewModel::refresh,
                             onRetry = projectBoardViewModel::refresh,
+                            onOpen = open,
+                        )
+                        TaskTab.List, TaskTab.Upcoming -> ProjectTicketPage(
+                            ui = projectTicketUi,
+                            upcoming = tabs.getOrNull(page) == TaskTab.Upcoming,
+                            onRefresh = projectTicketViewModel::refresh,
+                            onQuery = projectTicketViewModel::setQuery,
+                            onFilters = viewModel::setFilters,
                             onOpen = open,
                         )
                         TaskTab.Backlog -> when {
@@ -425,7 +442,9 @@ private fun headerSubtitle(ui: TaskUiState): String = when (ui.tab) {
         val label = sp.number?.let { "#$it" } ?: sp.name
         team + label + if (sp.status == "active") " · ${sprintDaysLeft(sp.endDate)}d left" else " · ${sp.status.replaceFirstChar(Char::uppercase)}"
     } ?: "Sprint board"
-    TaskTab.KanbanBoard -> ui.planScope.selectedProject?.name ?: "Kanban board"
+    TaskTab.KanbanBoard -> ui.planScope.selectedProject?.name ?: "Project board"
+    TaskTab.List -> "Every ticket in this project"
+    TaskTab.Upcoming -> "By start date · overdue first"
     TaskTab.Backlog -> {
         if (ui.planScope.projectScoped && ui.planScope.projectType == "kanban") {
             "Tickets in the initial state"
@@ -645,6 +664,7 @@ private fun FilterSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel
         when (ui.tab) {
             TaskTab.Sprint -> "Filter sprint"
             TaskTab.KanbanBoard -> "Filter board"
+            TaskTab.List, TaskTab.Upcoming -> "Filter project tickets"
             else -> "Filter backlog"
         },
         viewModel::closeSheet,

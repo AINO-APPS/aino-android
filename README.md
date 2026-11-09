@@ -68,7 +68,19 @@ surface links to Backlog. Older project responses use the Scrum default; unknown
 future tabs degrade safely to Backlog without enabling new planning surfaces.
 Kanban projects use the server's project-board response for workflow
 columns, tickets and WIP occupancy; the separate project backlog is shown only
-when the server enables it. Task List views remain outside this Android slice.
+when the server enables it.
+
+Task list projects map the server's ordered List, Board and Calendar tabs to
+native List, Board and Upcoming. Calendar itself remains web-only. List sorts
+and filters by key, title, type, status, assignee, priority, start date and due
+date. `ProjectTicketViewModel` reads every bounded project collection page
+(`GET /tasks?scope=list&project_id=…`) instead of a legacy placement bucket.
+Upcoming shows open tickets with past start dates or deadlines first, followed
+by start-date groups and tickets without a start date; it never truncates old
+overdue work to a rolling date window. List and Upcoming open the shared ticket
+detail for date edits. Their workflow Board uses the same server columns and
+occupancy as Kanban, without a sprint. Project/filter changes discard late
+collection responses; failures offer Retry and pull-to-refresh.
 
 Scheduled planning, date-placement actions, daily carry-forward and team automatic
 sprint configuration are no longer exposed or called by the app. Start/due dates

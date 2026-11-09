@@ -79,7 +79,7 @@ class PlanningSurfaceTest {
             projects = listOf(project.copy(type = "task_list", planTabs = listOf("list", "board", "calendar"))),
         )
         assertEquals(
-            listOf(TaskTab.Backlog),
+            listOf(TaskTab.List, TaskTab.KanbanBoard, TaskTab.Upcoming),
             planningTabs(taskList, agileEnabled = false, sprints = emptyList(), currentSprintId = null),
         )
     }

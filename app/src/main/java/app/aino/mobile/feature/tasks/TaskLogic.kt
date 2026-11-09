@@ -13,7 +13,8 @@ import java.util.Locale
 
 /** Android planning tabs; `key` matches a server `planTabs` value. */
 enum class TaskTab(val key: String) {
-    Backlog("backlog"), Sprint("sprint"), Reports("reports"), KanbanBoard("board"), ServiceDesk("service-desk");
+    Backlog("backlog"), Sprint("sprint"), Reports("reports"), KanbanBoard("board"),
+    List("list"), Upcoming("upcoming"), ServiceDesk("service-desk");
 
     companion object {
         fun fromKey(key: String?): TaskTab? = entries.firstOrNull { it.key == key }
@@ -90,8 +91,7 @@ fun matchesPlanFilters(task: Task, filters: TaskFilters, quick: BacklogQuickFilt
 
 /**
  * Project responses decide planning tabs. Older responses fall back to a
- * stable, supported surface set; Android never recreates Scheduled or adds
- * the not-yet-supported Task list views. Kanban tabs are resolved by project type.
+ * stable, supported surface set. Kanban and Task list tabs are resolved by project type.
  */
 fun planningTabs(
     agileEnabled: Boolean,
@@ -102,7 +102,10 @@ fun planningTabs(
 ): List<TaskTab> {
     if (projectTabs != null) {
         return projectTabs.mapNotNull(TaskTab::fromKey).distinct()
-            .filter { it != TaskTab.ServiceDesk && it != TaskTab.KanbanBoard }
+            .filterNot {
+                it == TaskTab.ServiceDesk || it == TaskTab.KanbanBoard ||
+                    it == TaskTab.List || it == TaskTab.Upcoming
+            }
             .ifEmpty { listOf(TaskTab.Backlog) }
     }
 
@@ -117,6 +120,16 @@ fun planningTabs(
 }
 
 fun planningTabs(scope: PlanScope, agileEnabled: Boolean, sprints: List<AvailableSprint>, currentSprintId: Long?): List<TaskTab> {
+    if (scope.projectScoped && scope.projectType == "task_list") {
+        return scope.planTabs.mapNotNull { tab ->
+            when (tab) {
+                "list" -> TaskTab.List
+                "board" -> TaskTab.KanbanBoard
+                "calendar", "upcoming" -> TaskTab.Upcoming
+                else -> null
+            }
+        }.distinct()
+    }
     if (scope.projectScoped && scope.projectType == "kanban") {
         return scope.planTabs.mapNotNull { tab ->
             when (tab) {
@@ -151,7 +164,7 @@ fun strandedSprintGroups(tasks: List<Task>, sprints: List<AvailableSprint>): Lis
 /** `useFilters.filterCount` — status is a board or sprint filter. */
 fun filterCount(filters: TaskFilters, tab: TaskTab): Int {
     val base = mutableListOf(filters.assignee, filters.label, filters.priority, filters.search.trim())
-    if (tab == TaskTab.Sprint || tab == TaskTab.KanbanBoard) base += filters.status
+    if (tab in setOf(TaskTab.Sprint, TaskTab.KanbanBoard, TaskTab.List, TaskTab.Upcoming)) base += filters.status
     return base.count(String::isNotEmpty)
 }
 

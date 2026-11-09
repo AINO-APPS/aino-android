@@ -34,6 +34,31 @@ class ProjectBoardViewModelTest {
     }
 
     @Test
+    fun taskListLoadsTheProjectWorkflowBoardWithoutSprintOrBacklogReads() {
+        val paths = java.util.concurrent.CopyOnWriteArrayList<String>()
+        val repository = TaskRepository(ApiClient { request ->
+            paths += request.path
+            ApiResponse(200, emptyMap(), """{
+                "project":{"id":3,"type":"task_list","planTabs":["list","board","calendar"]},
+                "columns":[{"stateId":21,"count":1,"accepting":true,
+                    "state":{"id":21,"key":"review","name":"Review","category":"in_review"}}],
+                "tickets":[{"id":7,"title":"Review","project_id":3,"workflow_state_id":21}]
+            }""".toByteArray())
+        })
+        viewModel = ProjectBoardViewModel(repository, session)
+        session.writePlanScope(PlanScope(
+            projectScoped = true, selectedProjectId = 3,
+            projects = listOf(ProjectOption(id = 3, type = "task_list", planTabs = listOf("list", "board", "calendar"))),
+        ))
+        val state = runBlocking {
+            withTimeout(5_000) { viewModel.ui.first { it.board != null } }
+        }
+        assertEquals(listOf("projects/3/board"), paths)
+        assertEquals(listOf(7L), state.tasksForColumn(state.columns.single()).map(Task::id))
+        assertEquals("Review", state.columns.single().state?.name)
+    }
+
+    @Test
     fun selectedKanbanProjectLoadsServerColumnsAndFiltersCardsWithoutChangingOccupancy() {
         val paths = mutableListOf<String>()
         val repository = TaskRepository(ApiClient { request ->
