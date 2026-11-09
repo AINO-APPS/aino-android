@@ -116,8 +116,12 @@ class TaskRepository(
             decode(api.execute(ApiRequest(path = "tasks/schedule-overlays?from=$from&to=$to")))
 
         /** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
-        fun loadCompletionPreview(id: Long): CompletionPreview =
-            decode(api.execute(ApiRequest(path = "sprints/$id/completion-preview")))
+        // @api GET sprints/:param/completion-preview
+        fun loadCompletionPreview(id: Long, rolloverTo: String? = null): CompletionPreview {
+            val query = rolloverTo?.let { "?rolloverTo=${java.net.URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+            val path = "sprints/$id/completion-preview" + query
+            return decode(api.execute(ApiRequest(path = path)))
+        }
 
         /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
         fun loadBaseline(id: Long): BaselineResponse =
