@@ -163,7 +163,7 @@ class ProjectOwnershipViewModelTest {
         })
         val shell = TasksShellViewModel(repository, ticketSession = session)
         shell.setSearch("old-7")
-        await { !shell.ui.value.searching }
+        await { !shell.ui.value.searching && shell.searchResults.value.singleOrNull()?.id == 7L }
         assertEquals(listOf("OPS-21"), shell.searchResults.value.map { it.displayKey })
         assertTrue(shell.searchResults.value.single().project!!.archived)
         assertEquals(listOf("OLD-7"), shell.searchResults.value.single().keyAliases)
