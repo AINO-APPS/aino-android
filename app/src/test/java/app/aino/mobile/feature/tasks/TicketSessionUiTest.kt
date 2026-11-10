@@ -317,10 +317,17 @@ class TicketSessionUiTest {
                 WorkflowState(102, "in_progress", "In Progress"),
             )
             assertTrue("Move request should be in flight", harness.awaitStatusWrite())
-            harness.await { harness.boardViewModel.ui.value.tasks.single().workflowStateKey == "in_progress" }
+            harness.await {
+                harness.boardViewModel.ui.value.tasks.single().workflowStateKey == "in_progress" &&
+                    harness.detailViewModel.ui.value.detail?.workflowStateKey == "in_progress"
+            }
 
             harness.finishStatusWrite()
-            harness.await { harness.boardViewModel.ui.value.error != null }
+            harness.await {
+                harness.boardViewModel.ui.value.error != null &&
+                    harness.boardViewModel.ui.value.tasks.single().workflowStateKey == "todo" &&
+                    harness.detailViewModel.ui.value.detail?.workflowStateKey == "todo"
+            }
 
             assertEquals("todo", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
             assertEquals("todo", harness.detailViewModel.ui.value.detail?.workflowStateKey)
@@ -539,12 +546,21 @@ class TicketSessionUiTest {
         harness.planRows = backlog
         harness.detailResponse = backlog
         harness.viewModelPlan.loadBacklog()
-        harness.await { harness.viewModelPlan.ui.value.planLoaded }
-        harness.await { !harness.detailViewModel.ui.value.detailLoading }
+        harness.await {
+            harness.viewModelPlan.ui.value.planLoaded &&
+                harness.viewModelPlan.ui.value.backlog.map { it.id } == listOf(201L)
+        }
+        harness.await {
+            !harness.detailViewModel.ui.value.detailLoading &&
+                harness.detailViewModel.ui.value.detail?.title == "Ship release"
+        }
 
         harness.planRows = ""
         harness.viewModelPlan.loadBacklog()
-        harness.await { harness.planReads == 2 && harness.viewModelPlan.ui.value.backlog.isEmpty() }
+        harness.await {
+            harness.planReads == 2 && !harness.viewModelPlan.ui.value.backlogLoading &&
+                harness.viewModelPlan.ui.value.backlog.isEmpty()
+        }
 
         assertTrue(harness.viewModelPlan.ui.value.backlog.isEmpty())
         assertEquals(0, harness.viewModelPlan.ui.value.backlogTotal)
@@ -923,7 +939,7 @@ internal class TicketSessionHarness {
         await { !boardViewModel.ui.value.sprintLoading && boardViewModel.ui.value.tasks.size == 1 }
         viewModelPlan.loadBacklog()
         await { viewModelPlan.ui.value.planLoaded }
-        await { !detailViewModel.ui.value.detailLoading }
+        await { !detailViewModel.ui.value.detailLoading && !detailViewModel.ui.value.worklogsLoading }
     }
 
     fun await(condition: () -> Boolean) {
