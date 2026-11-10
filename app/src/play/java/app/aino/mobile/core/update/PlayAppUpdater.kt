@@ -88,6 +88,20 @@ class PlayAppUpdater : AppUpdater {
         _ui.value = UpdateUiState()
     }
 
+    override fun installRequired(activity: Activity) {
+        if (_ui.value.readyToInstall) {
+            manager(activity).completeUpdate()
+            return
+        }
+        // The store link works even if the optional in-app check failed or was dismissed.
+        runCatching {
+            activity.startActivity(android.content.Intent(
+                android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("https://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID}"),
+            ))
+        }.onFailure { _ui.value = UpdateUiState(message = "Could not open Google Play. Try again.") }
+    }
+
     private fun AppUpdateInfo.asAvailable() =
         AvailableUpdate(version = availableVersionCode().toString(), apkUrl = "", notes = "")
 }

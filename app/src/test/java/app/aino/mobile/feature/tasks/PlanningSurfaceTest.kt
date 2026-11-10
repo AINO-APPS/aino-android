@@ -126,24 +126,6 @@ class PlanningSurfaceTest {
     }
 
     @Test
-    fun onlySuperAdminAndAboveGetTheTeamPicker() {
-        assertTrue(showsTeamPicker("super_admin"))
-        assertTrue(showsTeamPicker("platform_admin"))
-        assertFalse(showsTeamPicker("hr_admin"))
-        assertFalse(showsTeamPicker("manager"))
-        assertFalse(showsTeamPicker("employee"))
-    }
-
-    @Test
-    fun theDefaultTeamIsTheRememberedOneThenTheUsersOwnThenTheFirst() {
-        val teams = listOf(TeamOption(1, "Payments"), TeamOption(2, "Platform"))
-        assertEquals(2L, defaultTeamId(remembered = 2, ownTeamId = 1, teams = teams))
-        assertEquals(1L, defaultTeamId(remembered = null, ownTeamId = 1, teams = teams))
-        assertEquals(1L, defaultTeamId(remembered = 99, ownTeamId = null, teams = teams))
-        assertNull(defaultTeamId(remembered = null, ownTeamId = null, teams = emptyList()))
-    }
-
-    @Test
     fun thePlanSplitViewIsReachableFromBacklogForTheRunningSprintFirst() {
         // "Plan sprint" targets the running sprint, else the next planned one.
         assertEquals(active.id, planTargetId(listOf(planned, active), currentSprintId = active.id))
@@ -152,21 +134,17 @@ class PlanningSurfaceTest {
     }
 
     @Test
-    fun onlyTheSelectedTeamsSprintsDriveTheTabs() {
-        val other = active.copy(id = 99, teamId = 7)
-        // Without the picker the server already scoped the list, so it is used
-        // as-is.
-        assertEquals(listOf(active), sprintsForTeam(listOf(active), null, pickerVisible = false))
-        // With it, the chosen team narrows the list.
-        assertEquals(listOf(active), sprintsForTeam(listOf(active, other), 3, pickerVisible = true))
-        // Unassigned has no sprints at all.
-        assertTrue(sprintsForTeam(listOf(active), -1L, pickerVisible = true).isEmpty())
+    fun onlyTheSelectedProjectsSprintsDriveTheTabs() {
+        val selected = active.copy(projectId = 3)
+        val other = active.copy(id = 99, projectId = 7)
+        val scope = PlanScope(projectScoped = true, selectedProjectId = 3, sprints = listOf(selected, other))
+        assertEquals(listOf(selected), scope.teamSprints)
+        assertTrue(scope.copy(selectedProjectId = null).teamSprints.isEmpty())
     }
 
     @Test
-    fun theTeamScopeIsSentOnlyWhenAteamIsChosen() {
-        assertEquals(TeamScope(teamId = 3), scopeForTeam(3))
-        assertEquals(TeamScope(unassigned = true), scopeForTeam(-1))
-        assertEquals(TeamScope(), scopeForTeam(null))
+    fun planningScopeNeverDerivesOwnershipFromTheActorsTeam() {
+        assertEquals(TeamScope(projectId = 3), PlanScope(selectedProjectId = 3, teamId = 9).teamScope)
+        assertEquals(TeamScope(), PlanScope(teamId = 9, selectedTeamId = -1).teamScope)
     }
 }

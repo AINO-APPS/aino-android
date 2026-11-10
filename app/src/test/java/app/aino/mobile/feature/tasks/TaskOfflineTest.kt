@@ -23,8 +23,8 @@ class TaskOfflineTest {
         if (request.path.startsWith("tasks/backlog")) backlogLoads.incrementAndGet()
         if (offline) throw ApiError.Network(request.method, "https://x/api/${request.path}", java.io.IOException("offline"))
         val body = when {
-            request.path.startsWith("tasks/backlog") -> """{"tasks":[{"id":4,"title":"Ship","container":"backlog"}]}"""
-            request.path == "tasks/carry-forward" -> """{"carried":0}"""
+            request.path.startsWith("tasks/backlog") -> """{"tasks":[{"id":4,"project_id":3,"title":"Ship","container":"backlog"}]}"""
+            request.path.startsWith("projects") -> """[{"id":3,"name":"Project","capabilities":{"canCreateTickets":true}}]"""
             else -> "[]"
         }
         ApiResponse(200, emptyMap(), body.toByteArray())

@@ -28,5 +28,8 @@ interface AppUpdater {
     /** User accepted the update banner. */
     fun install(activity: Activity)
 
+    /** A server refusal cannot be dismissed with the optional update banner. */
+    fun installRequired(activity: Activity) = install(activity)
+
     fun dismiss()
 }

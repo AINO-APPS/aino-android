@@ -63,6 +63,7 @@ class OkHttpApiClient(
     private val client: OkHttpClient = defaultClient(),
     private val timeZoneProvider: () -> TimeZone = TimeZone::getDefault,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val upgrades: app.aino.mobile.core.update.ClientUpgradeState = app.aino.mobile.core.update.ClientUpgrades.state,
 ) : ApiClient {
     /**
      * Uploads get their own connection pool (Signal sends attachments over a
@@ -89,10 +90,8 @@ class OkHttpApiClient(
     override fun execute(request: ApiRequest): ApiResponse {
         val method = request.method.uppercase()
         val url = resolveApiUrl(baseUrl, request.path)
-        // A caller-supplied Authorization (e.g. a step-up token) replaces the stored one.
-        val explicitAuth = request.headers.keys.any { it.equals(RequestHeaders.AUTHORIZATION, ignoreCase = true) }
-        val headers = request.headers + standardHeaders(
-            tokenProvider.getToken().takeUnless { explicitAuth },
+        val headers = request.platformHeaders(
+            tokenProvider.getToken(),
             timezoneOffsetMinutes(timeZoneProvider(), clock()),
         )
         val builder = Request.Builder().url(url)
@@ -113,7 +112,9 @@ class OkHttpApiClient(
         val transport = if (isUpload) uploadClient else client
         try {
             transport.newCall(builder.build()).execute().use { response ->
+                if (response.code == 426) upgrades.observe(426, "")
                 val bytes = response.body?.bytes() ?: ByteArray(0)
+                upgrades.observe(response.code, bytes.toString(Charsets.UTF_8))
                 if (!response.isSuccessful) throw ApiError.Http(response.code, bytes.toString(Charsets.UTF_8), method, url)
                 return ApiResponse(response.code, response.headers.toMultimap(), bytes)
             }

@@ -496,8 +496,6 @@ data class CreateBacklogPayload(
     val title: String,
     val description: String = "",
     val priority: String = "medium",
-    /** The team being browsed: an admin creates the ticket there, as web does. */
-    @SerialName("team_id") val teamId: Long? = null,
     @SerialName("assigned_to") val assignedTo: Long? = null,
     @SerialName("due_date") val dueDate: String? = null,
     @SerialName("label_ids") val labelIds: List<Long>? = null,

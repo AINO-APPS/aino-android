@@ -89,6 +89,7 @@ object AvatarLoader {
   /** Shares the app's pinned TLS settings (P2.5), with short timeouts so a slow host never delays a ring. */
   private val client: OkHttpClient by lazy {
     app.aino.mobile.core.network.CertificatePinning.apply(OkHttpClient.Builder())
+      .addNetworkInterceptor(app.aino.mobile.core.network.FirstPartyClientInterceptor())
       .connectTimeout(CONNECT_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
       .readTimeout(READ_TIMEOUT_MS.toLong(), TimeUnit.MILLISECONDS)
       .build()

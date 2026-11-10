@@ -42,6 +42,7 @@ class AppContainer private constructor(private val context: Context) {
     }
 
     init {
+        app.aino.mobile.core.update.ClientUpgrades.state.attach(context)
         app.aino.mobile.core.network.DeviceId.value = app.aino.mobile.core.network.DeviceId.load(context)
         app.aino.mobile.feature.chat.ChatMediaMemory.attach(context)
     }
@@ -54,6 +55,7 @@ class AppContainer private constructor(private val context: Context) {
      * network change used to surface as "offline" long after the network returned.
      */
     val http: OkHttpClient = app.aino.mobile.core.network.CertificatePinning.apply(OkHttpClient.Builder())
+        .addNetworkInterceptor(app.aino.mobile.core.network.FirstPartyClientInterceptor())
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -72,7 +74,7 @@ class AppContainer private constructor(private val context: Context) {
 
     /** Un-refreshing client for the auth flow itself (login, refresh). */
     private val okHttpApi = OkHttpApiClient(tokenProvider = tokens, client = apiHttp)
-    val rawApi: ApiClient = okHttpApi
+    val rawApi: ApiClient = app.aino.mobile.core.network.UpgradeAwareApiClient(okHttpApi)
 
     /** Default network of the device; resets drop connections opened on the previous network. */
     val connectivity: app.aino.mobile.core.network.ConnectivityMonitor by lazy {

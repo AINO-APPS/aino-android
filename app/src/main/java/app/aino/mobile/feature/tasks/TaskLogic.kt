@@ -183,11 +183,9 @@ private fun filterParams(filters: TaskFilters, includeStatus: Boolean): List<Pai
     filters.search.trim().takeIf(String::isNotEmpty)?.let { add("search" to it) }
 }
 
-/** The admin's team scope as query parameters. */
+/** Planning requests are project-owned; never emit retired team-scope parameters. */
 private fun teamParams(scope: TeamScope): List<Pair<String, String>> = when {
     scope.projectId != null -> listOf("project_id" to scope.projectId.toString())
-    scope.unassigned -> listOf("unassigned" to "1")
-    scope.teamId != null -> listOf("team_id" to scope.teamId.toString())
     else -> emptyList()
 }
 

@@ -89,17 +89,6 @@ class TaskRepository(
 
     fun search(q: String): List<Task> = decode(api.execute(ApiRequest(path = searchQuery(q))))
 
-    /**
-     * `GET /org/teams` — the admin's team picker options. The endpoint returns a
-     * plain array of team rows (see `modules/organization/teamListing.ts`).
-     */
-    fun loadTeams(): List<TeamOption> =
-        decode<JsonArray>(api.execute(ApiRequest(path = "org/teams"))).mapNotNull { element ->
-            val row = element.jsonObject
-            val id = row["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null
-            TeamOption(id, row["name"]?.jsonPrimitive?.content.orEmpty())
-        }
-
     // ── Next-generation surfaces ─────────────────────────────────────────
     /** Current and historical keys resolve to the canonical ticket on the server. */
     fun loadByKey(key: String): Task {
@@ -194,17 +183,10 @@ class TaskRepository(
     fun loadProjectSprints(projectId: Long): SprintListResponse =
         decode(api.execute(ApiRequest(path = "sprints?project_id=$projectId")))
 
-    fun loadAvailableSprints(): List<AvailableSprint> =
-        decode(api.execute(ApiRequest(path = "tasks/available-sprints")))
-
-    fun loadAgileConfig(projectId: Long? = null): AgileConfig =
-        AgileConfig.from(decode(api.execute(ApiRequest(path = "agile/config" + (projectId?.let { "?project_id=$it" } ?: "")))))
+    fun loadAgileConfig(projectId: Long): AgileConfig =
+        AgileConfig.from(decode(api.execute(ApiRequest(path = "agile/config?project_id=$projectId"))))
 
     fun loadSprintStats(sprintId: Long): SprintStats = decode(api.execute(ApiRequest(path = "sprints/$sprintId/stats")))
-
-    /** `GET /sprints[?team_id=…]` — rows plus the server-selected current sprint. */
-    fun loadTeamSprints(teamId: Long? = null): SprintListResponse =
-        decode(api.execute(ApiRequest(path = "sprints" + (teamId?.let { "?team_id=$it" } ?: ""))))
 
     // ── Sprint lifecycle ─────────────────────────────────────────────────
     fun startSprint(id: Long): SprintEnvelope = mutate("sprints/$id/start", Unit)

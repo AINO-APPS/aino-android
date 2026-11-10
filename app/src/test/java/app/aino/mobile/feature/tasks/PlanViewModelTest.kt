@@ -73,7 +73,8 @@ class PlanViewModelTest {
         val repository = TaskRepository(ApiClient { request ->
             val body = when {
                 request.method == "POST" && request.path == "tasks/backlog" ->
-                    """{"id":201,"title":"Capture work","container":"backlog","priority":"high"}"""
+                    """{"id":201,"project_id":3,"title":"Capture work","container":"backlog","priority":"high"}"""
+                request.path.startsWith("projects") -> """[{"id":3,"name":"Project","capabilities":{"canCreateTickets":true}}]"""
                 request.path.startsWith("tasks/backlog") -> """{"tasks":[]}"""
                 request.path == "tasks/carry-forward" -> """{"carried":0}"""
                 else -> "[]"
@@ -84,6 +85,8 @@ class PlanViewModelTest {
         val plan = PlanViewModel(repository, session)
         shell.bind(1, "employee", null, agileEnabled = false)
         await { plan.ui.value.planLoaded }
+        shell.openSheet(TaskSheet.CreateTicket)
+        await { plan.ui.value.draft.projectId == 3L }
         plan.updateDraft { it.copy(title = "Capture work") }
         plan.submitBacklog()
         await { plan.ui.value.backlog.any { it.id == 201L } && !plan.ui.value.creating }
@@ -111,7 +114,7 @@ class PlanViewModelTest {
         var bulkRequests = 0
         val rows: () -> String = {
             (201..202).joinToString(",") { id ->
-                """{"id":$id,"title":"Ticket $id","container":"${if (placed) "sprint" else "backlog"}","sprint_id":${if (placed) "10" else "null"},"capabilities":{"can":{"placeInSprint":{"allowed":true}}}}"""
+                """{"id":$id,"project_id":3,"title":"Ticket $id","container":"${if (placed) "sprint" else "backlog"}","sprint_id":${if (placed) "10" else "null"},"capabilities":{"can":{"placeInSprint":{"allowed":true}}}}"""
             }
         }
         val repository = TaskRepository(ApiClient { request ->
@@ -125,9 +128,10 @@ class PlanViewModelTest {
                 request.path.startsWith("tasks/search") -> """[${rows()}]"""
                 request.path.endsWith("/detail") -> {
                     val id = request.path.split('/')[1]
-                    """{"id":$id,"title":"Ticket $id","container":"${if (placed) "sprint" else "backlog"}","sprint_id":${if (placed) "10" else "null"},"capabilities":{"can":{"placeInSprint":{"allowed":true}}}}"""
+                    """{"id":$id,"project_id":3,"title":"Ticket $id","container":"${if (placed) "sprint" else "backlog"}","sprint_id":${if (placed) "10" else "null"},"capabilities":{"can":{"placeInSprint":{"allowed":true}}}}"""
                 }
-                request.path == "tasks/available-sprints" -> """[{"id":10,"name":"Sprint 10","status":"active"}]"""
+                request.path.startsWith("projects") -> """[{"id":3,"name":"Project","capabilities":{"canCreateTickets":true}}]"""
+                request.path == "sprints?project_id=3" -> """{"sprints":[{"id":10,"project_id":3,"name":"Sprint 10","status":"active"}]}"""
                 request.path == "sprints/10/board" -> """{"sprint":{"id":10,"name":"Sprint 10"},"tickets":[]}"""
                 request.path == "tasks/carry-forward" -> """{"carried":0}"""
                 else -> "[]"
@@ -139,6 +143,8 @@ class PlanViewModelTest {
         val board = SprintBoardViewModel(repository, session)
         val detail = TicketDetailViewModel(201, repository, session)
         shell.bind(1, "employee", null, agileEnabled = true)
+        await { shell.ui.value.planScope.selectedProjectId == 3L }
+        shell.loadBacklog()
         shell.selectSprint(10)
         await { plan.ui.value.backlog.size == 2 }
         detail.refreshDetail()
@@ -180,7 +186,7 @@ class PlanViewModelTest {
             harness.viewModel.selectTab(TaskTab.Backlog)
             harness.viewModelPlan.openSprintPlan()
             assertTrue(harness.viewModelPlan.ui.value.planOpen)
-            harness.viewModel.selectTab(TaskTab.ServiceDesk)
+            harness.viewModel.selectTab(TaskTab.Reports)
             assertEquals(false, harness.viewModelPlan.ui.value.planOpen)
         } finally {
             harness.close()

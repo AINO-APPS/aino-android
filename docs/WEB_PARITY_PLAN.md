@@ -62,11 +62,9 @@ These deliberately deviate from the web at 430px:
   See the Phase 3 "Mobile-first redesign" note.
 - **Tasks is mobile-first (approved 2026-10-06, v0.16.0).** §5 rule 8 is
   waived for the Tasks area (shell, Sprint board, Backlog, Service Desk, task
-  detail, Sprint Insights); data, actions and endpoints are unchanged. Tabs are
-  `Sprint · Backlog · Scheduled · Service Desk` in a swipeable pager; the
-  Scheduled tab (planner-dated tasks: overdue + next 30 days, via
-  `GET /tasks?start_date&end_date`) also ships on web/desktop (platform
-  v3.0.39). Task detail edits each property inline (`PUT /tasks/:id` with only
+  detail, Sprint Insights). Plan is now project-scoped: Scrum uses Backlog,
+  Sprint and Reports; Kanban and Task list use the project's advertised tabs.
+  Scheduled and ticket timers are retired. Task detail edits each property inline (`PUT /tasks/:id` with only
   the changed keys). `task_assigned` / `task_updated` patch the affected task
   from `GET /tasks/:id/detail` instead of reloading the tab, and the visible
   tab is re-fetched every 30 s while Tasks is in the foreground (the server
@@ -1133,18 +1131,51 @@ Project ownership parity (2026-11-04, ticket13):
 | Surface | Android behavior | JVM owner (`feature/tasks/ProjectOwnershipViewModelTest.kt`) |
 | --- | --- | --- |
 | Plan project switcher | All accessible projects, including archived/viewer projects; project-scoped lists and current sprint | `everyRoleCanSelectAnAccessibleProjectIncludingArchivedReadOnlyProjects`, `changingProjectScopesBacklogAndTheCurrentSprintInsteadOfTheActorsTeam` |
-| Older servers | Team scope remains when project listing is unavailable | `aServerWithoutProjectListingKeepsLegacyTeamScope` |
+| Missing project metadata | Keep known projects or show an empty project context; never fall back to team, Scheduled or timer routes | `ProjectOnlyPlanningTest.missingProjectMetadataNeverFallsBackToTeamPlanningRoutes` |
 | `ticket-create-project` | Required active, server-authorized `projects/mine` picker; current project default | `createDefaultsToCurrentProjectAndRefusesAnUnavailableProject` |
 | `move-ticket-project` | Target picker, server preview of key/status/sprint departure, explicit confirm; canonical response updates shared store | `moveShowsServerPreviewBeforeConfirmAndPublishesTheCanonicalTicket` |
-| Archived/viewer tickets | Edit/move/timer actions hidden and guarded by server capabilities; commenting independently authorized | `archivedAndViewerTicketsExposeOnlyTheActionsAllowedByTheServer`, `anArchivedTicketCanStillBeCommentedOnWhenTheServerAllowsIt` |
+| Archived/viewer tickets | Edit/move/worklog actions hidden and guarded by server capabilities; commenting independently authorized | `archivedAndViewerTicketsExposeOnlyTheActionsAllowedByTheServer`, `anArchivedTicketCanStillBeCommentedOnWhenTheServerAllowsIt` |
 | Alias search | Exact key search uses `GET tasks/by-key/:key`; displays stored `ticket_key` and aliases | `searchingAnOldKeyUsesServerResolutionAndShowsTheCurrentTicket` |
 
-HTTP and realtime snapshots use platform integration `2dc7da974b3b9fdab27e0e034df37309c57413aa`.
+HTTP inventory/parity is synchronized with authoritative platform ticket 09
+`86441aa0a77057d4012f174b7e1fc1de7f7597ad` (including public/admin client-version
+reads). Realtime was rechecked against that checkout: all 85 events remain routed.
 `project_updated` refreshes project metadata and ticket projections.
 Project settings, members, key renames and workflow editing remain web-only.
 The canonical cross-client `contracts/tasks-parity.json` belongs to the platform repository:
 close its two ticket13 Android waivers during platform integration closeout, after the Android merge.
 This Android change does not resolve the platform tracker or modify platform files.
+
+Project-types ticket 09 (Android):
+
+- Every first-party HTTP transport identifies `android` with `BuildConfig.VERSION_NAME`
+  using `X-AINO-Client` and `X-AINO-Client-Version`, including auth, retries,
+  multipart/stream uploads, raw media requests and realtime handshakes.
+  Third-party traffic is excluded.
+- HTTP 426 publishes the `CLIENT_UPGRADE_REQUIRED` refusal before feature error,
+  cache or auth-refresh handling. The full-app update gate has no dismiss action;
+  Back and optional-banner dismissal cannot reveal authenticated or cached content.
+  The refusal survives sign-out and process recreation for the installed version.
+- The update action belongs to the existing flavor updater: Google Play opens the
+  app's store page (or completes a downloaded update); direct rechecks the trusted
+  Android channel and opens its HTTPS APK link. Failure leaves the gate in place.
+- Plan and Sprint Insights never retry failed project metadata with team scope.
+  Backlog creation omits `team_id`; sprint/config reads require project ownership.
+  Organization team CRUD and membership remain independent and unchanged.
+- No version bump, report/enforce switch, server compatibility removal or release
+  is part of this implementation. The gate reacts only to server refusals;
+  it does not enforce minimums locally. Startup does not need the public
+  `GET /api/client-versions` lookup.
+
+Validation owners: `MockWebServerHarnessTest`, `ClientUpgradeTest`,
+`FirstPartyClientInterceptorTest`, `RealtimeClientCloseTest`, `ClientUpgradeGateTest`,
+`RequiredPlayUpdateTest`, `DirectAppUpdaterTest`, `ProjectOnlyPlanningTest`,
+`SprintInsightsSelectionTest` and the existing Tasks repository/UI suites.
+The inventory currently reports 271 proven operations, 234 waivers, 3 retired
+client operations, 33 pending operations and no unmatched Android calls.
+Pending platform operations are not claimed as implemented by merely recording
+their routes; neither a local minimum-version gate nor native admin adoption UI
+is introduced.
 
 ¹ Git refs (`/tasks/:id/git`) have API wrappers on the web but no UI anywhere, so
 they are not ported (no invented UI). Custom-field *values* are edited in the
