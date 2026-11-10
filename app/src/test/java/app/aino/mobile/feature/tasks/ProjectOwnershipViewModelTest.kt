@@ -223,7 +223,7 @@ class ProjectOwnershipViewModelTest {
         val detail = TicketDetailViewModel(7, repository, session)
         await { detail.ui.value.detail != null }
         detail.addComment(7, "Still readable")
-        await { detail.ui.value.detailComments.isNotEmpty() }
+        await { detail.ui.value.detailComments.isNotEmpty() && detail.ui.value.detail?.commentCount == 1 }
         assertEquals("Still readable", detail.ui.value.detailComments.single().content)
         assertEquals(1, detail.ui.value.detail?.commentCount)
         assertFalse(detail.ui.value.detailEditing)

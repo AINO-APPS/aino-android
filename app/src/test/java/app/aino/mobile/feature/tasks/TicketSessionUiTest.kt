@@ -1039,7 +1039,7 @@ internal class TicketSessionHarness {
         await { !boardViewModel.ui.value.sprintLoading && boardViewModel.ui.value.tasks.size == 1 }
         viewModelPlan.loadBacklog()
         await { viewModelPlan.ui.value.planLoaded }
-        await { !detailViewModel.ui.value.detailLoading }
+        await { !detailViewModel.ui.value.detailLoading && !detailViewModel.ui.value.worklogsLoading }
     }
 
     fun await(condition: () -> Boolean) {
