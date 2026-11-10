@@ -172,7 +172,8 @@ data class TaskUiState(
      * then the sprint's team for an admin browsing one.
      */
     val teamTitle: String
-        get() = teams.firstOrNull { it.id == selectedTeamId }?.name
+        get() = if (planScope.projectScoped) projects.firstOrNull { it.id == planScope.selectedProjectId }?.name ?: "Plan"
+            else teams.firstOrNull { it.id == selectedTeamId }?.name
             ?: if (selectedTeamId == -1L) "Unassigned" else null
             ?: teamName
             ?: currentSprint?.teamName
@@ -195,7 +196,8 @@ data class TaskUiState(
     val hasSelection: Boolean get() = selectedIds.isNotEmpty()
     val completedExpanded: Boolean get() = completedOpen && !hasSelection
     /** Selection mode swaps the "New ticket" FAB for the bulk action bar so the two never overlap. */
-    val showNewTicketFab: Boolean get() = tab == TaskTab.Backlog && !searchOpen && !hasSelection
+    val showNewTicketFab: Boolean get() = tab == TaskTab.Backlog && !searchOpen && !hasSelection &&
+        (!planScope.projectScoped || planScope.createProjects.isNotEmpty())
     /** The epic filter narrows the backlog and board to one epic's children. */
     val epicFiltered: List<Task> get() = selectedEpicId?.let { epic ->
         backlog.filter { it.parentTaskId == epic }

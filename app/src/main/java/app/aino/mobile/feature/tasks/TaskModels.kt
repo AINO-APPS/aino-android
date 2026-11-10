@@ -34,7 +34,13 @@ data class TaskPerson(
 }
 
 @Serializable
-data class TaskProject(val id: Long, val key: String? = null, val name: String? = null, val color: String? = null)
+data class TaskProject(
+    val id: Long,
+    val key: String? = null,
+    val name: String? = null,
+    val color: String? = null,
+    @SerialName("is_archived") val archived: Boolean = false,
+)
 
 @Serializable
 data class TaskSprint(
@@ -67,6 +73,11 @@ data class TaskCapabilityActions(
     val delete: TaskCapabilityDecision = TaskCapabilityDecision(),
     val placeInSprint: TaskCapabilityDecision = TaskCapabilityDecision(),
     val schedule: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val canMoveProject: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val comment: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val logWork: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val logWorkForOthers: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val canEditEstimate: TaskCapabilityDecision = TaskCapabilityDecision(),
 )
 
 @Serializable
@@ -92,6 +103,8 @@ data class Task(
     @SerialName("blocked_reason") val blockedReason: String? = null,
     @SerialName("comment_count") val commentCount: Int = 0,
     @SerialName("issue_key") val issueKey: String? = null,
+    @SerialName("ticket_key") val ticketKey: String? = null,
+    @SerialName("key_aliases") val keyAliases: List<String> = emptyList(),
     @SerialName("sprint_id") val sprintId: Long? = null,
     val container: String? = null,
     val capabilities: TaskCapabilities? = null,
@@ -107,8 +120,11 @@ data class Task(
     @SerialName("workflow_state_category") val workflowStateCategory: String? = null,
     /** Planned effort in minutes, shown against [loggedMinutes]. */
     @SerialName("estimated_minutes") val estimatedMinutes: Int? = null,
-    /** Minutes logged by timers started from this task; rolls into the timesheet. */
+    /** Compatibility alias of the computed worklog total. */
     @SerialName("logged_minutes") val loggedMinutes: Int = 0,
+    @SerialName("time_spent_minutes") val timeSpentMinutes: Int = loggedMinutes,
+    @SerialName("original_estimate_minutes") val originalEstimateMinutes: Int? = estimatedMinutes,
+    @SerialName("remaining_estimate_minutes") val remainingEstimateMinutes: Int? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("completed_at") val completedAt: String? = null,
     @SerialName("acceptance_criteria") val acceptanceCriteriaRaw: JsonElement? = null,
@@ -121,7 +137,7 @@ data class Task(
     val comments: List<TaskComment> = emptyList(),
 ) {
     /** `issue_key || "#id"` (TaskCard / BacklogTab). */
-    val displayKey: String get() = issueKey ?: "#$id"
+    val displayKey: String get() = ticketKey ?: issueKey ?: "#$id"
 
     /** The single definition of complete: the server derives `completed_at` (D5). */
     val isCompleted: Boolean get() = completedAt != null
@@ -221,6 +237,7 @@ data class AvailableSprint(
     @SerialName("end_date") val endDate: String = "",
     val status: String = "planned",
     val goal: String? = null,
+    @SerialName("project_id") val projectId: Long? = null,
     @SerialName("team_id") val teamId: Long? = null,
     @SerialName("team_name") val teamName: String? = null,
     /** The sprint's running number within its team; the heading shows "#3". */
@@ -284,6 +301,18 @@ data class ProjectOption(
     val key: String = "",
     val name: String = "",
     val color: String? = null,
+    @SerialName("is_archived") val archived: Boolean = false,
+    val capabilities: ProjectCapabilities? = null,
+)
+
+@Serializable
+data class ProjectCapabilities(
+    val canAdminister: Boolean = false,
+    val canCreateTickets: Boolean = false,
+    val canManageMembers: Boolean = false,
+    val canEditWorkflow: Boolean = false,
+    val canRenameKey: Boolean = false,
+    val canArchive: Boolean = false,
 )
 
 // ─── Agile config (`GET /agile/config`, AgileConfigContext) ─────────────────
@@ -676,34 +705,6 @@ data class TaskPreferences(
 ) {
     val isCompact: Boolean get() = cardDensity == "compact"
 }
-
-/** `GET /tasks/:id/timer` and `POST /tasks/:id/timer/start`. */
-@Serializable
-data class TaskTimerState(
-    @SerialName("taskId") val taskId: Long = 0,
-    val running: Boolean = false,
-    @SerialName("startedAt") val startedAt: String? = null,
-    val time: TaskTimeSummary = TaskTimeSummary(),
-)
-
-/** `POST /tasks/:id/timer/stop`. */
-@Serializable
-data class TaskTimerStop(
-    @SerialName("taskId") val taskId: Long = 0,
-    val running: Boolean = false,
-    val minutes: Int = 0,
-    val time: TaskTimeSummary = TaskTimeSummary(),
-)
-
-/** Logged against estimated, with the overrun made explicit. */
-@Serializable
-data class TaskTimeSummary(
-    val estimated: Int = 0,
-    val logged: Int = 0,
-    val remaining: Int = 0,
-    val percent: Int = 0,
-    val over: Boolean = false,
-)
 
 /** `GET /tracker/task-time` — the timesheet's per-task view. */
 @Serializable

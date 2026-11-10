@@ -50,6 +50,7 @@ internal fun InlineTicketComments(ticketId: Long, session: TicketSession, onDism
                 users = ui.assignableUsers,
                 viewModel = detail,
                 placeholder = "Write a comment…",
+                canComment = TaskCapability.Comment in ui.availableActions,
             )
         }
     }

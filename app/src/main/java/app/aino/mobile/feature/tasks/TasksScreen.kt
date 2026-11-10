@@ -270,7 +270,10 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
             Text(ui.teamTitle, color = colors.text, fontSize = 1.4.rem, fontWeight = FontWeight.ExtraBold, modifier = Modifier.semantics { heading() })
             Text(headerSubtitle(ui), color = colors.textMuted, fontSize = 0.78.rem, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (showsTeamPicker(ui.role)) {
+        if (ui.planScope.projectScoped) {
+            ProjectPicker(ui, viewModel)
+            Spacer(Modifier.width(8.dp))
+        } else if (showsTeamPicker(ui.role)) {
             TeamPicker(ui, viewModel)
             Spacer(Modifier.width(8.dp))
         }
@@ -346,6 +349,31 @@ private fun TeamPicker(ui: TaskUiState, viewModel: TaskViewModel) {
                 MenuItem(if (team.id == ui.selectedTeamId) HeroIcons.Check else HeroIcons.Users, team.name) {
                     open = false
                     viewModel.selectTeam(team.id)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectPicker(ui: TaskUiState, viewModel: TaskViewModel) {
+    val colors = LocalWebColors.current
+    var open by remember { mutableStateOf(false) }
+    val scope = ui.planScope
+    val current = scope.projects.firstOrNull { it.id == scope.selectedProjectId }
+    Box {
+        TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+            Text(current?.key ?: "Select project", color = colors.text, fontSize = 0.78.rem, maxLines = 1)
+            Icon(HeroIcons.ChevronDown, null, tint = colors.textMuted, modifier = Modifier.size(14.dp))
+        }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.background(colors.bgElevated)) {
+            scope.projects.forEach { project ->
+                MenuItem(
+                    if (project.id == scope.selectedProjectId) HeroIcons.Check else HeroIcons.Folder,
+                    "${project.key} · ${project.name}" + if (project.archived) " · Archived" else "",
+                ) {
+                    open = false
+                    viewModel.selectProject(project.id)
                 }
             }
         }

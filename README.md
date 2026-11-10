@@ -81,12 +81,46 @@ every loaded view, including open Detail and search.
 
 Ticket Detail has an id-keyed, route-scoped `TicketDetailViewModel`. It reads the
 same session Ticket store as the lists and owns editing, Activity history, tabs,
-Placement, comments and timers. Blocker and parent writes refetch the full Ticket
+Placement, comments and worklogs. Blocker and parent writes refetch the full Ticket
 before publishing it because those endpoints return relationship metadata.
 Notifications and links enter the same Detail route; key lookups publish their
 full Ticket before opening the id-keyed route. Comment threads remain shared with
 the inline panel, and session notices keep Open, View and Undo available after a
 Detail route closes.
+
+Ticket time tracking uses manual worklogs, not Start/Stop. Log work defaults to
+today and accepts a worked day, a duration such as `2h 30m`, optional local start
+time and comment. Server `INVALID_DURATION` errors stay inline without losing
+the draft. The newest-first list shows the author, day, duration and comment;
+`capabilities.can.logWork.allowed` and each row's `canEdit` / `canDelete` decide
+which actions appear. Writes publish server-computed time spent into the shared
+Ticket store, and realtime/reconnect/polling refresh worklogs. Original and
+remaining estimates are editable inline only when `canEditEstimate` is allowed;
+zero estimates still show overruns. Create, edit and delete offer automatic
+remaining adjustment, set-to and leave-unchanged choices. The optional person
+picker follows `logWorkForOthers`, and entries show logged-by attribution when
+it differs from the author. Attendance warnings remain visible after a save,
+until the next successful worklog save replaces them. The Attendance clock-in
+timer is unchanged.
+
+Estimate and worklog writes share an atomic gate and one effort publication path;
+competing writes are ignored until the current write finishes. Worklog list refreshes
+publish time spent and both estimates, without allowing an older in-flight read to
+undo a write. Shared compact and comfortable cards show spent, original and remaining
+effort. The accessible effort bar uses spent / (spent + remaining), hides an unknown
+forecast and treats a zero total as zero progress; overruns still compare spent to
+original. History renders worklog identity, author/logger, worked day, duration,
+comment and old/new values, including deleted records and nullable estimates.
+
+Endpoint snapshots are regenerated against the paired platform checkout using
+`node scripts/check-endpoint-parity.mjs <platform-path> --update`. Add
+`--platform-ref=<commit>` to pin an inventory when the checkout is shared.
+Retirement entries in `docs/parity-waivers.json` mark the three legacy ticket
+timer routes as client-retired, not implemented or pending. All five manual
+worklog/estimate operations are proven without temporary waivers on either
+platform. `TicketWorklogsTest` exercises remaining choices for create/edit/delete,
+inline estimates, capability-driven visibility, attribution and warning persistence
+through the real repository and view model with the fake HTTP harness.
 
 Plan opens on Backlog, followed by Scheduled and Sprint (when enabled); Sprint
 retains its board and planning views. Backlog groups live work by sprint and

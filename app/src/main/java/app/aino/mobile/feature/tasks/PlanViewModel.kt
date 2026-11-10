@@ -39,7 +39,7 @@ class PlanViewModel(
         val ids: List<Long>, val loaded: Boolean, val baseline: TicketPlanBaseline?,
         val offset: Int, val hasMore: Boolean,
     )
-    private val teamViews = mutableMapOf<Long?, CachedPlan>()
+    private val teamViews = mutableMapOf<TeamScope, CachedPlan>()
 
     init {
         ticketScope.launch {
@@ -52,14 +52,14 @@ class PlanViewModel(
                         backlogJob?.cancel()
                         teamViews.clear()
                         _ui.update { PlanUiState(planScope = scope) }
-                    } else if (previous.selectedTeamId != scope.selectedTeamId) {
+                    } else if (previous.teamScope != scope.teamScope) {
                         backlogGen.incrementAndGet()
                         backlogJob?.cancel()
-                        teamViews[previous.selectedTeamId] = CachedPlan(
+                        teamViews[previous.teamScope] = CachedPlan(
                             previous.planTicketIds, previous.planLoaded, previous.planBaseline,
                             previous.planOffset, previous.planHasMore,
                         )
-                        val cached = teamViews[scope.selectedTeamId]
+                        val cached = teamViews[scope.teamScope]
                         _ui.update {
                             it.copy(
                                 planScope = scope, tickets = ticketSession.store.state.value.tickets,
@@ -90,6 +90,7 @@ class PlanViewModel(
         ticketScope.launch {
             ticketSession.planRequests.collect { request ->
                 when (request) {
+                    PlanRequest.PrepareCreate -> prepareCreate()
                     PlanRequest.Load -> loadBacklog()
                     PlanRequest.PrepareImport -> if (_ui.value.backlog.isEmpty()) loadBacklog()
                     PlanRequest.EnsureLoaded -> if (!_ui.value.planLoaded && !_ui.value.backlogLoading) loadBacklog()
@@ -228,6 +229,20 @@ class PlanViewModel(
         if (!_ui.value.planLoaded && !_ui.value.backlogLoading) loadBacklog()
     }
     fun updateDraft(transform: (BacklogDraft) -> BacklogDraft) = _ui.update { it.copy(draft = transform(it.draft)) }
+    private fun prepareCreate() {
+        val scope = ticketSession.planScope.value
+        if (!scope.projectScoped) return
+        _ui.update { state ->
+            val projectId = scope.selectedProjectId?.takeIf { id -> scope.createProjects.any { it.id == id } }
+            state.copy(draft = state.draft.copy(projectId = projectId))
+        }
+    }
+
+    fun setDraftProject(projectId: Long?) = _ui.update { state ->
+        state.copy(draft = state.draft.copy(
+            projectId = projectId, sprintId = null, workflowStateId = null,
+        ))
+    }
     fun setDraftSprint(id: Long?) = _ui.update { s ->
         val end = id?.let { wanted -> s.sprints.firstOrNull { it.id == wanted }?.endDate?.take(10) }
         s.copy(draft = s.draft.copy(sprintId = id, dueDate = if (id == null) "" else end ?: s.draft.dueDate))
@@ -237,11 +252,21 @@ class PlanViewModel(
         val s = _ui.value
         val draft = s.draft
         if (draft.title.isBlank() || s.creating) return
+        if (s.planScope.projectScoped && s.planScope.createProjects.none { it.id == draft.projectId }) {
+            fail("Choose a project where you can create tickets.")
+            return
+        }
+        if (s.planScope.projectScoped && draft.sprintId != null &&
+            s.sprints.none { it.id == draft.sprintId && it.projectId == draft.projectId }
+        ) {
+            fail(capabilityReasonCopy("SPRINT_PROJECT_MISMATCH"))
+            return
+        }
         _ui.update { it.copy(creating = true) }
         io {
             val payload = CreateBacklogPayload(
                 title = draft.title.trim(), description = plainTextToHtml(draft.description),
-                priority = draft.priority, teamId = s.selectedTeamId?.takeIf { it > 0 },
+                priority = draft.priority, teamId = s.selectedTeamId?.takeIf { !s.planScope.projectScoped && it > 0 },
                 assignedTo = draft.assignedTo, dueDate = draft.dueDate.ifEmpty { null },
                 labelIds = draft.labels.ifEmpty { null }, sprintId = draft.sprintId,
                 storyPoints = draft.storyPoints, workItemTypeId = draft.workItemTypeId,

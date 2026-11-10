@@ -13,7 +13,7 @@ data class TeamOption(val id: Long, val name: String)
  *
  * [unassigned] is the admin bucket for legacy tickets with no owning team.
  */
-data class TeamScope(val teamId: Long? = null, val unassigned: Boolean = false)
+data class TeamScope(val teamId: Long? = null, val unassigned: Boolean = false, val projectId: Long? = null)
 
 fun showsTeamPicker(role: String?): Boolean = role in TEAM_PICKER_ROLES
 

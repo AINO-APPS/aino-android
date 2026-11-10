@@ -18,6 +18,9 @@ data class PlanScope(
     val labels: List<TaskLabel> = emptyList(),
     val assignableUsers: List<AssignableUser> = emptyList(),
     val projects: List<ProjectOption> = emptyList(),
+    val projectScoped: Boolean = false,
+    val selectedProjectId: Long? = null,
+    val myProjects: List<ProjectOption> = emptyList(),
     val sprints: List<AvailableSprint> = emptyList(),
     val currentSprintId: Long? = null,
     val currentSprintRow: AvailableSprint? = null,
@@ -27,15 +30,18 @@ data class PlanScope(
     val selectedEpicId: Long? = null,
 ) {
     internal fun contains(ticket: Task): Boolean = when {
+        projectScoped -> selectedProjectId != null && ticket.projectId == selectedProjectId
         !showsTeamPicker(role) -> teamId == null || ticket.teamId == teamId
         selectedTeamId == -1L -> ticket.teamId == null
         selectedTeamId != null -> ticket.teamId == selectedTeamId
         else -> true
     }
 
-    val teamScope: TeamScope get() = scopeForTeam(selectedTeamId)
+    val teamScope: TeamScope get() = if (projectScoped) TeamScope(projectId = selectedProjectId) else scopeForTeam(selectedTeamId)
+    val createProjects: List<ProjectOption> get() = myProjects.filter { !it.archived && it.capabilities?.canCreateTickets == true }
     val teamSprints: List<AvailableSprint> get() {
-        val scoped = sprintsForTeam(sprints, selectedTeamId, showsTeamPicker(role))
+        val scoped = if (projectScoped) sprints.filter { it.projectId == selectedProjectId }
+        else sprintsForTeam(sprints, selectedTeamId, showsTeamPicker(role))
         val current = currentSprintRow?.takeIf { it.id == currentSprintId }
         return if (current != null && scoped.none { it.id == current.id }) scoped + current else scoped
     }

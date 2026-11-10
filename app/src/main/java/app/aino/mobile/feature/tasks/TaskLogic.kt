@@ -148,6 +148,7 @@ private fun filterParams(filters: TaskFilters, includeStatus: Boolean): List<Pai
 
 /** The admin's team scope as query parameters. */
 private fun teamParams(scope: TeamScope): List<Pair<String, String>> = when {
+    scope.projectId != null -> listOf("project_id" to scope.projectId.toString())
     scope.unassigned -> listOf("unassigned" to "1")
     scope.teamId != null -> listOf("team_id" to scope.teamId.toString())
     else -> emptyList()
@@ -555,6 +556,7 @@ private val HISTORY_FIELDS = mapOf(
 
 /** TaskDetailModal history `actionText()` as styled runs. */
 fun historyText(h: TaskHistoryEntry): List<Pair<HistoryPart, String>> = when {
+    h.action in listOf("worklog_added", "worklog_updated", "worklog_deleted", "estimate_changed") -> effortHistoryText(h)
     h.action == "created" && h.field == "planned_date" && !h.oldValue.isNullOrEmpty() ->
         listOf(HistoryPart.Plain to "carried forward from ", HistoryPart.Old to h.oldValue)
     h.action == "created" -> listOf(HistoryPart.Plain to "created this task")
@@ -581,6 +583,7 @@ fun historyText(h: TaskHistoryEntry): List<Pair<HistoryPart, String>> = when {
 private val HISTORY_ICONS = mapOf(
     "created" to "+", "status_change" to "⇔", "updated" to "✎", "scheduled" to "▸", "unscheduled" to "□",
     "comment_added" to "•", "comment_edited" to "✎", "comment_deleted" to "×", "deleted" to "×",
+    "worklog_added" to "+", "worklog_updated" to "✎", "worklog_deleted" to "×", "estimate_changed" to "✎",
 )
 
 fun historyIcon(action: String): String = HISTORY_ICONS[action] ?: "✎"

@@ -20,8 +20,8 @@ class RealtimeEventRegistryTest {
         // 80 = 69 sendToUser types (incl. attendance_update, chat_message_delivered, call_ringing) + 6 tenant-wide broadcast types
         // + task_assigned + team_attendance_update, leave_policy_changed, task_updated, notifications_changed
         // + chat_group_join_request, group_call_updated, meeting_reaction (group links and group calls)
-        // + meeting_full (the mesh participant cap).
-        assertEquals(84, RealtimeEvent.entries.size)
+        // + meeting_full (the mesh participant cap), project_updated (project metadata and keys).
+        assertEquals(85, RealtimeEvent.entries.size)
         assertEquals(RealtimeDomain.Meeting, RealtimeEvent.from("meeting_full")?.domain)
         assertEquals(RealtimeEvent.AttendanceUpdate, RealtimeEvent.from("attendance_update"))
     }
@@ -31,8 +31,9 @@ class RealtimeEventRegistryTest {
         assertEquals(RealtimeDomain.Attendance, RealtimeEvent.from("team_attendance_update")?.domain)
         assertEquals(RealtimeDomain.Leaves, RealtimeEvent.from("leave_policy_changed")?.domain)
         assertEquals(RealtimeDomain.Tasks, RealtimeEvent.from("task_updated")?.domain)
+        assertEquals(RealtimeDomain.Tasks, RealtimeEvent.from("project_updated")?.domain)
         assertEquals(RealtimeDomain.Notifications, RealtimeEvent.from("notifications_changed")?.domain)
-        for (type in listOf("team_attendance_update", "leave_policy_changed", "task_updated", "notifications_changed")) {
+        for (type in listOf("team_attendance_update", "leave_policy_changed", "task_updated", "project_updated", "notifications_changed")) {
             assertEquals(type, RealtimeReaction.Refetch, RealtimeEvent.from(type)?.reaction)
         }
     }

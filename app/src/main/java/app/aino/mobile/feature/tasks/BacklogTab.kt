@@ -536,6 +536,7 @@ internal fun ScheduleDialog(task: Task, title: String = "Schedule \"${task.title
 internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel) {
     val colors = LocalWebColors.current
     val d = ui.draft
+    val createSprints = if (ui.planScope.projectScoped) ui.sprints.filter { it.projectId == d.projectId } else ui.teamSprints
     var picker by remember { mutableStateOf<String?>(null) }
     TaskSheetScaffold("New ticket", viewModel::closeSheet, HeroIcons.Plus) {
         Column(
@@ -568,17 +569,14 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel, planVi
                         PropertyText(ui.agile.type(d.workItemTypeId)?.name ?: "Default", muted = d.workItemTypeId == null)
                     }
                 }
-                // Only the browsed team's sprints: a ticket is created into the
-                // team whose backlog is on screen, so a foreign sprint would be
-                // rejected (and the ticket would leave this list anyway).
-                if (ui.agileEnabled && ui.teamSprints.isNotEmpty()) {
+                if (ui.agileEnabled && createSprints.isNotEmpty()) {
                     PropertyRow(HeroIcons.RocketLaunch, "Sprint", { picker = "sprint" }) {
-                        PropertyText(ui.teamSprints.firstOrNull { it.id == d.sprintId }?.name ?: "Backlog (no sprint)", muted = d.sprintId == null)
+                        PropertyText(createSprints.firstOrNull { it.id == d.sprintId }?.name ?: "Backlog (no sprint)", muted = d.sprintId == null)
                     }
                 }
-                if (ui.projects.isNotEmpty()) {
+                if (ui.planScope.projectScoped || ui.projects.isNotEmpty()) {
                     PropertyRow(HeroIcons.Folder, "Project", { picker = "project" }) {
-                        PropertyText(ui.projects.firstOrNull { it.id == d.projectId }?.let { "${it.key} · ${it.name}" } ?: "No project", muted = d.projectId == null)
+                        PropertyText(ui.projects.firstOrNull { it.id == d.projectId }?.let { "${it.key} · ${it.name}" } ?: "Choose project (required)", muted = d.projectId == null)
                     }
                 }
                 if (ui.labels.isNotEmpty()) {
@@ -599,12 +597,12 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel, planVi
         Spacer(Modifier.height(16.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             PillButton("Cancel", viewModel::closeSheet, Modifier.weight(1f))
-            PillButton(if (ui.creating) "Creating…" else "Create ticket", planViewModel::submitBacklog, Modifier.weight(1f), primary = true, enabled = d.title.isNotBlank() && !ui.creating)
+            PillButton(if (ui.creating) "Creating…" else "Create ticket", planViewModel::submitBacklog, Modifier.weight(1f), primary = true, enabled = d.title.isNotBlank() && !ui.creating && (!ui.planScope.projectScoped || ui.planScope.createProjects.any { it.id == d.projectId }))
         }
     }
     TaskPickers(
         picker = picker,
-        ui = ui.planScope,
+        ui = ui.planScope.copy(sprints = createSprints, selectedProjectId = d.projectId),
         assignee = d.assignedTo,
         typeId = d.workItemTypeId,
         sprintId = d.sprintId,
@@ -614,7 +612,7 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel, planVi
         onAssignee = { v -> planViewModel.updateDraft { it.copy(assignedTo = v) } },
         onType = { v -> planViewModel.updateDraft { it.copy(workItemTypeId = v) } },
         onSprint = planViewModel::setDraftSprint,
-        onProject = { v -> planViewModel.updateDraft { it.copy(projectId = v) } },
+        onProject = planViewModel::setDraftProject,
         onLabels = { v -> planViewModel.updateDraft { it.copy(labels = v) } },
     )
 }
@@ -659,7 +657,8 @@ internal fun TaskPickers(
         )
         "project" -> SelectSheet(
             "Project",
-            listOf(SelectOption<Long?>(null, "No project")) + ui.projects.map { SelectOption<Long?>(it.id, it.name, it.key, color = it.color?.let { c -> hexColor(c) }) },
+            (if (ui.projectScoped) emptyList() else listOf(SelectOption<Long?>(null, "No project"))) +
+                (if (ui.projectScoped) ui.createProjects else ui.projects).map { SelectOption<Long?>(it.id, it.name, it.key, color = it.color?.let { c -> hexColor(c) }) },
             setOf(projectId), onDismiss, { onProject(it.firstOrNull()) }, icon = HeroIcons.Folder,
         )
         "labels" -> SelectSheet(

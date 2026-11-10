@@ -6,7 +6,7 @@
     "path": "server/**/*.ts"
   },
   "totals": {
-    "events": 84
+    "events": 85
   },
   "events": [
     "approval_update",
@@ -86,6 +86,7 @@
     "platform_access_session_ended",
     "platform_access_session_revoked",
     "platform_access_session_started",
+    "project_updated",
     "task_assigned",
     "task_updated",
     "team_attendance_update",

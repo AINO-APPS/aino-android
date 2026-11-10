@@ -134,6 +134,7 @@ enum class RealtimeEvent(
     TaskAssigned("task_assigned", RealtimeDomain.Tasks, RealtimeReaction.Refetch),
     /** `{ taskId, action: updated|status|deleted|comment }`. */
     TaskUpdated("task_updated", RealtimeDomain.Tasks, RealtimeReaction.Refetch),
+    ProjectUpdated("project_updated", RealtimeDomain.Tasks, RealtimeReaction.Refetch),
     /** `{ type, status, id? }` — also echoed to the acting approver's other devices. */
     ApprovalUpdate("approval_update", RealtimeDomain.Approvals, RealtimeReaction.Refetch),
     LeaveUpdate("leave_update", RealtimeDomain.Leaves, RealtimeReaction.Refetch),

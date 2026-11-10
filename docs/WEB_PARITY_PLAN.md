@@ -1126,6 +1126,25 @@ Endpoint coverage after Phase 5: **106/464** (`docs/PARITY_MATRIX.md`).
 | P6.6 | Agile settings: work item types, workflow states, reorder, permissions/grants/requests         | N/A (web-only 2026-10-01) ³ |
 | P6.7 | Service desk tickets + stats                                                                   | DONE ⁴ |
 | P6.8 | `SprintInsights` page                                                                          | DONE   |
+| P6.9 | Project-scoped Plan, required project on create, previewed move, capabilities and alias search | Implemented; ticket13 Android branch |
+
+Project ownership parity (2026-11-04, ticket13):
+
+| Surface | Android behavior | JVM owner (`feature/tasks/ProjectOwnershipViewModelTest.kt`) |
+| --- | --- | --- |
+| Plan project switcher | All accessible projects, including archived/viewer projects; project-scoped lists and current sprint | `everyRoleCanSelectAnAccessibleProjectIncludingArchivedReadOnlyProjects`, `changingProjectScopesBacklogAndTheCurrentSprintInsteadOfTheActorsTeam` |
+| Older servers | Team scope remains when project listing is unavailable | `aServerWithoutProjectListingKeepsLegacyTeamScope` |
+| `ticket-create-project` | Required active, server-authorized `projects/mine` picker; current project default | `createDefaultsToCurrentProjectAndRefusesAnUnavailableProject` |
+| `move-ticket-project` | Target picker, server preview of key/status/sprint departure, explicit confirm; canonical response updates shared store | `moveShowsServerPreviewBeforeConfirmAndPublishesTheCanonicalTicket` |
+| Archived/viewer tickets | Edit/move/timer actions hidden and guarded by server capabilities; commenting independently authorized | `archivedAndViewerTicketsExposeOnlyTheActionsAllowedByTheServer`, `anArchivedTicketCanStillBeCommentedOnWhenTheServerAllowsIt` |
+| Alias search | Exact key search uses `GET tasks/by-key/:key`; displays stored `ticket_key` and aliases | `searchingAnOldKeyUsesServerResolutionAndShowsTheCurrentTicket` |
+
+HTTP and realtime snapshots use platform integration `2dc7da974b3b9fdab27e0e034df37309c57413aa`.
+`project_updated` refreshes project metadata and ticket projections.
+Project settings, members, key renames and workflow editing remain web-only.
+The canonical cross-client `contracts/tasks-parity.json` belongs to the platform repository:
+close its two ticket13 Android waivers during platform integration closeout, after the Android merge.
+This Android change does not resolve the platform tracker or modify platform files.
 
 ¹ Git refs (`/tasks/:id/git`) have API wrappers on the web but no UI anywhere, so
 they are not ported (no invented UI). Custom-field *values* are edited in the

@@ -1,6 +1,23 @@
 {
   "schemaVersion": 1,
-  "policy": "Waivers require an endpoint key, an owner and a non-empty reason. Pending implementation work is not a waiver.",
+  "policy": "Waivers require an endpoint key, an owner and a non-empty reason. Pending implementation work is not a waiver. Client retirements require deprecated platform routes and no remaining Android call sites.",
+  "clientRetired": [
+    {
+      "key": "GET /api/tasks/:param/timer",
+      "owner": "Android manual-worklogs/ticket-07",
+      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
+    },
+    {
+      "key": "POST /api/tasks/:param/timer/start",
+      "owner": "Android manual-worklogs/ticket-07",
+      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
+    },
+    {
+      "key": "POST /api/tasks/:param/timer/stop",
+      "owner": "Android manual-worklogs/ticket-07",
+      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
+    }
+  ],
   "waivers": [
     {
       "key": "POST /api/auth/activity",

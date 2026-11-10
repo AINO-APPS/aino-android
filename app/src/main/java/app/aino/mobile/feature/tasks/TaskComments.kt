@@ -77,6 +77,7 @@ internal fun CommentSection(
     users: List<AssignableUser>,
     viewModel: TicketCommentActions,
     placeholder: String = "Write a comment… (type @ to mention someone)",
+    canComment: Boolean = true,
 ) {
     val colors = LocalWebColors.current
     var editingId by remember { mutableStateOf<Long?>(null) }
@@ -112,7 +113,7 @@ internal fun CommentSection(
                         Text("(edited)", color = colors.textMuted, fontSize = 0.7.rem)
                     }
                 }
-                if (editingId == c.id) {
+                if (editingId == c.id && canComment) {
                     WebTextField(editText, { editText = it }, "Edit comment...", singleLine = false, minLines = 3)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         WebButton("Save", {
@@ -123,7 +124,7 @@ internal fun CommentSection(
                 } else {
                     c.content?.takeIf(String::isNotBlank)?.let { TaskHtml(it, colors.text, 0.85.rem) }
                     CommentAttachment(c)
-                    if (c.userId != null && c.userId == currentUserId) {
+                    if (canComment && c.userId != null && c.userId == currentUserId) {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (!c.content.isNullOrBlank()) {
                                 Text("Edit", color = colors.textMuted, fontSize = 0.75.rem, modifier = Modifier.clickable {
@@ -137,7 +138,7 @@ internal fun CommentSection(
                 }
             }
         }
-        CommentComposer(taskId, users, viewModel, placeholder)
+        if (canComment) CommentComposer(taskId, users, viewModel, placeholder)
     }
 }
 
