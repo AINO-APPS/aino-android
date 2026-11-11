@@ -118,7 +118,7 @@ class TaskRepositoryTest {
                    "workItemTypes":[],"workflowStates":[{"id":9,"key":"todo","name":"Todo","color":"#111111","wip_limit":3,"is_initial":true}],"canEdit":true}"""
             },
         )
-        val config = repository.loadAgileConfig()
+        val config = repository.loadAgileConfig(1)
         assertEquals(listOf("1", "2", "3"), config.pointScale)
         assertEquals("pts", config.unitLabel)
         assertTrue(config.features.wipLimits)
@@ -141,23 +141,22 @@ class TaskRepositoryTest {
                 }
             },
         )
-        assertEquals("Core", repository.loadAvailableSprints().single().teamName)
         assertEquals(13.0, repository.loadSprintStats(2).totals.points, 0.0)
         assertEquals("WEB", repository.loadProjects().single().key)
-        assertEquals(21.0, repository.loadTeamSprints().sprints.single().velocityPoints!!, 0.0)
-        assertEquals(3L, repository.loadTeamSprints().currentSprintId)
+        assertEquals(21.0, repository.loadProjectSprints(1).sprints.single().velocityPoints!!, 0.0)
+        assertEquals(3L, repository.loadProjectSprints(1).currentSprintId)
     }
 
     @Test
-    fun requestsTheSelectedTeamsCurrentSprintForTheTeamPicker() {
+    fun requestsTheSelectedProjectsCurrentSprint() {
         val captured = mutableListOf<ApiRequest>()
         val repository = TaskRepository(
             client(captured) { """{"sprints":[{"id":31,"name":"Paused","status":"paused","team_id":7}],"currentSprintId":31}""" },
         )
 
-        val sprintList = repository.loadTeamSprints(teamId = 7)
+        val sprintList = repository.loadProjectSprints(projectId = 7)
 
-        assertEquals("sprints?team_id=7", captured.single().path)
+        assertEquals("sprints?project_id=7", captured.single().path)
         assertEquals(31L, sprintList.currentSprintId)
         assertEquals("paused", sprintList.sprints.single().status)
     }

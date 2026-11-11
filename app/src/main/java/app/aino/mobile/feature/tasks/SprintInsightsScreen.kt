@@ -92,23 +92,34 @@ fun SprintInsightsScreen(viewModel: TaskViewModel, onBack: () -> Unit, requested
     var loading by remember { mutableStateOf(false) }
     var refreshing by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
+    var displayedProjectId by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(reloadKey, ui.teamScope) {
-        val teamId = ui.selectedTeamId.takeIf { showsTeamPicker(ui.role) }
+        if (displayedProjectId != ui.planScope.selectedProjectId) {
+            displayedProjectId = ui.planScope.selectedProjectId
+            sprints = emptyList()
+            selectedId = null
+            data = null
+            loading = false
+        }
+        val projectId = ui.planScope.selectedProjectId ?: run {
+            sprints = emptyList()
+            selectedId = null
+            data = null
+            return@LaunchedEffect
+        }
         val list = withContext(Dispatchers.IO) {
-            runCatching {
-                ui.planScope.selectedProjectId?.takeIf { ui.planScope.projectScoped }?.let(repo::loadProjectSprints)
-                    ?: repo.loadTeamSprints(teamId)
-            }
+            runCatching { repo.loadProjectSprints(projectId) }
                 .getOrDefault(SprintListResponse(sprints = sprints, currentSprintId = ui.currentSprintId))
         }
-        sprints = list.sprints
-        if (selectedId == null || list.sprints.none { it.id == selectedId }) {
-            selectedId = initialInsightsSprint(list.sprints, requestedSprintId, list.currentSprintId)
+        sprints = list.sprints.filter { it.projectId == projectId }
+        if (selectedId == null || sprints.none { it.id == selectedId }) {
+            selectedId = initialInsightsSprint(sprints, requestedSprintId, list.currentSprintId)
         }
     }
-    LaunchedEffect(selectedId, reloadKey) {
-        val id = selectedId ?: run { refreshing = false; return@LaunchedEffect }
+    LaunchedEffect(selectedId, reloadKey, ui.planScope.selectedProjectId) {
+        val id = selectedId?.takeIf { id -> sprints.any { it.id == id && it.projectId == ui.planScope.selectedProjectId } }
+            ?: run { refreshing = false; loading = false; data = null; return@LaunchedEffect }
         loading = true
         data = withContext(Dispatchers.IO) {
             coroutineScope {

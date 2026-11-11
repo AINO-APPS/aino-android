@@ -53,6 +53,24 @@ class DirectAppUpdater(
         dismissedVersion = _ui.value.available?.version
         _ui.value = UpdateUiState()
     }
+
+    override fun installRequired(activity: Activity) {
+        if (_ui.value.loading) return
+        _ui.value = UpdateUiState(loading = true)
+        scope.launch {
+            runCatching {
+                val latest = repository.check()
+                if (latest == null) {
+                    _ui.value = UpdateUiState(message = "The required update is not available yet. Try again shortly.")
+                } else {
+                    repository.openDownload(activity, latest)
+                    _ui.value = UpdateUiState()
+                }
+            }.onFailure {
+                _ui.value = UpdateUiState(message = "Could not open the update download. Check your connection and try again.")
+            }
+        }
+    }
 }
 
 fun createAppUpdater(): AppUpdater = DirectAppUpdater()

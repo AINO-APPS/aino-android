@@ -5,11 +5,11 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 537,
-    "covered": 272,
+    "platform": 539,
+    "covered": 271,
     "waived": 234,
     "clientRetired": 3,
-    "missing": 30,
+    "missing": 33,
     "unmatched": 0
   },
   "covered": [
@@ -831,7 +831,7 @@
     {
       "method": "GET",
       "path": "/api/org/teams",
-      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
+      "source": "app/src/main/java/app/aino/mobile/feature/organization/OrganizationRepository.kt"
     },
     {
       "method": "POST",
@@ -1206,11 +1206,6 @@
     {
       "method": "GET",
       "path": "/api/tasks/assignable-users",
-      "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
-    },
-    {
-      "method": "GET",
-      "path": "/api/tasks/available-sprints",
       "source": "app/src/main/java/app/aino/mobile/feature/tasks/TaskRepository.kt"
     },
     {

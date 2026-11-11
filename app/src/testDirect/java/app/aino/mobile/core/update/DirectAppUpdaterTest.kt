@@ -92,4 +92,25 @@ class DirectAppUpdaterTest {
         assertNull(intent.type)
         assertEquals(UpdateUiState(), updater.ui.value)
     }
+
+    @Test
+    fun requiredUpdateRechecksAndOpensTheTrustedDownloadEvenAfterDismissal() {
+        val updater = updater(200, "999.0.0")
+        updater.check(activity)
+        updater.dismiss()
+        updater.installRequired(activity)
+        assertEquals(
+            "https://cdn.test/android/releases/android-v999.0.0/AINO-999.0.0-direct.apk",
+            shadowOf(activity).nextStartedActivity.data.toString(),
+        )
+    }
+
+    @Test
+    fun failedRequiredUpdateAllowsRetryWithoutClaimingTheClientIsCurrent() {
+        val updater = updater(503, BuildConfig.VERSION_NAME)
+        updater.installRequired(activity)
+        assertFalse(updater.ui.value.loading)
+        assertEquals("Could not open the update download. Check your connection and try again.", updater.ui.value.message)
+        assertNull(shadowOf(activity).nextStartedActivity)
+    }
 }

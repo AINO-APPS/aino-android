@@ -846,10 +846,10 @@ internal class TicketSessionHarness {
                 saved
             }
             request.path.startsWith("tasks/by-key/") -> saved
-            request.path == "tasks/available-sprints" -> """[{"id":10,"name":"Sprint","status":"active"},{"id":11,"name":"Next sprint","status":"planned"}]"""
-            request.path == "sprints" -> """{"sprints":[{"id":10,"name":"Sprint","status":"active"}],"currentSprintId":10}"""
+            request.path.startsWith("projects") -> """[{"id":3,"name":"Project","capabilities":{"canCreateTickets":true}}]"""
+            request.path == "sprints?project_id=3" -> """{"sprints":[{"id":10,"name":"Sprint","status":"active"},{"id":11,"name":"Next sprint","status":"planned"}],"currentSprintId":10}"""
             request.path == "tasks/201/history" -> { historyReads++; historyResponse }
-            request.path in setOf("tasks/labels", "tasks/assignable-users", "projects") -> "[]"
+            request.path in setOf("tasks/labels", "tasks/assignable-users") -> "[]"
             (request.path == "tasks/201" && request.method == "PUT") ||
                 request.path == "tasks/201/status" || request.path == "tasks/201/assign-sprint" ||
                 (request.path == "tasks/backlog" && request.method == "POST") -> {
@@ -871,8 +871,21 @@ internal class TicketSessionHarness {
             }
             else -> "{}"
         }
-        ApiResponse(200, emptyMap(), body.toByteArray())
+        ApiResponse(200, emptyMap(), withProjectOwnership(Json.parseToJsonElement(body)).toString().toByteArray())
     })
+
+    private fun withProjectOwnership(value: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonElement =
+        when (value) {
+            is kotlinx.serialization.json.JsonArray -> kotlinx.serialization.json.JsonArray(value.map(::withProjectOwnership))
+            is kotlinx.serialization.json.JsonObject -> {
+                val fields = value.mapValues { withProjectOwnership(it.value) }.toMutableMap()
+                if ("id" in fields && ("title" in fields || "name" in fields) && "project_id" !in fields) {
+                    fields["project_id"] = kotlinx.serialization.json.JsonPrimitive(3)
+                }
+                kotlinx.serialization.json.JsonObject(fields)
+            }
+            else -> value
+        }
     val session = TicketSession()
     val viewModel = TaskViewModel(repository, ticketSession = session)
     val viewModelPlan = PlanViewModel(repository, viewModel.ticketSession)

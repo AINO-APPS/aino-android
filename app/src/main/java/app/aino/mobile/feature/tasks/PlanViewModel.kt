@@ -70,6 +70,7 @@ class PlanViewModel(
                                 error = null, confirm = null,
                             ).projectPlan()
                         }
+                        if (previous.planLoaded) loadBacklog()
                     } else _ui.update { it.copy(planScope = scope).projectPlan() }
                 }
             }
@@ -154,6 +155,7 @@ class PlanViewModel(
     fun dismissConfirm() = _ui.update { it.copy(confirm = null) }
 
     fun loadBacklog() {
+        if (_ui.value.planScope.projectScoped && _ui.value.planScope.selectedProjectId == null) return
         backlogJob?.cancel()
         _ui.update { it.copy(backlogLoading = it.backlog.isEmpty(), backlogLoadingMore = false) }
         val gen = backlogGen.incrementAndGet()
@@ -275,7 +277,7 @@ class PlanViewModel(
         io {
             val payload = CreateBacklogPayload(
                 title = draft.title.trim(), description = plainTextToHtml(draft.description),
-                priority = draft.priority, teamId = s.selectedTeamId?.takeIf { !s.planScope.projectScoped && it > 0 },
+                priority = draft.priority,
                 assignedTo = draft.assignedTo, dueDate = draft.dueDate.ifEmpty { null },
                 labelIds = draft.labels.ifEmpty { null }, sprintId = draft.sprintId,
                 storyPoints = draft.storyPoints, workItemTypeId = draft.workItemTypeId,

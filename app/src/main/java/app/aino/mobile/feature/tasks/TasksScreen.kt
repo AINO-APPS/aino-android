@@ -316,9 +316,6 @@ private fun TasksHeader(ui: TaskUiState, viewModel: TaskViewModel, onOpenInsight
         if (ui.planScope.projectScoped) {
             ProjectPicker(ui, viewModel)
             Spacer(Modifier.width(8.dp))
-        } else if (showsTeamPicker(ui.role)) {
-            TeamPicker(ui, viewModel)
-            Spacer(Modifier.width(8.dp))
         }
         RoundIconButton(HeroIcons.MagnifyingGlass, "Search tasks", viewModel::openSearch)
         Spacer(Modifier.width(8.dp))
@@ -371,33 +368,7 @@ internal fun MenuItem(
     )
 }
 
-/**
- * Super admin and above pick one team at a time — there is no merged board,
- * because one board cannot show several sprints. The chosen team drives the
- * tabs, the landing and every list query.
- */
-@Composable
-private fun TeamPicker(ui: TaskUiState, viewModel: TaskViewModel) {
-    val colors = LocalWebColors.current
-    var open by remember { mutableStateOf(false) }
-    val current = ui.teams.firstOrNull { it.id == ui.selectedTeamId }?.name ?: "Select team"
-    Box {
-        TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
-            Text(current, color = colors.text, fontSize = 0.78.rem, maxLines = 1)
-            Icon(HeroIcons.ChevronDown, contentDescription = null, tint = colors.textMuted, modifier = Modifier.size(14.dp))
-        }
-        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }, modifier = Modifier.background(colors.bgElevated)) {
-            MenuItem(HeroIcons.Users, "Unassigned") { open = false; viewModel.selectTeam(-1L) }
-            ui.teams.forEach { team ->
-                MenuItem(if (team.id == ui.selectedTeamId) HeroIcons.Check else HeroIcons.Users, team.name) {
-                    open = false
-                    viewModel.selectTeam(team.id)
-                }
-            }
-        }
-    }
-}
-
+/** Accessible projects drive the planning tabs and every collection query. */
 @Composable
 private fun ProjectPicker(ui: TaskUiState, viewModel: TaskViewModel) {
     val colors = LocalWebColors.current

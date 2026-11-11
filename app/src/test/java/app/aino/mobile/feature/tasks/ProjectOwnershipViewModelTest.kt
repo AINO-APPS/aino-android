@@ -199,15 +199,16 @@ class ProjectOwnershipViewModelTest {
         assertEquals(4L, plan.ui.value.planScope.selectedProjectId)
     }
 
-    @Test fun aServerWithoutProjectListingKeepsLegacyTeamScope() {
+    @Test fun aServerWithoutProjectListingNeverFallsBackToLegacyTeamScope() {
         val repository = TaskRepository(ApiClient { request ->
             response(if (request.path == "org/teams") """[{"id":8,"name":"Own team"}]""" else "{}")
         })
         val shell = TasksShellViewModel(repository, ticketSession = session)
         shell.bind(1, "super_admin", "Own team", agileEnabled = false, teamId = 8)
         await { shell.ui.value.teamResolved }
-        assertFalse(shell.ui.value.planScope.projectScoped)
-        assertEquals(TeamScope(teamId = 8), shell.ui.value.teamScope)
+        assertTrue(shell.ui.value.planScope.projectScoped)
+        assertEquals(TeamScope(), shell.ui.value.teamScope)
+        assertNull(shell.ui.value.planScope.selectedProjectId)
     }
 
     @Test fun anArchivedTicketCanStillBeCommentedOnWhenTheServerAllowsIt() {
