@@ -43,6 +43,9 @@
       "placeInSprint": {
         "allowed": true
       },
+      "canAddSubtask": {
+        "allowed": true
+      },
       "schedule": {
         "allowed": true
       }

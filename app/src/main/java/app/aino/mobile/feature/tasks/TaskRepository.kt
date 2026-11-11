@@ -215,6 +215,10 @@ class TaskRepository(
     // ── Task writes ──────────────────────────────────────────────────────
     fun createBacklogTask(payload: CreateBacklogPayload): Task = mutate("tasks/backlog", payload)
 
+    // @api POST tasks/:id/subtasks
+    fun createSubtask(parentId: Long, title: String): Task =
+        mutate("tasks/$parentId/subtasks", JsonObject(mapOf("title" to kotlinx.serialization.json.JsonPrimitive(title))))
+
     fun updateTask(id: Long, payload: UpdateTaskPayload): Task = mutate("tasks/$id", payload, "PUT")
 
     fun updateImportFields(id: Long, payload: ImportUpdatePayload): Task = mutate("tasks/$id", payload, "PUT")

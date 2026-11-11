@@ -56,6 +56,9 @@ data class TicketDetailUiState(
     val moveBusy: Boolean = false,
     val projectAgile: AgileConfig? = null,
     val projectSprints: List<AvailableSprint>? = null,
+    val subtaskTitle: String? = null,
+    val subtaskBusy: Boolean = false,
+    val subtaskError: String? = null,
 ) {
     val canLogWork get() = !closed && detail?.capability(TaskCapability.LogWork)?.allowed == true
     val canLogWorkForOthers get() = !closed && detail?.capability(TaskCapability.LogWorkForOthers)?.allowed == true
@@ -250,6 +253,44 @@ class TicketDetailViewModel(
             worklogWarnings = emptyList(), estimateDraft = null, estimateError = null, estimateBusy = false)
     }
     fun setDetailTab(tab: DetailTab) = _ui.update { it.copy(detailTab = tab) }
+    fun beginAddSubtask() {
+        val task = _ui.value.detail ?: return
+        if (allowed(task, TaskCapability.AddSubtask)) _ui.update { it.copy(subtaskTitle = "", subtaskError = null) }
+    }
+    fun setSubtaskTitle(title: String) {
+        if (!_ui.value.subtaskBusy) _ui.update { it.copy(subtaskTitle = title.take(200), subtaskError = null) }
+    }
+    fun dismissAddSubtask() {
+        if (!_ui.value.subtaskBusy) _ui.update { it.copy(subtaskTitle = null, subtaskError = null) }
+    }
+    fun createSubtask() {
+        val state = _ui.value
+        val task = state.detail ?: return
+        val title = state.subtaskTitle?.trim().orEmpty()
+        if (title.isBlank() || state.subtaskBusy || !allowed(task, TaskCapability.AddSubtask)) return
+        _ui.update { it.copy(subtaskBusy = true, subtaskError = null) }
+        io {
+            runCatching { repository.createSubtask(ticketId, title) }.fold(
+                onSuccess = { child ->
+                    save(child)
+                    _ui.update { it.copy(subtaskTitle = null) }
+                    ticketSession.requestPlanRefresh()
+                    ticketSession.requestBoard(BoardRequest.ReloadLoaded)
+                    notify("Subtask created")
+                },
+                onFailure = { error ->
+                    val message = when (error) {
+                        is ApiError -> userFacingMessage(error, "Could not create subtask")
+                        is TaskFailure -> capabilityFailureCopy(error.code) ?: error.message ?: "Could not create subtask"
+                        else -> "Could not create subtask"
+                    }
+                    _ui.update { it.copy(subtaskError = capabilityFailureCopy(message) ?: message) }
+                },
+            )
+            _ui.update { it.copy(subtaskBusy = false) }
+            refreshDetail()
+        }
+    }
     fun startEdit() {
         val task = _ui.value.detail ?: return
         if (allowed(task, TaskCapability.Edit)) _ui.update { it.copy(detailEditing = true) }

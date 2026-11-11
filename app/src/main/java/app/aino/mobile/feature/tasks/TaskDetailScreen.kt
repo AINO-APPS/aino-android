@@ -193,7 +193,8 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
                 Spacer(Modifier.height(16.dp))
                 PropertiesCard(task, ui, viewModel, onStatus = { statusSheet = true })
                 Spacer(Modifier.height(20.dp))
-                SubtaskPanel(task, onOpenTicket)
+                SubtaskPanel(task, ui, viewModel, onOpenTicket)
+                AddSubtaskDialog(ui, viewModel)
                 DetailSections(task, ui, viewModel, onOpenTicket)
             }
         }
@@ -698,7 +699,7 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TicketDetailUiState, view
 }
 
 @Composable
-private fun SubtaskPanel(task: Task, onOpenTicket: (Long) -> Unit) {
+private fun SubtaskPanel(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onOpenTicket: (Long) -> Unit) {
     val colors = LocalWebColors.current
     if (task.isSubtask) {
         task.parentTaskId?.let { parentId ->
@@ -709,9 +710,17 @@ private fun SubtaskPanel(task: Task, onOpenTicket: (Long) -> Unit) {
             )
         }
     } else {
-        task.subtaskSummary?.takeIf { it.total > 0 }?.let { summary ->
+        val summary = task.subtaskSummary
+        val canAdd = task.capability(TaskCapability.AddSubtask).allowed
+        if ((summary?.total ?: 0) > 0 || canAdd) {
             PanelBox {
-                Text("Subtasks · ${summary.done}/${summary.total} done", color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Subtasks · ${summary?.done ?: 0}/${summary?.total ?: 0} done", color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold)
+                    if (canAdd) TextButton(onClick = viewModel::beginAddSubtask, enabled = !ui.subtaskBusy) {
+                        Text("Add subtask", color = colors.primary)
+                    }
+                }
+                if (task.subtasks.isNullOrEmpty()) Text("Break this ticket into smaller steps.", color = colors.textMuted, fontSize = 0.82.rem)
                 task.subtasks.orEmpty().forEach { child ->
                     Row(
                         Modifier.fillMaxWidth().clickable(onClickLabel = "Open ${child.displayKey}") { onOpenTicket(child.id) }.padding(vertical = 8.dp),
@@ -719,7 +728,8 @@ private fun SubtaskPanel(task: Task, onOpenTicket: (Long) -> Unit) {
                     ) {
                         Text(child.displayKey, color = colors.textMuted, fontSize = 0.75.rem)
                         Text(child.title, color = colors.primary, fontSize = 0.82.rem, modifier = Modifier.weight(1f))
-                        if (child.isCompleted) Text("Done", color = colors.success, fontSize = 0.75.rem)
+                        Text(child.workflowStateName ?: child.workflowStateKey ?: if (child.isCompleted) "Done" else "Open",
+                            color = if (child.isCompleted) colors.success else colors.textMuted, fontSize = 0.75.rem)
                     }
                 }
             }

@@ -2,10 +2,14 @@ package app.aino.mobile.feature.tasks
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import app.aino.mobile.ComposeTestHostActivity
 import app.aino.mobile.core.designsystem.tokens.LocalWebColors
 import app.aino.mobile.core.designsystem.tokens.WebColorsDark
@@ -57,7 +61,32 @@ class SubtaskDetailUiTest {
         }
         compose.onNodeWithText("Subtasks · 1/2 done").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Open child").performScrollTo().performClick()
+        compose.onNodeWithText("Add subtask").assertDoesNotExist()
         assertEquals(203L, opened)
+    }
+
+    @Test fun parentWithNoChildrenOffersAddSubtaskFromTheServerCapability() {
+        harness.detailResponse = harness.original.replace("\"can\":{", "\"can\":{\"canAddSubtask\":{\"allowed\":true},")
+        harness.loadBoardPlanAndDetail()
+        harness.session.writePlanScope(harness.session.planScope.value.copy(
+            agile = AgileConfig(features = AgileFeatures(epics = false)),
+        ))
+        var opened: Long? = null
+        compose.setContent {
+            CompositionLocalProvider(LocalWebColors provides WebColorsDark) {
+                TaskDetailScreen(harness.detailViewModel, {}, { opened = it })
+            }
+        }
+        compose.onNodeWithText("Add subtask").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("Follows the parent's project and sprint.").assertIsDisplayed()
+        compose.onNodeWithText("Create subtask").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Subtask title").performTextInput("Small step")
+        compose.onNodeWithText("Create subtask").performClick()
+        compose.waitUntil(5_000) { harness.detailViewModel.ui.value.detail?.subtaskSummary?.total == 1 }
+        compose.onNodeWithText("Subtasks · 0/1 done").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Small step").performScrollTo().assertTextContains("New").performClick()
+        assertEquals(202L, opened)
+        assertEquals(1, harness.subtaskWrites)
     }
 
     @Test fun subtaskOpensParentAndNeverOffersOrWritesStoryPoints() {
