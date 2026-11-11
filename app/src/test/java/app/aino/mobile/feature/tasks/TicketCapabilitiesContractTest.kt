@@ -28,23 +28,23 @@ class TicketCapabilitiesContractTest {
         val configured = System.getenv("AINO_PLATFORM_CONTRACT_FIXTURES")
             ?.let(Path::of)
             ?.takeIf(Files::isDirectory)
-        if (configured != null) return configured.resolve(name).takeIf(Files::isRegularFile)
-
-        return generateSequence(Path.of(System.getProperty("user.dir")).toAbsolutePath()) { it.parent }
-            .flatMap { ancestor ->
-                sequenceOf(
-                    ancestor.resolve("aino-platform").resolve("contracts").resolve("fixtures"),
-                    ancestor.resolve("contracts").resolve("fixtures"),
-                )
-            }
-            .filter(Files::isDirectory)
-            .mapNotNull { directory -> directory.resolve(name).takeIf(Files::isRegularFile) }
-            .firstOrNull()
+        return configured?.resolve(name)?.takeIf(Files::isRegularFile)
     }
 
     private fun fixtureData(name: String): JsonElement {
         val fixture = json.parseToJsonElement(payload(name))
         return (fixture as? JsonObject)?.get("data") ?: fixture
+    }
+
+    @Test
+    fun addSubtaskDecodesTheServerDecisionAndDefaultsToDenied() {
+        val action = TaskCapability.entries.find { it.name == "AddSubtask" }
+        assertNotNull("Add subtask must be a decoded server capability", action)
+        val allowed = json.decodeFromString<Task>("""{"id":7,"title":"Parent","capabilities":{"can":{"canAddSubtask":{"allowed":true}}}}""")
+        val cancelled = json.decodeFromString<Task>("""{"id":7,"title":"Parent","capabilities":{"can":{"canAddSubtask":{"allowed":false,"reason":"CANCELLED_TERMINAL"}}}}""")
+        assertTrue(allowed.capability(action!!).allowed)
+        assertEquals("CANCELLED_TERMINAL", cancelled.capability(action).reason)
+        assertFalse(Task(7, "Old server").capability(action).allowed)
     }
 
     @Test
@@ -56,6 +56,7 @@ class TicketCapabilitiesContractTest {
         assertFalse(ticket.capabilities!!.transitions.first().allowed)
         assertEquals("INVALID_TRANSITION", ticket.capabilities.transitions.first().reason)
         assertTrue(ticket.capabilities.can.edit.allowed)
+        assertTrue(ticket.capabilities.can.canAddSubtask.allowed)
         assertEquals("ACCESS_DENIED", ticket.capabilities.can.transfer.reason)
     }
 

@@ -75,6 +75,7 @@ data class TaskCapabilityActions(
     val placeInSprint: TaskCapabilityDecision = TaskCapabilityDecision(),
     val schedule: TaskCapabilityDecision = TaskCapabilityDecision(),
     val canMoveProject: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val canAddSubtask: TaskCapabilityDecision = TaskCapabilityDecision(),
     val comment: TaskCapabilityDecision = TaskCapabilityDecision(),
     val logWork: TaskCapabilityDecision = TaskCapabilityDecision(),
     val logWorkForOthers: TaskCapabilityDecision = TaskCapabilityDecision(),
@@ -123,6 +124,7 @@ data class Task(
     /** The workflow state is the only status (D4). */
     @SerialName("workflow_state_id") val workflowStateId: Long? = null,
     @SerialName("workflow_state_key") val workflowStateKey: String? = null,
+    @SerialName("workflow_state_name") val workflowStateName: String? = null,
     @SerialName("workflow_state_category") val workflowStateCategory: String? = null,
     /** Planned effort in minutes, shown against [loggedMinutes]. */
     @SerialName("estimated_minutes") val estimatedMinutes: Int? = null,

@@ -102,6 +102,13 @@ own effort; a separate read-only total includes non-deleted subtasks exactly as
 returned by the server. Child changes and effort writes refresh those server
 totals instead of adding local worklog amounts. Older responses without hierarchy
 metadata retain their existing flat lists and own-effort presentation.
+**Add subtask** is shown from the server's `canAddSubtask` decision, even when
+the parent has no children and the Epic feature is disabled. The title-only
+`POST /tasks/:id/subtasks` request lets the server fix the Subtask type and
+inherit project/sprint; clients never offer those selectors. Creating refreshes
+the parent's list/progress and shared planning data. A stale refusal preserves
+the draft, explains the standard reason and refreshes capabilities. Missing or
+denied capabilities never offer creation.
 
 The Activity-scoped `PlanViewModel` owns Backlog paging, sort and read-adjusted
 totals, Completed, selection and bulk actions, the create draft, epics, import

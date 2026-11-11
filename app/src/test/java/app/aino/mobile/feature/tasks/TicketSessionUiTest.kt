@@ -752,6 +752,8 @@ internal class TicketSessionHarness {
     @Volatile var cancelResponse = ""
     @Volatile var searchRows = ""
     @Volatile var detailResponse = original
+    @Volatile var subtaskWrites = 0
+    @Volatile var subtaskPayload: kotlinx.serialization.json.JsonObject? = null
     @Volatile var detailResponseGate: HeldTicketResponse? = null
     @Volatile var boardResponseGate: HeldTicketResponse? = null
     @Volatile var commentResponseGate: HeldTicketResponse? = null
@@ -776,6 +778,13 @@ internal class TicketSessionHarness {
     @Volatile var completedRollover: String? = null
     val repository = TaskRepository(ApiClient { request ->
         val body = when {
+            request.path == "tasks/201/subtasks" && request.method == "POST" -> {
+                subtaskWrites++
+                subtaskPayload = Json.parseToJsonElement(requireNotNull(request.body).toString(Charsets.UTF_8)).jsonObject
+                val child = """{"id":202,"title":"Small step","is_subtask":true,"parent_task_id":201,"project_id":3,"sprint_id":10,"work_item_type_id":9,"workflow_state_name":"New"}"""
+                detailResponse = detailResponse.dropLast(1) + ""","subtask_summary":{"total":1,"done":0},"subtasks":[$child]}"""
+                child
+            }
             request.path == "sprints/10/completion-preview" ->
                 """{"defaultTarget":11,"moving":[{"id":201,"title":"Ship release"}],"staying":[],"movingPoints":0}"""
             request.path == "sprints/11/board" ->

@@ -9,6 +9,7 @@ enum class TaskCapability {
     PlaceInSprint,
     Schedule,
     MoveProject,
+    AddSubtask,
     Comment,
     LogWork,
     LogWorkForOthers,
@@ -26,6 +27,7 @@ fun Task.capability(action: TaskCapability): TaskCapabilityDecision {
         TaskCapability.PlaceInSprint -> can.placeInSprint
         TaskCapability.Schedule -> can.schedule
         TaskCapability.MoveProject -> can.canMoveProject
+        TaskCapability.AddSubtask -> can.canAddSubtask
         TaskCapability.Comment -> can.comment
         TaskCapability.LogWork -> can.logWork
         TaskCapability.LogWorkForOthers -> can.logWorkForOthers
