@@ -374,7 +374,12 @@ class TicketSessionUiTest {
         harness.viewModel.setSearch("Ship")
         harness.await { harness.viewModel.searchResults.value.size == 1 }
         harness.openInlineComments()
-        harness.await { harness.inlineComments?.loading == false }
+        harness.await {
+            harness.inlineComments?.loading == false &&
+                harness.inlineViewModel.ui.value.detail?.id == 201L &&
+                !harness.inlineViewModel.ui.value.detailLoading &&
+                !harness.inlineViewModel.ui.value.worklogsLoading
+        }
 
         harness.saved = harness.original.replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
         harness.detailViewModel.updateFields(
@@ -529,7 +534,9 @@ class TicketSessionUiTest {
         harness.await {
             harness.writes == 1 && harness.boardViewModel.ui.value.tasks.isEmpty() &&
                 201L in harness.viewModelPlan.ui.value.recentlyUpdated &&
-                201L in harness.detailViewModel.ui.value.recentlyUpdated
+                201L in harness.detailViewModel.ui.value.recentlyUpdated &&
+                harness.detailViewModel.ui.value.detail?.container == "backlog" &&
+                harness.viewModelPlan.ui.value.backlog.map { it.id } == listOf(201L)
         }
         assertEquals("backlog", harness.detailViewModel.ui.value.detail?.container)
         assertEquals(listOf(201L), harness.viewModelPlan.ui.value.backlog.map { it.id })
