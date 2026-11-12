@@ -7,8 +7,8 @@
   "totals": {
     "platform": 539,
     "covered": 272,
-    "waived": 234,
-    "clientRetired": 14,
+    "waived": 235,
+    "clientRetired": 13,
     "missing": 21,
     "unmatched": 0
   },
@@ -1379,11 +1379,6 @@
       "key": "GET /api/tasks/scheduled",
       "owner": "A-104",
       "reason": "Ticket 11 removed legacy date-planned task listing."
-    },
-    {
-      "key": "GET /api/tasks/schedule-overlays",
-      "owner": "A-104",
-      "reason": "Ticket 11 removed legacy date-planned task overlays."
     },
     {
       "key": "PATCH /api/tasks/:param/schedule",

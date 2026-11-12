@@ -503,6 +503,7 @@
 | PUT | `/api/tasks/labels/:id` | implemented | A-104 |
 | GET | `/api/tasks/labels/manage` | implemented | A-104 |
 | GET | `/api/tasks/lookup/quicksearch` | implemented | A-104 |
+| GET | `/api/tasks/schedule-overlays` | waived | A-104 |
 | GET | `/api/tasks/search` | implemented | A-104 |
 | GET | `/api/tracker/analytics` | implemented | existing/A-108 |
 | POST | `/api/tracker/break-end` | implemented | existing/A-108 |
@@ -532,7 +533,6 @@
 | GET | `/metrics` | waived | existing/A-108 |
 | GET | `/readyz` | waived | existing/A-108 |
 | GET | `/api/tasks/scheduled` | client-retired | A-104 |
-| GET | `/api/tasks/schedule-overlays` | client-retired | A-104 |
 | PATCH | `/api/tasks/:id/schedule` | client-retired | A-104 |
 | PATCH | `/api/tasks/:id/unschedule` | client-retired | A-104 |
 | POST | `/api/tasks/carry-forward` | client-retired | A-104 |

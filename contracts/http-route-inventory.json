@@ -8,8 +8,8 @@
   "scopeNote": "Mounted routes are inventoried from the route snapshot. Ticket 11 removals remain as deprecated retirement history, excluded from the supported OpenAPI contract.",
   "totals": {
     "routerMounts": 36,
-    "concreteEndpoints": 525,
-    "openApiOperations": 265
+    "concreteEndpoints": 526,
+    "openApiOperations": 266
   },
   "standaloneRoutes": [
     {
@@ -85,7 +85,7 @@
       "mountPath": "/api/tasks",
       "source": "server/routes/tasks/index.ts",
       "coverage": "baseline",
-      "endpointCount": 47
+      "endpointCount": 48
     },
     {
       "id": "sprints",
@@ -2779,6 +2779,11 @@
     },
     {
       "method": "GET",
+      "path": "/api/tasks/schedule-overlays",
+      "coverage": "operation"
+    },
+    {
+      "method": "GET",
       "path": "/api/tasks/search",
       "coverage": "operation"
     },
@@ -2920,13 +2925,6 @@
     {
       "method": "GET",
       "path": "/api/tasks/scheduled",
-      "deprecated": true,
-      "retiredBy": "ticket-11",
-      "coverage": "retired-history"
-    },
-    {
-      "method": "GET",
-      "path": "/api/tasks/schedule-overlays",
       "deprecated": true,
       "retiredBy": "ticket-11",
       "coverage": "retired-history"
