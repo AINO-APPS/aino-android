@@ -179,18 +179,18 @@ comment and old/new values, including deleted records and nullable estimates.
 Endpoint snapshots are regenerated against the paired platform checkout using
 `node scripts/check-endpoint-parity.mjs <platform-path> --update`. Add
 `--platform-ref=<commit>` to pin an inventory when the checkout is shared.
-Retirement entries in `docs/parity-waivers.json` mark the three legacy ticket
-timer routes as client-retired, not implemented or pending. All five manual
-worklog/estimate operations are proven without temporary waivers on either
-platform. `TicketWorklogsTest` exercises remaining choices for create/edit/delete,
-inline estimates, capability-driven visibility, attribution and warning persistence
-through the real repository and view model with the fake HTTP harness.
+Ticket 11 removes retired timer and team-sprint operations from the platform
+inventory; Android has no remaining call sites for those routes. All five
+manual worklog/estimate operations are proven without temporary waivers on
+either platform. `TicketWorklogsTest` exercises remaining choices for
+create/edit/delete, inline estimates, capability-driven visibility,
+attribution and warning persistence through the real repository and view
+model with the fake HTTP harness.
 
-Plan opens on Backlog, followed by Scheduled and Sprint (when enabled); Sprint
-retains its board and planning views. Backlog groups live work by sprint and
-backlog with matching ticket/point totals. All resets only the independent Mine,
-High and Unscheduled quick chips. Mine includes work assigned to you and your
-unassigned creations; Unscheduled checks the planner date, not sprint membership.
+Plan opens on project Backlog or Sprint (when enabled); Sprint retains its board
+and planning views. Backlog groups live work by sprint and backlog with matching
+ticket/point totals. Quick filters remain independent and never change sprint
+membership.
 Search and More remain in the header. More → Filters and view options contains
 advanced filters, sorting, Epic selection and compact/comfortable density.
 Compact cards omit descriptions, labels and extra metadata. Completed work starts
