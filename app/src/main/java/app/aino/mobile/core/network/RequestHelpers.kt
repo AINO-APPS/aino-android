@@ -11,6 +11,7 @@ object RequestHeaders {
 
     /** Marks app-minted tokens server-side; admin routes are web-only and refuse them. */
     const val CLIENT = "X-AINO-Client"
+    const val CLIENT_VERSION = "X-AINO-Client-Version"
     const val ANDROID = "android"
 
     /** Stable install id: the server keeps one session per device (see [DeviceId]). */
@@ -48,12 +49,20 @@ fun standardHeaders(
 ): Map<String, String> = buildMap {
     put(RequestHeaders.REQUESTED_WITH, RequestHeaders.AINO)
     put(RequestHeaders.CLIENT, RequestHeaders.ANDROID)
+    put(RequestHeaders.CLIENT_VERSION, app.aino.mobile.BuildConfig.VERSION_NAME)
     put(RequestHeaders.TOKEN_REFRESH, RequestHeaders.ROTATE)
     put(RequestHeaders.TIMEZONE_OFFSET, timezoneOffsetMinutes.toString())
     DeviceId.value?.let { put(RequestHeaders.DEVICE_ID, it) }
     token?.trim()?.takeIf(String::isNotEmpty)?.let {
         put(RequestHeaders.AUTHORIZATION, "Bearer $it")
     }
+}
+
+/** Required headers are case-insensitive; step-up authorization remains caller-owned. */
+internal fun ApiRequest.platformHeaders(token: String?, offsetMinutes: Int): Map<String, String> {
+    val explicitAuth = headers.keys.any { it.equals(RequestHeaders.AUTHORIZATION, ignoreCase = true) }
+    val defaults = standardHeaders(token.takeUnless { explicitAuth }, offsetMinutes)
+    return headers.filterKeys { name -> defaults.keys.none { it.equals(name, ignoreCase = true) } } + defaults
 }
 
 fun resolveApiUrl(baseUrl: String, path: String): String {

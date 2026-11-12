@@ -43,9 +43,6 @@ class TicketSession {
     private val mutablePlanRequests = MutableSharedFlow<PlanRequest>(extraBufferCapacity = 32)
     internal val planRequests = mutablePlanRequests.asSharedFlow()
     internal fun requestPlan(request: PlanRequest) { mutablePlanRequests.tryEmit(request) }
-    private val mutableScheduledRequests = MutableSharedFlow<ScheduledRequest>(extraBufferCapacity = 32)
-    internal val scheduledRequests = mutableScheduledRequests.asSharedFlow()
-    internal fun requestScheduled(request: ScheduledRequest) { mutableScheduledRequests.tryEmit(request) }
     private val mutableShellRequests = MutableSharedFlow<ShellRequest>(extraBufferCapacity = 32)
     internal val shellRequests = mutableShellRequests.asSharedFlow()
     internal fun requestShell(request: ShellRequest) { mutableShellRequests.tryEmit(request) }
@@ -186,16 +183,7 @@ internal sealed interface PlanRequest {
     data class CreateForColumn(val state: WorkflowState) : PlanRequest
 }
 
-internal sealed interface ScheduledRequest {
-    data object CarryForward : ScheduledRequest
-    data object Load : ScheduledRequest
-    data object ReloadLoaded : ScheduledRequest
-    data class Show(val date: String?) : ScheduledRequest
-}
-
 internal sealed interface ShellRequest {
-    data object ShowScheduled : ShellRequest
-    data object ReloadScheduledIfVisible : ShellRequest
     data object CloseSheet : ShellRequest
     data class OpenSheet(val sheet: TaskSheet) : ShellRequest
     data class SelectSprint(val id: Long) : ShellRequest
@@ -230,13 +218,14 @@ internal class TicketStore(
         if (incoming.isCancelled) removal.cancelled else removal.allowReopen && removal === token
 
     fun upsert(ticket: Task, removalToken: Any? = null): Task {
-        val stored = withoutComments(ticket)
+        var stored = withoutComments(ticket)
         synchronized(ticketLock) {
             val removal = removedIds[stored.id]
             if (removal != null) {
                 if (!admits(removal, stored, removalToken)) return stored
                 if (!stored.isCancelled) removedIds.remove(stored.id)
             }
+            stored = retainHierarchy(stored, mutable.value.tickets[stored.id])
             mutable.update { snapshot ->
                 snapshot.copy(tickets = snapshot.tickets + (stored.id to stored), ticketRevision = snapshot.ticketRevision + 1)
             }
@@ -250,7 +239,10 @@ internal class TicketStore(
             val accepted = stored.filter { (id, ticket) -> removedIds[id]?.let { admits(it, ticket, null) } ?: true }
             if (accepted.isEmpty()) return
             mutable.update { snapshot ->
-                snapshot.copy(tickets = snapshot.tickets + accepted, ticketRevision = snapshot.ticketRevision + 1)
+                snapshot.copy(
+                    tickets = snapshot.tickets + accepted.mapValues { (id, ticket) -> retainHierarchy(ticket, snapshot.tickets[id]) },
+                    ticketRevision = snapshot.ticketRevision + 1,
+                )
             }
         }
     }
@@ -329,4 +321,15 @@ internal class TicketStore(
 
     private fun withoutComments(ticket: Task): Task =
         if (ticket.comments.isEmpty()) ticket else ticket.copy(comments = emptyList())
+
+    private fun retainHierarchy(ticket: Task, previous: Task?): Task {
+        if (previous == null || (previous.subtasks == null && previous.subtaskSummary == null)) return ticket
+        if (ticket.subtasks != null && ticket.subtaskSummary != null) return ticket
+        return ticket.copy(
+            subtasks = ticket.subtasks ?: if (ticket.subtaskSummary == null) previous.subtasks else null,
+            subtaskSummary = ticket.subtaskSummary ?: previous.subtaskSummary,
+            effort = if (ticket.subtaskSummary == null) ticket.effort ?: previous.effort else ticket.effort,
+            parent = if (ticket.subtaskSummary == null) ticket.parent ?: previous.parent else ticket.parent,
+        )
+    }
 }

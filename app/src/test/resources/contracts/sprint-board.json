@@ -35,6 +35,7 @@
           "transfer": { "allowed": false, "reason": "ACCESS_DENIED" },
           "delete": { "allowed": true },
           "placeInSprint": { "allowed": true },
+          "canAddSubtask": { "allowed": true },
           "schedule": { "allowed": false, "reason": "IN_SPRINT" }
         }
       },

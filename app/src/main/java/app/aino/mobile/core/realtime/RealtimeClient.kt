@@ -33,6 +33,7 @@ class RealtimeClient(
     private val json: Json = Json { ignoreUnknownKeys = true },
     private val baseUrl: String = NetworkConfig.webSocketUrl,
     private val random: () -> Double = Random::nextDouble,
+    private val upgrades: app.aino.mobile.core.update.ClientUpgradeState = app.aino.mobile.core.update.ClientUpgrades.state,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow<RealtimeState>(RealtimeState.Disconnected)
@@ -165,7 +166,12 @@ class RealtimeClient(
                     scheduleReconnect(connectionGeneration, 1006)
                     return@launch
                 }
-                val request = Request.Builder().url(realtimeUrl(baseUrl, token)).build()
+                val request = Request.Builder().url(realtimeUrl(baseUrl, token)).apply {
+                    app.aino.mobile.core.network.standardHeaders(
+                        null,
+                        app.aino.mobile.core.network.timezoneOffsetMinutes(java.util.TimeZone.getDefault(), System.currentTimeMillis()),
+                    ).forEach(::header)
+                }.build()
                 socket = client.newWebSocket(request, listener(connectionGeneration))
             }
         }
@@ -211,6 +217,10 @@ class RealtimeClient(
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = closeOnce(code, reason)
 
         override fun onFailure(webSocket: WebSocket, error: Throwable, response: Response?) {
+            if (response?.code == 426) {
+                upgrades.observe(426, "")
+                runCatching { response.peekBody(64 * 1024).string() }.getOrNull()?.let { upgrades.observe(426, it) }
+            }
             closeOnce(response?.code ?: 1006, error.message ?: "Connection failed")
         }
     }

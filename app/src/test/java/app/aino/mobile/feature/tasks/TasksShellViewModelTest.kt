@@ -72,7 +72,7 @@ class TasksShellViewModelTest {
     }
 
     @Test
-    fun refreshingServiceDeskKeepsItsTabAndSignalsItsIndependentSurface() {
+    fun projectPlanDoesNotExposeTheRetiredTeamScopedServiceDeskTab() {
         val repository = TaskRepository(ApiClient { request ->
             val body = if (request.path == "tasks/preferences") """{"card_density":"compact"}""" else "{}"
             ApiResponse(200, emptyMap(), body.toByteArray())
@@ -81,13 +81,10 @@ class TasksShellViewModelTest {
         shell.bind(1, "employee", null, agileEnabled = false)
         await { shell.ui.value.teamResolved }
         shell.selectTab(TaskTab.ServiceDesk)
-        val before = shell.ui.value.serviceDeskVersion
-
         shell.refresh(pull = true)
-
-        await { shell.ui.value.serviceDeskVersion > before && !shell.ui.value.refreshing }
-        assertEquals(TaskTab.ServiceDesk, shell.ui.value.tab)
-        assertTrue(shell.ui.value.visibleTabs.contains(TaskTab.ServiceDesk))
+        await { !shell.ui.value.refreshing }
+        assertEquals(TaskTab.Backlog, shell.ui.value.tab)
+        assertTrue(TaskTab.ServiceDesk !in shell.ui.value.visibleTabs)
     }
 
     private fun await(condition: () -> Boolean) {

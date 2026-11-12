@@ -35,6 +35,41 @@ class TaskRepositoryTest {
     }
 
     @Test
+    fun projectBoardAndOptionalBacklogUseTheProjectEndpointsAndServerMetadata() {
+        val captured = mutableListOf<ApiRequest>()
+        val repository = TaskRepository(client(captured) {
+            """
+            {
+              "project":{"id":17,"key":"FLOW","name":"Flow","type":"kanban",
+                "planTabs":["backlog","board"],"kanban_backlog_enabled":true,
+                "enable_wip_limits":true,
+                "capabilities":{"canCreateTickets":true,"canChangeType":false}},
+              "sprint":null,
+              "columns":[{"stateId":21,"count":2,"limit":3,"accepting":true,
+                "state":{"id":21,"key":"in_progress","name":"In Progress","category":"open","wip_limit":3}}],
+              "tickets":[{"id":91,"title":"Ship the board","project_id":17,
+                "workflow_state_id":21,"workflow_state_key":"in_progress","priority":"high"}]
+            }
+            """.trimIndent()
+        })
+
+        val board = repository.loadProjectBoard(17)
+        val backlog = repository.loadProjectBacklog(17)
+
+        assertEquals(listOf("projects/17/board", "projects/17/backlog"), captured.map { it.path })
+        assertEquals("kanban", board.project.type)
+        assertEquals(listOf("backlog", "board"), board.project.planTabs)
+        assertTrue(board.project.kanbanBacklogEnabled)
+        assertTrue(board.project.wipEnabled)
+        assertTrue(board.project.capabilities!!.canCreateTickets)
+        assertEquals("In Progress", board.columns.single().state?.name)
+        assertEquals(2, board.columns.single().count)
+        assertEquals(3, board.columns.single().limit)
+        assertEquals(91L, board.tickets.single().id)
+        assertEquals(17L, backlog.project.id)
+    }
+
+    @Test
     fun decodesAnEnrichedSprintRowWithNumericStoryPointsAndCriteria() {
         val captured = mutableListOf<ApiRequest>()
         val repository = TaskRepository(
@@ -83,7 +118,7 @@ class TaskRepositoryTest {
                    "workItemTypes":[],"workflowStates":[{"id":9,"key":"todo","name":"Todo","color":"#111111","wip_limit":3,"is_initial":true}],"canEdit":true}"""
             },
         )
-        val config = repository.loadAgileConfig()
+        val config = repository.loadAgileConfig(1)
         assertEquals(listOf("1", "2", "3"), config.pointScale)
         assertEquals("pts", config.unitLabel)
         assertTrue(config.features.wipLimits)
@@ -106,23 +141,22 @@ class TaskRepositoryTest {
                 }
             },
         )
-        assertEquals("Core", repository.loadAvailableSprints().single().teamName)
         assertEquals(13.0, repository.loadSprintStats(2).totals.points, 0.0)
         assertEquals("WEB", repository.loadProjects().single().key)
-        assertEquals(21.0, repository.loadTeamSprints().sprints.single().velocityPoints!!, 0.0)
-        assertEquals(3L, repository.loadTeamSprints().currentSprintId)
+        assertEquals(21.0, repository.loadProjectSprints(1).sprints.single().velocityPoints!!, 0.0)
+        assertEquals(3L, repository.loadProjectSprints(1).currentSprintId)
     }
 
     @Test
-    fun requestsTheSelectedTeamsCurrentSprintForTheTeamPicker() {
+    fun requestsTheSelectedProjectsCurrentSprint() {
         val captured = mutableListOf<ApiRequest>()
         val repository = TaskRepository(
             client(captured) { """{"sprints":[{"id":31,"name":"Paused","status":"paused","team_id":7}],"currentSprintId":31}""" },
         )
 
-        val sprintList = repository.loadTeamSprints(teamId = 7)
+        val sprintList = repository.loadProjectSprints(projectId = 7)
 
-        assertEquals("sprints?team_id=7", captured.single().path)
+        assertEquals("sprints?project_id=7", captured.single().path)
         assertEquals(31L, sprintList.currentSprintId)
         assertEquals("paused", sprintList.sprints.single().status)
     }
@@ -135,25 +169,21 @@ class TaskRepositoryTest {
         })
 
         repository.createBacklogTask(CreateBacklogPayload(title = "Later", labelIds = listOf(3), storyPoints = "5", projectId = 1))
-        repository.scheduleTask(7, "2026-09-26")
-        repository.unscheduleTask(7)
         repository.assignSprint(7, 2)
         repository.updateImportFields(7, ImportUpdatePayload(assignedTo = 4, dueDate = null))
         repository.completeSprint(2, "backlog")
         repository.startSprint(2)
 
-        assertEquals(listOf("POST", "PATCH", "PATCH", "PATCH", "PUT", "POST", "POST"), captured.map { it.method })
+        assertEquals(listOf("POST", "PATCH", "PUT", "POST", "POST"), captured.map { it.method })
         assertEquals(
-            listOf("tasks/backlog", "tasks/7/schedule", "tasks/7/unschedule", "tasks/7/assign-sprint", "tasks/7", "sprints/2/complete", "sprints/2/start"),
+            listOf("tasks/backlog", "tasks/7/assign-sprint", "tasks/7", "sprints/2/complete", "sprints/2/start"),
             captured.map { it.path },
         )
         assertTrue(body(captured[0]).contains("\"label_ids\":[3]"))
         assertTrue(body(captured[0]).contains("\"story_points\":\"5\""))
-        assertEquals("""{"date":"2026-09-26"}""", body(captured[1]))
-        assertNull(captured[2].body)
-        assertEquals("""{"sprint_id":2}""", body(captured[3]))
-        assertEquals("""{"assigned_to":4,"due_date":null}""", body(captured[4]))
-        assertEquals("""{"rolloverTo":"backlog"}""", body(captured[5]))
+        assertEquals("""{"sprint_id":2}""", body(captured[1]))
+        assertEquals("""{"assigned_to":4,"due_date":null}""", body(captured[2]))
+        assertEquals("""{"rolloverTo":"backlog"}""", body(captured[3]))
     }
 
     @Test

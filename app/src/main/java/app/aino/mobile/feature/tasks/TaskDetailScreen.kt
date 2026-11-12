@@ -109,7 +109,6 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
     var menu by remember { mutableStateOf(false) }
     var statusSheet by remember { mutableStateOf(false) }
     var blockSheet by remember { mutableStateOf(false) }
-    var scheduleOpen by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     val copyKey = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(task.displayKey)) }
 
@@ -157,13 +156,6 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
                                 if (ui.agile.features.blockers && canEdit.allowed) {
                                     MenuItem(HeroIcons.NoSymbol, if (task.isBlocked) "Clear blocker" else "Mark blocked", enabled = canEdit.allowed, reason = canEdit.reasonCopy()) { menu = false; blockSheet = true }
                                 }
-                                val canSchedule = task.capability(TaskCapability.Schedule)
-                                if (canSchedule.allowed) {
-                                    MenuItem(HeroIcons.CalendarDays, if (task.container == "scheduled") "Reschedule" else "Schedule to a day") { menu = false; scheduleOpen = true }
-                                }
-                                if (task.container == "scheduled" && canSchedule.allowed) {
-                                    MenuItem(HeroIcons.ArchiveBox, "Move to backlog", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { menu = false; viewModel.unschedule(task.id, task.title, closeAfter = true) }
-                                }
                                 MenuItem(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") { menu = false; copyKey() }
                                 if (task.capability(TaskCapability.MoveProject).allowed) {
                                     MenuItem(HeroIcons.Folder, "Move to project", enabled = !ui.moveBusy) {
@@ -201,6 +193,8 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
                 Spacer(Modifier.height(16.dp))
                 PropertiesCard(task, ui, viewModel, onStatus = { statusSheet = true })
                 Spacer(Modifier.height(20.dp))
+                SubtaskPanel(task, ui, viewModel, onOpenTicket)
+                AddSubtaskDialog(ui, viewModel)
                 DetailSections(task, ui, viewModel, onOpenTicket)
             }
         }
@@ -233,9 +227,6 @@ fun TaskDetailScreen(viewModel: TicketDetailViewModel, onClose: () -> Unit, onOp
         )
         }
     if (blockSheet) BlockerSheet(task, viewModel) { blockSheet = false }
-    if (scheduleOpen) {
-        ScheduleDialog(task, initial = task.dueDate, onDismiss = { scheduleOpen = false }) { date -> viewModel.schedule(task.id, date, closeAfter = true) }
-    }
     if (ui.movePickerOpen) {
         SelectSheet(
             "Move to project",
@@ -358,6 +349,7 @@ private fun MetaPill(icon: androidx.compose.ui.graphics.vector.ImageVector, text
 private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onStatus: () -> Unit) {
     val colors = LocalWebColors.current
     var picker by remember { mutableStateOf<String?>(null) }
+    var startOpen by remember { mutableStateOf(false) }
     var dueOpen by remember { mutableStateOf(false) }
     var pointsOpen by remember { mutableStateOf(false) }
     val canEdit = task.capability(TaskCapability.Edit)
@@ -383,13 +375,17 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
             val column = columnOf(task.workflowStateKey)
             StatusPill(state?.let(::stateLabel) ?: column.label, hexColor(state?.color, colors.tone(column.tone)))
         }
+        PropertyRow(HeroIcons.CalendarDays, "Start date", if (canEdit.allowed) ({ startOpen = true }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
+            if (task.startDate != null) PropertyText(formatDate(task.startDate))
+            else PropertyText("No start date", muted = true)
+        }
         PropertyRow(HeroIcons.CalendarDays, "Due date", if (canEdit.allowed) ({ dueOpen = true }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
             val due = formatDueDate(task.dueDate)
             val overdue = isDueOverdue(task.dueDate) && !task.isCompleted
             if (due != null) PropertyText("${formatDate(task.dueDate)} · $due", color = if (overdue) colors.danger else null)
             else PropertyText("No due date", muted = true)
         }
-        if (ui.agileEnabled && ui.sprints.isNotEmpty()) {
+        if (TaskTab.Sprint in ui.planScope.visibleTabs && ui.sprints.isNotEmpty()) {
             val canPlace = task.capability(TaskCapability.PlaceInSprint)
             PropertyRow(HeroIcons.RocketLaunch, "Sprint", if (canPlace.allowed) ({ picker = "sprint" }) else null, reason = if (canPlace.allowed) null else canPlace.reasonCopy()) {
                 val name = task.sprint?.name ?: task.sprintId?.let { id -> ui.sprints.firstOrNull { it.id == id }?.name ?: "Sprint #$id" }
@@ -402,7 +398,7 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
                 else FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { task.labels.forEach { LabelPill(it) } }
             }
         }
-        if (ui.agile.features.storyPoints) {
+        if (ui.agile.features.storyPoints && !task.isSubtask) {
             PropertyRow(HeroIcons.ChartBar, "Estimate", if (canEdit.allowed) ({ pointsOpen = true }) else null, reason = if (canEdit.allowed) null else canEdit.reasonCopy()) {
                 val pts = formatPoints(task.storyPoints)
                 PropertyText(if (pts.isEmpty()) "Not estimated" else "$pts ${ui.agile.unitLabel}", muted = pts.isEmpty())
@@ -469,7 +465,8 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
             onLabels = { viewModel.setLabels(task, it) },
         )
     }
-    if (dueOpen) DueDateSheet(task, viewModel) { dueOpen = false }
+    if (startOpen) TicketDateSheet("Start date", task.startDate, { viewModel.setStartDate(task, it) }) { startOpen = false }
+    if (dueOpen) TicketDateSheet("Due date", task.dueDate, { viewModel.setDueDate(task, it) }) { dueOpen = false }
     if (pointsOpen) {
         TaskSheetScaffold("Estimate", { pointsOpen = false }, HeroIcons.ChartBar) {
             StoryPointPicker(task.storyPoints?.let(::formatPoints), { v -> viewModel.setStoryPoints(task, v); pointsOpen = false }, ui.agile)
@@ -481,25 +478,25 @@ private fun PropertiesCard(task: Task, ui: TicketDetailUiState, viewModel: Ticke
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DueDateSheet(task: Task, viewModel: TicketDetailViewModel, onDismiss: () -> Unit) {
+private fun TicketDateSheet(label: String, date: String?, onDate: (String) -> Unit, onDismiss: () -> Unit) {
     val colors = LocalWebColors.current
-    val start = localDateOf(task.dueDate) ?: java.time.LocalDate.now()
+    val start = localDateOf(date) ?: java.time.LocalDate.now()
     val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli())
     androidx.compose.material3.DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             TextButton(onClick = {
-                state.selectedDateMillis?.let { ms -> viewModel.setDueDate(task, java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString()) }
+                state.selectedDateMillis?.let { ms -> onDate(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString()) }
                 onDismiss()
             }) { Text("Set", color = colors.primary, fontWeight = FontWeight.SemiBold) }
         },
         dismissButton = {
             Row {
-                if (task.dueDate != null) TextButton(onClick = { viewModel.setDueDate(task, ""); onDismiss() }) { Text("Clear", color = colors.danger) }
+                if (date != null) TextButton(onClick = { onDate(""); onDismiss() }) { Text("Clear", color = colors.danger) }
                 TextButton(onClick = onDismiss) { Text("Cancel", color = colors.textSecondary) }
             }
         },
-    ) { androidx.compose.material3.DatePicker(state = state) }
+    ) { androidx.compose.material3.DatePicker(state = state, title = { Text(label, Modifier.padding(start = 24.dp, top = 16.dp)) }) }
 }
 
 /** Set / clear the blocker with a reason (`PATCH /tasks/:id/block`). */
@@ -701,10 +698,50 @@ private fun AcceptanceCriteriaEditor(taskId: Long, ui: TicketDetailUiState, view
     }
 }
 
+@Composable
+private fun SubtaskPanel(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onOpenTicket: (Long) -> Unit) {
+    val colors = LocalWebColors.current
+    if (task.isSubtask) {
+        task.parentTaskId?.let { parentId ->
+            val key = task.parentKey ?: task.parent?.ticketKey ?: task.parent?.issueKey ?: "#$parentId"
+            Text(
+                "Parent $key", color = colors.primary, fontSize = 0.84.rem,
+                modifier = Modifier.fillMaxWidth().clickable { onOpenTicket(parentId) }.padding(vertical = 12.dp),
+            )
+        }
+    } else {
+        val summary = task.subtaskSummary
+        val canAdd = task.capability(TaskCapability.AddSubtask).allowed
+        if ((summary?.total ?: 0) > 0 || canAdd) {
+            PanelBox {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Subtasks · ${summary?.done ?: 0}/${summary?.total ?: 0} done", color = colors.text, fontSize = 0.85.rem, fontWeight = FontWeight.Bold)
+                    if (canAdd) TextButton(onClick = viewModel::beginAddSubtask, enabled = !ui.subtaskBusy) {
+                        Text("Add subtask", color = colors.primary)
+                    }
+                }
+                if (task.subtasks.isNullOrEmpty()) Text("Break this ticket into smaller steps.", color = colors.textMuted, fontSize = 0.82.rem)
+                task.subtasks.orEmpty().forEach { child ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable(onClickLabel = "Open ${child.displayKey}") { onOpenTicket(child.id) }.padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(child.displayKey, color = colors.textMuted, fontSize = 0.75.rem)
+                        Text(child.title, color = colors.primary, fontSize = 0.82.rem, modifier = Modifier.weight(1f))
+                        Text(child.workflowStateName ?: child.workflowStateKey ?: if (child.isCompleted) "Done" else "Open",
+                            color = if (child.isCompleted) colors.success else colors.textMuted, fontSize = 0.75.rem)
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
 /** ParentChildPanel: Epics list children + rollup; others show "Part of" + a picker. */
 @Composable
 private fun ParentChildPanel(task: Task, ui: TicketDetailUiState, viewModel: TicketDetailViewModel, onOpenTicket: (Long) -> Unit) {
-    if (!ui.agile.features.epics) return
+    if (!ui.agile.features.epics || task.isSubtask) return
     val colors = LocalWebColors.current
     val isEpic = ui.agile.type(task.workItemTypeId)?.isEpic == true
     var loading by remember(task.id, isEpic) { mutableStateOf(true) }

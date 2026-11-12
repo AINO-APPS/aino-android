@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class PagedBacklogTotalsTest {
     private lateinit var session: TicketSession
     private val models = ViewModelStore()
-    private val original = """{"id":1,"title":"Ship","container":"backlog","priority":"high","workflow_state_key":"todo","capabilities":{"can":{"edit":{"allowed":true}}}}"""
+    private val original = """{"id":1,"project_id":3,"title":"Ship","container":"backlog","priority":"high","workflow_state_key":"todo","capabilities":{"can":{"edit":{"allowed":true}}}}"""
     @Volatile private var saved = original
     @Volatile private var firstPage = page(original, 100, 8, 60, 70, true)
     @Volatile private var laterPage: String? = null
@@ -33,7 +33,7 @@ class PagedBacklogTotalsTest {
             request.path.startsWith("tasks/backlog") -> throw IOException("Later page unavailable")
             request.path == "tasks/1" || request.path == "tasks/2" ||
                 request.path == "tasks/1/detail" || request.path == "tasks/2/detail" -> saved
-            request.path == "tasks/carry-forward" -> """{"carried":0}"""
+            request.path.startsWith("projects") -> """[{"id":3,"name":"Project","capabilities":{"canCreateTickets":true}}]"""
             else -> "[]"
         }
         ApiResponse(200, emptyMap(), body.toByteArray())
@@ -61,7 +61,7 @@ class PagedBacklogTotalsTest {
         assertEquals(100, vmPlan.ui.value.backlogTotal)
         assertEquals(1, vmPlan.ui.value.backlog.size)
 
-        saved = original.replace("\"backlog\"", "\"scheduled\"")
+        saved = original.replace("\"backlog\"", "\"sprint\"")
         write(vmPlan.ui.value.backlog.single())
         await { vmPlan.ui.value.backlog.isEmpty() }
 

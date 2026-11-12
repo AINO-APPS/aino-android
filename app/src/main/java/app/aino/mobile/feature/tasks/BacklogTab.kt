@@ -61,15 +61,14 @@ import app.aino.mobile.core.designsystem.tokens.rem
  * Backlog — a grooming queue:
  *   independent quick chips; secondary filters and view options
  *   grouped list (sticky, collapsible sprint / backlog sections)
- *   swipe right → schedule · swipe left → add to sprint · long-press → actions
+ *   swipe left → add to sprint · long-press → actions
  *   "New ticket" FAB → create sheet
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, scheduledViewModel: ScheduledViewModel, onOpen: (Task) -> Unit, onComments: (Long) -> Unit = {}) {
+internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewModel: PlanViewModel, onOpen: (Task) -> Unit, onComments: (Long) -> Unit = {}) {
     val colors = LocalWebColors.current
     var collapsed by rememberSaveable { mutableStateOf(listOf<String>()) }
-    var scheduling by remember { mutableStateOf<Task?>(null) }
     var sprintFor by remember { mutableStateOf<Task?>(null) }
     var actionsFor by remember { mutableStateOf<Task?>(null) }
     val list = rememberLazyListState()
@@ -84,7 +83,7 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
             item(key = "controls") { BacklogControls(ui, viewModel, planViewModel) }
             // "Plan sprint" is the only way into the split planner: the Sprint
             // tab is the board (ADR-015).
-            if (ui.agileEnabled) {
+            if (ui.sprintTabVisible) {
                 item(key = "plan-sprint") {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         PillButton("Plan sprint", planViewModel::openSprintPlan, tonal = true)
@@ -101,24 +100,35 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
                     if (ui.filterCount > 0) {
                         TaskEmptyState(HeroIcons.MagnifyingGlass, "No tickets match your filters", "Try removing a filter or two to widen the results.", action = "Clear filters", onAction = viewModel::clearFilters)
                     } else {
-                        TaskEmptyState(HeroIcons.ArchiveBox, "Backlog is empty", "Capture work that isn't scheduled yet — plan it into a sprint later.", action = "Create first ticket", onAction = { viewModel.openSheet(TaskSheet.CreateTicket) })
+                        TaskEmptyState(HeroIcons.ArchiveBox, "Backlog is empty", "Capture work that isn't in a sprint — plan it into a sprint later.", action = "Create first ticket", onAction = { viewModel.openSheet(TaskSheet.CreateTicket) })
                     }
                 }
                 else -> {
                     val row: @Composable (Task) -> Unit = { task ->
-                        BacklogRow(
-                            task, ui, planViewModel, onOpen,
-                            onSchedule = { scheduling = task },
-                            onSprint = { sprintFor = task },
-                            onActions = { actionsFor = task },
-                            onComments = onComments,
-                        )
+                        Column {
+                            BacklogRow(
+                                task, ui, planViewModel, onOpen,
+                                onSprint = { sprintFor = task },
+                                onActions = { actionsFor = task },
+                                onComments = onComments,
+                            )
+                            task.subtasks.orEmpty().forEach { child ->
+                                Box(Modifier.padding(start = 24.dp)) {
+                                    BacklogRow(
+                                        child, ui, planViewModel, onOpen,
+                                        onSprint = { sprintFor = child },
+                                        onActions = { actionsFor = child },
+                                        onComments = onComments,
+                                    )
+                                }
+                            }
+                        }
                     }
                     // Stranded sprint tickets render in their own warning group
                     // *after* the ordinary backlog rows — never instead of them.
                     val stranded = ui.backlogGroups.orEmpty()
                     val grouped = stranded.flatMap { group -> group.tasks.map { it.id } }.toSet()
-                    items(ui.sortedBacklog.filterNot { it.id in grouped }, key = { "b-${it.id}" }) { row(it) }
+                    items(planningFamilies(ui.sortedBacklog.filterNot { it.id in grouped }, ui.tickets), key = { "b-${it.id}" }) { row(it) }
                     stranded.forEach { group ->
                         val isCollapsed = group.key in collapsed
                         stickyHeader(key = "g-${group.key}") {
@@ -126,7 +136,7 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
                                 collapsed = if (isCollapsed) collapsed - group.key else collapsed + group.key
                             }
                         }
-                        if (!isCollapsed) items(group.tasks, key = { "b-${it.id}" }) { row(it) }
+                        if (!isCollapsed) items(planningFamilies(group.tasks, ui.tickets), key = { "b-${it.id}" }) { row(it) }
                     }
                     item(key = "footer") {
                         Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
@@ -148,7 +158,6 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
         }
     }
 
-    scheduling?.let { task -> ScheduleDialog(task, onDismiss = { scheduling = null }) { date -> scheduledViewModel.schedule(task.id, date) } }
     sprintFor?.let { task ->
         SelectSheet(
             "Add to sprint",
@@ -160,7 +169,7 @@ internal fun BacklogPage(ui: TaskUiState, viewModel: TaskViewModel, planViewMode
         )
     }
     actionsFor?.let { task ->
-        BacklogActionsSheet(task, ui, planViewModel, onOpen = { onOpen(task) }, onSchedule = { scheduling = task }, onSprint = { sprintFor = task }, onDismiss = { actionsFor = null }, onComments = onComments)
+        BacklogActionsSheet(task, ui, planViewModel, onOpen = { onOpen(task) }, onSprint = { sprintFor = task }, onDismiss = { actionsFor = null }, onComments = onComments)
     }
 }
 
@@ -173,7 +182,7 @@ private fun BacklogControls(ui: TaskUiState, viewModel: TaskViewModel, planViewM
             CountChip("All", quick.isAll, { planViewModel.setQuickFilters(BacklogQuickFilters()) })
             CountChip("Mine", quick.mine, { planViewModel.setQuickFilters(quick.copy(mine = !quick.mine)) })
             CountChip("High", quick.high, { planViewModel.setQuickFilters(quick.copy(high = !quick.high)) })
-            CountChip("Unscheduled", quick.unscheduled, { planViewModel.setQuickFilters(quick.copy(unscheduled = !quick.unscheduled)) })
+            CountChip("No start date", quick.unscheduled, { planViewModel.setQuickFilters(quick.copy(unscheduled = !quick.unscheduled)) })
         }
     }
 }
@@ -336,7 +345,7 @@ private fun BacklogGroupHeader(group: BacklogGroup, collapsed: Boolean, onToggle
             modifier = Modifier.background(accent.copy(alpha = 0.14f), CircleShape).padding(horizontal = 8.dp, vertical = 1.dp),
         )
         // Points alongside the count, so a group's weight is visible before opening it.
-        val points = group.tasks.sumOf { it.storyPoints ?: 0.0 }
+        val points = group.tasks.sumOf { it.planningPoints ?: 0.0 }
         if (points > 0) {
             Spacer(Modifier.width(6.dp))
             Text(
@@ -351,7 +360,7 @@ private fun BacklogGroupHeader(group: BacklogGroup, collapsed: Boolean, onToggle
     }
 }
 
-/** Swipe right = schedule; swipe left = add to sprint (when sprints exist). Both snap back and open a picker. */
+/** Swipe left = add to sprint (when sprints exist). The row stays until the server confirms. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BacklogRow(
@@ -359,19 +368,18 @@ private fun BacklogRow(
     ui: TaskUiState,
     planViewModel: PlanViewModel,
     onOpen: (Task) -> Unit,
-    onSchedule: () -> Unit,
     onSprint: () -> Unit,
     onActions: () -> Unit,
     onComments: (Long) -> Unit,
 ) {
     val colors = LocalWebColors.current
-    val canSchedule = task.capability(TaskCapability.Schedule)
     val canPlaceInSprint = task.capability(TaskCapability.PlaceInSprint)
-    val canSprint = ui.agileEnabled && ui.sprints.isNotEmpty() && canPlaceInSprint.allowed
+    val selectable = !task.isSubtask
+    val canSprint = ui.sprintTabVisible && ui.sprints.isNotEmpty() && canPlaceInSprint.allowed
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             when (value) {
-                SwipeToDismissBoxValue.StartToEnd -> if (canSchedule.allowed) onSchedule()
+                SwipeToDismissBoxValue.StartToEnd -> Unit
                 SwipeToDismissBoxValue.EndToStart -> if (canSprint) onSprint()
                 SwipeToDismissBoxValue.Settled -> Unit
             }
@@ -385,62 +393,44 @@ private fun BacklogRow(
             .padding(horizontal = 16.dp, vertical = 5.dp)
             .semantics {
                 customActions = buildList {
-                    add(CustomAccessibilityAction("Select") { planViewModel.toggleSelection(task.id); true })
-                    add(CustomAccessibilityAction(if (canSchedule.allowed) "Schedule" else "Schedule — ${canSchedule.reasonCopy()}") { if (canSchedule.allowed) onSchedule(); true })
+                    if (selectable) add(CustomAccessibilityAction("Select") { planViewModel.toggleSelection(task.id); true })
                     if (canSprint) add(CustomAccessibilityAction("Add to sprint") { onSprint(); true })
                     add(CustomAccessibilityAction("More actions") { onActions(); true })
                 }
             },
-            enableDismissFromStartToEnd = canSchedule.allowed,
+            enableDismissFromStartToEnd = false,
             enableDismissFromEndToStart = canSprint,
         backgroundContent = {
             val direction = state.dismissDirection
             if (direction == SwipeToDismissBoxValue.Settled) return@SwipeToDismissBox
             val toSprint = direction == SwipeToDismissBoxValue.EndToStart
-            val tint = if (toSprint) colors.success else colors.primary
+            val tint = colors.success
             Row(
                 Modifier.fillMaxSize().clip(CardShape).background(tint.copy(alpha = 0.18f).compositeOver(colors.bg)).padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = if (toSprint) Arrangement.End else Arrangement.Start,
             ) {
-                Icon(if (toSprint) HeroIcons.RocketLaunch else HeroIcons.CalendarDays, null, Modifier.size(20.dp), tint = tint)
+                Icon(HeroIcons.RocketLaunch, null, Modifier.size(20.dp), tint = tint)
                 Spacer(Modifier.width(8.dp))
-                Text(if (toSprint) "Add to sprint" else "Schedule", color = tint, fontSize = 0.86.rem, fontWeight = FontWeight.SemiBold)
+                Text("Add to sprint", color = tint, fontSize = 0.86.rem, fontWeight = FontWeight.SemiBold)
             }
         },
     ) {
         TaskCardM3(
             task, ui.agile,
-            onOpen = { if (ui.hasSelection) planViewModel.toggleSelection(task.id) else onOpen(task) },
+            onOpen = { if (ui.hasSelection && selectable) planViewModel.toggleSelection(task.id) else onOpen(task) },
             highlighted = task.id in ui.recentlyUpdated,
             showStatus = true,
             // Long-press starts selection; the checkbox only appears once selecting.
-            onLongPress = { planViewModel.toggleSelection(task.id) },
+            onLongPress = if (selectable) ({ planViewModel.toggleSelection(task.id) }) else null,
             longPressLabel = "Select",
             onComments = { onComments(task.id) },
             compact = ui.compact,
             selected = task.id in ui.selectedIds,
             attribution = ui.attribution[task.id],
-            leading = if (ui.hasSelection) {
+            leading = if (ui.hasSelection && selectable) {
                 { SelectionToggle(task.id in ui.selectedIds) { planViewModel.toggleSelection(task.id) } }
             } else null,
-            trailing = if (!ui.compact) ({
-                Column {
-                    Row(
-                        Modifier
-                            .clip(ChipShape)
-                            .background(colors.primary.copy(alpha = if (canSchedule.allowed) 0.12f else 0.06f))
-                            .clickable(enabled = canSchedule.allowed, onClickLabel = "Schedule", onClick = onSchedule)
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(HeroIcons.CalendarDays, null, Modifier.size(14.dp), tint = if (canSchedule.allowed) colors.primaryLight else colors.textMuted)
-                        Spacer(Modifier.width(4.dp))
-                        Text("Schedule", color = if (canSchedule.allowed) colors.primaryLight else colors.textMuted, fontSize = 0.72.rem, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                    }
-                    if (!canSchedule.allowed) Text(canSchedule.reasonCopy(), color = colors.textMuted, fontSize = 0.68.rem, maxLines = 2)
-                }
-            }) else null,
             // Long-press selects; the overflow keeps the row actions one tap away.
             topTrailing = {
                 Box(
@@ -458,7 +448,6 @@ private fun BacklogActionsSheet(
     ui: TaskUiState,
     planViewModel: PlanViewModel,
     onOpen: () -> Unit,
-    onSchedule: () -> Unit,
     onSprint: () -> Unit,
     onDismiss: () -> Unit,
     onComments: (Long) -> Unit,
@@ -468,10 +457,8 @@ private fun BacklogActionsSheet(
     TaskSheetScaffold(task.displayKey, onDismiss) {
         Text(task.title, color = colors.text, fontSize = 0.95.rem, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 12.dp))
         ActionRow(HeroIcons.ArrowTopRightOnSquare, "Open details") { onDismiss(); onOpen() }
-        val canSchedule = task.capability(TaskCapability.Schedule)
-        ActionRow(HeroIcons.CalendarDays, "Schedule to a day", enabled = canSchedule.allowed, reason = canSchedule.reasonCopy()) { onDismiss(); onSchedule() }
         val canPlaceInSprint = task.capability(TaskCapability.PlaceInSprint)
-        if (ui.agileEnabled && ui.sprints.isNotEmpty()) ActionRow(HeroIcons.RocketLaunch, "Add to sprint", enabled = canPlaceInSprint.allowed, reason = canPlaceInSprint.reasonCopy()) { onDismiss(); onSprint() }
+        if (ui.sprintTabVisible && ui.sprints.isNotEmpty()) ActionRow(HeroIcons.RocketLaunch, "Add to sprint", enabled = canPlaceInSprint.allowed, reason = canPlaceInSprint.reasonCopy()) { onDismiss(); onSprint() }
         ActionRow(HeroIcons.ChatBubbleOvalLeft, "Comments" + if (task.commentCount > 0) " (${task.commentCount})" else "") { onDismiss(); onComments(task.id) }
         ActionRow(HeroIcons.DocumentDuplicate, "Copy ${task.displayKey}") {
             clipboard.setText(androidx.compose.ui.text.AnnotatedString(task.displayKey))
@@ -498,34 +485,6 @@ private fun BacklogActionsSheet(
                 }
         val canCancel = task.capability(TaskCapability.Cancel)
         ActionRow(HeroIcons.Trash, "Cancel ticket", danger = true, enabled = canCancel.allowed, reason = canCancel.reasonCopy()) { onDismiss(); planViewModel.requestDelete(task) }
-    }
-}
-
-/** M3 date picker; returns `YYYY-MM-DD`. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun ScheduleDialog(task: Task, title: String = "Schedule \"${task.title}\"", initial: String? = null, onDismiss: () -> Unit, onPick: (String) -> Unit) {
-    val colors = LocalWebColors.current
-    val start = localDateOf(initial) ?: java.time.LocalDate.now()
-    val state = androidx.compose.material3.rememberDatePickerState(
-        initialSelectedDateMillis = start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli(),
-    )
-    androidx.compose.material3.DatePickerDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            androidx.compose.material3.TextButton(onClick = {
-                state.selectedDateMillis?.let { ms ->
-                    onPick(java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneOffset.UTC).toLocalDate().toString())
-                }
-                onDismiss()
-            }) { Text("Schedule", color = colors.primary, fontWeight = FontWeight.SemiBold) }
-        },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel", color = colors.textSecondary) } },
-    ) {
-        androidx.compose.material3.DatePicker(
-            state = state,
-            title = { Text(title, color = colors.textSecondary, fontSize = 0.86.rem, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 24.dp, end = 12.dp, top = 16.dp)) },
-        )
     }
 }
 
@@ -569,7 +528,7 @@ internal fun CreateTicketSheet(ui: TaskUiState, viewModel: TaskViewModel, planVi
                         PropertyText(ui.agile.type(d.workItemTypeId)?.name ?: "Default", muted = d.workItemTypeId == null)
                     }
                 }
-                if (ui.agileEnabled && createSprints.isNotEmpty()) {
+                if (ui.sprintTabVisible && createSprints.isNotEmpty()) {
                     PropertyRow(HeroIcons.RocketLaunch, "Sprint", { picker = "sprint" }) {
                         PropertyText(createSprints.firstOrNull { it.id == d.sprintId }?.name ?: "Backlog (no sprint)", muted = d.sprintId == null)
                     }

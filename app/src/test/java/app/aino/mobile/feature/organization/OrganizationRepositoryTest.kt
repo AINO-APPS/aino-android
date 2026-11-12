@@ -84,12 +84,10 @@ class OrganizationRepositoryTest {
     }
 
     @Test
-    fun teamsCrudAndSprintConfigShapes() {
+    fun teamsCrudShapes() {
         val captured = mutableListOf<ApiRequest>()
         val repo = repository(captured) { request ->
             when {
-                request.path.endsWith("sprint-config") && request.method == "GET" ->
-                    """{"teamId":3,"teamName":"Core","sprintDurationWeeks":3,"sprintStartDate":"2026-01-05","sprintMode":"auto","sprintPaused":true,"currentSprint":{"number":2}}"""
                 request.method == "GET" ->
                     """[{"id":3,"org_id":4,"name":"Core","department_id":1,"department_name":"Eng","lead_id":7,"lead_name":"Ann","member_count":4,"sprint_duration_weeks":2,"sprint_start_date":"2026-01-05","sprint_mode":"manual"}]"""
                 else -> """{"message":"ok"}"""
@@ -114,41 +112,7 @@ class OrganizationRepositoryTest {
         assertEquals("DELETE", captured[3].method)
         assertEquals("org/teams/3", captured[3].path)
 
-        val config = repo.teamSprintConfig(3)
-        assertEquals("org/teams/3/sprint-config", captured[4].path)
-        assertEquals(SprintConfig(3, "Core", 3, "2026-01-05", "auto", true), config)
-
-        repo.updateTeamSprintConfig(3, 2, null, "manual")
-        assertEquals("PUT", captured[5].method)
-        assertEquals("org/teams/3/sprint-config", captured[5].path)
-        assertEquals("""{"sprint_duration_weeks":2,"sprint_start_date":null,"sprint_mode":"manual"}""", captured[5].text)
-
-        repo.updateTeamSprintConfig(3, 4, "2026-02-02", "auto")
-        assertEquals("""{"sprint_duration_weeks":4,"sprint_start_date":"2026-02-02","sprint_mode":"auto"}""", captured[6].text)
-    }
-
-    @Test
-    fun sprintActivePauseResume() {
-        val captured = mutableListOf<ApiRequest>()
-        val repo = repository(captured) { request ->
-            when (request.path) {
-                "sprints/active" -> """{"sprint":{"id":11,"name":"Sprint 4","status":"active","team_id":3}}"""
-                else -> """{"sprint":{"id":11,"name":"Sprint 4","status":"paused"}}"""
-            }
-        }
-        assertEquals(Sprint(11, "Sprint 4", "active"), repo.activeSprint())
-        assertEquals("GET", captured[0].method)
-
-        assertEquals("paused", repo.pauseSprint(11)?.status)
-        assertEquals("POST", captured[1].method)
-        assertEquals("sprints/11/pause", captured[1].path)
-        // OkHttp needs a (possibly empty) body for POST.
-        assertEquals(0, captured[1].body?.size)
-
-        repo.resumeSprint(11)
-        assertEquals("sprints/11/resume", captured[2].path)
-
-        assertNull(repository(mutableListOf()) { """{"sprint":null}""" }.activeSprint())
+        assertEquals(4, captured.size)
     }
 
     @Test

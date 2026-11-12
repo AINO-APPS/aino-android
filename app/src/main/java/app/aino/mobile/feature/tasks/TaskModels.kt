@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNames
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -74,6 +75,7 @@ data class TaskCapabilityActions(
     val placeInSprint: TaskCapabilityDecision = TaskCapabilityDecision(),
     val schedule: TaskCapabilityDecision = TaskCapabilityDecision(),
     val canMoveProject: TaskCapabilityDecision = TaskCapabilityDecision(),
+    val canAddSubtask: TaskCapabilityDecision = TaskCapabilityDecision(),
     val comment: TaskCapabilityDecision = TaskCapabilityDecision(),
     val logWork: TaskCapabilityDecision = TaskCapabilityDecision(),
     val logWorkForOthers: TaskCapabilityDecision = TaskCapabilityDecision(),
@@ -92,8 +94,10 @@ data class Task(
     val title: String,
     val description: String? = null,
     val priority: String = "medium",
-    /** Date-only planning metadata. Never affects backlog membership (D2). */
+    /** Compatibility field for servers that predate start dates. */
     @SerialName("planned_date") val plannedDate: String? = null,
+    /** Date metadata independent of placement; an explicit null clears the date. */
+    @SerialName("start_date") val startDate: String? = plannedDate,
     @SerialName("due_date") val dueDate: String? = null,
     @SerialName("assigned_to") val assignedTo: Long? = null,
     @SerialName("user_id") val userId: Long? = null,
@@ -113,10 +117,14 @@ data class Task(
     val rank: String? = null,
     @SerialName("project_id") val projectId: Long? = null,
     @SerialName("parent_task_id") val parentTaskId: Long? = null,
+    @SerialName("parent_key") val parentKey: String? = null,
+    @SerialName("is_subtask") val isSubtask: Boolean = false,
+    @SerialName("is_epic") val isEpic: Boolean = false,
     @SerialName("work_item_type_id") val workItemTypeId: Long? = null,
     /** The workflow state is the only status (D4). */
     @SerialName("workflow_state_id") val workflowStateId: Long? = null,
     @SerialName("workflow_state_key") val workflowStateKey: String? = null,
+    @SerialName("workflow_state_name") val workflowStateName: String? = null,
     @SerialName("workflow_state_category") val workflowStateCategory: String? = null,
     /** Planned effort in minutes, shown against [loggedMinutes]. */
     @SerialName("estimated_minutes") val estimatedMinutes: Int? = null,
@@ -135,9 +143,16 @@ data class Task(
     val sprint: TaskSprint? = null,
     /** Only present on `GET /tasks/:id/detail`. */
     val comments: List<TaskComment> = emptyList(),
+    /** Null means this collection did not include hierarchy; an empty list clears it. */
+    val subtasks: List<Task>? = null,
+    @SerialName("subtask_summary") val subtaskSummary: SubtaskSummary? = null,
+    val effort: TaskEffort? = null,
+    val parent: ParentTask? = null,
 ) {
     /** `issue_key || "#id"` (TaskCard / BacklogTab). */
     val displayKey: String get() = ticketKey ?: issueKey ?: "#$id"
+
+    val planningPoints: Double? get() = storyPoints.takeUnless { isSubtask || isEpic }
 
     /** The single definition of complete: the server derives `completed_at` (D5). */
     val isCompleted: Boolean get() = completedAt != null
@@ -244,6 +259,7 @@ data class AvailableSprint(
     @SerialName("sprint_number") val sprintNumber: Int? = null,
     @Serializable(with = LenientDoubleNullableSerializer::class)
     @SerialName("velocity_points") val velocityPoints: Double? = null,
+    @SerialName("can_manage") val canManage: Boolean? = null,
 ) {
     /**
      * The sprint's number, from `sprint_number` or the trailing digits of its
@@ -276,6 +292,23 @@ data class SprintBoardResponse(
 )
 
 @Serializable
+data class ProjectBoardColumn(
+    val stateId: Long,
+    val count: Int = 0,
+    val limit: Int? = null,
+    val accepting: Boolean = true,
+    val state: WorkflowState? = null,
+)
+
+@Serializable
+data class ProjectBoardResponse(
+    val project: ProjectOption,
+    val sprint: AvailableSprint? = null,
+    val columns: List<ProjectBoardColumn> = emptyList(),
+    val tickets: List<Task> = emptyList(),
+)
+
+@Serializable
 data class SprintEnvelope(val sprint: AvailableSprint? = null)
 
 @Serializable
@@ -294,7 +327,10 @@ data class SprintTotals(
 @Serializable
 data class SprintStats(val totals: SprintTotals = SprintTotals())
 
-/** Lightweight `GET /projects` row for pickers (full CRUD lives in the Projects page). */
+/** Older servers omit the project-type planning contract. */
+internal val DEFAULT_SCRUM_PLAN_TABS = listOf("backlog", "sprint", "reports")
+
+/** Lightweight `GET /projects` row for pickers (project settings remain web-only). */
 @Serializable
 data class ProjectOption(
     val id: Long,
@@ -303,7 +339,23 @@ data class ProjectOption(
     val color: String? = null,
     @SerialName("is_archived") val archived: Boolean = false,
     val capabilities: ProjectCapabilities? = null,
-)
+    val type: String = "scrum",
+    val planTabs: List<String> = DEFAULT_SCRUM_PLAN_TABS,
+    val availableTypes: List<String> = emptyList(),
+    val changeableTypes: List<String> = emptyList(),
+    @SerialName("kanban_backlog_enabled") val kanbanBacklogEnabled: Boolean = false,
+    @SerialName("enable_wip_limits")
+    @JsonNames("wip_enabled")
+    val wipEnabled: Boolean = false,
+) {
+    val typeDisplayName: String
+        get() = when (type) {
+            "scrum" -> "Scrum"
+            "kanban" -> "Kanban"
+            "task_list" -> "Task list"
+            else -> type.replace('_', ' ').replaceFirstChar(Char::uppercase)
+        }
+}
 
 @Serializable
 data class ProjectCapabilities(
@@ -313,6 +365,7 @@ data class ProjectCapabilities(
     val canEditWorkflow: Boolean = false,
     val canRenameKey: Boolean = false,
     val canArchive: Boolean = false,
+    val canChangeType: Boolean = false,
 )
 
 // ─── Agile config (`GET /agile/config`, AgileConfigContext) ─────────────────
@@ -343,6 +396,7 @@ data class WorkItemType(
     val icon: String? = null,
     @SerialName("is_default") val isDefault: Boolean = false,
     @SerialName("is_epic") val isEpic: Boolean = false,
+    @SerialName("is_subtask") val isSubtask: Boolean = false,
     @SerialName("sort_order") val sortOrder: Int = 0,
 )
 
@@ -444,8 +498,6 @@ data class CreateBacklogPayload(
     val title: String,
     val description: String = "",
     val priority: String = "medium",
-    /** The team being browsed: an admin creates the ticket there, as web does. */
-    @SerialName("team_id") val teamId: Long? = null,
     @SerialName("assigned_to") val assignedTo: Long? = null,
     @SerialName("due_date") val dueDate: String? = null,
     @SerialName("label_ids") val labelIds: List<Long>? = null,
@@ -485,9 +537,6 @@ data class TaskStatusPayload(val status: String)
 @Serializable
 data class TaskCommentPayload(val content: String)
 
-@Serializable
-data class SchedulePayload(val date: String)
-
 /** `PUT /sprints/:id` — the only field the planner edits inline. */
 @Serializable
 data class SprintGoalPayload(val goal: String)
@@ -500,9 +549,6 @@ data class CompleteSprintPayload(val rolloverTo: String)
 
 @Serializable
 data class BlockPayload(@SerialName("is_blocked") val isBlocked: Boolean, @SerialName("blocked_reason") val blockedReason: String?)
-
-@Serializable
-data class CarryForwardResponse(val message: String = "", val carried: Int = 0)
 
 @Serializable
 data class TaskMessageResponse(val message: String = "")
@@ -646,27 +692,6 @@ data class ScheduleOverlay(
     /** The day this overlay belongs to, whether it is a date or a timestamp. */
     val day: String? get() = date ?: startTime?.take(10)
 }
-
-/** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
-@Serializable
-data class CompletionPreview(
-    val sprint: CompletionPreviewSprint? = null,
-    val defaultTarget: String? = null,
-    val moving: Int = 0,
-    val staying: Int = 0,
-    val movingPoints: Double = 0.0,
-) {
-    val doneTasks: Int get() = staying
-    val totalTasks: Int get() = moving + staying
-    val incompleteTasks: Int get() = moving
-}
-
-@Serializable
-data class CompletionPreviewSprint(
-    val id: Long = 0,
-    val name: String = "",
-    val status: String = "",
-)
 
 /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
 @Serializable

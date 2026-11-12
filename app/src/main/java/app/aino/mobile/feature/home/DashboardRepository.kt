@@ -58,10 +58,8 @@ class DashboardRepository(
         runCatching { get<DashboardTaskList>("sprints/$sprintId/tasks").tasks }.getOrDefault(emptyList())
 
     /**
-     * The planned-day range query. It is the ADR-015 Scheduled container
-     * (`sprint_id IS NULL AND planned_date BETWEEN …`), so a ticket in a sprint
-     * never leaks into the week, and completed rows come back in the same
-     * response — that is what the card's "N of M done" counts.
+     * The start-date range query; older servers read the legacy planned date.
+     * Completed rows come back in the same response for the "N of M done" counts.
      *
      * Null means the query failed. An empty list is a real answer ("nothing
      * planned") and the card says so; a failure must not borrow that sentence.

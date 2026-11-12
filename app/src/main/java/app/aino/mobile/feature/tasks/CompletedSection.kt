@@ -138,7 +138,7 @@ internal fun CompletedSection(
 @Composable
 internal fun CompletedRow(task: Task, agile: AgileConfig, onOpen: (Task) -> Unit) {
     val colors = LocalWebColors.current
-    val points = if (agile.features.storyPoints) formatPoints(task.storyPoints) else ""
+    val points = if (agile.features.storyPoints) formatPoints(task.planningPoints) else ""
     Row(
         Modifier
             .fillMaxWidth()

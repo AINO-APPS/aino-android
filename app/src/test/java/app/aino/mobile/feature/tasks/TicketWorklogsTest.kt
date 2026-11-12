@@ -41,6 +41,37 @@ class TicketWorklogsTest {
         assertNull(harness.detailViewModel.ui.value.detail?.remainingEstimateMinutes)
     }
 
+    @Test fun savingWorkRefreshesServerFamilyTotalsWithoutReplacingOwnEffort() {
+        fun detail(total: Int) = harness.original.dropLast(1) + ""","subtask_summary":{"total":2,"done":1},
+                "effort":{"own_time_spent_minutes":20,"total_time_spent_minutes":$total,
+                "own_remaining_estimate_minutes":30,"total_remaining_estimate_minutes":120}}"""
+        harness.detailResponse = detail(70)
+        harness.worklogsResponse = """{"worklogs":[],"time_spent_minutes":20}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.worklogsLoading }
+        harness.worklogMutationResponse = """{"worklog":{"id":3,"day_worked":"2026-11-09","minutes":60},
+            "ticket":{"id":201,"time_spent_minutes":80,"remaining_estimate_minutes":0}}"""
+        harness.detailResponse = detail(130)
+        harness.detailViewModel.saveWorklog(WorklogDraft(timeSpent = "1h"))
+        harness.await { !harness.detailViewModel.ui.value.worklogBusy &&
+            harness.detailViewModel.ui.value.detail?.effort?.totalTimeSpentMinutes == 130 }
+        assertEquals(80, harness.detailViewModel.ui.value.detail?.timeSpentMinutes)
+        assertEquals(0, harness.detailViewModel.ui.value.detail?.remainingEstimateMinutes)
+    }
+
+    @Test fun boardRefreshDoesNotDiscardDetailOnlySubtaskTotalsAndChildren() {
+        harness.detailResponse = harness.original.dropLast(1) + """,
+            "subtask_summary":{"total":1,"done":0},"subtasks":[{"id":202,"title":"Child","is_subtask":true}],
+            "effort":{"total_time_spent_minutes":70}}"""
+        harness.loadBoardPlanAndDetail()
+        harness.await { !harness.detailViewModel.ui.value.detailLoading }
+        harness.boardTicket = harness.original.replace("Ship release", "Refreshed title")
+        harness.boardViewModel.loadSprint()
+        harness.await { harness.detailViewModel.ui.value.detail?.title == "Refreshed title" }
+        assertEquals(70, harness.detailViewModel.ui.value.detail?.effort?.totalTimeSpentMinutes)
+        assertEquals(listOf(202L), harness.detailViewModel.ui.value.detail?.subtasks?.map(Task::id))
+    }
+
     @Test fun estimateSaveGatesEveryCompetingWorklogWriteUntilPublication() {
         harness.detailResponse = harness.original.replace("\"edit\":{\"allowed\":true}", "\"canEditEstimate\":{\"allowed\":true},\"logWork\":{\"allowed\":true}")
         harness.worklogsResponse = """{"worklogs":[{"id":7,"day_worked":"2026-11-01","minutes":30,"canEdit":true,"canDelete":true}],"time_spent_minutes":30}"""

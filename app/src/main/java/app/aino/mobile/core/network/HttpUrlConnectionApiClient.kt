@@ -12,6 +12,7 @@ class HttpUrlConnectionApiClient(
     private val timeZoneProvider: () -> TimeZone = TimeZone::getDefault,
     private val clock: () -> Long = System::currentTimeMillis,
     private val connectionFactory: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
+    private val upgrades: app.aino.mobile.core.update.ClientUpgradeState = app.aino.mobile.core.update.ClientUpgrades.state,
 ) : ApiClient {
     override fun execute(request: ApiRequest): ApiResponse {
         val method = request.method.uppercase()
@@ -29,12 +30,8 @@ class HttpUrlConnectionApiClient(
             connection.useCaches = false
             connection.instanceFollowRedirects = true
 
-            val defaults = standardHeaders(
-                token = tokenProvider.getToken(),
-                timezoneOffsetMinutes = timezoneOffsetMinutes(timeZoneProvider(), clock()),
-            )
-            // Required security/context headers cannot be replaced by an individual request.
-            (request.headers + defaults).forEach(connection::setRequestProperty)
+            request.platformHeaders(tokenProvider.getToken(), timezoneOffsetMinutes(timeZoneProvider(), clock()))
+                .forEach(connection::setRequestProperty)
 
             request.streamBody?.let { stream ->
                 connection.doOutput = true
@@ -51,10 +48,12 @@ class HttpUrlConnectionApiClient(
             }
 
             val statusCode = connection.responseCode
+            if (statusCode == 426) upgrades.observe(426, "")
             val responseBody = (if (statusCode >= 400) connection.errorStream else connection.inputStream)
                 ?.use { it.readBytes() }
                 ?: ByteArray(0)
             if (statusCode !in 200..299) {
+                upgrades.observe(statusCode, responseBody.toString(Charsets.UTF_8))
                 throw ApiError.Http(statusCode, responseBody.toString(Charsets.UTF_8), method, requestUrl)
             }
             return ApiResponse(

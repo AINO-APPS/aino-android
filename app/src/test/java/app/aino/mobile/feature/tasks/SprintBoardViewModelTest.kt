@@ -168,6 +168,8 @@ class SprintBoardViewModelTest {
         harness.detailResponse = harness.saved
         harness.planRows = harness.saved
 
+        board.beginComplete()
+        harness.await { board.ui.value.canCompleteSprint }
         board.setRollover("backlog")
         board.completeSprint()
         harness.await {
@@ -191,6 +193,8 @@ class SprintBoardViewModelTest {
         harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":11")
         harness.detailResponse = harness.saved
 
+        board.beginComplete()
+        harness.await { board.ui.value.canCompleteSprint }
         board.setRollover("11")
         board.completeSprint()
         harness.await { harness.detailViewModel.ui.value.detail?.sprintId == 11L && !board.ui.value.lifecycleBusy }
@@ -203,6 +207,23 @@ class SprintBoardViewModelTest {
         harness.await { board.ui.value.tasks.singleOrNull()?.sprintId == 11L }
         assertEquals(listOf(201L), board.ui.value.tasks.map { it.id })
         assertEquals("sprint", harness.detailViewModel.ui.value.detail?.container)
+    }
+
+    @Test
+    fun completionRefreshesCancelledWorkThatTheServerMovesWithItsParent() {
+        harness.loadBoardPlanAndDetail()
+        harness.detailResponse = harness.original.replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"cancelled\"")
+        harness.detailViewModel.refreshDetail()
+        harness.await { harness.boardViewModel.ui.value.cancelled.singleOrNull()?.id == 201L }
+        harness.detailResponse = harness.detailResponse.replace("\"sprint_id\":10", "\"sprint_id\":11")
+
+        harness.boardViewModel.beginComplete()
+        harness.await { harness.boardViewModel.ui.value.canCompleteSprint }
+        harness.boardViewModel.completeSprint()
+        harness.await { harness.completedRollover != null && !harness.boardViewModel.ui.value.lifecycleBusy }
+
+        assertEquals(11L, harness.boardViewModel.ui.value.tickets[201L]?.sprintId)
+        assertEquals("cancelled", harness.boardViewModel.ui.value.tickets[201L]?.workflowStateKey)
     }
 
     @Test

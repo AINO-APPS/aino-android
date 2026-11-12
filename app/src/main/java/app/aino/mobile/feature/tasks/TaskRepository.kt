@@ -21,6 +21,14 @@ class TaskRepository(
 ) {
     // ── Lists ────────────────────────────────────────────────────────────
     // @api GET tasks
+    fun loadProjectTickets(
+        projectId: Long,
+        query: ProjectTicketQuery = ProjectTicketQuery(),
+        filters: TaskFilters = TaskFilters(),
+        offset: Int = 0,
+    ): ProjectTicketCollection = decode(api.execute(ApiRequest(path = projectTicketsQuery(projectId, query, filters, offset))))
+
+    // @api GET tasks
     // @api GET tasks/backlog
     // @api GET tasks/search
     fun loadSprintTasks(
@@ -36,6 +44,14 @@ class TaskRepository(
     // @api GET sprints/:id/board
     fun loadSprintBoard(sprintId: Long): SprintBoardResponse =
         decode(api.execute(ApiRequest(path = "sprints/$sprintId/board")))
+
+    // @api GET projects/:id/board
+    fun loadProjectBoard(projectId: Long): ProjectBoardResponse =
+        decode(api.execute(ApiRequest(path = "projects/$projectId/board")))
+
+    // @api GET projects/:id/backlog
+    fun loadProjectBacklog(projectId: Long): ProjectBoardResponse =
+        decode(api.execute(ApiRequest(path = "projects/$projectId/backlog")))
 
     fun loadBacklog(
         filters: TaskFilters,
@@ -73,25 +89,6 @@ class TaskRepository(
 
     fun search(q: String): List<Task> = decode(api.execute(ApiRequest(path = searchQuery(q))))
 
-    /**
-     * `GET /tasks/scheduled` — every unsprinted ticket with a planned day only.
-     * The date window still goes to the overlays endpoint (leave and holidays
-     * are calendar context, not the task set).
-     */
-    fun loadScheduled(filters: TaskFilters, teamScope: TeamScope = TeamScope()): List<Task> =
-        decode<TaskListResponse>(api.execute(ApiRequest(path = scheduledQuery(filters, teamScope)))).tasks
-
-    /**
-     * `GET /org/teams` — the admin's team picker options. The endpoint returns a
-     * plain array of team rows (see `modules/organization/teamListing.ts`).
-     */
-    fun loadTeams(): List<TeamOption> =
-        decode<JsonArray>(api.execute(ApiRequest(path = "org/teams"))).mapNotNull { element ->
-            val row = element.jsonObject
-            val id = row["id"]?.jsonPrimitive?.content?.toLongOrNull() ?: return@mapNotNull null
-            TeamOption(id, row["name"]?.jsonPrimitive?.content.orEmpty())
-        }
-
     // ── Next-generation surfaces ─────────────────────────────────────────
     /** Current and historical keys resolve to the canonical ticket on the server. */
     fun loadByKey(key: String): Task {
@@ -103,13 +100,13 @@ class TaskRepository(
         fun loadEpics(): List<EpicSummary> =
             decode<EpicListResponse>(api.execute(ApiRequest(path = "tasks/epics"))).epics
 
-        /** `GET /tasks/schedule-overlays` — read-only leave, holidays and meetings. */
-        fun loadScheduleOverlays(from: String, to: String): ScheduleOverlays =
-            decode(api.execute(ApiRequest(path = "tasks/schedule-overlays?from=$from&to=$to")))
-
         /** `GET /sprints/:id/completion-preview` — the carryover pre-flight. */
-        fun loadCompletionPreview(id: Long): CompletionPreview =
-            decode(api.execute(ApiRequest(path = "sprints/$id/completion-preview")))
+        // @api GET sprints/:param/completion-preview
+        fun loadCompletionPreview(id: Long, rolloverTo: String? = null): CompletionPreview {
+            val query = rolloverTo?.let { "?rolloverTo=${java.net.URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+            val path = "sprints/$id/completion-preview" + query
+            return decode(api.execute(ApiRequest(path = path)))
+        }
 
         /** `GET /sprints/:id/baseline` — committed points and the scope delta. */
         fun loadBaseline(id: Long): BaselineResponse =
@@ -186,17 +183,10 @@ class TaskRepository(
     fun loadProjectSprints(projectId: Long): SprintListResponse =
         decode(api.execute(ApiRequest(path = "sprints?project_id=$projectId")))
 
-    fun loadAvailableSprints(): List<AvailableSprint> =
-        decode(api.execute(ApiRequest(path = "tasks/available-sprints")))
-
-    fun loadAgileConfig(projectId: Long? = null): AgileConfig =
-        AgileConfig.from(decode(api.execute(ApiRequest(path = "agile/config" + (projectId?.let { "?project_id=$it" } ?: "")))))
+    fun loadAgileConfig(projectId: Long): AgileConfig =
+        AgileConfig.from(decode(api.execute(ApiRequest(path = "agile/config?project_id=$projectId"))))
 
     fun loadSprintStats(sprintId: Long): SprintStats = decode(api.execute(ApiRequest(path = "sprints/$sprintId/stats")))
-
-    /** `GET /sprints[?team_id=…]` — rows plus the server-selected current sprint. */
-    fun loadTeamSprints(teamId: Long? = null): SprintListResponse =
-        decode(api.execute(ApiRequest(path = "sprints" + (teamId?.let { "?team_id=$it" } ?: ""))))
 
     // ── Sprint lifecycle ─────────────────────────────────────────────────
     fun startSprint(id: Long): SprintEnvelope = mutate("sprints/$id/start", Unit)
@@ -225,6 +215,10 @@ class TaskRepository(
     // ── Task writes ──────────────────────────────────────────────────────
     fun createBacklogTask(payload: CreateBacklogPayload): Task = mutate("tasks/backlog", payload)
 
+    // @api POST tasks/:id/subtasks
+    fun createSubtask(parentId: Long, title: String): Task =
+        mutate("tasks/$parentId/subtasks", JsonObject(mapOf("title" to kotlinx.serialization.json.JsonPrimitive(title))))
+
     fun updateTask(id: Long, payload: UpdateTaskPayload): Task = mutate("tasks/$id", payload, "PUT")
 
     fun updateImportFields(id: Long, payload: ImportUpdatePayload): Task = mutate("tasks/$id", payload, "PUT")
@@ -244,10 +238,6 @@ class TaskRepository(
     fun updateStatus(id: Long, status: String): Task =
         mutate("tasks/$id/status", TaskStatusPayload(status), "PATCH")
 
-    fun scheduleTask(id: Long, date: String): Task = mutate("tasks/$id/schedule", SchedulePayload(date), "PATCH")
-
-    fun unscheduleTask(id: Long): Task = mutate("tasks/$id/unschedule", Unit, "PATCH")
-
     fun assignSprint(id: Long, sprintId: Long?): Task =
         mutate("tasks/$id/assign-sprint", AssignSprintPayload(sprintId), "PATCH")
 
@@ -258,8 +248,6 @@ class TaskRepository(
         mutate<ProjectMovePayload, ProjectMoveResponse>("tasks/$id/move-project", ProjectMovePayload(projectId)).task
 
     fun deleteTask(id: Long): CancelTaskResponse = mutate("tasks/$id", Unit, "DELETE")
-
-    fun carryForward(): CarryForwardResponse = mutate("tasks/carry-forward", Unit)
 
     // ── Detail ───────────────────────────────────────────────────────────
     fun loadDetail(id: Long): Task = decode(api.execute(ApiRequest(path = "tasks/$id/detail")))

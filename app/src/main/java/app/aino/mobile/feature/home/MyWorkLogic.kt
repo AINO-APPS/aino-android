@@ -118,8 +118,8 @@ private val DAY_HEADER = DateTimeFormatter.ofPattern("EEEE", Locale.US)
  * Sprint mode: the viewer's open tickets in the running sprint, flat.
  *
  * A sprint is a container, so its rows are not grouped by day — a ticket in a
- * sprint may have no planned day at all (ADR-015: a sprint wins over a planned
- * day). The sprint endpoint orders by `created_at`, so the card sorts.
+ * sprint may have no start date at all. The sprint endpoint orders by
+ * `created_at`, so the card sorts.
  */
 fun sprintGroups(tasks: List<DashboardTask>): List<MyWorkGroup> =
     if (tasks.isEmpty()) emptyList()
@@ -138,8 +138,8 @@ fun weekGroups(
     weekStart: LocalDate,
 ): List<MyWorkGroup> = buildList {
     if (overdue.isNotEmpty()) add(MyWorkGroup("overdue", "Overdue", overdue.sortedByDay()))
-    val byDay = week.filter { it.plannedDate != null }
-        .groupBy { LocalDate.parse(it.plannedDate) }
+    val byDay = week.mapNotNull { task -> startDay(task)?.let { it to task } }
+        .groupBy({ it.first }, { it.second })
     (0L..6L).forEach { offset ->
         val day = weekStart.plusDays(offset)
         val dayTasks = byDay[day] ?: return@forEach
@@ -152,14 +152,16 @@ fun weekGroups(
  * already names the day everywhere else (spec D4).
  */
 fun rowDayLabel(task: DashboardTask, groupKey: String): String? =
-    if (groupKey != "overdue" || task.plannedDate == null) null
-    else LocalDate.parse(task.plannedDate).format(ROW_DAY)
+    if (groupKey != "overdue") null else startDay(task)?.format(ROW_DAY)
+
+private fun startDay(task: DashboardTask): LocalDate? =
+    task.startDate?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
 
 private val ROW_DAY = DateTimeFormatter.ofPattern("MMM d", Locale.US)
 
 /** Overdue rows read left-to-right by the day they slipped from. */
 private fun List<DashboardTask>.sortedByDay(): List<DashboardTask> =
-    sortedWith(compareBy({ it.plannedDate ?: "" }, { priorityRank(it.priority) }))
+    sortedWith(compareBy({ startDay(it) }, { priorityRank(it.priority) }))
 
 private fun priorityRank(priority: String?): Int = when (priority) {
     "high" -> 0

@@ -70,6 +70,7 @@ class PlanViewModel(
                                 error = null, confirm = null,
                             ).projectPlan()
                         }
+                        if (previous.planLoaded) loadBacklog()
                     } else _ui.update { it.copy(planScope = scope).projectPlan() }
                 }
             }
@@ -105,6 +106,16 @@ class PlanViewModel(
         }
         ticketScope.launch {
             ticketSession.planRefreshes.collect { if (_ui.value.planLoaded) loadBacklog() }
+        }
+        ticketScope.launch {
+            ticketSession.sync(repository).changes.collect { change ->
+                val state = _ui.value
+                val changed = ticketSession.store.state.value.tickets[change.ticketId]
+                if (state.planLoaded && (state.planTasks.any { parent -> parent.subtasks.orEmpty().any { it.id == change.ticketId } } ||
+                        (changed?.isSubtask == true && changed.parentTaskId in state.planTicketIds))) {
+                    loadBacklog()
+                }
+            }
         }
         ticketSession.onClose { synchronized(ticketSession.planScopeLock) { teamViews.clear() } }
     }
@@ -144,6 +155,7 @@ class PlanViewModel(
     fun dismissConfirm() = _ui.update { it.copy(confirm = null) }
 
     fun loadBacklog() {
+        if (_ui.value.planScope.projectScoped && _ui.value.planScope.selectedProjectId == null) return
         backlogJob?.cancel()
         _ui.update { it.copy(backlogLoading = it.backlog.isEmpty(), backlogLoadingMore = false) }
         val gen = backlogGen.incrementAndGet()
@@ -157,7 +169,7 @@ class PlanViewModel(
                         loadBacklog()
                         return@fold
                     }
-                    ticketSession.store.upsert(page.tasks)
+                    ticketSession.store.upsert(planningTickets(page.tasks))
                     _ui.update {
                         val next = it.copy(
                             tickets = ticketSession.store.state.value.tickets,
@@ -200,7 +212,7 @@ class PlanViewModel(
                         loadBacklog()
                         return@fold
                     }
-                    ticketSession.store.upsert(page.tasks)
+                    ticketSession.store.upsert(planningTickets(page.tasks))
                     _ui.update { current ->
                         val offset = s.planOffset + page.tasks.size
                         val next = current.copy(
@@ -244,8 +256,7 @@ class PlanViewModel(
         ))
     }
     fun setDraftSprint(id: Long?) = _ui.update { s ->
-        val end = id?.let { wanted -> s.sprints.firstOrNull { it.id == wanted }?.endDate?.take(10) }
-        s.copy(draft = s.draft.copy(sprintId = id, dueDate = if (id == null) "" else end ?: s.draft.dueDate))
+        s.copy(draft = s.draft.copy(sprintId = id))
     }
 
     fun submitBacklog() {
@@ -266,7 +277,7 @@ class PlanViewModel(
         io {
             val payload = CreateBacklogPayload(
                 title = draft.title.trim(), description = plainTextToHtml(draft.description),
-                priority = draft.priority, teamId = s.selectedTeamId?.takeIf { !s.planScope.projectScoped && it > 0 },
+                priority = draft.priority,
                 assignedTo = draft.assignedTo, dueDate = draft.dueDate.ifEmpty { null },
                 labelIds = draft.labels.ifEmpty { null }, sprintId = draft.sprintId,
                 storyPoints = draft.storyPoints, workItemTypeId = draft.workItemTypeId,
@@ -294,7 +305,6 @@ class PlanViewModel(
         _ui.update {
             it.copy(draft = BacklogDraft(
                 sprintId = sprintId, workflowStateId = state.id.takeIf { id -> id != 0L },
-                dueDate = s.sprints.firstOrNull { sp -> sp.id == sprintId }?.endDate?.take(10).orEmpty(),
             ))
         }
         ticketSession.requestShell(ShellRequest.OpenSheet(TaskSheet.CreateTicket))
@@ -304,8 +314,7 @@ class PlanViewModel(
         val s = _ui.value
         val targetId = planTargetId(s.teamSprints, s.currentSprintId)
         if (targetId == null) {
-            notify(if (canManageSprint(s.role)) "No sprint yet — create one in Admin → Teams"
-            else "No sprint yet — an admin can create one in Admin → Teams")
+            notify("No sprint yet — plan tickets in the backlog until a sprint starts.")
             return
         }
         _ui.update { it.copy(planOpen = true) }
@@ -328,7 +337,7 @@ class PlanViewModel(
 
     fun configureImport(task: Task) = _ui.update { s ->
         s.copy(importTaskId = task.id, importAssignedTo = task.assignedTo,
-            importDueDate = s.currentSprint?.endDate?.take(10) ?: task.dueDate?.take(10).orEmpty())
+            importDueDate = task.dueDate?.take(10).orEmpty())
     }
     fun cancelImportConfig() = _ui.update { it.copy(importTaskId = null, importAssignedTo = null, importDueDate = "") }
     fun setImportAssignee(id: Long?) = _ui.update { it.copy(importAssignedTo = id) }
@@ -406,6 +415,14 @@ class PlanViewModel(
                     }
                     if (action == "delete") saved.forEach { ticketSession.store.markCancelled(it.id, it) }
                     else ticketSession.store.upsert(saved)
+                    if (action == "move_to_sprint") {
+                        saved.forEach { refreshLoadedSubtasks(it, repository, ticketSession) }
+                        if (saved.any { parent ->
+                                !parent.subtasks.isNullOrEmpty() || ticketSession.store.state.value.tickets.values.any {
+                                    it.isSubtask && it.parentTaskId == parent.id
+                                }
+                            }) ticketSession.requestBoard(BoardRequest.ReloadLoaded)
+                    }
                     clearSelection()
                     notify(bulkSummary(result))
                     loadBacklog()
@@ -433,7 +450,9 @@ class PlanViewModel(
         ) { bulkAction("delete") }) }
     }
     fun reorder(taskId: Long, beforeId: Long?, afterId: Long?) {
-        val decision = ticketSession.store.state.value.tickets[taskId]?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
+        val task = ticketSession.store.state.value.tickets[taskId]
+        if (task?.isSubtask == true) return notify(capabilityReasonCopy("SUBTASK_FOLLOWS_PARENT"))
+        val decision = task?.capability(TaskCapability.Edit) ?: TaskCapabilityDecision()
         if (!decision.allowed) return notify(decision.reasonCopy())
         io {
             runCatching { repository.rankTask(taskId, beforeId, afterId) }.fold(

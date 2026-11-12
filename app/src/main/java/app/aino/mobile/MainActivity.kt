@@ -42,8 +42,8 @@ import app.aino.mobile.feature.attendance.VerifyFix
 import app.aino.mobile.core.navigation.AttendanceSystemActions
 import app.aino.mobile.feature.tasks.TasksShellViewModel
 import app.aino.mobile.feature.tasks.SprintBoardViewModel
+import app.aino.mobile.feature.tasks.ProjectBoardViewModel
 import app.aino.mobile.feature.tasks.PlanViewModel
-import app.aino.mobile.feature.tasks.ScheduledViewModel
 import app.aino.mobile.feature.profile.ProfileViewModel
 import app.aino.mobile.core.push.PushNotifications
 import app.aino.mobile.core.push.PushTokenRegistrar
@@ -128,13 +128,13 @@ class MainActivity : FragmentActivity() {
                 key = "sprint-board-${ticketSession.key}",
                 factory = SprintBoardViewModel.factory(applicationContext, ticketSession),
             )
+            val projectBoardViewModel = androidx.lifecycle.viewmodel.compose.viewModel<ProjectBoardViewModel>(
+                key = "project-board-${ticketSession.key}",
+                factory = ProjectBoardViewModel.factory(applicationContext, ticketSession),
+            )
             val planViewModel = androidx.lifecycle.viewmodel.compose.viewModel<PlanViewModel>(
                 key = "plan-${ticketSession.key}",
                 factory = PlanViewModel.factory(applicationContext, ticketSession),
-            )
-            val scheduledViewModel = androidx.lifecycle.viewmodel.compose.viewModel<ScheduledViewModel>(
-                key = "scheduled-${ticketSession.key}",
-                factory = ScheduledViewModel.factory(applicationContext, ticketSession),
             )
             val themeStore = ThemePreferenceStore(applicationContext)
             val isDark by themeStore.isDark.collectAsState(initial = true)
@@ -143,6 +143,7 @@ class MainActivity : FragmentActivity() {
             val branding by app.aino.mobile.core.AppContainer.get(applicationContext).branding.state.collectAsState()
             val chatPrefs by app.aino.mobile.core.settings.ChatPreferences.state.collectAsState()
             val locked by app.aino.mobile.core.settings.AppLock.locked.collectAsState()
+            val upgradeRequired by app.aino.mobile.core.update.ClientUpgrades.state.required.collectAsState()
             // Signal "Screen security": no screenshots or recents preview anywhere in the app.
             androidx.compose.runtime.DisposableEffect(chatPrefs.screenSecurity) {
                 if (chatPrefs.screenSecurity) app.aino.mobile.core.designsystem.acquireSecure(window)
@@ -154,9 +155,10 @@ class MainActivity : FragmentActivity() {
                 if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(!chatPrefs.screenLock)
                 onDispose { if (android.os.Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(true) }
             }
-            androidx.compose.runtime.LaunchedEffect(locked) { if (locked) requestUnlock() }
+            androidx.compose.runtime.LaunchedEffect(locked, upgradeRequired) { if (locked && upgradeRequired == null) requestUnlock() }
             WebTheme(darkTheme = isDark, accent = branding.accentColor) {
               app.aino.mobile.core.designsystem.IncognitoKeyboard(chatPrefs.incognitoKeyboard) {
+              app.aino.mobile.core.update.ClientUpgradeGate(appUpdater) {
               androidx.compose.foundation.layout.Box {
                 AinoApp(
                     authViewModel,
@@ -167,8 +169,8 @@ class MainActivity : FragmentActivity() {
                     taskViewModel,
                     ticketSession,
                     sprintBoardViewModel,
+                    projectBoardViewModel,
                     planViewModel,
-                    scheduledViewModel,
                     profileViewModel,
                     chatViewModel,
                     incomingCallViewModel,
@@ -198,6 +200,7 @@ class MainActivity : FragmentActivity() {
                     },
                 )
                 if (locked) app.aino.mobile.core.designsystem.component.AppLockOverlay(onUnlock = ::requestUnlock)
+              }
               }
               }
             }

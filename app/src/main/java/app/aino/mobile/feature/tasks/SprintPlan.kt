@@ -73,7 +73,7 @@ internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewMo
                 PlanSectionTitle(
                     "Sprint",
                     sprint?.let { sp ->
-                        val points = boardUi.tasks.sumOf { it.storyPoints ?: 0.0 }
+                        val points = boardUi.tasks.sumOf { it.planningPoints ?: 0.0 }
                         "${formatPoints(points)} ${ui.agile.unitLabel}"
                     },
                 )
@@ -88,9 +88,18 @@ internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewMo
                     )
                 }
             } else {
-                items(boardUi.tasks, key = { "sp-${it.id}" }) { task ->
-                    PlanRow(task, ui, onOpen, actionLabel = "Move to backlog") {
-                        planViewModel.assignSprint(task, null)
+                items(planningFamilies(boardUi.tasks, boardUi.tickets), key = { "sp-${it.id}" }) { task ->
+                    Column {
+                        PlanRow(task, ui, onOpen, actionLabel = "Move to backlog") {
+                            planViewModel.assignSprint(task, null)
+                        }
+                        task.subtasks.orEmpty().forEach { child ->
+                            Box(Modifier.padding(start = 24.dp)) {
+                                PlanRow(child, ui, onOpen, actionLabel = "Move to backlog") {
+                                    planViewModel.assignSprint(child, null)
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -117,9 +126,18 @@ internal fun SprintPlanPage(ui: TaskUiState, boardUi: SprintBoardUiState, viewMo
                     )
                 }
             } else {
-                items(pullable, key = { "pb-${it.id}" }) { task ->
-                    PlanRow(task, ui, onOpen, actionLabel = "Pull into sprint") {
-                        moving = task
+                items(planningFamilies(pullable, ui.tickets), key = { "pb-${it.id}" }) { task ->
+                    Column {
+                        PlanRow(task, ui, onOpen, actionLabel = "Pull into sprint") {
+                            moving = task
+                        }
+                        task.subtasks.orEmpty().forEach { child ->
+                            Box(Modifier.padding(start = 24.dp)) {
+                                PlanRow(child, ui, onOpen, actionLabel = "Pull into sprint") {
+                                    moving = child
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -249,12 +267,15 @@ private fun PlanSectionTitle(title: String, trailing: String?) {
 @Composable
 private fun PlanRow(task: Task, ui: TaskUiState, onOpen: (Task) -> Unit, actionLabel: String, onAction: () -> Unit) {
     val colors = LocalWebColors.current
-    val points = if (ui.agile.features.storyPoints) formatPoints(task.storyPoints) else ""
+    val points = if (ui.agile.features.storyPoints) formatPoints(task.planningPoints) else ""
+    val placement = task.capability(TaskCapability.PlaceInSprint)
     Row(
         Modifier
             .fillMaxWidth()
             .clickable(onClickLabel = "Open ${task.displayKey}", onClick = { onOpen(task) })
-            .semantics { customActions = listOf(CustomAccessibilityAction(actionLabel) { onAction(); true }) }
+            .semantics {
+                customActions = if (placement.allowed) listOf(CustomAccessibilityAction(actionLabel) { onAction(); true }) else emptyList()
+            }
             .padding(horizontal = 20.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -279,7 +300,7 @@ private fun PlanRow(task: Task, ui: TaskUiState, onOpen: (Task) -> Unit, actionL
             Text(points, color = colors.textMuted, fontSize = 0.72.rem, maxLines = 1)
         }
         Spacer(Modifier.width(8.dp))
-        Box(
+        if (placement.allowed) Box(
             Modifier
                 .size(32.dp)
                 .clip(CircleShape)

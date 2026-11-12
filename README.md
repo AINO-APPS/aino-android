@@ -47,21 +47,68 @@ app-level check. No face, fingerprint, or biometric template leaves the device.
 
 The Activity-scoped `TasksShellViewModel` owns team scope, tabs, shared sheets,
 search membership, preferences and metadata. It is the only Plan-scope writer.
-Its `TaskShellUiState` contains no Tickets or Board, Plan, Scheduled or Detail
+Its `TaskShellUiState` contains no Tickets or Board, Plan or Detail
 state; search rows are a session-reset projection, not another Ticket owner.
 `TaskViewModel` remains a source-compatible alias for the shell. `TasksScreen`
 composes the owners' states only at the UI boundary. List actions belong to their
 surface's ViewModel, and the inline comments sheet has its own id-keyed Detail
 ViewModel, disposed when the sheet closes. No ViewModel references another.
 The app shell forwards realtime, reconnect and visible polling directly to the
-signed-in `TicketSession`, and schedule notice links go to `ScheduledViewModel`.
+signed-in `TicketSession`.
 Service desk and Sprint insights retain their independent reads and selection.
 
-The Activity-scoped `ScheduledViewModel` owns Scheduled membership ids and the
-visible date window, scheduling and unscheduling (including Undo), overlays and
-one-shot date focus, including daily carry-forward. It reads the session Ticket store and Plan scope without
-referencing another ViewModel. Team switches restore cached ids before refreshing;
-the shell only coordinates tab navigation through session requests.
+Project reads and the shared `PlanScope` retain the server's project type,
+ordered `planTabs`, Kanban backlog/WIP switches and `canChangeType` capability.
+The project switcher shows Scrum, Kanban or Task list, including archived
+projects. Responses from older Phase 2 servers without these fields use Scrum
+metadata defaults and do not grant type changes. Project settings remain
+web-only. Supported tabs follow the server's ordered `planTabs`: Scrum keeps
+Backlog, Sprint and Reports even without an active sprint. The empty Sprint
+surface links to Backlog. Older project responses use the Scrum default; unknown
+future tabs degrade safely to Backlog without enabling new planning surfaces.
+Kanban projects use the server's project-board response for workflow
+columns, tickets and WIP occupancy; the separate project backlog is shown only
+when the server enables it.
+
+Task list projects map the server's ordered List, Board and Calendar tabs to
+native List, Board and Upcoming. Calendar itself remains web-only. List sorts
+and filters by key, title, type, status, assignee, priority, start date and due
+date. `ProjectTicketViewModel` reads every bounded project collection page
+(`GET /tasks?scope=list&project_id=…`) instead of a legacy placement bucket.
+Upcoming shows open tickets with past start dates or deadlines first, followed
+by start-date groups and tickets without a start date; it never truncates old
+overdue work to a rolling date window. List and Upcoming open the shared ticket
+detail for date edits. Their workflow Board uses the same server columns and
+occupancy as Kanban, without a sprint. Project/filter changes discard late
+collection responses; failures offer Retry and pull-to-refresh.
+
+Scheduled planning, date-placement actions, daily carry-forward and team automatic
+sprint configuration are no longer exposed or called by the app. Start/due dates
+remain independent ticket fields. Selecting a sprint does not prefill or replace
+the due date, and board cards show the ticket due date and sprint end separately.
+
+Scrum backlog/sprint plans and the Kanban backlog nest server-provided subtasks
+under their parents, including completed children. Boards keep independent child
+cards labelled with the parent's key; Task list collections retain those rows.
+Only parents are ranked or selected for backlog bulk actions. Placement and
+project-move permissions remain server decisions; successful family moves refetch
+loaded children for their canonical placement, workflow state, keys and aliases.
+Subtask story points are neither editable nor counted in native planning totals.
+Sprint report, baseline and completion metrics remain server-owned.
+
+Ticket Detail shows subtask done/total counts and child/parent navigation without
+requiring the Epic feature. Its editable estimates and worklogs remain the ticket's
+own effort; a separate read-only total includes non-deleted subtasks exactly as
+returned by the server. Child changes and effort writes refresh those server
+totals instead of adding local worklog amounts. Older responses without hierarchy
+metadata retain their existing flat lists and own-effort presentation.
+**Add subtask** is shown from the server's `canAddSubtask` decision, even when
+the parent has no children and the Epic feature is disabled. The title-only
+`POST /tasks/:id/subtasks` request lets the server fix the Subtask type and
+inherit project/sprint; clients never offer those selectors. Creating refreshes
+the parent's list/progress and shared planning data. A stale refusal preserves
+the draft, explains the standard reason and refreshes capabilities. Missing or
+denied capabilities never offer creation.
 
 The Activity-scoped `PlanViewModel` owns Backlog paging, sort and read-adjusted
 totals, Completed, selection and bulk actions, the create draft, epics, import
@@ -73,7 +120,15 @@ session requests coordinate those writes and shared sheets.
 
 The Activity-scoped `SprintBoardViewModel` owns Board membership ids, optimistic
 moves and identity-checked rollback, sprint lifecycle and rollover, completion
-preview, stats and scope baseline. It reads the session Ticket store and Plan
+preview, stats and scope baseline. Completion opens a server-preview-driven
+dialog for the next planned sprint, a new planned sprint, or backlog. Parents,
+subtasks, points, staying tickets and new-sprint dates are never inferred from
+the locally loaded board. New-target requests require the preview's explicit
+`supportsNewSprint` opt-in; older servers retain numeric-sprint/backlog requests.
+Loading or failed previews block completion and can be retried. Lifecycle
+authorization controls are unchanged: member access awaits an explicit server
+`canManageSprint` capability, not the API-support flag.
+It reads the session Ticket store and Plan
 scope without referencing another ViewModel. The Tasks shell remains the only
 Plan-scope writer; session requests coordinate Board reloads and metadata refresh.
 Completing a sprint refetches enriched Tickets so rollover Placement updates in
@@ -87,6 +142,15 @@ Notifications and links enter the same Detail route; key lookups publish their
 full Ticket before opening the id-keyed route. Comment threads remain shared with
 the inline panel, and session notices keep Open, View and Undo available after a
 Detail route closes.
+
+Ticket Detail shows Start date immediately before Due date. Both are editable
+with the Ticket's edit capability, independently of sprint or Scheduled placement.
+Due dates before the start date are refused, and Activity names start-date edits.
+Ticket, My Work and manager attendance-day readers prefer `start_date`; rows from
+older servers fall back to `planned_date` only when `start_date` is absent, so an
+explicit null stays cleared. Start-date edits send both fields to support older
+servers without calling placement endpoints. Planning tabs and Scheduled behavior
+remain unchanged in this compatibility slice.
 
 Ticket time tracking uses manual worklogs, not Start/Stop. Log work defaults to
 today and accepts a worked day, a duration such as `2h 30m`, optional local start

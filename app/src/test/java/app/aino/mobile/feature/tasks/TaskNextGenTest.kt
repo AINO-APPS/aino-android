@@ -114,12 +114,26 @@ class TaskNextGenTest {
     @Test
     fun theDeltaAllowListMatchesTheServer() {
         // Mirrors server/modules/tasks/tasks.deltas.ts and the web mirror.
-        assertEquals(19, DELTA_FIELDS.size)
+        assertEquals(20, DELTA_FIELDS.size)
+        assertTrue("start_date" in DELTA_FIELDS)
         assertTrue("planned_date" in DELTA_FIELDS)
         assertTrue("logged_minutes" in DELTA_FIELDS)
         // A transfer moves the ticket's owning team.
         assertTrue("team_id" in DELTA_FIELDS)
         assertFalse("org_id" in DELTA_FIELDS)
+    }
+
+    @Test
+    fun startDateDeltasTakePrecedenceOverTheLegacyAliasIncludingClears() {
+        val original = task().copy(startDate = "2026-11-10", plannedDate = "2026-11-10", sprintId = 7, container = "sprint")
+        val cleared = applyTaskDelta(original, parseTaskDelta(json("""{"taskId":1,"fields":{"start_date":null,"planned_date":"2026-11-11"}}"""))!!)
+        assertNull(cleared.startDate)
+        assertEquals(7L, cleared.sprintId)
+        assertEquals("sprint", cleared.container)
+        val legacy = applyTaskDelta(original, parseTaskDelta(json("""{"taskId":1,"fields":{"planned_date":"2026-11-12"}}"""))!!)
+        assertEquals("2026-11-12", legacy.startDate)
+        val canonical = applyTaskDelta(original, parseTaskDelta(json("""{"taskId":1,"fields":{"start_date":"2026-11-13"}}"""))!!)
+        assertEquals("2026-11-13", canonical.startDate)
     }
 
     @Test
@@ -312,9 +326,9 @@ class TaskNextGenTest {
     }
 
     @Test
-    fun theSprintTabHasBothSurfaces() {
-        // The Board/Plan switch is gone; the planner is a Backlog action now.
-        assertEquals(TaskTab.Scheduled, TaskTab.fromKey("scheduled"))
+    fun reportsReplaceTheRetiredScheduledTab() {
+        assertEquals(TaskTab.Reports, TaskTab.fromKey("reports"))
+        assertNull(TaskTab.fromKey("scheduled"))
         assertNull(TaskTab.fromKey("nonsense"))
     }
 
