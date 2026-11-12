@@ -379,8 +379,6 @@
 | POST | `/api/org/teams` | implemented | A-105 |
 | DELETE | `/api/org/teams/:id` | implemented | A-105 |
 | PUT | `/api/org/teams/:id` | implemented | A-105 |
-| GET | `/api/org/teams/:id/sprint-config` | pending | A-105 |
-| PUT | `/api/org/teams/:id/sprint-config` | pending | A-105 |
 | GET | `/api/platform-access` | waived | existing/A-108 |
 | POST | `/api/platform-access/:id/approve` | waived | existing/A-108 |
 | POST | `/api/platform-access/:id/deny` | waived | existing/A-108 |
@@ -421,9 +419,6 @@
 | PUT | `/api/projects/:id/workflow-states/reorder` | pending | A-104 |
 | GET | `/api/projects/:id/workflow-transitions` | pending | A-104 |
 | PUT | `/api/projects/:id/workflow-transitions` | pending | A-104 |
-| GET | `/api/projects/migration/review` | pending | A-104 |
-| POST | `/api/projects/migration/switch` | pending | A-104 |
-| POST | `/api/projects/migration/switch-back` | pending | A-104 |
 | GET | `/api/projects/mine` | implemented | A-104 |
 | GET | `/api/projects/types` | pending | A-104 |
 | GET | `/api/public/branding` | implemented | existing/A-108 |
@@ -489,14 +484,8 @@
 | GET | `/api/tasks/:id/parent` | implemented | A-104 |
 | PATCH | `/api/tasks/:id/parent` | implemented | A-104 |
 | PATCH | `/api/tasks/:id/rank` | implemented | A-104 |
-| PATCH | `/api/tasks/:id/schedule` | pending | A-104 |
 | PATCH | `/api/tasks/:id/status` | implemented | A-104 |
 | POST | `/api/tasks/:id/subtasks` | implemented | A-104 |
-| GET | `/api/tasks/:id/timer` | client-retired | A-104 |
-| POST | `/api/tasks/:id/timer/start` | client-retired | A-104 |
-| POST | `/api/tasks/:id/timer/stop` | client-retired | A-104 |
-| POST | `/api/tasks/:id/transfer` | pending | A-104 |
-| PATCH | `/api/tasks/:id/unschedule` | pending | A-104 |
 | GET | `/api/tasks/:id/worklogs` | implemented | A-104 |
 | POST | `/api/tasks/:id/worklogs` | implemented | A-104 |
 | DELETE | `/api/tasks/:id/worklogs/:worklogId` | implemented | A-104 |
@@ -507,7 +496,6 @@
 | POST | `/api/tasks/backlog` | implemented | A-104 |
 | POST | `/api/tasks/bulk` | implemented | A-104 |
 | GET | `/api/tasks/by-key/:key` | implemented | A-104 |
-| POST | `/api/tasks/carry-forward` | pending | A-104 |
 | GET | `/api/tasks/epics` | implemented | A-104 |
 | GET | `/api/tasks/labels` | implemented | A-104 |
 | POST | `/api/tasks/labels` | implemented | A-104 |
@@ -515,8 +503,6 @@
 | PUT | `/api/tasks/labels/:id` | implemented | A-104 |
 | GET | `/api/tasks/labels/manage` | implemented | A-104 |
 | GET | `/api/tasks/lookup/quicksearch` | implemented | A-104 |
-| GET | `/api/tasks/schedule-overlays` | pending | A-104 |
-| GET | `/api/tasks/scheduled` | pending | A-104 |
 | GET | `/api/tasks/search` | implemented | A-104 |
 | GET | `/api/tracker/analytics` | implemented | existing/A-108 |
 | POST | `/api/tracker/break-end` | implemented | existing/A-108 |
@@ -545,4 +531,18 @@
 | GET | `/healthz` | waived | existing/A-108 |
 | GET | `/metrics` | waived | existing/A-108 |
 | GET | `/readyz` | waived | existing/A-108 |
+| GET | `/api/tasks/scheduled` | client-retired | A-104 |
+| GET | `/api/tasks/schedule-overlays` | client-retired | A-104 |
+| PATCH | `/api/tasks/:id/schedule` | client-retired | A-104 |
+| PATCH | `/api/tasks/:id/unschedule` | client-retired | A-104 |
+| POST | `/api/tasks/carry-forward` | client-retired | A-104 |
+| GET | `/api/tasks/:id/timer` | client-retired | A-104 |
+| POST | `/api/tasks/:id/timer/start` | client-retired | A-104 |
+| POST | `/api/tasks/:id/timer/stop` | client-retired | A-104 |
+| POST | `/api/tasks/:id/transfer` | client-retired | A-104 |
+| GET | `/api/org/teams/:id/sprint-config` | client-retired | A-105 |
+| PUT | `/api/org/teams/:id/sprint-config` | client-retired | A-105 |
+| POST | `/api/projects/migration/switch` | client-retired | A-104 |
+| POST | `/api/projects/migration/switch-back` | client-retired | A-104 |
+| GET | `/api/projects/migration/review` | client-retired | A-104 |
 

@@ -2,21 +2,20 @@
   "schemaVersion": 1,
   "policy": "Waivers require an endpoint key, an owner and a non-empty reason. Pending implementation work is not a waiver. Client retirements require deprecated platform routes and no remaining Android call sites.",
   "clientRetired": [
-    {
-      "key": "GET /api/tasks/:param/timer",
-      "owner": "Android manual-worklogs/ticket-07",
-      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
-    },
-    {
-      "key": "POST /api/tasks/:param/timer/start",
-      "owner": "Android manual-worklogs/ticket-07",
-      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
-    },
-    {
-      "key": "POST /api/tasks/:param/timer/stop",
-      "owner": "Android manual-worklogs/ticket-07",
-      "reason": "Ticket timers replaced by manual worklogs. Deprecated server compatibility remains for older clients."
-    }
+    { "key": "GET /api/tasks/scheduled", "owner": "A-104", "reason": "Ticket 11 removed legacy date-planned task listing." },
+    { "key": "GET /api/tasks/schedule-overlays", "owner": "A-104", "reason": "Ticket 11 removed legacy date-planned task overlays." },
+    { "key": "PATCH /api/tasks/:param/schedule", "owner": "A-104", "reason": "Ticket 11 removed legacy date scheduling." },
+    { "key": "PATCH /api/tasks/:param/unschedule", "owner": "A-104", "reason": "Ticket 11 removed legacy date scheduling." },
+    { "key": "POST /api/tasks/carry-forward", "owner": "A-104", "reason": "Ticket 11 removed legacy sprint carry-forward." },
+    { "key": "GET /api/tasks/:param/timer", "owner": "A-104", "reason": "Ticket 11 removed task timers; time is recorded as manual worklogs." },
+    { "key": "POST /api/tasks/:param/timer/start", "owner": "A-104", "reason": "Ticket 11 removed task timers; time is recorded as manual worklogs." },
+    { "key": "POST /api/tasks/:param/timer/stop", "owner": "A-104", "reason": "Ticket 11 removed task timers; time is recorded as manual worklogs." },
+    { "key": "POST /api/tasks/:param/transfer", "owner": "A-104", "reason": "Ticket 11 removed team transfer from project-owned task workflows." },
+    { "key": "GET /api/org/teams/:param/sprint-config", "owner": "A-104", "reason": "Ticket 11 removed team sprint configuration." },
+    { "key": "PUT /api/org/teams/:param/sprint-config", "owner": "A-104", "reason": "Ticket 11 removed team sprint configuration." },
+    { "key": "POST /api/projects/migration/switch", "owner": "A-104", "reason": "Ticket 11 retired project ownership migration operations." },
+    { "key": "POST /api/projects/migration/switch-back", "owner": "A-104", "reason": "Ticket 11 retired project ownership migration operations." },
+    { "key": "GET /api/projects/migration/review", "owner": "A-104", "reason": "Ticket 11 retired project ownership migration operations." }
   ],
   "waivers": [
     {
