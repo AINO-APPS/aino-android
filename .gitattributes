@@ -1,0 +1,4 @@
+# Generated parity checks compare exact bytes on every platform.
+/contracts/android-endpoint-coverage.json text eol=lf
+/contracts/http-route-inventory.json text eol=lf
+/docs/PARITY_MATRIX.md text eol=lf
