@@ -18,6 +18,11 @@
   ],
   "waivers": [
     {
+      "key": "GET /api/projects/hierarchy-repairs",
+      "owner": "A-104",
+      "reason": "Read-only hierarchy migration audit is web-only organization administration; this is not an ownership switch or switch-back operation."
+    },
+    {
       "key": "GET /api/tasks/schedule-overlays",
       "owner": "A-104",
       "reason": "The platform retains this read-only calendar context endpoint; Android has no call site for it."

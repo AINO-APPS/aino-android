@@ -5,9 +5,9 @@
     "android": "app/src/main/java/**/*.kt"
   },
   "totals": {
-    "platform": 539,
+    "platform": 540,
     "covered": 272,
-    "waived": 235,
+    "waived": 236,
     "clientRetired": 13,
     "missing": 21,
     "unmatched": 0
