@@ -530,13 +530,15 @@ class TicketSessionUiTest {
         harness.loadBoardPlanAndDetail()
         harness.saved = harness.original.replace("\"sprint_id\":10", "\"sprint_id\":null")
             .replace("\"container\":\"sprint\"", "\"container\":\"backlog\"")
+        harness.planRows = harness.saved
         harness.viewModelPlan.assignSprint(harness.boardViewModel.ui.value.tasks.single(), null)
         harness.await {
             harness.writes == 1 && harness.boardViewModel.ui.value.tasks.isEmpty() &&
                 201L in harness.viewModelPlan.ui.value.recentlyUpdated &&
                 201L in harness.detailViewModel.ui.value.recentlyUpdated &&
                 harness.detailViewModel.ui.value.detail?.container == "backlog" &&
-                harness.viewModelPlan.ui.value.backlog.map { it.id } == listOf(201L)
+                harness.viewModelPlan.ui.value.backlog.map { it.id } == listOf(201L) &&
+                harness.viewModelPlan.ui.value.planOffset == 1
         }
         assertEquals("backlog", harness.detailViewModel.ui.value.detail?.container)
         assertEquals(listOf(201L), harness.viewModelPlan.ui.value.backlog.map { it.id })

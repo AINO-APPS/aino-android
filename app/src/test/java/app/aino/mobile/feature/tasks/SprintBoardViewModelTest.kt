@@ -33,23 +33,37 @@ class SprintBoardViewModelTest {
         harness.loadBoardPlanAndDetail()
         harness.saved = harness.original.replace("\"workflow_state_id\":101", "\"workflow_state_id\":102")
             .replace("\"workflow_state_key\":\"todo\"", "\"workflow_state_key\":\"in_progress\"")
+        val statsBeforeMove = harness.sprintStatsReads
         harness.boardViewModel.moveTask(harness.boardViewModel.ui.value.tasks.single(), WorkflowState(102, "in_progress", "In Progress"))
         val notice = runBlocking { withTimeout(5_000) { harness.session.notices.first() } }
         assertEquals("Undo", notice.actionLabel)
+        harness.await { harness.sprintStatsReads > statsBeforeMove }
         harness.detailResponse = harness.saved.replace("Ship release", "Edited after move")
         harness.detailViewModel.refreshDetail()
-        harness.await { harness.detailViewModel.ui.value.detail?.title == "Edited after move" }
+        harness.await {
+            !harness.detailViewModel.ui.value.detailLoading &&
+                harness.detailViewModel.ui.value.detail?.title == "Edited after move" &&
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.title == "Edited after move"
+        }
         harness.holdAndRejectNextStatusWrite()
 
         notice.action?.invoke()
         assertTrue(harness.awaitStatusWrite())
+        harness.await { harness.boardViewModel.ui.value.tasks.singleOrNull()?.workflowStateKey == "todo" }
         assertEquals("Edited after move", harness.boardViewModel.ui.value.tasks.single().title)
         assertEquals("todo", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
         harness.detailResponse = harness.saved.replace("Ship release", "Newer during Undo")
         harness.detailViewModel.refreshDetail()
-        harness.await { harness.detailViewModel.ui.value.detail?.title == "Newer during Undo" }
+        harness.await {
+            !harness.detailViewModel.ui.value.detailLoading &&
+                harness.detailViewModel.ui.value.detail?.title == "Newer during Undo" &&
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.title == "Newer during Undo"
+        }
         harness.finishStatusWrite()
-        harness.await { harness.boardViewModel.ui.value.error != null }
+        harness.await {
+            harness.boardViewModel.ui.value.error != null &&
+                harness.boardViewModel.ui.value.tasks.singleOrNull()?.workflowStateKey == "in_progress"
+        }
         assertEquals("Newer during Undo", harness.boardViewModel.ui.value.tasks.single().title)
         assertEquals("in_progress", harness.boardViewModel.ui.value.tasks.single().workflowStateKey)
     }
@@ -140,12 +154,14 @@ class SprintBoardViewModelTest {
     fun creatingFromAColumnAppearsOnTheBoardEvenWhenRefreshFails() {
         val board = harness.boardViewModel
         harness.loadBoardPlanAndDetail()
-        board.loadSprint()
-        harness.await { board.ui.value.tasks.size == 1 }
         harness.rejectBoardReads = true
         harness.saved = """{"id":202,"title":"New column ticket","container":"sprint","sprint_id":10,"workflow_state_id":102,"workflow_state_key":"in_progress"}"""
 
         harness.viewModelPlan.openCreateForColumn(WorkflowState(102, "in_progress", "In Progress"))
+        harness.await {
+            harness.viewModelPlan.ui.value.draft.projectId == 3L &&
+                harness.viewModelPlan.ui.value.draft.sprintId == 10L
+        }
         harness.viewModelPlan.updateDraft { it.copy(title = "New column ticket") }
         harness.viewModelPlan.submitBacklog()
         harness.await { board.ui.value.tasks.any { it.id == 202L } }
